@@ -1,0 +1,35 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "outputs": ["dist/**", ".expo/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$"
+      ],
+      "env": [
+        "EXPO_PUBLIC_*"
+      ]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "start": {
+      "cache": false,
+      "persistent": true
+    },
+    "android": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "ios": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "web": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

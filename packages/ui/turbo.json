@@ -1,0 +1,27 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "outputs": ["dist/**", "types/**"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.stories.*",
+        "!**/*.test.*",
+        "!**/*.spec.*"
+      ]
+    },
+    "dev": {
+      "dependsOn": [],
+      "cache": false,
+      "persistent": true
+    },
+    "type-check": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.stories.*",
+        "!**/*.test.*",
+        "!**/*.spec.*"
+      ]
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "name": "home-server-monorepo",
+  "private": true,
+  "description": "Home service platform monorepo with backend API, mobile apps, and admin web interface",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "type-check": "turbo type-check",
+    "test": "turbo test",
+    "test:watch": "turbo test:watch",
+    "format": "turbo format",
+    "clean": "turbo clean",
+    "ci": "turbo build test lint type-check",
+    "storybook": "turbo storybook --filter=@repo/ui",
+    "build-storybook": "turbo build-storybook --filter=@repo/ui",
+    "deploy": "turbo deploy",
+    "start": "turbo start",
+    "format:prettier": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "install:all": "pnpm install",
+    "backend:dev": "turbo dev --filter=backend",
+    "backend:build": "turbo build --filter=backend",
+    "backend:start": "turbo start --filter=backend",
+    "admin:dev": "turbo dev --filter=admin-web",
+    "admin:build": "turbo build --filter=admin-web",
+    "admin:start": "turbo start --filter=admin-web",
+    "mobile-user:dev": "turbo dev --filter=mobile-user",
+    "mobile-user:build": "turbo build --filter=mobile-user",
+    "mobile-user:android": "turbo android --filter=mobile-user",
+    "mobile-user:ios": "turbo ios --filter=mobile-user",
+    "mobile-worker:dev": "turbo dev --filter=mobile-worker",
+    "mobile-worker:build": "turbo build --filter=mobile-worker",
+    "mobile-worker:android": "turbo android --filter=mobile-worker",
+    "mobile-worker:ios": "turbo ios --filter=mobile-worker",
+    "ui:dev": "turbo dev --filter=@repo/ui",
+    "ui:build": "turbo build --filter=@repo/ui"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "turbo": "^2.5.5",
+    "typescript": "^5.8.3"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=18",
+    "pnpm": ">=9.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "dependencies": {
+    "tsup": "^8.5.0"
+  }
+}

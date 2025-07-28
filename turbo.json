@@ -1,0 +1,189 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [
+    ".env",
+    ".env.local",
+    ".env.production",
+    ".env.development",
+    "package.json",
+    "pnpm-lock.yaml",
+    "tsconfig.json",
+    ".gitignore"
+  ],
+  "globalEnv": [
+    "NODE_ENV",
+    "VERCEL_ENV",
+    "CI",
+    "GITHUB_TOKEN",
+    "TURBO_TOKEN",
+    "TURBO_TEAM",
+    "DATABASE_URL",
+    "REDIS_URL"
+  ],
+    "globalPassThroughEnv": [
+    "NODE_ENV",
+    "CI",
+    "VERCEL",
+    "VERCEL_ENV",
+    "VERCEL_URL",
+    "npm_lifecycle_event"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": [
+        "^build",
+        "type-check"
+      ],
+      "outputs": [
+        ".next/**",
+        "!.next/cache/**",
+        "dist/**",
+        "build/**",
+        "lib/**",
+        "storybook-static/**"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!README.md",
+        "!**/*.md",
+        "!**/*.test.*",
+        "!**/*.spec.*",
+        "!**/*.stories.*",
+        "!**/coverage/**",
+        "!**/test-results/**"
+      ]
+    },
+    "deps-ready": {
+      "dependsOn": [
+        "^deps-ready"
+      ]
+    },
+    "type-check": {
+      "dependsOn": [
+        "deps-ready"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.md",
+        "!**/*.test.*",
+        "!**/*.spec.*",
+        "!**/*.stories.*",
+        "!**/coverage/**",
+        "!**/test-results/**"
+      ],
+      "outputs": []
+    },
+    "lint": {
+      "dependsOn": [
+        "deps-ready"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.md",
+        "!**/coverage/**",
+        "!**/test-results/**",
+        "!**/dist/**",
+        "!**/build/**",
+        "!**/.next/**"
+      ],
+      "outputs": []
+    },
+    "format": {
+      "inputs": [
+        "**/*.{js,jsx,ts,tsx,json,md,css,scss}"
+      ],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.md"
+      ],
+      "outputs": [
+        "coverage/**",
+        "test-results/**"
+      ]
+    },
+    "test:watch": {
+      "cache": false,
+      "persistent": true,
+      "interactive": true
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": [
+        "^build"
+      ]
+    },
+    "storybook": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": [
+        "^build"
+      ]
+    },
+    "build-storybook": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "storybook-static/**"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.md",
+        "!**/*.test.*"
+      ]
+    },
+    "clean": {
+      "cache": false
+    },
+    "deploy": {
+      "dependsOn": [
+        "build",
+        "test",
+        "lint",
+        "type-check"
+      ],
+      "cache": false
+    },
+    "start": {
+      "dependsOn": [
+        "build"
+      ],
+      "cache": false,
+      "persistent": true
+    },
+    "//#format:root": {
+      "inputs": [
+        "*.{js,json,md}",
+        ".github/**",
+        "docs/**"
+      ],
+      "outputs": []
+    },
+    "//#setup": {
+      "outputs": [
+        "node_modules/**",
+        ".turbo/**"
+      ]
+    },
+    "check-types": {
+      "dependsOn": [
+        "type-check"
+      ],
+      "cache": false
+    },
+    "prebuild": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [],
+      "cache": false
+    }
+  }
+}
