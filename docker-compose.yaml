@@ -1,0 +1,37 @@
+services:
+  home_server_postgres_container:
+    image: postgres:latest
+    ports:
+      - "15432:5432"
+    volumes:
+      - E:\home_server_data\database_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: home_server
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+  home_server_redis_container:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - E:\home_server_data\redis_data:/data
+  home_server_rustfs_container:
+    image: rustfs/rustfs:1.0.0-alpha.28
+    ports:
+      - "9000:9000"
+    volumes:
+      - E:\home_server_data\oss_data:/data
+    environment:
+      RUSTFS_ACCESS_KEY: root
+      RUSTFS_SECRET_KEY: G?cue>NY=D+p%QEuc#5g
+      RUSTFS_CONSOLE_ENABLE: true
+
+# 暂时不需要引入全文搜索
+#   home_server_meilisearch_container:
+#     image: getmeili/meilisearch:latest
+#     ports:
+#       - "7700:7700"
+#     volumes:
+#       - D:\cow_course_meilisearch_data:/meili_data
+#     environment:
+#       MEILI_ENV: development
