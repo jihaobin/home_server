@@ -21,5 +21,6 @@ function withTurborepoManagedCache(config) {
   config.cacheStores = [
     new FileStore({ root: path.join(__dirname, ".cache/metro") }),
   ];
+    config.resolver.unstable_enablePackageExports = true;
   return config;
 }
