@@ -1,74 +1,69 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
     boolean,
     pgTable,
     timestamp,
     varchar,
     text,
-    decimal,
-    pgEnum,
+    uniqueIndex,
+    index,
 } from 'drizzle-orm/pg-core';
 
 import { createId } from '.';
-
-/**
- *
- * CREATE TYPE user_role AS ENUM (
-    'customer',         -- 客户
-    'service_personnel',-- 服务人员
-    'shop_admin',       -- 店铺管理员
-    'admin',            -- 平台管理员
-    'super_admin'       -- 超级管理员
-);
- */
-/* =================================================================
--- 1. 认证与用户核心模块
--- 设计说明: 该模块负责用户的身份认证、基础信息和详细资料管理。
--- 采用 users 和 user_profiles 分离的设计，核心认证信息与非必要个人信息解耦，
--- 有利于性能优化和数据安全。
--- =================================================================
-*/
-export const roleEnum = pgEnum('user_role', [
-    'customer',
-    'service_personnel',
-    'shop_admin',
-    'admin',
-    'super_admin',
-]);
+import { roleEnum } from './enums';
+import { servicePersonnel, shops } from './shops-service';
+import { userProfiles } from './user-profiles';
+import { userAddresses } from './addresses';
+import { orders } from './orders';
+import { notifications } from './notifications';
+import { userCoupons } from './coupons';
 
 // -- 用户表 (users)
 // -- 存储用户的核心认证信息和基本资料。
-export const users = pgTable('users', {
-    id: varchar('id', { length: 5 })
-        .primaryKey()
-        .$default(() => createId())
-        .unique(),
-    email: varchar('email', { length: 255 }).notNull().default('').unique(),
-    emailVerified: boolean('email_verified')
-        .$defaultFn(() => false)
-        .notNull(),
-    name: varchar('name', { length: 50 }).notNull().default(''),
-    jobTitle: varchar('job_title', { length: 50 }).notNull().default(''),
-    income: decimal('income', { precision: 10, scale: 2 })
-        .notNull()
-        .default('0'),
-    role: roleEnum('role').default('customer'),
-    isDelete: boolean('is_delete').notNull().default(false),
-    image: varchar('image', { length: 255 }).notNull().default(''),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').$onUpdateFn(() => new Date()),
-});
+export const users = pgTable(
+    'users',
+    {
+        id: varchar('id', { length: 255 })
+            .primaryKey()
+            .$default(() => createId())
+            .unique(),
+        email: varchar('email', { length: 255 }).notNull().default('').unique(),
+        emailVerified: boolean('email_verified')
+            .$defaultFn(() => false)
+            .notNull(),
+        name: varchar('name', { length: 50 }).notNull().default(''),
+        phoneNumber: varchar('phone_number', { length: 20 }).unique(), // 手机号码
+        role: roleEnum('role').default('customer'),
+        isActive: boolean('is_active').notNull().default(true), // 账户是否激活
+        image: varchar('image', { length: 255 }).notNull().default(''),
+        createdAt: timestamp('created_at').notNull().defaultNow(),
+        updatedAt: timestamp('updated_at').$onUpdateFn(() => new Date()),
+    },
+    (table) => [
+        uniqueIndex('idx_users_email_active')
+            .on(table.email)
+            .where(sql`is_active = true`),
+        uniqueIndex('idx_users_phone_active')
+            .on(table.phoneNumber)
+            .where(sql`phone_number IS NOT NULL AND is_active = true`),
+        index('idx_users_role_active').on(
+            table.role,
+            table.isActive,
+            table.createdAt,
+        ),
+    ],
+);
 
 // -- 第三方账户表 (accounts)
 // -- 用于支持 OAuth 第三方登录。
 export const accounts = pgTable('accounts', {
-    id: varchar('id', { length: 15 })
+    id: varchar('id', { length: 255 })
         .primaryKey()
         .$default(() => createId())
         .unique(),
     accountId: varchar('account_id', { length: 255 }).notNull(),
     providerId: varchar('provider_id', { length: 255 }).notNull(),
-    userId: varchar('user_id', { length: 5 })
+    userId: varchar('user_id', { length: 255 })
         .notNull()
         .references(() => users.id, { onDelete: 'cascade' }),
     accessToken: text('access_token'),
@@ -85,7 +80,7 @@ export const accounts = pgTable('accounts', {
 // -- 会话表 (sessions)
 // -- 存储用户的登录会话信息。
 export const sessions = pgTable('sessions', {
-    id: varchar('id', { length: 5 })
+    id: varchar('id', { length: 255 })
         .primaryKey()
         .$default(() => createId())
         .unique(),
@@ -95,7 +90,7 @@ export const sessions = pgTable('sessions', {
     updatedAt: timestamp('updated_at').$onUpdateFn(() => new Date()),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
-    userId: varchar('user_id', { length: 5 })
+    userId: varchar('user_id', { length: 255 })
         .notNull()
         .references(() => users.id, { onDelete: 'cascade' }),
 });
@@ -103,7 +98,7 @@ export const sessions = pgTable('sessions', {
 // -- 验证令牌表 (verification_tokens)
 // -- 存储用于邮箱验证或密码重置等一次性令牌。
 export const verifications = pgTable('verifications', {
-    id: varchar('id', { length: 5 })
+    id: varchar('id', { length: 255 })
         .primaryKey()
         .$default(() => createId())
         .unique(),
@@ -115,9 +110,22 @@ export const verifications = pgTable('verifications', {
 });
 
 // 表关系
-export const userRelations = relations(users, ({ many }) => ({
+export const userRelations = relations(users, ({ many, one }) => ({
     accounts: many(accounts),
     sessions: many(sessions),
+    shops: many(shops),
+    servicePersonnelInfo: one(servicePersonnel, {
+        fields: [users.id],
+        references: [servicePersonnel.userId],
+    }),
+    profile: one(userProfiles, {
+        fields: [users.id],
+        references: [userProfiles.userId],
+    }),
+    addresses: many(userAddresses),
+    orders: many(orders),
+    notifications: many(notifications),
+    userCoupons: many(userCoupons),
 }));
 
 export const accountsRelations = relations(accounts, ({ one }) => ({

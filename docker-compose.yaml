@@ -1,6 +1,6 @@
 services:
   home_server_postgres_container:
-    image: postgres:latest
+    image: postgis/postgis:latest
     ports:
       - "15432:5432"
     volumes:
