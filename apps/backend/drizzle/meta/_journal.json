@@ -15,6 +15,13 @@
       "when": 1753954296282,
       "tag": "0001_legal_ikaris",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1753957876193,
+      "tag": "0002_remarkable_ser_duncan",
+      "breakpoints": true
     }
   ]
 }

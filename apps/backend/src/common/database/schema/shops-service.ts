@@ -33,7 +33,10 @@ export const shops = pgTable(
             .references(() => users.id, { onDelete: 'cascade' }), // 店铺所有者的用户 ID
         name: varchar('name', { length: 100 }).notNull(), // 店铺名称
         description: text('description'), // 店铺描述
-        address: varchar('address', { length: 255 }), // 店铺地址
+        detailedAddress: varchar('address', { length: 255 }), // 店铺的详细地址
+        province: varchar('province', { length: 100 }), // 省份
+        district: varchar('district', { length: 100 }), // 市区
+        county: varchar('county', { length: 100 }), // 区县
         geom: geometry('geom', { type: 'point' }), // 店铺地理位置（PostGIS Point 类型）
         createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
@@ -47,6 +50,18 @@ export const shops = pgTable(
         index('idx_shops_owner_active').on(
             table.ownerId,
             table.createdAt.desc(),
+        ),
+        // 省份索引 - 用于按省份筛选店铺
+        index('idx_shops_province').on(table.province),
+        // 市区索引 - 用于按市区筛选店铺
+        index('idx_shops_district').on(table.district),
+        // 区县索引 - 用于按区县筛选店铺
+        index('idx_shops_county').on(table.county),
+        // 省市区组合索引 - 用于按地理位置层级查询
+        index('idx_shops_geo_hierarchy').on(
+            table.province,
+            table.district,
+            table.county,
         ),
     ],
 );

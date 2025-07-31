@@ -24,8 +24,10 @@ export const userAddresses = pgTable(
         userId: varchar('user_id', { length: 255 })
             .notNull()
             .references(() => users.id, { onDelete: 'cascade' }), // 关联的用户 ID
-        addressLine1: varchar('address_line1', { length: 255 }).notNull(), // 详细地址
-        city: varchar('city', { length: 100 }), // 城市
+        detailedAddress: varchar('address_line1', { length: 255 }).notNull(), // 详细地址
+        province: varchar('province', { length: 100 }).notNull(), // 省份
+        district: varchar('district', { length: 100 }).notNull(), // 市区
+        county: varchar('county', { length: 100 }).notNull(), // 区县
         geom: geometry('geom', { type: 'point' }), // 地址地理位置（PostGIS Point 类型）
         recipientName: varchar('recipient_name', { length: 50 }).notNull(), // 收货人姓名
         recipientPhone: varchar('recipient_phone', { length: 20 }).notNull(), // 收货人电话
@@ -40,6 +42,18 @@ export const userAddresses = pgTable(
         index('idx_user_addresses_user_default').on(
             table.userId,
             table.isDefault,
+        ),
+        // 省份索引 - 用于按省份筛选地址
+        index('idx_user_addresses_province').on(table.province),
+        // 市区索引 - 用于按市区筛选地址
+        index('idx_user_addresses_district').on(table.district),
+        // 区县索引 - 用于按区县筛选地址
+        index('idx_user_addresses_county').on(table.county),
+        // 省市区组合索引 - 用于按地理位置层级查询
+        index('idx_user_addresses_geo_hierarchy').on(
+            table.province,
+            table.district,
+            table.county,
         ),
     ],
 );

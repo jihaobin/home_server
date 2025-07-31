@@ -12,6 +12,7 @@ export * from './financial';
 export * from './notifications';
 export * from './coupons';
 export * from './enums';
+export * from './china-city';
 
 export const createId = init({
     length: 15,
