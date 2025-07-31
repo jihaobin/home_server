@@ -8,6 +8,13 @@
       "when": 1753944922094,
       "tag": "0000_new_dragon_lord",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1753954296282,
+      "tag": "0001_legal_ikaris",
+      "breakpoints": true
     }
   ]
 }

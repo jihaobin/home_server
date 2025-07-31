@@ -31,6 +31,9 @@ export const users = pgTable(
         emailVerified: boolean('email_verified')
             .$defaultFn(() => false)
             .notNull(),
+        phoneNumberVerified: boolean('phone_Number_verified')
+            .$defaultFn(() => false)
+            .notNull(),
         name: varchar('name', { length: 50 }).notNull().default(''),
         phoneNumber: varchar('phone_number', { length: 20 }).unique(), // 手机号码
         role: roleEnum('role').default('customer'),
