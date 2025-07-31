@@ -115,26 +115,18 @@ export function createAuth(
         user: {
             // Additional custom fields that will be available in session
             additionalFields: {
-                jobTitle: {
-                    type: 'string',
-                    required: false,
-                    defaultValue: '',
-                },
-                income: {
-                    type: 'string',
-                    required: false,
-                    defaultValue: '0',
-                },
                 role: {
                     type: 'string',
-                    required: false,
-                    defaultValue: 'user',
+                    required: true,
+                    defaultValue: 'comu',
+                    fieldName: 'role',
+                    input: true,
                 },
-                isDelete: {
+                isActive: {
                     type: 'boolean',
                     required: false,
-                    defaultValue: false,
-                    input: false,
+                    defaultValue: true,
+                    fieldName: 'is_active',
                 },
             },
         },
