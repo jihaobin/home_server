@@ -17,6 +17,7 @@ import {
     orderStatusEnum,
     paymentStatusEnum,
     assignmentTypeEnum,
+    paymentMethodEnum,
 } from './enums';
 
 /**
@@ -139,7 +140,7 @@ export const payments = pgTable(
             .notNull()
             .references(() => orders.id, { onDelete: 'cascade' }), // 关联的订单 ID
         amount: decimal('amount', { precision: 10, scale: 2 }).notNull(), // 支付金额
-        paymentMethod: varchar('payment_method', { length: 50 }), // 支付方式 (如 'wechat_pay', 'alipay')
+        paymentMethod: paymentMethodEnum('payment_method').notNull(), // 支付方式 (如 'wechat_pay', 'alipay')
         transactionId: varchar('transaction_id', { length: 255 }), // 第三方支付平台的交易号
         status: paymentStatusEnum('status').notNull().default('pending'), // 支付状态
         paidAt: timestamp('paid_at', { withTimezone: true }), // 支付完成时间

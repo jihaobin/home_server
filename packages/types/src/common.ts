@@ -1,9 +1,4 @@
 import { z } from 'zod/v4';
-import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
-
-// 立即扩展 Zod
-extendZodWithOpenApi(z);
-// 注意：Zod OpenAPI 扩展在 index.ts 中执行
 
 /**
  * API响应状态码枚举
@@ -173,103 +168,190 @@ export type ErrorCodeType = (typeof ErrorCode)[keyof typeof ErrorCode];
 // ============================================================================
 
 /**
+ * API响应状态码枚举 Schema
+ */
+export const ApiStatusCodeSchema = z.enum(ApiStatusCode)
+    .meta({
+        description: 'API响应状态码枚举',
+        enum: {
+            SUCCESS: '成功',
+            FAIL: '失败'
+        }
+    });
+
+/**
+ * 错误代码枚举 Schema
+ */
+export const ErrorCodeSchema = z.enum(ErrorCode)
+    .meta({
+        description: '错误代码枚举，用于区分不同类型的错误',
+        examples: [
+            '1000-1999(系统级错误)',
+            '2000-2999(HTTP错误)',
+            '3000-3999(数据库错误)',
+            '4000-4999(验证错误)',
+            '5000-5999(业务逻辑错误)',
+            '6000-6999(外部服务错误)'
+        ]
+    });
+
+/**
  * 基础响应 Schema
  */
 export const BaseResponseSchema = z.object({
-  code: z.number().openapi({
-    description: '状态码，0表示成功',
-    example: 0
-  }),
-  message: z.string().openapi({
-    description: '响应消息',
-    example: '操作成功'
-  }),
-  timestamp: z.number().openapi({
-    description: '时间戳',
-    example: Date.now()
-  }),
-  path: z.string().optional().openapi({
-    description: '请求路径',
-    example: '/api/users'
-  }),
-  stack: z.string().optional().openapi({
-    description: '错误堆栈（仅开发环境）'
-  })
-}).openapi('BaseResponse');
+    code: z.number()
+        .meta({
+            description: '状态码，0表示成功，其他值表示错误',
+            title: '状态码',
+            examples: [0, 1000, 2000]
+        }),
+    message: z.string()
+        .meta({
+            description: '消息',
+            title: '消息',
+            examples: ['操作成功', '系统错误']
+        }),
+    data: z.any()
+        .meta({
+            description: '数据，成功时返回实际数据，失败时可能包含错误详情',
+            title: '数据'
+        }),
+    timestamp: z.number()
+        .meta({
+            description: '时间戳',
+            title: '时间戳',
+            examples: [1672531200000]
+        }),
+    path: z.string().optional()
+        .meta({
+            description: '请求路径，主要用于错误响应',
+            title: '请求路径',
+            examples: ['/api/address/all']
+        }),
+    stack: z.string().optional()
+        .meta({
+            description: '错误堆栈，仅在开发环境下的错误响应中返回',
+            title: '错误堆栈'
+        })
+}).meta({
+    title: '基础API响应',
+    description: '统一的API响应格式'
+});
 
 /**
  * 成功响应 Schema
  */
 export const SuccessResponseSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
   BaseResponseSchema.extend({
-    data: dataSchema.openapi({
-      description: '响应数据'
-    })
-  }).openapi('SuccessResponse');
+      code: z.literal(ApiStatusCode.SUCCESS).meta({
+          description: '成功状态码',
+          title: '状态码'
+      }),
+      data: dataSchema
+  }).meta({
+      title: '成功响应',
+      description: '成功响应 Schema'
+  });
 
 /**
  * 错误响应 Schema
  */
 export const ErrorResponseSchema = BaseResponseSchema.extend({
-  error: z.object({
-    type: z.string().openapi({
-      description: '错误类型',
-      example: 'ValidationError'
+    code: z.union([
+        ErrorCodeSchema,
+    ]).meta({
+        description: '错误状态码',
+        title: '状态码'
     }),
-    details: z.any().optional().openapi({
-      description: '错误详情'
-    })
-  }).optional().openapi({
-    description: '错误信息'
-  })
-}).openapi('ErrorResponse');
+  error: z.object({
+      type: z.string().meta({
+          description: '错误类型',
+          title: '错误类型'
+      }),
+      details: z.any().optional().meta({
+          description: '错误详情',
+          title: '错误详情'
+      })
+  }).optional()
+}).meta({
+    title: '错误响应',
+    description: '错误响应 Schema'
+});
 
 /**
  * 分页元数据 Schema
  */
 export const PaginationMetaSchema = z.object({
-  page: z.number().min(1).openapi({
-    description: '当前页码',
-    example: 1
-  }),
-  limit: z.number().min(1).max(100).openapi({
-    description: '每页数量',
-    example: 10
-  }),
-  total: z.number().min(0).openapi({
-    description: '总记录数',
-    example: 100
-  }),
-  totalPages: z.number().min(0).openapi({
-    description: '总页数',
-    example: 10
-  }),
-  hasNext: z.boolean().openapi({
-    description: '是否有下一页',
-    example: true
-  }),
-  hasPrev: z.boolean().openapi({
-    description: '是否有上一页',
-    example: false
-  })
-}).openapi('PaginationMeta');
+    page: z.number().min(1)
+        .meta({
+            description: '当前页码',
+            title: '当前页码',
+            examples: [1, 2, 3]
+        }),
+    limit: z.number().min(1).max(100)
+        .meta({
+            description: '每页条数',
+            title: '每页条数',
+            examples: [10, 20, 50]
+        }),
+    total: z.number().min(0)
+        .meta({
+            description: '总条数',
+            title: '总条数',
+            examples: [100, 500, 1000]
+        }),
+    totalPages: z.number().min(0)
+        .meta({
+            description: '总页数',
+            title: '总页数',
+            examples: [10, 25, 100]
+        }),
+    hasNext: z.boolean()
+        .meta({
+            description: '是否有下一页',
+            title: '是否有下一页',
+            examples: [true, false]
+        }),
+    hasPrev: z.boolean()
+        .meta({
+            description: '是否有上一页',
+            title: '是否有上一页',
+            examples: [true, false]
+        })
+}).meta({
+    title: '分页元数据',
+    description: '分页查询的元数据信息'
+});
 
 /**
  * 分页数据 Schema
  */
 export const PaginatedDataSchema = <T extends z.ZodTypeAny>(itemSchema: T) =>
   z.object({
-    items: z.array(itemSchema).openapi({
-      description: '数据列表'
-    }),
+      items: z.array(itemSchema)
+          .meta({
+              description: '数据列表',
+              title: '数据列表'
+          }),
     meta: PaginationMetaSchema
-  }).openapi('PaginatedData');
+          .meta({
+              description: '分页元数据',
+              title: '分页元数据'
+          })
+  }).meta({
+      title: '分页数据',
+      description: '分页数据 Schema'
+  });
 
 /**
  * 分页响应 Schema
  */
 export const PaginatedResponseSchema = <T extends z.ZodTypeAny>(itemSchema: T) =>
-  SuccessResponseSchema(PaginatedDataSchema(itemSchema)).openapi('PaginatedResponse');
+    SuccessResponseSchema(PaginatedDataSchema(itemSchema))
+        .meta({
+            title: '分页响应',
+            description: '分页响应 Schema'
+        });
 
 /**
  * 分页查询参数 Schema
@@ -277,37 +359,50 @@ export const PaginatedResponseSchema = <T extends z.ZodTypeAny>(itemSchema: T) =
 export const PaginationQuerySchema = z.object({
   page: z.string().optional().transform((val) => val ? parseInt(val, 10) : 1).pipe(
     z.number().min(1).max(1000)
-  ).openapi({
-    description: '页码',
-    example: '1'
-  }),
+    ).meta({
+        description: '页码',
+        title: '页码',
+        examples: [1, 2, 3]
+    }),
   limit: z.string().optional().transform((val) => val ? parseInt(val, 10) : 10).pipe(
     z.number().min(1).max(100)
-  ).openapi({
-    description: '每页数量',
-    example: '10'
-  }),
-  search: z.string().optional().openapi({
-    description: '搜索关键词',
-    example: 'keyword'
-  }),
-  sortBy: z.string().optional().openapi({
-    description: '排序字段',
-    example: 'createdAt'
-  }),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('desc').openapi({
-    description: '排序方向',
-    example: 'desc'
-  })
-}).openapi('PaginationQuery');
-
-
+    ).meta({
+        description: '每页条数',
+        title: '每页条数',
+        examples: [10, 20, 50]
+    }),
+    search: z.string().optional()
+        .meta({
+            description: '搜索关键字',
+            title: '搜索关键字',
+            examples: ['北京', '上海']
+        }),
+    sortBy: z.string().optional()
+        .meta({
+            description: '排序字段',
+            title: '排序字段',
+            examples: ['id', 'name', 'created_at']
+        }),
+    sortOrder: z.enum(['asc', 'desc']).optional().default('desc')
+        .meta({
+            description: '排序顺序',
+            title: '排序顺序',
+            examples: ['asc', 'desc']
+        })
+}).meta({
+    title: '分页查询参数',
+    description: '通用分页查询参数'
+});
 
 // ============================================================================
 // TYPE EXPORTS
 // ============================================================================
 
 // Zod-inferred types
+export type ZodApiStatusCode = z.infer<typeof ApiStatusCodeSchema>;
+export type ZodErrorCode = z.infer<typeof ErrorCodeSchema>;
 export type ZodBaseResponse = z.infer<typeof BaseResponseSchema>;
 export type ZodErrorResponse = z.infer<typeof ErrorResponseSchema>;
+export type ZodPaginationMeta = z.infer<typeof PaginationMetaSchema>;
+export type ZodPaginatedData<T = unknown> = z.infer<ReturnType<typeof PaginatedDataSchema<z.ZodObject<any>>>>;
 export type ZodPaginationQuery = z.infer<typeof PaginationQuerySchema>;

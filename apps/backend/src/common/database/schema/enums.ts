@@ -26,6 +26,16 @@ export const paymentStatusEnum = pgEnum('payment_status', [
 ]);
 
 /**
+ * 支付方法枚举
+ */
+
+export const paymentMethodEnum = pgEnum('payment_method', [
+    'wechat_pay', // 微信支付
+    'alipay', // 支付宝
+    'bank_transfer', // 银行转账
+]);
+
+/**
  * 提现状态枚举
  */
 export const withdrawalStatusEnum = pgEnum('withdrawal_status', [

@@ -1,6 +1,4 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import {
     LogFormatterType,
     LoggerModule,
@@ -13,6 +11,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CacheModule, CacheType } from './common/cache';
 import { ExceptionsModule } from './common/exceptions';
 import { InterceptorsModule } from './common/interceptors';
+import { ModulesModule } from './modules/modules.module';
 
 @Module({
     imports: [
@@ -74,8 +73,11 @@ import { InterceptorsModule } from './common/interceptors';
         AuthModule.forRoot({
             disableExceptionFilter: true,
         }),
+
+        // 业务模块
+        ModulesModule,
     ],
-    controllers: [AppController],
-    providers: [AppService],
+    controllers: [],
+    providers: [],
 })
 export class AppModule {}
