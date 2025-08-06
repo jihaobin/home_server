@@ -27,7 +27,7 @@ export const ApiQueries = <T extends z.ZodObject<z.ZodRawShape>>(
         if (zodType) {
             acc.push({
                 name,
-                required: zodType.safeParse(undefined).success,
+                required: zodType.isOptional() ? false : true,
                 schema: z.toJSONSchema(zodType) as unknown as ReturnType<
                     typeof toJSONSchema
                 >,

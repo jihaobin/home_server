@@ -1,11 +1,13 @@
 // Learn more: https://docs.expo.dev/guides/monorepos/
 const { getDefaultConfig } = require("expo/metro-config");
-const { FileStore } = require("metro-cache");
+const { FileStore } = require('@expo/metro-config/file-store');
 
 const path = require("node:path");
 
 const config = withTurborepoManagedCache(
-getDefaultConfig(__dirname)
+    getDefaultConfig(__dirname), {
+    isCSSEnabled: true,
+}
 );
 module.exports = config;
 

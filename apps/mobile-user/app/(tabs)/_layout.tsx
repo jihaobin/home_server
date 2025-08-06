@@ -41,17 +41,10 @@ export default function TabLayout() {
         }}
       />
     <Tabs.Screen
-        name="sign-in"
+        name="map"
         options={{
-          title: '登录',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-        }}
-      />
-    <Tabs.Screen
-        name="sign-up"
-        options={{
-          title: '注册',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'Map',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="map.fill" color={color} />,
         }}
       />
     </Tabs>

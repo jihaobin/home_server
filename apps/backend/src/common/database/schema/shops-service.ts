@@ -34,6 +34,7 @@ export const shops = pgTable(
         name: varchar('name', { length: 100 }).notNull(), // 店铺名称
         description: text('description'), // 店铺描述
         detailedAddress: varchar('address', { length: 255 }), // 店铺的详细地址
+        homeNumber: varchar('home_number', { length: 50 }).notNull(), // 门牌号
         province: varchar('province', { length: 100 }), // 省份
         district: varchar('district', { length: 100 }), // 市区
         county: varchar('county', { length: 100 }), // 区县

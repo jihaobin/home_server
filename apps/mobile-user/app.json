@@ -40,6 +40,12 @@
                     "configureAndroidBackup": true,
                     "faceIDPermission": "Allow $(PRODUCT_NAME) to access your Face ID biometric data."
                 }
+            ],
+            [
+                "expo-location",
+                {
+                    "locationAlwaysAndWhenInUsePermission": "当前应用需要访问您的位置，已获取你的服务地址"
+                }
             ]
         ],
         "experiments": {

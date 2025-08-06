@@ -1,0 +1,11 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "build-types-package",
+			"type": "shell",
+			"command": "cd packages/types && pnpm build",
+			"group": "build"
+		}
+	]
+}

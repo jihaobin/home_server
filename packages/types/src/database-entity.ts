@@ -330,9 +330,13 @@ export const ShopsSchema = z.object({
         description: '店铺描述',
         title: '店铺描述'
     }),
-    address: z.string().max(255).optional().meta({
-        description: '店铺地址',
-        title: '店铺地址'
+    detailedAddress: z.string().max(255).optional().meta({
+        description: '店铺详细地址',
+        title: '店铺详细地址'
+    }),
+    homeNumber: z.string().max(50).optional().meta({
+        description: '门牌号',
+        title: '门牌号'
     }),
     geom: z.string().optional().meta({
         description: '店铺位置',
@@ -491,9 +495,13 @@ export const UserAddressesSchema = z.object({
         description: '用户ID',
         title: '用户ID'
     }),
-    address_line1: z.string().max(255).meta({
+    detailedAddress: z.string().max(255).meta({
         description: '详细地址',
         title: '详细地址'
+    }),
+    homeNumber: z.string().max(50).meta({
+        description: '门牌号',
+        title: '门牌号'
     }),
     geom: z.string().optional().meta({
         description: '几何点数据',

@@ -25,6 +25,7 @@ export const userAddresses = pgTable(
             .notNull()
             .references(() => users.id, { onDelete: 'cascade' }), // 关联的用户 ID
         detailedAddress: varchar('address_line1', { length: 255 }).notNull(), // 详细地址
+        homeNumber: varchar('home_number', { length: 50 }).notNull(), // 门牌号
         province: varchar('province', { length: 100 }).notNull(), // 省份
         district: varchar('district', { length: 100 }).notNull(), // 市区
         county: varchar('county', { length: 100 }).notNull(), // 区县

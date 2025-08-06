@@ -99,8 +99,6 @@ export class SwaggerModels {
                 schemas[modelName] = convertZodToJSONSchema(
                     schema as z.ZodTypeAny,
                 );
-
-                console.log(`✓ 已加载: ${modelName}`);
             } catch (error) {
                 console.warn(`× 跳过 ${schemaName}: ${error}`);
             }
