@@ -6,12 +6,14 @@
   "exports": {
     "./base.json": "./base.json",
     "./nextjs.json": "./nextjs.json",
-    "./react-library.json": "./react-library.json"
+    "./react-library.json": "./react-library.json",
+    "./react-native.json": "./react-native.json"
   },
   "files": [
     "base.json",
     "nextjs.json",
-    "react-library.json"
+    "react-library.json",
+    "react-native.json"
   ],
   "publishConfig": {
     "access": "public"

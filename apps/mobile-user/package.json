@@ -20,7 +20,7 @@
     "@react-navigation/elements": "^2.3.8",
     "@react-navigation/native": "^7.1.6",
     "@repo/types": "workspace:*",
-    "@repo/ui": "workspace:*",
+    "@repo/mobile-ui": "workspace:*",
     "@repo/utils": "workspace:*",
     "expo": "~53.0.20",
     "expo-blur": "~14.1.5",

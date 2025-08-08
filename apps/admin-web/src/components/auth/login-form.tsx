@@ -9,9 +9,9 @@ import { Eye, EyeOff, Mail, Lock } from "lucide-react"
 import { sendVerificationEmail } from "@/hooks/useAuth"
 import { SocialLoginButtons } from "./social-login-buttons"
 import { login } from "@/lib/auth"
-import { Input } from "@repo/ui/components/input"
-import { Button } from "@repo/ui/components/button"
-import { Label } from "@repo/ui/components/label"
+import { Input } from "@repo/web-ui/components/input"
+import { Button } from "@repo/web-ui/components/button"
+import { Label } from "@repo/web-ui/components/label"
 
 const loginSchema = z.object({
   email: z.email("请输入有效的邮箱地址"),

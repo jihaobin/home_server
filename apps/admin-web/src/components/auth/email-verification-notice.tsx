@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Mail, CheckCircle, Loader2, ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { sendVerificationEmail } from "@/hooks/useAuth"
-import { Button } from "@repo/ui/components/button"
+import { Button } from "@repo/web-ui/components/button"
 
 interface EmailVerificationNoticeProps {
   email: string

@@ -12,8 +12,8 @@
     "format": "turbo format",
     "clean": "turbo clean",
     "ci": "turbo build test lint type-check",
-    "storybook": "turbo storybook --filter=@repo/ui",
-    "build-storybook": "turbo build-storybook --filter=@repo/ui",
+    "storybook": "turbo storybook --filter=@repo/web-ui",
+    "build-storybook": "turbo build-storybook --filter=@repo/web-ui",
     "deploy": "turbo deploy",
     "start": "turbo start",
     "format:prettier": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
@@ -33,8 +33,8 @@
     "mobile-worker:build": "dotenvx run -f apps/mobile-worker/.env.production -- turbo build --filter=mobile-worker",
     "mobile-worker:android": "dotenvx run -f apps/mobile-worker/.env.development -- turbo android --filter=mobile-worker",
     "mobile-worker:ios": "dotenvx run -f apps/mobile-worker/.env.development -- turbo ios --filter=mobile-worker",
-    "ui:dev": "turbo dev --filter=@repo/ui",
-    "ui:build": "turbo build --filter=@repo/ui"
+    "ui:dev": "turbo dev --filter=@repo/web-ui",
+    "ui:build": "turbo build --filter=@repo/web-ui"
   },
   "devDependencies": {
     "@dotenvx/dotenvx": "^1.48.3",

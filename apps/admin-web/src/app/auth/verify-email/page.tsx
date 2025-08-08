@@ -6,7 +6,7 @@ import { CheckCircle, XCircle, Mail, ArrowLeft, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { sendVerificationEmail } from "@/hooks/useAuth"
 import { authClient } from "@/lib/authClient"
-import { Button } from "@repo/ui/components/button"
+import { Button } from "@repo/web-ui/components/button"
 
 type VerificationStatus = 'loading' | 'success' | 'error' | 'expired' | 'invalid'
 

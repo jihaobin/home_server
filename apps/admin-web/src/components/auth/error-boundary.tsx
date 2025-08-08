@@ -2,7 +2,7 @@
 
 import { Component, ReactNode } from "react"
 import { AlertTriangle, RefreshCw } from "lucide-react"
-import { Button } from "@repo/ui/components/button"
+import { Button } from "@repo/web-ui/components/button"
 
 interface ErrorBoundaryProps {
   children: ReactNode

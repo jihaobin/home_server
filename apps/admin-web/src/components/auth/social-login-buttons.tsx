@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Github } from "lucide-react"
 import { socialLogin, wechatLogin } from "@/lib/auth"
-import { Button } from "@repo/ui/components/button"
+import { Button } from "@repo/web-ui/components/button"
 
 interface SocialLoginButtonsProps {
   onLoading?: (loading: boolean) => void

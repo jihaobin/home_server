@@ -20,7 +20,7 @@ This Turborepo includes the following packages/apps:
 - `admin-web`: Next.js 管理后台应用
 - `mobile-user`: React Native Expo 用户移动应用
 - `mobile-worker`: React Native Expo 工作人员移动应用
-- `@repo/ui`: 共享的 React 组件库
+- `@repo/web-ui`: 共享的 React 组件库
 - `@repo/types`: 共享的 TypeScript 类型定义
 - `@repo/utils`: 共享的工具函数库
 - `@repo/eslint-config`: ESLint 配置

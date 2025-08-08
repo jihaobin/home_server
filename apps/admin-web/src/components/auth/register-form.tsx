@@ -9,9 +9,9 @@ import { Eye, EyeOff, Mail, Lock, User } from "lucide-react"
 import { SocialLoginButtons } from "./social-login-buttons"
 import { EmailVerificationNotice } from "./email-verification-notice"
 import { register as registerUser } from "@/lib/auth"
-import { Input } from "@repo/ui/components/input"
-import { Button } from "@repo/ui/components/button"
-import { Label } from "@repo/ui/components/label"
+import { Input } from "@repo/web-ui/components/input"
+import { Button } from "@repo/web-ui/components/button"
+import { Label } from "@repo/web-ui/components/label"
 
 
 const registerSchema = z.object({

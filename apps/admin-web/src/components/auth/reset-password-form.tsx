@@ -9,9 +9,9 @@ import { Lock, Eye, EyeOff, CheckCircle, AlertCircle, Loader2 } from "lucide-rea
 import { zodResolver } from "@hookform/resolvers/zod"
 import { authClient } from "@/lib/authClient"
 import { ErrorContext } from "better-auth/react"
-import { Button } from "@repo/ui/components/button"
-import { Input } from "@repo/ui/components/input"
-import { Label } from "@repo/ui/components/label"
+import { Button } from "@repo/web-ui/components/button"
+import { Input } from "@repo/web-ui/components/input"
+import { Label } from "@repo/web-ui/components/label"
 
 const resetPasswordSchema = z.object({
   password: z.string()

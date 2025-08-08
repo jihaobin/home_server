@@ -5,7 +5,7 @@
  */
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { BaseMap } from 'tlbs-map-react';
-import {Button} from "@repo/ui/components/button"
+import {Button} from "@repo/web-ui/components/button"
 
 // 设备检测工具函数
 const isMobileDevice = () => {

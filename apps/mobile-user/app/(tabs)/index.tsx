@@ -6,6 +6,8 @@ import ParallaxScrollView from '@/components/ParallaxScrollView';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 
+import {Button} from "@repo/mobile-ui/components/button"
+
 export default function HomeScreen() {
   return (
     <ParallaxScrollView
@@ -51,6 +53,7 @@ export default function HomeScreen() {
           <ThemedText type="defaultSemiBold">app-example</ThemedText>.
         </ThemedText>
       </ThemedView>
+      <Button text='hhhhhh1'/>
     </ParallaxScrollView>
   );
 }
