@@ -3,7 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "exports": {
-    "./components/*": "./src/components/*.tsx"
+    "./tsconfig.json": "./tsconfig.json",
+    "./components/*": "./src/components/*.tsx",
+    "./tailwind": "./tailwind.config.js",
+    "./style.css": "./src/styles/global.css",
+    "./lib/*": "./src/lib/*.{ts,tsx}",
+    "./lib/icons/*": "./src/lib/icons/*.{ts,tsx}",
+    "./lib/utils": "./src/lib/utils.ts",
+    "./babel": "./babel.config.js",
+    "./metro": "./metro.config.js"
   },
   "scripts": {
     "dev": "echo 'Add dev script here'",
@@ -13,12 +21,23 @@
   },
   "dependencies": {
     "@repo/utils": "workspace:*",
-    "react": "^19.1.1",
-    "react-native": "0.79.5"
+    "@rn-primitives/accordion": "^1.0.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react-native": "^0.447.0",
+    "nativewind": "^4.1.23",
+    "react": "19.0.0",
+    "react-native": "0.79.5",
+    "react-native-reanimated": "~3.17.4",
+    "react-native-safe-area-context": "5.4.0",
+    "react-native-svg": "^15.9.0",
+    "tailwind-merge": "^3.0.1"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
+    "prettier-plugin-tailwindcss": "0.5.11",
+    "tailwindcss": "3.4.17",
     "typescript": "^5.9.2"
   }
 }

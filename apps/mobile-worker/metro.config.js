@@ -1,13 +1,14 @@
 // Learn more: https://docs.expo.dev/guides/monorepos/
 const { getDefaultConfig } = require("expo/metro-config");
-const { FileStore } = require("metro-cache");
+const { FileStore } = require('@expo/metro-config/file-store');
+const { withNativeWind } = require('nativewind/metro');
 
 const path = require("node:path");
 
 const config = withTurborepoManagedCache(
-getDefaultConfig(__dirname)
+    getDefaultConfig(__dirname, { isCSSEnabled: true })
 );
-module.exports = config;
+module.exports = withNativeWind(config, { input: "../../packages/mobile-ui/src/styles/global.css" });
 
 /**
  * Move the Metro cache to the `.cache/metro` folder.
@@ -21,5 +22,6 @@ function withTurborepoManagedCache(config) {
   config.cacheStores = [
     new FileStore({ root: path.join(__dirname, ".cache/metro") }),
   ];
+    config.resolver.unstable_enablePackageExports = true;
   return config;
 }

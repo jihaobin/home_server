@@ -1,0 +1,6 @@
+{
+  "aliases": {
+    "components": "@repo/mobile-ui/components",
+    "lib": "@repo/mobile-ui/lib"
+  }
+}
