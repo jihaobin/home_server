@@ -7,38 +7,6 @@ import {
   BaseResponseSchema,
 } from '@repo/types';
 
-/**
- * 检测是否在服务端环境
- */
-function isServerEnvironment(): boolean {
-  return typeof window === 'undefined';
-}
-
-/**
- * 获取Next.js服务端headers（仅在服务端环境中可用）
- */
-async function getServerHeaders(): Promise<Record<string, string> | undefined> {
-  if (!isServerEnvironment()) {
-    return undefined;
-  }
-
-  try {
-    // 动态导入Next.js的headers函数，避免在客户端环境中出错
-    const { headers } = await import('next/headers');
-    const headersList = await headers();
-
-    // 将Headers对象转换为普通对象
-    const headersObj: Record<string, string> = {};
-    headersList.forEach((value, key) => {
-      headersObj[key] = value;
-    });
-
-    return headersObj;
-  } catch (error) {
-    console.warn('Failed to get server headers:', error);
-    return undefined;
-  }
-}
 
 /**
  * API客户端配置选项
@@ -256,21 +224,6 @@ export class ApiClient {
         ...fetchOptions,
       };
 
-      // 根据环境自动配置认证
-      if (isServerEnvironment()) {
-        // 服务端环境：获取headers并传递给请求
-        const serverHeaders = await getServerHeaders();
-        if (serverHeaders) {
-          requestOptions.headers = {
-            ...requestOptions.headers,
-            ...serverHeaders,
-          };
-        }
-      } else {
-        // 客户端环境：确保credentials设置为include
-        requestOptions.credentials = 'include';
-      }
-
       const response = await this.client(url, requestOptions);
 
       return validateResponse(response, schema, skipValidation);
@@ -375,43 +328,4 @@ export const api = {
 
   patch: <T = unknown>(url: string, data?: any, options?: ApiRequestOptions<T>) =>
     apiClient.patch<T>(url, data, options),
-};
-
-/**
- * 创建支持better-auth的API客户端
- * 自动处理服务端和客户端环境的认证差异
- */
-export function createBetterAuthApiClient(options: ApiClientOptions = {}): ApiClient {
-  return new ApiClient({
-    // 默认配置，适合better-auth
-    timeout: 15000,
-    debug: process.env.NODE_ENV === 'development',
-    ...options,
-  });
-}
-
-/**
- * 专门用于better-auth的API客户端实例
- */
-export const betterAuthApiClient = createBetterAuthApiClient();
-
-/**
- * 便捷的better-auth API请求方法
- * 自动处理服务端/客户端环境差异
- */
-export const betterAuthApi = {
-  get: <T = unknown>(url: string, options?: ApiRequestOptions<T>) =>
-    betterAuthApiClient.get<T>(url, options),
-
-  post: <T = unknown>(url: string, data?: any, options?: ApiRequestOptions<T>) =>
-    betterAuthApiClient.post<T>(url, data, options),
-
-  put: <T = unknown>(url: string, data?: any, options?: ApiRequestOptions<T>) =>
-    betterAuthApiClient.put<T>(url, data, options),
-
-  delete: <T = unknown>(url: string, options?: ApiRequestOptions<T>) =>
-    betterAuthApiClient.delete<T>(url, options),
-
-  patch: <T = unknown>(url: string, data?: any, options?: ApiRequestOptions<T>) =>
-    betterAuthApiClient.patch<T>(url, data, options),
 };

@@ -1,5 +1,5 @@
 import "better-auth"
-import { authClient } from "@/lib/authClient";
+import { authClient } from "@/lib/auth-cient";
 
 export const { signIn, signUp, signOut, useSession, sendVerificationEmail } = authClient;
 

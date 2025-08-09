@@ -5,21 +5,15 @@ import {ofetch } from 'ofetch';
 import * as Device from 'expo-device';
 
 import * as Location from 'expo-location';
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || 'http://192.168.0.112:5050';
+import { apiClient } from '@/lib/http-client';
 
 async function getDetailedAddress(lat: number, lng: number) {
   try {
-    const response = await ofetch(`${API_BASE_URL}/api/address/detailed-reverse-geocode`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      query: {
-        location: `${lat},${lng}`,
-        poi_options: 'address_format=short;policy=2;orderby=_distance'
-      }
-    });
+   const response = apiClient.get("/address/all",{
+    query: {
+        filter: "city"
+    }
+   })
     return response;
   } catch (error) {
     console.error('详细地址解析失败:', error);

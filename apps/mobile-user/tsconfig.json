@@ -1,10 +1,17 @@
 {
-  "extends": "@repo/mobile-ui/tsconfig.json",
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts",
-    "nativewind-env.d.ts"
-  ]
+    "extends": "@repo/mobile-ui/tsconfig.json",
+    "compilerOptions": {
+        "strict": true,
+        "paths": {
+            "@/*": ["./*"],
+            "@repo/mobile-ui/*": ["../../packages/mobile-ui/src/*"]
+        }
+    },
+    "include": [
+        "**/*.ts",
+        "**/*.tsx",
+        ".expo/types/**/*.ts",
+        "expo-env.d.ts",
+        "nativewind-env.d.ts"
+    ]
 }

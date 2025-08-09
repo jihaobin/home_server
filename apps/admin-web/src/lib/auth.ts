@@ -1,9 +1,7 @@
 "use server"
 
-import { ofetch } from "ofetch";
 import "server-only"
-import { authClient } from "./authClient"
-import { unstable_cache } from "next/cache";
+import { authClient } from "./auth-cient"
 import { headers } from "next/headers";
 // import { cache } from "react"
 // import { headers } from "next/headers"
@@ -18,7 +16,7 @@ type ErrorTypes = Partial<
 	>
 >;
 
-export const requireUser = unstable_cache(async () => {
+export const requireUser = async () => {
   const sessions = await authClient.getSession({
     fetchOptions: {
       headers: await headers()
@@ -32,7 +30,7 @@ export const requireUser = unstable_cache(async () => {
     image: sessions.data?.user.image,
     role: sessions.data?.user.role,
   }
-})
+}
 
 export async function logout() {
   await authClient.signOut();
@@ -49,7 +47,7 @@ export async function login({ email, password }: {
   })
 }
 
-export async function register({ name, email, password, }: {
+export async function register({ name, email, password }: {
   name: string, email: string; password: string
 }) {
 
@@ -59,7 +57,7 @@ export async function register({ name, email, password, }: {
     password,
     callbackURL: "http://localhost:3000/auth/verify-email",
     surname: name,
-    role: "user"
+      role: "customer"
   })
 }
 

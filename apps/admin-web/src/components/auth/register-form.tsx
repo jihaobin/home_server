@@ -12,6 +12,7 @@ import { register as registerUser } from "@/lib/auth"
 import { Input } from "@repo/web-ui/components/input"
 import { Button } from "@repo/web-ui/components/button"
 import { Label } from "@repo/web-ui/components/label"
+import { authClient } from "@/lib/auth-cient"
 
 
 const registerSchema = z.object({
@@ -60,16 +61,16 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       })
 
       if (result.error) {
-        console.error("注册失败:", result.error)
-        if (result.error.message?.includes("email")) {
-          setError("email", {
-            message: "该邮箱已被注册，请使用其他邮箱"
-          })
-        } else {
-          setError("root", {
-            message: "注册失败，请稍后重试"
-          })
+        if(result.error.code === authClient.$ERROR_CODES.USER_ALREADY_EXISTS){
+            setError("email", {
+                message: "该邮箱已被注册，请使用其他邮箱"
+            })
+            return
         }
+
+        setError("root", {
+            message: "注册失败，请稍后重试"
+        })
         return
       }
 

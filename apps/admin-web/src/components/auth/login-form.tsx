@@ -12,6 +12,7 @@ import { login } from "@/lib/auth"
 import { Input } from "@repo/web-ui/components/input"
 import { Button } from "@repo/web-ui/components/button"
 import { Label } from "@repo/web-ui/components/label"
+import { authClient } from "@/lib/auth-cient"
 
 const loginSchema = z.object({
   email: z.email("请输入有效的邮箱地址"),
@@ -46,10 +47,11 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       setIsLoading(true)
       setNeedsVerification(false)
 
-      const result = await login({
-        email: data.email,
-        password: data.password,
-      })
+      const result = await authClient.signIn.email({
+          email: data.email,
+          password: data.password,
+          callbackURL:"http://localhost:3000/"
+        })
 
       console.log(result)
 
