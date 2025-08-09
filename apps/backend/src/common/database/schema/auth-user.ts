@@ -31,16 +31,18 @@ export const users = pgTable(
         emailVerified: boolean('email_verified')
             .$defaultFn(() => false)
             .notNull(),
-        phoneNumberVerified: boolean('phone_Number_verified')
+        phoneNumberVerified: boolean('phone_number_verified')
             .$defaultFn(() => false)
             .notNull(),
-        name: varchar('name', { length: 50 }).notNull().default(''),
+        name: varchar('name', { length: 50 }).default(''),
         phoneNumber: varchar('phone_number', { length: 20 }).unique(), // 手机号码
         role: roleEnum('role').default('customer'),
-        isActive: boolean('is_active').notNull().default(true), // 账户是否激活
+        isActive: boolean('is_active').default(true), // 账户是否激活
         image: varchar('image', { length: 255 }).notNull().default(''),
         createdAt: timestamp('created_at').notNull().defaultNow(),
-        updatedAt: timestamp('updated_at').$onUpdateFn(() => new Date()),
+        updatedAt: timestamp('updated_at')
+            .$onUpdateFn(() => new Date())
+            .defaultNow(),
     },
     (table) => [
         uniqueIndex('idx_users_email_active')

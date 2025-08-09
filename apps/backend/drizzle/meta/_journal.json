@@ -29,6 +29,20 @@
       "when": 1754382042519,
       "tag": "0003_kind_bullseye",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1754722819456,
+      "tag": "0004_curvy_silver_samurai",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1754723131927,
+      "tag": "0005_dusty_lifeguard",
+      "breakpoints": true
     }
   ]
 }

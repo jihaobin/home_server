@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { AddressService } from './address.service';
 import {
     AddressQuery,
@@ -19,6 +19,7 @@ import {
     ApiErrorResponses,
 } from 'src/common/decorator';
 import { tencentReverseGeocodeService } from './address.gdMap.api';
+import { AuthGuard } from '../auth/auth.guard';
 
 @ApiTags('地址管理')
 @Controller('address')
@@ -53,6 +54,7 @@ export class AddressController {
     @ApiErrorResponses()
     @ApiQueries(AddressQuerySchema)
     @Get('all')
+    @UseGuards(AuthGuard)
     findAll(@Query() query: AddressQuery) {
         return this.addressService.findAll(query);
     }

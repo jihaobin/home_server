@@ -118,16 +118,16 @@ export function createAuth(
                 role: {
                     type: 'string',
                     required: true,
-                    defaultValue: 'comu',
+                    defaultValue: 'customer',
                     fieldName: 'role',
                     input: true,
                 },
-                isActive: {
-                    type: 'boolean',
-                    required: false,
-                    defaultValue: true,
-                    fieldName: 'is_active',
-                },
+                // isActive: {
+                //     type: 'boolean',
+                //     required: false,
+                //     defaultValue: true,
+                //     fieldName: 'is_active',
+                // },
             },
         },
 
