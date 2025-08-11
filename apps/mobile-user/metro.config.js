@@ -5,9 +5,26 @@ const { withNativeWind } = require("nativewind/metro");
 
 const path = require("node:path");
 
+// 获取 monorepo 根目录
+const projectRoot = __dirname;
+const monorepoRoot = path.resolve(projectRoot, '../..');
+
 const config = withTurborepoManagedCache(
     getDefaultConfig(__dirname, { isCSSEnabled: true })
 );
+
+// 配置 watchFolders 以包含 monorepo 根目录
+config.watchFolders = [monorepoRoot];
+
+// 配置模块解析路径
+config.resolver.nodeModulesPaths = [
+    path.resolve(projectRoot, 'node_modules'),
+    path.resolve(monorepoRoot, 'node_modules'),
+];
+
+// 配置 disableHierarchicalLookup
+config.resolver.disableHierarchicalLookup = false;
+
 module.exports = withNativeWind(config, {
     input: "../../packages/mobile-ui/src/styles/global.css",
 });
