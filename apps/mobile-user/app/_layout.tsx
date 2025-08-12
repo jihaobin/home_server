@@ -23,8 +23,22 @@ export {
 
 export default function RootLayout() {
     const hasMounted = React.useRef(false);
-    const { colorScheme, isDarkColorScheme } = useColorScheme();
+    const { isDarkColorScheme } = useColorScheme();
     const [isColorSchemeLoaded, setIsColorSchemeLoaded] = React.useState(false);
+
+    // 预热位置服务
+    React.useEffect(() => {
+        const preWarmLocation = async () => {
+            try {
+                const { HighAccuracyLocationManager } = await import('@/lib/location-utils');
+                const locationManager = HighAccuracyLocationManager.getInstance();
+                await locationManager.preWarmLocationServices();
+            } catch (error) {
+                console.warn('Failed to pre-warm location services:', error);
+            }
+        };
+        preWarmLocation();
+    }, []);
 
     useIsomorphicLayoutEffect(() => {
         if (hasMounted.current) {
