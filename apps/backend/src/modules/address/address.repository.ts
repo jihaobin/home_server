@@ -1,7 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { AddressQuery } from '@repo/types';
+import {
+    AddressQuery,
+    CreateUserAddress,
+    UpdateUserAddress,
+} from '@repo/types';
+import { eq } from 'drizzle-orm';
 import { DB } from 'src/common/database/database.provider';
 import { DbType } from 'src/common/database/db';
+import { userAddresses } from 'src/common/database/schema';
 
 @Injectable()
 export class AddressRespository {
@@ -27,5 +33,32 @@ export class AddressRespository {
             default:
                 return this.db.query.chinaCity.findMany();
         }
+    }
+
+    createAddress(data: CreateUserAddress) {
+        return this.db.insert(userAddresses).values({
+            ...data,
+            geom: [data.lat, data.lng],
+        });
+    }
+
+    updateAddress(id: string, data: UpdateUserAddress) {
+        return this.db
+            .update(userAddresses)
+            .set({
+                ...data,
+                ...(data.lat && data.lng ? { geom: [data.lat, data.lng] } : {}),
+            })
+            .where(eq(userAddresses.userId, id));
+    }
+
+    deleteAddress(id: string) {
+        return this.db.delete(userAddresses).where(eq(userAddresses.id, id));
+    }
+
+    findByUserId(id: string) {
+        return this.db.query.userAddresses.findFirst({
+            where: (userAddresses, { eq }) => eq(userAddresses.userId, id),
+        });
     }
 }

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { CanActivate, ExecutionContext } from '@nestjs/common';
 
@@ -18,8 +18,8 @@ export type UserSession = NonNullable<
 
 declare module 'express' {
     interface Request {
-        session: UserSession | null;
-        user: UserSession['user'] | null;
+        session: UserSession;
+        user: UserSession['user'];
     }
 }
 
@@ -48,8 +48,15 @@ export class AuthGuard implements CanActivate {
             headers: fromNodeHeaders(request.headers),
         });
 
-        request.session = session;
-        request.user = session?.user ?? null; // useful for observability tools like Sentry
+        if (!session || !session.user) {
+            throw new UnauthorizedException({
+                code: 'UNAUTHORIZED',
+                message: '当前用户未登录',
+            });
+        }
+
+        request.session = session!;
+        request.user = session.user; // useful for observability tools like Sentry
 
         const isPublic = this.reflector.get('PUBLIC', context.getHandler());
 
@@ -60,9 +67,9 @@ export class AuthGuard implements CanActivate {
         if (isOptional && !session) return true;
 
         if (!session) {
-            throw new APIError(401, {
+            throw new UnauthorizedException({
                 code: 'UNAUTHORIZED',
-                message: 'Unauthorized',
+                message: '当前用户未登录',
             });
         }
 

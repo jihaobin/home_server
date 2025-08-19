@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { UserAddressesSchema } from './database-entity';
 
 export const AddressQuerySchema = z.object({
     filter: z.enum(['all', 'province', 'city', 'area']).meta({
@@ -252,8 +253,18 @@ export const SuggestionRequestSchema = z.object({
     filter: z.string().optional().describe('筛选条件，如：category=公交站'),
     added_fields: z.array(z.literal('category_code')).optional().describe('返回指定标准附加字段'),
     address_format: z.literal('short').optional().describe('返回"不带行政区划的"短地址'),
-    page_index: z.number().int().min(1).optional().describe('页码，从1开始'),
-    page_size: z.number().int().min(1).max(20).optional().describe('每页条数，取值范围1-20'),
+    page_index: z.string().regex(/^\d+$/, '页码必须是数字').refine((val) => {
+        const num = parseInt(val, 10);
+        return num >= 1;
+    }, {
+        message: '页码必须大于等于1',
+    }).optional().describe('页码，从1开始'),
+    page_size: z.string().regex(/^\d+$/, '每页条数必须是数字').refine((val) => {
+        const num = parseInt(val, 10);
+        return num >= 1 && num <= 20;
+    }, {
+        message: '每页条数必须在1-20之间',
+    }).optional().describe('每页条数，取值范围1-20'),
     output: z.enum(['json', 'jsonp']).optional().describe('返回格式，默认JSON'),
     callback: z.string().optional().describe('JSONP方式回调函数'),
 });
@@ -266,6 +277,32 @@ export const SuggestionResponseSchema = z.object({
     count: z.number().describe('结果总数（注：本服务一个查询条件最多返回100条结果）'),
     data: z.array(SuggestionDataSchema).describe('提示词数组，每项为一个POI对象'),
 });
+
+// 新建用户地址schema
+export const CreateUserAddressSchema = UserAddressesSchema.omit({ geom: true, id: true }).extend({
+    /**
+     * 经度
+     */
+    lng: z.number("lng 不能为空,并且lng必须是数字").describe('经度'),
+    /**
+     * 纬度
+     */
+    lat: z.number("lat 不能为空,并且lat必须是数字").describe('纬度'),
+}).refine((data) => data.lat && data.lng, {
+    message: '经纬度信息不完整',
+    path: ['lat', 'lng'],
+});
+
+export const UpdateUserAddressSchema = CreateUserAddressSchema.partial().extend({
+    id: z.string("id 不能为空").max(255, "id 不能超过255个字符").meta({
+        description: '地址ID',
+        title: '地址ID'
+    }),
+});
+
+export type CreateUserAddress = z.infer<typeof CreateUserAddressSchema>;
+
+export type UpdateUserAddress = z.infer<typeof UpdateUserAddressSchema>;
 
 // 关键词输入提示请求参数类型
 export type SuggestionRequest = z.infer<typeof SuggestionRequestSchema>;

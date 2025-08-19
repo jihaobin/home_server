@@ -221,8 +221,8 @@ export class HighAccuracyLocationManager {
 
     const watchConfig: Location.LocationOptions = {
       accuracy: config?.accuracy || Location.LocationAccuracy.High, // 平衡精度和速度
-      timeInterval: config?.timeInterval || 2000, // 2秒更新一次（比之前更频繁）
-      distanceInterval: config?.distanceInterval || 5, // 移动5米更新（比之前更敏感）
+        timeInterval: config?.timeInterval || 1000 * 60 * 5, // 5分钟更新一次
+        distanceInterval: config?.distanceInterval || 100, // 移动100米更新
     };
 
     try {

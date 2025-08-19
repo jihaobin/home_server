@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, RefreshControl } from 'react-native';
+import { View, ScrollView, RefreshControl, Pressable } from 'react-native';
+import { router } from 'expo-router';
 import { Text } from '@repo/mobile-ui/components/ui/text';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@repo/mobile-ui/components/ui/card';
 import { LogoutButton } from '@/components/LogoutButton';
@@ -124,6 +125,15 @@ export default function HomeScreen() {
             快捷操作
           </Text>
           <View className="space-y-3">
+            <Pressable onPress={() => router.push('/address/service-address')}>
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">服务地址</CardTitle>
+                  <CardDescription>管理您的服务地址信息</CardDescription>
+                </CardHeader>
+              </Card>
+            </Pressable>
+
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">查看附近服务</CardTitle>

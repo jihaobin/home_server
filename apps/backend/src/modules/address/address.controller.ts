@@ -1,17 +1,31 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    Delete,
+    Get,
+    Param,
+    Post,
+    Query,
+    Req,
+    UsePipes,
+    UseGuards,
+} from '@nestjs/common';
 import { AddressService } from './address.service';
 import {
     AddressQuery,
     AddressQuerySchema,
     ChinaCitySchema,
+    CreateUserAddress,
     ReverseGeocodeRequest,
     ReverseGeocodeRequestSchema,
     ReverseGeocodeResponseSchema,
     SuggestionRequest,
     SuggestionRequestSchema,
     SuggestionResponseSchema,
+    UpdateUserAddress,
+    UpdateUserAddressSchema,
 } from '@repo/types';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod/v4';
 import {
     ApiQueries,
@@ -19,6 +33,11 @@ import {
     ApiErrorResponses,
 } from 'src/common/decorator';
 import { tencentReverseGeocodeService } from './address.gdMap.api';
+import { Request } from 'express';
+import { ApiBodies } from 'src/common/decorator/swagger-api-bodies';
+import { CreateUserAddressSchema } from '@repo/types';
+import { UserAddressesSchema } from '@repo/types';
+import { ZodValidationPipe } from 'src/common/pipes';
 import { AuthGuard } from '../auth/auth.guard';
 
 @ApiTags('地址管理')
@@ -54,7 +73,6 @@ export class AddressController {
     @ApiErrorResponses()
     @ApiQueries(AddressQuerySchema)
     @Get('all')
-    @UseGuards(AuthGuard)
     findAll(@Query() query: AddressQuery) {
         return this.addressService.findAll(query);
     }
@@ -98,20 +116,7 @@ export class AddressController {
         return await tencentReverseGeocodeService.simpleReverseGeocode(query);
     }
 
-    @ApiOperation({
-        summary: '详细地址逆解析服务',
-        description: '根据经纬度获取详细地址信息（包含周边POI）',
-    })
-    @Get('detailed-reverse-geocode')
-    @ApiQueries(ReverseGeocodeRequestSchema)
-    @ApiSuccessResponse(ReverseGeocodeResponseSchema, {
-        description: '成功获取详细地址信息',
-    })
-    @ApiErrorResponses()
-    async detailedReverseGeocode(@Query() query: ReverseGeocodeRequest) {
-        return await tencentReverseGeocodeService.getDetailedAddress(query);
-    }
-
+    @UseGuards(AuthGuard)
     @Get('suggestion')
     @ApiOperation({
         summary: '地址建议服务',
@@ -124,5 +129,72 @@ export class AddressController {
     @ApiErrorResponses()
     async suggestion(@Query() query: SuggestionRequest) {
         return await tencentReverseGeocodeService.getSuggestions(query);
+    }
+
+    @UsePipes(new ZodValidationPipe(CreateUserAddressSchema))
+    @ApiOperation({
+        summary: '创建用户地址',
+        description: '创建用户地址',
+    })
+    @ApiBodies(CreateUserAddressSchema)
+    @ApiSuccessResponse(UserAddressesSchema, {
+        description: '成功创建用户地址',
+    })
+    @ApiErrorResponses()
+    @Post('create')
+    async createUserAddress(
+        @Body() body: Omit<CreateUserAddress, 'userId'>,
+        @Req() req: Request,
+    ) {
+        return await this.addressService.createAddress({
+            ...body,
+            userId: req.user?.id,
+        });
+    }
+
+    @UsePipes(new ZodValidationPipe(UpdateUserAddressSchema))
+    @ApiOperation({
+        summary: '更新用户地址',
+        description: '更新用户地址',
+    })
+    @ApiBodies(UpdateUserAddressSchema)
+    @ApiSuccessResponse(UserAddressesSchema, {
+        description: '成功更新用户地址',
+    })
+    @ApiErrorResponses()
+    @Post('update')
+    async updateUserAddress(
+        @Body() body: UpdateUserAddress,
+        @Req() req: Request,
+    ) {
+        return await this.addressService.updateAddress(body.id, {
+            ...body,
+            userId: req.user?.id,
+        });
+    }
+
+    @ApiOperation({
+        summary: '删除用户地址',
+        description: '删除用户地址',
+    })
+    @ApiParam({ name: 'id', description: '用户地址ID' })
+    @ApiErrorResponses()
+    @Delete(':id')
+    deleteUserAddress(@Param('id') id: string) {
+        return this.addressService.deleteAddress(id);
+    }
+
+    @ApiOperation({
+        summary: '获取用户地址列表',
+        description: '获取当前用户的所有地址(需登录后使用)',
+    })
+    @ApiSuccessResponse(UserAddressesSchema, {
+        description: '成功获取用户地址列表',
+    })
+    @UseGuards(AuthGuard)
+    @ApiErrorResponses()
+    @Get()
+    async getUserAddress(@Req() req: Request) {
+        return await this.addressService.getAddressByUserId(req.user?.id);
     }
 }

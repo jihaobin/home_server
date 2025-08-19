@@ -26,6 +26,11 @@ export interface ApiClientOptions extends Omit<FetchOptions, 'method' | 'body'> 
    * 是否在开发环境下打印请求日志
    */
   debug?: boolean;
+
+    /**
+     * 错误提示的toast实现，不同端传入不同实现
+     */
+    toast?: (msg: string) => void;
 }
 
 /**
@@ -67,9 +72,10 @@ const HTTP_STATUS_TO_ERROR_CODE: Record<number, ErrorCode> = {
 
 /**
  * 创建错误响应
+ * 严格按照 ApiResponse 接口和 ErrorCode 枚举
  */
 function createErrorResponse<T = unknown>(
-  code: ErrorCode | number,
+    code: ErrorCode,
   message: string,
   path?: string,
   error?: any
@@ -85,48 +91,73 @@ function createErrorResponse<T = unknown>(
 }
 
 /**
- * 处理HTTP错误
+ * API客户端错误类
+ * 严格按照 ErrorCode 枚举定义
+ */
+export class ApiClientError extends Error {
+    code: ErrorCode;
+    path?: string;
+    originalError?: any;
+    timestamp: number;
+
+    constructor(code: ErrorCode, message: string, path?: string, originalError?: any) {
+        super(message);
+        this.name = 'ApiClientError';
+        this.code = code;
+        this.path = path;
+        this.originalError = originalError;
+        this.timestamp = Date.now();
+    }
+
+    /**
+     * 转换为 ApiResponse 格式
+     */
+    toApiResponse<T = unknown>(): ApiResponse<T> {
+        return {
+            code: this.code,
+            message: this.message,
+            data: null as T,
+            timestamp: this.timestamp,
+            path: this.path,
+            stack: process.env.NODE_ENV === 'development' ? this.stack : undefined,
+        };
+    }
+}
+
+/**
+ * 处理HTTP错误，返回严格符合 ErrorCode 枚举的错误响应
  */
 function handleHttpError<T = unknown>(error: any, path?: string): ApiResponse<T> {
+    let errorCode: ErrorCode;
+    let message: string;
+
   // 网络错误
   if (error.name === 'TypeError' && error.message.includes('fetch')) {
-    return createErrorResponse<T>(
-      ErrorCode.NETWORK_ERROR,
-      '网络连接失败，请检查网络连接',
-      path,
-      error
-    );
+      errorCode = ErrorCode.NETWORK_ERROR;
+      message = '网络连接失败，请检查网络连接';
   }
-
   // 超时错误
-  if (error.name === 'AbortError' || error.message?.includes('timeout')) {
-    return createErrorResponse<T>(
-      ErrorCode.TIMEOUT_ERROR,
-      '请求超时，请稍后重试',
-      path,
-      error
-    );
+  else if (error.name === 'AbortError' || error.message?.includes('timeout')) {
+      errorCode = ErrorCode.TIMEOUT_ERROR;
+      message = '请求超时，请稍后重试';
   }
-
   // HTTP状态码错误
-  if (error.status) {
-    const errorCode = HTTP_STATUS_TO_ERROR_CODE[error.status] || ErrorCode.UNKNOWN_ERROR;
-    const message = error.statusText || `HTTP ${error.status} 错误`;
+  else if (error.status) {
+      errorCode = HTTP_STATUS_TO_ERROR_CODE[error.status] || ErrorCode.UNKNOWN_ERROR;
+      message = error.statusText || `HTTP ${error.status} 错误`;
+  }
+  // 其他未知错误
+    else {
+        errorCode = ErrorCode.UNKNOWN_ERROR;
+        message = error.message || '未知错误';
+    }
 
     return createErrorResponse<T>(errorCode, message, path, error);
-  }
-
-  // 其他未知错误
-  return createErrorResponse<T>(
-    ErrorCode.UNKNOWN_ERROR,
-    error.message || '未知错误',
-    path,
-    error
-  );
 }
 
 /**
  * 验证响应数据
+ * 严格按照 ApiResponse 接口处理错误
  */
 function validateResponse<T>(
   response: any,
@@ -153,6 +184,7 @@ function validateResponse<T>(
 
     return response as ApiResponse<T>;
   } catch (validationError) {
+      // 返回严格符合 ErrorCode 枚举的验证错误
     return createErrorResponse<T>(
       ErrorCode.VALIDATION_ERROR,
       '响应数据格式错误',
@@ -168,6 +200,7 @@ function validateResponse<T>(
 export class ApiClient {
   private client: typeof ofetch;
   private options: ApiClientOptions;
+    private toast?: (msg: string) => void;
 
   constructor(options: ApiClientOptions = {}) {
     this.options = {
@@ -175,6 +208,7 @@ export class ApiClient {
       debug: process.env.NODE_ENV === 'development',
       ...options,
     };
+      this.toast = options.toast;
 
     this.client = ofetch.create({
       baseURL: this.options.baseURL,
@@ -210,12 +244,13 @@ export class ApiClient {
 
   /**
    * 通用API请求方法
+   * 出现错误时返回 rejected Promise
    */
   async request<T = unknown>(
     url: string,
     options: ApiRequestOptions<T> & { method?: string } = {}
   ): Promise<ApiResponse<T>> {
-    const { schema, skipValidation, method = 'GET', ...fetchOptions } = options;
+      const { schema, skipValidation, method = 'GET', ...fetchOptions } = options;
 
     try {
       // 准备请求选项
@@ -226,9 +261,59 @@ export class ApiClient {
 
       const response = await this.client(url, requestOptions);
 
-      return validateResponse(response, schema, skipValidation);
+        // 验证响应数据
+        const validatedResponse = validateResponse(response, schema, skipValidation);
+
+        // 如果是错误响应（非成功状态码）
+        if (validatedResponse.code !== ApiStatusCode.SUCCESS) {
+            // 显示错误 toast
+            if (this.toast) {
+                this.toast(validatedResponse.message);
+            }
+
+            // 确保错误码是 ErrorCode 枚举中的值
+            const errorCode = Object.values(ErrorCode).includes(validatedResponse.code as ErrorCode)
+                ? (validatedResponse.code as ErrorCode)
+                : ErrorCode.UNKNOWN_ERROR;
+
+            const error = new ApiClientError(
+                errorCode,
+                validatedResponse.message,
+                validatedResponse.path,
+                validatedResponse
+            );
+
+            // 返回 rejected Promise
+            return Promise.reject(error);
+        }
+
+        return validatedResponse;
     } catch (error) {
-      return handleHttpError<T>(error, url);
+        // 如果已经是 ApiClientError，直接处理
+        if (error instanceof ApiClientError) {
+            if (this.toast) {
+                this.toast(error.message);
+            }
+            return Promise.reject(error);
+        }
+
+        // 处理网络、超时等底层错误
+        const errorResponse = handleHttpError<T>(error, url);
+
+        // 显示错误 toast
+        if (this.toast) {
+            this.toast(errorResponse.message);
+        }
+
+        // 创建 ApiClientError 并返回 rejected Promise
+        const apiError = new ApiClientError(
+            errorResponse.code as ErrorCode,
+            errorResponse.message,
+            errorResponse.path,
+            error
+        );
+
+        return Promise.reject(apiError);
     }
   }
 
@@ -329,3 +414,37 @@ export const api = {
   patch: <T = unknown>(url: string, data?: any, options?: ApiRequestOptions<T>) =>
     apiClient.patch<T>(url, data, options),
 };
+
+// ============================================================================
+// UTILITY FUNCTIONS AND TYPE GUARDS
+// ============================================================================
+
+/**
+ * 判断错误是否为 ApiClientError
+ */
+export function isApiClientError(error: unknown): error is ApiClientError {
+    return error instanceof ApiClientError;
+}
+
+/**
+ * 获取错误消息的工具函数
+ */
+export function getErrorMessage(error: unknown): string {
+    if (isApiClientError(error)) {
+        return error.message;
+    }
+    if (error instanceof Error) {
+        return error.message;
+    }
+    return '未知错误';
+}
+
+/**
+ * 获取错误代码的工具函数
+ */
+export function getErrorCode(error: unknown): ErrorCode {
+    if (isApiClientError(error)) {
+        return error.code;
+    }
+    return ErrorCode.UNKNOWN_ERROR;
+}

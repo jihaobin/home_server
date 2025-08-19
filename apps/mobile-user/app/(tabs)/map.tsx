@@ -6,6 +6,7 @@ import {
   EnhancedLocationData
 } from "@/lib/location-utils";
 import { apiClient } from "@/lib/http-client";
+import { useLocationDetail } from "@/hooks/api/address";
 
 async function getDetailedAddress(lat: number, lng: number) {
     try {
@@ -35,6 +36,8 @@ export default function MapScreen() {
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [isTracking, setIsTracking] = useState<boolean>(false);
     const [addressInfo, setAddressInfo] = useState<string>("未获取地址信息");
+
+    const {data: locationData} = useLocationDetail()
 
     const { getCurrentPosition, startWatching, stopWatching } = useHighAccuracyLocation();
 
@@ -160,6 +163,8 @@ export default function MapScreen() {
                         <Text style={styles.errorText}>{errorMsg}</Text>
                     </View>
                 )}
+
+                <Text>{JSON.stringify(locationData)}</Text>
 
                 {currentLocation && (
                     <ScrollView style={styles.locationContainer}>

@@ -1,1 +1,0 @@
-export { default } from "@repo/web-ui/postcss.config";

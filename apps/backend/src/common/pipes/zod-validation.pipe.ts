@@ -41,11 +41,10 @@ export class ZodValidationPipe implements PipeTransform {
                 value = this.preprocessQueryParams(value);
             }
 
-            console.log('校验之前的值', value);
-
             // 使用schema验证并转换值
             return this.schema.parse(value);
         } catch (error) {
+            console.log('校验之前的值', value);
             if (error instanceof ZodError) {
                 // 抛出ValidationException，与系统的错误处理集成
                 throw createValidationException(error, this.errorMessage);
