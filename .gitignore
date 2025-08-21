@@ -44,9 +44,6 @@ yarn-error.log*
 .env.production
 .idea
 
-**/credentials/*.keystore
-**/credentials.json
-
 **/ios
 **/android
 
