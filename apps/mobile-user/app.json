@@ -53,6 +53,12 @@
         {
           "locationAlwaysAndWhenInUsePermission": "当前应用需要访问您的位置，已获取你的服务地址"
         }
+      ],
+       [
+        "expo-qq-location",
+        {
+          "apiKey": "WLEBZ-HCTC3-JMN3L-OLTJV-R2AJE-WCB7J",
+        }
       ]
     ],
     "experiments": {

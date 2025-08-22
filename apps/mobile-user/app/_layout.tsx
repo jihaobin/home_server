@@ -8,7 +8,6 @@ import { NAV_THEME } from '@repo/mobile-ui/lib/constants';
 import { useColorScheme } from '@repo/mobile-ui/lib/useColorScheme';
 import { Provider } from '@/components/provider';
 import { PortalHost } from '@rn-primitives/portal';
-import * as QqLocation from 'expo-qq-location';
 
 const LIGHT_THEME: Theme = {
     ...DefaultTheme,
@@ -64,7 +63,6 @@ export default function RootLayout() {
         <Provider>
             <ThemeProvider value={isDarkColorScheme ? DARK_THEME : LIGHT_THEME}>
                 <StatusBar style={isDarkColorScheme ? 'light' : 'dark'} />
-                <Text>Theme: {QqLocation.getTheme()}</Text>
                 <Stack
                     screenOptions={{
                         headerShown: true,
