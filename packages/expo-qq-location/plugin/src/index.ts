@@ -18,7 +18,7 @@ const withQqLocationApiKey: ConfigPlugin<QqLocationPluginProps> = (config, { api
     // Add Tencent Map API key
     AndroidConfig.Manifest.addMetaDataItemToMainApplication(
       mainApplication,
-      'TENCENT_MAP_API_KEY',
+        'TencentMapSDK',
       apiKey
     );
 
