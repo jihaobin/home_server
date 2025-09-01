@@ -2,3 +2,4 @@
 export * from './common';
 export * from './address';
 export * from "./database-entity"
+export * from './userAuthRealName';
