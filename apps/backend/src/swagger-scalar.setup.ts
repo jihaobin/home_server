@@ -11,14 +11,7 @@ export function setupScalarSwagger(app: INestApplication) {
 
 ## 认证说明
 
-本 API 使用 Better-Auth 库提供认证功能，认证端点由 Better-Auth 自动生成和管理：
-
-### 认证端点
-
-- **登录**: \`POST /api/auth/sign-in/email\`
-- **注册**: \`POST /api/auth/sign-up/email\`
-- **登出**: \`POST /api/auth/sign-out\`
-- **获取会话**: \`GET /api/auth/session\`
+本 API 使用 Better-Auth 库提供认证功能，认证端点由 Better-Auth 自动生成和管理(详情请查看这个路径 /api/auth/reference)
 
 ### 认证方式
 

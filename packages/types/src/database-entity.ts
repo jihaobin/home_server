@@ -291,21 +291,28 @@ export const SessionsSchema = z.object({
 
 // 用户资料表（关联用户，用于实名认证）
 export const UserProfilesSchema = z.object({
+    id: z.string().max(255).meta({
+        description: '用户资料ID',
+        title: '用户资料ID'
+    }),
     userId: z.string().max(255).meta({
         description: '用户ID',
         title: '用户ID'
     }),
-    realName: z.string().max(50).optional().meta({
+    realName: z.string().max(50).meta({
         description: '真实姓名',
         title: '真实姓名'
     }),
     idCardNumber: z.string()
         .max(18)
-        .regex(/^[1-9]\d{5}(18|19|20)\d{2}((0[1-9])|(1[0-2]))(([0-2][1-9])|10|20|30|31)\d{3}[0-9Xx]$/, '请输入有效的身份证号码')
-        .optional(),
+        .regex(/^[1-9]\d{5}(18|19|20)\d{2}((0[1-9])|(1[0-2]))(([0-2][1-9])|10|20|30|31)\d{3}[0-9Xx]$/, '请输入有效的身份证号码'),
     faceRecognitionData: z.string().optional().meta({
         description: '人脸识别数据',
         title: '人脸识别数据'
+    }),
+    createdAt: z.date().default(() => new Date()).meta({
+        description: '创建时间',
+        title: '创建时间'
     }),
     updatedAt: z.date().default(() => new Date()).meta({
         description: '更新时间',

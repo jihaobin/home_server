@@ -1,4 +1,5 @@
 import { z } from "zod/v4"
+import { UserProfilesSchema } from "./database-entity";
 
 /**
  * 用户实名认证数据
@@ -35,3 +36,25 @@ export type UserAuthRealNameApiRequest = z.infer<typeof userAuthRealNameApiReque
 export type userAuthRealNameApiResponse = z.Infer<typeof userAuthRealNameApiSchema>;
 
 export type UserAuthRealNameApiResponse = z.infer<typeof userAuthRealNameApiSchema>;
+
+
+/**
+ * 创建用户实名认证信息schema
+ */
+export const createUserAuthRealNameSchema = UserProfilesSchema.omit({ updatedAt: true, createdAt: true, id: true, })
+
+/**
+ * 更新用户实名认证信息
+ */
+export type CreateUserAuthRealName = z.infer<typeof createUserAuthRealNameSchema>
+
+/**
+ * 更新用户实名认证信息
+ */
+export const updateUserAuthRealNameSchema = createUserAuthRealNameSchema.partial().required({ userId: true })
+
+
+/**
+* 更新用户实名认证信息
+*/
+export type UpdateUserAuthRealName = z.infer<typeof updateUserAuthRealNameSchema>
