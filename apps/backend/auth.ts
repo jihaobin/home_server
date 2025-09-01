@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { genericOAuth } from 'better-auth/plugins';
 import db from './src/common/database/db';
+import { openAPI } from 'better-auth/plugins';
 
 import * as schema from 'src/common/database/schema';
 import { MailService } from 'src/common/mail/mail.service';
@@ -246,6 +247,7 @@ export function createAuth(
                 ],
             }),
             expo(),
+            openAPI(),
         ],
         ...(isProd
             ? {
