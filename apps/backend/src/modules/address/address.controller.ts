@@ -34,11 +34,7 @@ import {
 } from '@repo/types';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod/v4';
-import {
-    ApiQueries,
-    ApiSuccessResponse,
-    ApiErrorResponses,
-} from 'src/common/decorator';
+import { ApiQueries, ApiSuccessResponse } from 'src/common/decorator';
 import { tencentReverseGeocodeService } from './address.TencentMap.api';
 import { Request } from 'express';
 import { ApiBodies } from 'src/common/decorator/swagger-api-bodies';
@@ -79,7 +75,6 @@ export class AddressController {
             timestamp: Date.now(),
         },
     })
-    @ApiErrorResponses()
     @ApiQueries(AddressQuerySchema)
     @Get('all')
     findAll(@Query() query: AddressQuery) {
@@ -96,7 +91,6 @@ export class AddressController {
     @ApiSuccessResponse(ReverseGeocodeResponseSchema, {
         description: '成功获取地址信息',
     })
-    @ApiErrorResponses()
     async reverseGeocode(@Query() query: ReverseGeocodeRequest) {
         return await tencentReverseGeocodeService.reverseGeocodeWithValidation(
             query,
@@ -113,7 +107,6 @@ export class AddressController {
     @ApiSuccessResponse(SuggestionResponseSchema, {
         description: '成功获取详细地址信息',
     })
-    @ApiErrorResponses()
     async suggestion(@Query() query: SuggestionRequest) {
         return await tencentReverseGeocodeService.getSuggestions(query);
     }
@@ -128,7 +121,6 @@ export class AddressController {
     @ApiSuccessResponse(ParentInfoSchema, {
         description: '成功获取城市的上级城市和省份信息',
     })
-    @ApiErrorResponses()
     async getCityParentInfo(@Query() query: GeocodeRequest) {
         return await this.addressService.getCityParentInfo(query);
     }
@@ -147,6 +139,7 @@ export class AddressController {
         return await this.addressService.districtSearch(query.keyword);
     }
 
+    @UsePipes(new ZodValidationPipe(LocationSchema))
     @Get('explore')
     @ApiOperation({
         summary: '探索周边地点',
@@ -170,7 +163,6 @@ export class AddressController {
     @ApiSuccessResponse(UserAddressesSchema, {
         description: '成功创建用户地址',
     })
-    @ApiErrorResponses()
     @Post('create')
     async createUserAddress(
         @Body() body: Omit<CreateUserAddress, 'userId'>,
@@ -223,7 +215,6 @@ export class AddressController {
         description: '成功获取用户地址列表',
     })
     @UseGuards(AuthGuard)
-    @ApiErrorResponses()
     @Get()
     async getUserAddress(@Req() req: Request) {
         return await this.addressService.getAddressByUserId(req.user?.id);
