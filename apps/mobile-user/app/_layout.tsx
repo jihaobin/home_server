@@ -3,7 +3,7 @@ import { Theme, ThemeProvider, DefaultTheme, DarkTheme } from '@react-navigation
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as React from 'react';
-import { Platform, Text} from 'react-native';
+import { Platform} from 'react-native';
 import { NAV_THEME } from '@repo/mobile-ui/lib/constants';
 import { useColorScheme } from '@repo/mobile-ui/lib/useColorScheme';
 import { Provider } from '@/components/provider';
@@ -18,29 +18,10 @@ const DARK_THEME: Theme = {
     colors: NAV_THEME.dark,
 };
 
-export {
-    // Catch any errors thrown by the Layout component.
-    ErrorBoundary,
-} from 'expo-router';
-
 export default function RootLayout() {
     const hasMounted = React.useRef(false);
     const { isDarkColorScheme } = useColorScheme();
     const [isColorSchemeLoaded, setIsColorSchemeLoaded] = React.useState(false);
-
-    // 预热位置服务
-    React.useEffect(() => {
-        const preWarmLocation = async () => {
-            try {
-                const { HighAccuracyLocationManager } = await import('@/lib/location-utils');
-                const locationManager = HighAccuracyLocationManager.getInstance();
-                await locationManager.preWarmLocationServices();
-            } catch (error) {
-                console.warn('Failed to pre-warm location services:', error);
-            }
-        };
-        preWarmLocation();
-    }, []);
 
     useIsomorphicLayoutEffect(() => {
         if (hasMounted.current) {
@@ -73,7 +54,6 @@ export default function RootLayout() {
                         headerTintColor: '#16a34a', // 设置返回按钮和标题颜色为蓝色
                     }}
                 >
-                    <Stack.Screen name="index" />
                     <Stack.Screen name="auth" />
                     <Stack.Screen name="(tabs)" options={{
                         title: "上门服务",

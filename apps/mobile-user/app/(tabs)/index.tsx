@@ -1,33 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, ScrollView, RefreshControl, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { Text } from '@repo/mobile-ui/components/ui/text';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@repo/mobile-ui/components/ui/card';
 import { LogoutButton } from '@/components/LogoutButton';
-import { authClient } from '@/lib/auth-client';
+import { useSession } from '@/hooks/useAuth';
 
 export default function HomeScreen() {
-  const [user, setUser] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const { data: session, refetch } = useSession();
 
-  useEffect(() => {
-    loadUser();
-  }, []);
-
-  const loadUser = async () => {
-    try {
-      const session = await authClient.getSession();
-      if (session?.data?.user) {
-        setUser(session.data.user);
-      }
-    } catch (error) {
-      console.error('获取用户信息失败:', error);
-    }
-  };
+  // 从 session 中获取用户信息
+  const user = session?.user;
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadUser();
+    await refetch();
     setRefreshing(false);
   };
 

@@ -22,121 +22,120 @@ import ExpoQqLocationModule, {
 } from 'expo-qq-location';
 
 export default function ExampleUsage() {
-  const [location, setLocation] = useState<LocationChangedEvent | null>(null);
-  const [isLocating, setIsLocating] = useState(false);
-  const [locationStatus, setLocationStatus] = useState<string>('未开始定位');
-  const [apiKey, setApiKey] = useState<string>('');
+    //   const [location, setLocation] = useState<LocationChangedEvent | null>(null);
+    //   const [isLocating, setIsLocating] = useState(false);
+    //   const [locationStatus, setLocationStatus] = useState<string>('未开始定位');
+    //   const [apiKey, setApiKey] = useState<string>('');
 
-  useEffect(() => {
-    // 设置用户同意隐私协议（必须）
-    setUserAgreePrivacy(true);
+    //   useEffect(() => {
+    //     // 设置用户同意隐私协议（必须）
+    //     setUserAgreePrivacy(true);
 
-    // 获取API Key
-    const key = getApiKey();
-    setApiKey(key);
+    //     // 获取API Key
+    //     const key = getApiKey();
+    //     setApiKey(key);
 
-    // 设置设备ID（可选）
-    setDeviceID('expo-qq-location-device-id');
+    //     // 设置设备ID（可选）
+    //     setDeviceID('expo-qq-location-device-id');
 
-    // 添加定位成功监听器
-    const locationSubscription = addLocationListener((event: LocationChangedEvent) => {
-      setLocation(event);
-      setLocationStatus('定位成功');
-    });
+    //     // 添加定位成功监听器
+    //     const locationSubscription = addLocationListener((event: LocationChangedEvent) => {
+    //       setLocation(event);
+    //       setLocationStatus('定位成功');
+    //     });
 
-    // 添加定位错误监听器
-    const errorSubscription = addLocationErrorListener((event: LocationErrorEvent) => {
-      setLocationStatus(`定位失败: ${event.reason}`);
-      Alert.alert('定位失败', event.reason);
-    });
+    //     // 添加定位错误监听器
+    //     const errorSubscription = addLocationErrorListener((event: LocationErrorEvent) => {
+    //       setLocationStatus(`定位失败: ${event.reason}`);
+    //       Alert.alert('定位失败', event.reason);
+    //     });
 
-    // 添加状态监听器
-    const statusSubscription = addStatusUpdateListener((event: LocationStatusEvent) => {
-      console.log('状态更新:', event);
-    });
+    //     // 添加状态监听器
+    //     const statusSubscription = addStatusUpdateListener((event: LocationStatusEvent) => {
+    //     });
 
-    return () => {
-      // 清理监听器
-      locationSubscription?.remove();
-      errorSubscription?.remove();
-      statusSubscription?.remove();
-      // 停止定位
-      stopLocationUpdates();
-      removeAllLocationListeners();
-    };
-  }, []);
+    //     return () => {
+    //       // 清理监听器
+    //       locationSubscription?.remove();
+    //       errorSubscription?.remove();
+    //       statusSubscription?.remove();
+    //       // 停止定位
+    //       stopLocationUpdates();
+    //       removeAllLocationListeners();
+    //     };
+    //   }, []);
 
-  const handleStartContinuousLocation = async () => {
-    try {
-      // 检查权限
-      const hasPermission = await hasLocationPermission();
-      if (!hasPermission) {
-        // 尝试请求权限
-        const permissionGranted = await requestLocationPermission();
-        if (!permissionGranted) {
-          Alert.alert('权限提示', '请在设置中授予定位权限');
-          return;
-        }
-      }
+    //   const handleStartContinuousLocation = async () => {
+    //     try {
+    //       // 检查权限
+    //       const hasPermission = await hasLocationPermission();
+    //       if (!hasPermission) {
+    //         // 尝试请求权限
+    //         const permissionGranted = await requestLocationPermission();
+    //         if (!permissionGranted) {
+    //           Alert.alert('权限提示', '请在设置中授予定位权限');
+    //           return;
+    //         }
+    //       }
 
-      setIsLocating(true);
-      setLocationStatus('开始连续定位...');
+    //       setIsLocating(true);
+    //       setLocationStatus('开始连续定位...');
 
-      // 开始连续定位
-      const result = await startLocationUpdates({
-        interval: 3000, // 3秒间隔
-        requestLevel: RequestLevel.REQUEST_LEVEL_ADMIN_AREA,
-        allowGPS: true,
-        allowDirection: true,
-        indoorLocationMode: true,
-        locMode: LocationMode.HIGH_ACCURACY_MODE,
-        gpsFirst: false,
-        gpsTimeOut: 8000,
-      });
+    //       // 开始连续定位
+    //       const result = await startLocationUpdates({
+    //         interval: 3000, // 3秒间隔
+    //         requestLevel: RequestLevel.REQUEST_LEVEL_ADMIN_AREA,
+    //         allowGPS: true,
+    //         allowDirection: true,
+    //         indoorLocationMode: true,
+    //         locMode: LocationMode.HIGH_ACCURACY_MODE,
+    //         gpsFirst: false,
+    //         gpsTimeOut: 8000,
+    //       });
 
-      if (result === 0) {
-        setLocationStatus('连续定位已启动');
-      } else {
-        setIsLocating(false);
-        setLocationStatus(`启动定位失败，错误码: ${result}`);
-        Alert.alert('错误', `启动定位失败，错误码: ${result}`);
-      }
-    } catch (error) {
-      setIsLocating(false);
-      setLocationStatus('启动定位失败');
-      Alert.alert('错误', `启动定位失败: ${error}`);
-    }
-  };
+    //       if (result === 0) {
+    //         setLocationStatus('连续定位已启动');
+    //       } else {
+    //         setIsLocating(false);
+    //         setLocationStatus(`启动定位失败，错误码: ${result}`);
+    //         Alert.alert('错误', `启动定位失败，错误码: ${result}`);
+    //       }
+    //     } catch (error) {
+    //       setIsLocating(false);
+    //       setLocationStatus('启动定位失败');
+    //       Alert.alert('错误', `启动定位失败: ${error}`);
+    //     }
+    //   };
 
-  const handleStopLocation = () => {
-    try {
-      stopLocationUpdates();
-      setIsLocating(false);
-      setLocationStatus('定位已停止');
-    } catch (error) {
-      Alert.alert('错误', `停止定位失败: ${error}`);
-    }
-  };
+    //   const handleStopLocation = () => {
+    //     try {
+    //       stopLocationUpdates();
+    //       setIsLocating(false);
+    //       setLocationStatus('定位已停止');
+    //     } catch (error) {
+    //       Alert.alert('错误', `停止定位失败: ${error}`);
+    //     }
+    //   };
 
-  const handleGetCurrentLocation = () => {
-    // 注意：当前实现的模块只支持连续定位，没有单次定位功能
-    Alert.alert('提示', '当前模块只支持连续定位功能');
-  };
+    //   const handleGetCurrentLocation = () => {
+    //     // 注意：当前实现的模块只支持连续定位，没有单次定位功能
+    //     Alert.alert('提示', '当前模块只支持连续定位功能');
+    //   };
 
-  const handleEnableBackgroundLocation = () => {
-    // 注意：当前实现的模块不包含后台定位的单独控制
-    Alert.alert('提示', '后台定位通过权限配置自动启用');
-  };
+    //   const handleEnableBackgroundLocation = () => {
+    //     // 注意：当前实现的模块不包含后台定位的单独控制
+    //     Alert.alert('提示', '后台定位通过权限配置自动启用');
+    //   };
 
-  const handleDisableBackgroundLocation = () => {
-    // 注意：当前实现的模块不包含后台定位的单独控制
-    Alert.alert('提示', '后台定位通过权限配置控制');
-  };
+    //   const handleDisableBackgroundLocation = () => {
+    //     // 注意：当前实现的模块不包含后台定位的单独控制
+    //     Alert.alert('提示', '后台定位通过权限配置控制');
+    //   };
 
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>腾讯地图定位 SDK 示例</Text>
-
+          {/*
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>API Key</Text>
         <Text style={styles.text}>{apiKey || '未配置'}</Text>
@@ -145,9 +144,9 @@ export default function ExampleUsage() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>定位状态</Text>
         <Text style={styles.text}>{locationStatus}</Text>
-      </View>
+      </View> */}
 
-      <View style={styles.section}>
+          {/* <View style={styles.section}>
         <Text style={styles.sectionTitle}>位置信息</Text>
         {location ? (
           <View>
@@ -218,7 +217,7 @@ export default function ExampleUsage() {
           title="权限配置说明"
           onPress={handleDisableBackgroundLocation}
         />
-      </View>
+      </View> */}
     </ScrollView>
   );
 }

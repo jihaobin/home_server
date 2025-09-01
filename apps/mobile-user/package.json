@@ -62,7 +62,7 @@
     "expo-linking": "~7.1.7",
     "expo-location": "^18.1.6",
     "expo-network": "^7.1.5",
-    "expo-qq-location": "workspace:*",
+    "expo-qq-location": "^0.1.1",
     "expo-router": "~5.1.4",
     "expo-secure-store": "^14.2.3",
     "expo-splash-screen": "~0.30.10",
@@ -71,6 +71,7 @@
     "expo-system-ui": "~5.0.10",
     "expo-web-browser": "~14.2.0",
     "gcoord": "^1.0.7",
+    "immer": "^10.1.1",
     "nativewind": "^4.1.23",
     "react": "19.0.0",
     "react-dom": "19.0.0",
@@ -87,7 +88,8 @@
     "react-native-web": "~0.20.0",
     "react-native-webview": "13.13.5",
     "sonner-native": "^0.21.0",
-    "tlbs-map-react": "^1.1.0"
+    "tlbs-map-react": "^1.1.0",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

@@ -1,13 +1,34 @@
 import { apiClient } from "@/lib/http-client";
-import { EnhancedLocationData, useHighAccuracyLocation } from "@/lib/location-utils";
+import {
+    EnhancedLocationData,
+    useHighAccuracyLocation,
+} from "@/lib/location-utils";
 import { queryClient } from "@/lib/query-client";
-import { AddressQuery, ChinaCity, CreateUserAddress, ReverseGeocodeRequest, ReverseGeocodeResponse, SuggestionRequest, SuggestionResponse, UpdateUserAddress, UserAddresses, } from "@repo/types";
-import { useMutation, useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import {
+    AddressQuery,
+    ChinaCity,
+    CreateUserAddress,
+    ParentInfo,
+    ReverseGeocodeRequest,
+    ReverseGeocodeResponse,
+    SuggestionData,
+    SuggestionRequest,
+    SuggestionResponse,
+    UpdateUserAddress,
+    UserAddresses,
+    DistrictSearchResponse
+} from "@repo/types";
+import {
+    useMutation,
+    useQuery,
+    useSuspenseQuery,
+    useSuspenseInfiniteQuery,
+} from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
-import { MMKV } from 'react-native-mmkv'
+import { MMKV } from "react-native-mmkv";
 
-export const storage = new MMKV()
+export const storage = new MMKV();
 
 /**
  * 缓存管理工具
@@ -18,12 +39,12 @@ export const cacheUtils = {
      */
     clearAllGeoCache: () => {
         const allKeys = storage.getAllKeys();
-        allKeys.forEach(key => {
-            if (key.startsWith('reverse-geocode-')) {
+        allKeys.forEach((key) => {
+            if (key.startsWith("reverse-geocode-")) {
                 storage.delete(key);
             }
         });
-        console.log('已清理所有地理编码缓存');
+        console.log("已清理所有地理编码缓存");
     },
 
     /**
@@ -31,17 +52,21 @@ export const cacheUtils = {
      */
     getCacheStats: () => {
         const allKeys = storage.getAllKeys();
-        const geoKeys = allKeys.filter(key => key.startsWith('reverse-geocode-'));
-        const dataKeys = geoKeys.filter(key => !key.endsWith('-timestamp'));
-        const timestampKeys = geoKeys.filter(key => key.endsWith('-timestamp'));
+        const geoKeys = allKeys.filter((key) =>
+            key.startsWith("reverse-geocode-"),
+        );
+        const dataKeys = geoKeys.filter((key) => !key.endsWith("-timestamp"));
+        const timestampKeys = geoKeys.filter((key) =>
+            key.endsWith("-timestamp"),
+        );
 
         return {
             totalKeys: allKeys.length,
             geoDataKeys: dataKeys.length,
             geoTimestampKeys: timestampKeys.length,
-            allGeoKeys: geoKeys.length
+            allGeoKeys: geoKeys.length,
         };
-    }
+    },
 };
 
 /**
@@ -51,11 +76,15 @@ export const cacheUtils = {
  * @param precision 精度位数，默认3位小数（约110米精度）
  * @returns 标准化的坐标字符串
  */
-const normalizeCoordinates = (lat: number, lng: number, precision: number = 3): string => {
+const normalizeCoordinates = (
+    lat: number,
+    lng: number,
+    precision: number = 3,
+): string => {
     const normalizedLat = parseFloat(lat.toFixed(precision));
     const normalizedLng = parseFloat(lng.toFixed(precision));
     return `${normalizedLat},${normalizedLng}`;
-}
+};
 
 /**
  * 清理过期的地理编码缓存
@@ -65,57 +94,60 @@ const clearExpiredGeoCache = () => {
     const now = Date.now();
     const allKeys = storage.getAllKeys();
 
-    allKeys.forEach(key => {
-        if (key.startsWith('reverse-geocode-') && key.endsWith('-timestamp')) {
+    allKeys.forEach((key) => {
+        if (key.startsWith("reverse-geocode-") && key.endsWith("-timestamp")) {
             const cachedTime = storage.getNumber(key);
-            if (cachedTime && (now - cachedTime >= CACHE_DURATION)) {
+            if (cachedTime && now - cachedTime >= CACHE_DURATION) {
                 // 删除过期的缓存数据和时间戳
-                const dataKey = key.replace('-timestamp', '');
+                const dataKey = key.replace("-timestamp", "");
                 storage.delete(dataKey);
                 storage.delete(key);
             }
         }
     });
-}
+};
 
 /**
  * 获取中国城市列表
  */
-export const useChinaCity = (filter: AddressQuery) => useSuspenseQuery({
-    queryKey: ["china-city", filter],
-    queryFn: async () => {
-        // 添加时间戳控制
-        const CACHE_KEY = "china-city-cache";
-        const CACHE_TIMESTAMP_KEY = "china-city-cache-timestamp";
-        const CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7天
+export const useChinaCity = (filter: AddressQuery) =>
+    useSuspenseQuery({
+        queryKey: ["china-city", filter],
+        queryFn: async () => {
+            // 添加时间戳控制
+            const CACHE_KEY = "china-city-cache";
+            const CACHE_TIMESTAMP_KEY = "china-city-cache-timestamp";
+            const CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7天
 
-        const cachedData = storage.getString(CACHE_KEY);
-        const cachedTime = storage.getNumber(CACHE_TIMESTAMP_KEY);
-        const now = Date.now();
+            const cachedData = storage.getString(CACHE_KEY);
+            const cachedTime = storage.getNumber(CACHE_TIMESTAMP_KEY);
+            const now = Date.now();
 
-        // 检查缓存是否过期
-        if (cachedData && cachedTime && (now - cachedTime < CACHE_DURATION)) {
-            return JSON.parse(cachedData) as ChinaCity[];
-        }
+            // 检查缓存是否过期
+            if (cachedData && cachedTime && now - cachedTime < CACHE_DURATION) {
+                return JSON.parse(cachedData) as ChinaCity[];
+            }
 
-        const response = await apiClient.get<ChinaCity[]>("/address/all", {
-            query: Object.entries(filter).map(([key, value]) => ({
-                name: key,
-                value
-            }))
-        })
+            const response = await apiClient.get<ChinaCity[]>("/address/all", {
+                query: {
+                    filter: filter.filter
+                },
+            });
 
-        // 缓存新数据时保存时间戳
-        storage.set(CACHE_KEY, JSON.stringify(response.data));
-        storage.set(CACHE_TIMESTAMP_KEY, now);
+            // 缓存新数据时保存时间戳
+            storage.set(CACHE_KEY, JSON.stringify(response.data));
+            storage.set(CACHE_TIMESTAMP_KEY, now);
 
-        return response.data
-    },
-    staleTime: 30 * 60 * 1000, // 30分钟内认为数据是新鲜的，不会重新获取
-    gcTime: 60 * 60 * 1000, // 1小时的垃圾回收时间，保持缓存更久
-    refetchOnWindowFocus: false, // 窗口重新聚焦时不自动重新获取
-    refetchOnMount: false, // 组件重新挂载时不自动重新获取
-})
+            return response.data;
+        },
+        staleTime: 30 * 60 * 1000, // 30分钟内认为数据是新鲜的，不会重新获取
+        gcTime: 60 * 60 * 1000, // 1小时的垃圾回收时间，保持缓存更久
+        refetchOnWindowFocus: false, // 窗口重新聚焦时不自动重新获取
+        refetchOnMount: false, // 组件重新挂载时不自动重新获取
+        meta: {
+            errorMessage: "中国城市数据获取失败",
+        },
+    });
 
 /**
  * 地址逆解析(地理坐标转地址信息)
@@ -127,7 +159,7 @@ export const useChinaCity = (filter: AddressQuery) => useSuspenseQuery({
  * - 缓存key使用3位小数坐标（约110米精度），确保相近位置共享缓存
  * - API请求使用完整精度坐标，获得精确的建筑物级别地址信息
  */
-const useReverseGeocode = ({lat, lng}: {lat?: number, lng?: number}) => {
+const useReverseGeocode = ({ lat, lng }: { lat?: number; lng?: number }) => {
     // 标准化坐标用于查询key和缓存key的一致性
     const normalizedLat = lat ? parseFloat(lat.toFixed(3)) : undefined;
     const normalizedLng = lng ? parseFloat(lng.toFixed(3)) : undefined;
@@ -135,12 +167,13 @@ const useReverseGeocode = ({lat, lng}: {lat?: number, lng?: number}) => {
     return useSuspenseQuery({
         queryKey: ["reverse-geocode", normalizedLat, normalizedLng],
         queryFn: async () => {
-            if(!lat || !lng ) {
+            if (!lat || !lng) {
                 return [];
             }
 
             // 定期清理过期缓存（可以考虑使用更智能的触发机制）
-            if (Math.random() < 0.1) { // 10%的概率触发清理
+            if (Math.random() < 0.1) {
+            // 10%的概率触发清理
                 clearExpiredGeoCache();
             }
 
@@ -156,30 +189,38 @@ const useReverseGeocode = ({lat, lng}: {lat?: number, lng?: number}) => {
             const now = Date.now();
 
             // 检查缓存是否过期
-            if (cachedData && cachedTime && (now - cachedTime < CACHE_DURATION)) {
-                return JSON.parse(cachedData) as ReverseGeocodeResponse["result"];
+            if (cachedData && cachedTime && now - cachedTime < CACHE_DURATION) {
+                return JSON.parse(
+                    cachedData,
+                ) as ReverseGeocodeResponse["result"];
             }
 
             // 使用完整精度的原始坐标进行API请求，以获得更精确的地址信息
             const query: ReverseGeocodeRequest = {
                 location: `${lat},${lng}`, // 保持原始完整精度
                 get_poi: "1",
-                poi_options: `policy=2;orderby=_distance`
-            }
+                poi_options: `policy=2;orderby=_distance`,
+            };
 
-            const geocodeInfo = await apiClient.get<ReverseGeocodeResponse>("/address/reverse-geocode", {
-                params: query
-            });
+            const geocodeInfo = await apiClient.get<ReverseGeocodeResponse>(
+                "/address/reverse-geocode",
+                {
+                    params: query,
+                },
+            );
 
             storage.set(CACHE_KEY, JSON.stringify(geocodeInfo.data.result));
             storage.set(CACHE_TIMESTAMP_KEY, now);
             return geocodeInfo.data.result;
         },
+        meta: {
+            errorMessage: "地址数据获取失败",
+        },
     });
 };
 
 export function useLocationDetail() {
-    const [Location,setLocation] = useState<EnhancedLocationData>()
+    const [Location, setLocation] = useState<EnhancedLocationData>();
     const { startWatching, stopWatching } = useHighAccuracyLocation();
 
     // 获取完整精度的坐标用于API请求
@@ -188,7 +229,7 @@ export function useLocationDetail() {
 
     const reverseGeocodeData = useReverseGeocode({
         lat: fullPrecisionLat,
-        lng: fullPrecisionLng
+        lng: fullPrecisionLng,
     });
 
     useEffect(() => {
@@ -204,127 +245,206 @@ export function useLocationDetail() {
 }
 
 /**
- * 地址建议
+ * 地址建议查询页面数据类型
+ */
+interface AddressSuggestionPageData {
+    data: SuggestionData[];
+    count: number;
+    pageParam: number;
+    hasMore: boolean;
+}
+
+/**
+ * 地址建议 - 无限查询版本 - Suspense版本
  * @description 遵循腾讯地图接口(https://lbs.qq.com/service/webService/webServiceGuide/search/webServiceSuggestion)
  *
- * 查询策略：
- * - queryKey使用标准化坐标（3位小数）确保缓存一致性
- * - API请求使用完整精度坐标，获得更精确的搜索结果
+ * 支持分页查询，用于实现无限滚动效果，支持Suspense
  */
-const useAddressSuggestion = (keyword: string, city: string,{lat,lng}: {lat: number, lng: number}) => {
+export const useAddressSuggestionInfiniteSuspense = ({
+    keyword,
+    lat,
+    lng,
+    city,
+}: {
+    keyword?: string;
+    lat?: number;
+    lng?: number;
+    city?: string;
+}) => {
     // 标准化坐标用于查询key的一致性
-    const normalizedLat = parseFloat(lat.toFixed(3));
-    const normalizedLng = parseFloat(lng.toFixed(3));
+    const normalizedLat = lat ? parseFloat(lat.toFixed(3)) : undefined;
+    const normalizedLng = lng ? parseFloat(lng.toFixed(3)) : undefined;
 
-    return useQuery({
-        queryKey: ["address-suggestion", keyword, city, normalizedLat, normalizedLng],
-        queryFn: async () => {
-            if(!keyword || !lat || !lng || !city) {
-                return [];
+    return useSuspenseInfiniteQuery({
+        queryKey: [
+            "address-suggestion-infinite-suspense",
+            keyword,
+            city,
+            normalizedLat,
+            normalizedLng,
+        ],
+        queryFn: async ({ pageParam = 1 }): Promise<AddressSuggestionPageData> => {
+            // 如果没有关键词，返回空结果
+            if (!keyword || keyword.trim() === '') {
+                return {
+                    data: [],
+                    count: 0,
+                    pageParam,
+                    hasMore: false,
+                };
             }
 
             // 使用完整精度坐标进行API请求，获得更精确的搜索结果
             const query: SuggestionRequest = {
-                keyword,
-                region: city,
+                keyword: keyword!,
                 region_fix: "1",
-                page_size: "20",
+                page_size: "10", // 每页10条
+                page_index: pageParam.toString(),
                 policy: "1",
-                location:`${lat},${lng}` // 保持原始完整精度
+            };
+
+            if (city) {
+                query["region"] = city;
             }
 
-            const response = await apiClient.get<SuggestionResponse>("/address/suggestion", {
-                params: query
-            });
+            if (normalizedLat && normalizedLng) {
+                query["location"] = `${lat},${lng}`;
+            }
+
+            const response = await apiClient.get<SuggestionResponse>(
+                "/address/suggestion",
+                {
+                    params: query,
+                },
+            );
+
+            return {
+                data: response.data.data || [],
+                count: response.data.count || 0,
+                pageParam,
+                hasMore:
+                    response.data.data &&
+                    response.data.data.length === 10 &&
+                    pageParam * 10 < response.data.count,
+            };
+        },
+        getNextPageParam: (lastPage: AddressSuggestionPageData) => {
+            // 如果有更多数据，返回下一页的页码
+            return lastPage.hasMore ? lastPage.pageParam + 1 : undefined;
+        },
+        initialPageParam: 1,
+        meta: {
+            errorMessage: "搜索建议获取失败",
+        },
+    });
+};
+
+/**
+ * 获取城市对应的上级城市和省份信息
+ */
+export const useCityParentInfo = (city: string | undefined | null) =>
+    useQuery({
+        queryKey: ["city-parent-info", city],
+        queryFn: async () => {
+            const response = await apiClient.get<ParentInfo>(
+                "/address/cityParentInfo",
+                {
+                    params: { address: city },
+                },
+            );
+            return response.data;
+        },
+        enabled: !!city,
+        meta: {
+            errorMessage: "城市信息获取失败",
+        },
+    });
+
+/** 搜索城市 - Suspense */
+export const useCitySearchSuspense = (keyword: string | undefined | null) =>
+    useSuspenseQuery({
+        queryKey: ["city-search", keyword],
+        queryFn: async () => {
+            if (!keyword || keyword.trim() === '') {
+                return [];
+            }
+            const response = await apiClient.get<DistrictSearchResponse["result"]>(
+                "/address/districtSearch",
+                {
+                    params: { keyword },
+                },
+            );
             return response.data;
         },
         meta: {
-            errorMessage: "搜索建议获取失败"
-        }
+            errorMessage: "城市搜索失败",
+        },
     });
-
-};
-
-export const useAddressTip = (keyword: string) => {
-    const locationDetail = useLocationDetail();
-
-    // 获取位置数据，如果不可用则使用默认值
-    const hasValidData = locationDetail.data &&
-        !Array.isArray(locationDetail.data) &&
-        locationDetail.data.address_component &&
-        locationDetail.data.ad_info;
-
-    const city = hasValidData ? (locationDetail.data as ReverseGeocodeResponse["result"]).address_component.district || "" : "";
-    const lat = hasValidData ? (locationDetail.data as ReverseGeocodeResponse["result"]).ad_info.location.lat : 0;
-    const lng = hasValidData ? (locationDetail.data as ReverseGeocodeResponse["result"]).ad_info.location.lng : 0;
-
-    // 始终调用hook，但在数据不可用时传递空参数
-    const addressSuggestion = useAddressSuggestion(
-        hasValidData ? keyword : "", // 如果位置数据不可用，传递空字符串
-        city,
-        { lat, lng }
-    );
-
-    // 如果位置数据不可用，返回空结果
-    if (!hasValidData) {
-        return { data: [], isLoading: false, error: null };
-    }
-
-    return addressSuggestion;
-};
 
 /**
  * 获取用户所有的收货地址
  */
-export const useUserAddresses = () => useSuspenseQuery({
-    queryKey: ["user-addresses"],
-    queryFn: async () => {
-        const response = await apiClient.get<UserAddresses>("/address");
-        return response.data;
-    },
-});
+export const useUserAddresses = () =>
+    useSuspenseQuery({
+        queryKey: ["user-addresses"],
+        queryFn: async () => {
+            const response = await apiClient.get<UserAddresses[]>("/address");
+            return response.data;
+        },
+    });
 
 /**
  * 创建用户的收货地址
  */
-export const UseCreateAddress = () => useMutation({
-    mutationFn: (newAddress: CreateUserAddress) =>{
-        return apiClient.post<UserAddresses>("/address/create", newAddress);
-    },
-    onSuccess: () => {
-        queryClient.invalidateQueries({
-            queryKey: ["user-addresses"]
-        })
-    },
-    scope: {
-        id: "createAddress"
-    }
-})
+export const UseCreateAddress = () =>
+    useMutation({
+        mutationFn: (newAddress: CreateUserAddress) => {
+            return apiClient.post<UserAddresses>("/address/create", newAddress);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: ["user-addresses"],
+            });
+        },
+        scope: {
+            id: "createAddress",
+        },
+    });
 
-export const UseUpdateAddress = () => useMutation({
-    mutationFn: (newAddress: UpdateUserAddress) =>{
-        return apiClient.post<UserAddresses>("/address/update", newAddress);
-    },
-    onSuccess: () => {
-        queryClient.invalidateQueries({
-            queryKey: ["user-addresses"]
-        })
-    },
-    scope: {
-        id: "updateAddress"
-    }
-})
+/**
+ * 更新用户的收货地址
+ */
 
-export const UseDeleteAddress = () => useMutation({
-    mutationFn: (addressId: string) =>{
-        return apiClient.delete<UserAddresses>(`/address/${addressId}`);
-    },
-    onSuccess: () => {
-        queryClient.invalidateQueries({
-            queryKey: ["user-addresses"]
-        })
-    },
-    scope: {
-        id: "deleteAddress"
-    }
-})
+export const UseUpdateAddress = () =>
+    useMutation({
+        mutationFn: (newAddress: UpdateUserAddress) => {
+            return apiClient.post<UserAddresses>("/address/update", newAddress);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: ["user-addresses"],
+            });
+        },
+        scope: {
+            id: "updateAddress",
+        },
+    });
+
+/**
+ * 删除用户的收货地址
+ */
+export const useDeleteAddress = () =>
+    useMutation({
+        mutationFn: (addressId: string) => {
+            return apiClient.delete<UserAddresses>(`/address/${addressId}`);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: ["user-addresses"],
+            });
+        },
+        scope: {
+            id: "deleteAddress",
+        },
+    });
+
