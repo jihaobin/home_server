@@ -16,6 +16,7 @@ import {
     AddressQuerySchema,
     ChinaCitySchema,
     CreateUserAddress,
+    GeocodeRequestSchema,
     ReverseGeocodeRequest,
     ReverseGeocodeRequestSchema,
     ReverseGeocodeResponseSchema,
@@ -24,6 +25,12 @@ import {
     SuggestionResponseSchema,
     UpdateUserAddress,
     UpdateUserAddressSchema,
+    ParentInfoSchema,
+    DistrictSearchRequest,
+    DistrictSearchRequestSchema,
+    DistrictSearchResponseSchema,
+    LocationSchema,
+    EcplortPoiSchema,
 } from '@repo/types';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod/v4';
@@ -32,19 +39,21 @@ import {
     ApiSuccessResponse,
     ApiErrorResponses,
 } from 'src/common/decorator';
-import { tencentReverseGeocodeService } from './address.gdMap.api';
+import { tencentReverseGeocodeService } from './address.TencentMap.api';
 import { Request } from 'express';
 import { ApiBodies } from 'src/common/decorator/swagger-api-bodies';
 import { CreateUserAddressSchema } from '@repo/types';
 import { UserAddressesSchema } from '@repo/types';
 import { ZodValidationPipe } from 'src/common/pipes';
 import { AuthGuard } from '../auth/auth.guard';
+import { GeocodeRequest } from '@repo/types';
 
 @ApiTags('地址管理')
 @Controller('address')
 export class AddressController {
     constructor(private readonly addressService: AddressService) {}
 
+    @UsePipes(new ZodValidationPipe(AddressQuerySchema))
     @ApiOperation({
         summary: '获取中国城市数据',
         description:
@@ -77,6 +86,7 @@ export class AddressController {
         return this.addressService.findAll(query);
     }
 
+    @UsePipes(new ZodValidationPipe(ReverseGeocodeRequestSchema))
     @ApiOperation({
         summary: '地址逆解析服务',
         description: '根据经纬度获取详细地址信息',
@@ -93,30 +103,7 @@ export class AddressController {
         );
     }
 
-    @ApiOperation({
-        summary: '简化地址逆解析服务',
-        description: '根据经纬度获取基础地址信息（不包含POI）',
-    })
-    @Get('simple-reverse-geocode')
-    @ApiQueries(ReverseGeocodeRequestSchema)
-    @ApiSuccessResponse(
-        z.object({
-            address: z.string().describe('标准格式化地址'),
-            province: z.string().describe('省份'),
-            city: z.string().describe('城市'),
-            district: z.string().optional().describe('区县'),
-            adcode: z.string().describe('行政区划代码'),
-        }),
-        {
-            description: '成功获取简化地址信息',
-        },
-    )
-    @ApiErrorResponses()
-    async simpleReverseGeocode(@Query() query: ReverseGeocodeRequest) {
-        return await tencentReverseGeocodeService.simpleReverseGeocode(query);
-    }
-
-    @UseGuards(AuthGuard)
+    @UsePipes(new ZodValidationPipe(SuggestionRequestSchema))
     @Get('suggestion')
     @ApiOperation({
         summary: '地址建议服务',
@@ -131,6 +118,49 @@ export class AddressController {
         return await tencentReverseGeocodeService.getSuggestions(query);
     }
 
+    @Get('cityParentInfo')
+    @UsePipes(new ZodValidationPipe(GeocodeRequestSchema))
+    @ApiOperation({
+        summary: '获取城市的上级城市和省份信息',
+        description: '根据城市名称获取其上级城市和省份信息',
+    })
+    @ApiQueries(GeocodeRequestSchema)
+    @ApiSuccessResponse(ParentInfoSchema, {
+        description: '成功获取城市的上级城市和省份信息',
+    })
+    @ApiErrorResponses()
+    async getCityParentInfo(@Query() query: GeocodeRequest) {
+        return await this.addressService.getCityParentInfo(query);
+    }
+
+    @UsePipes(new ZodValidationPipe(DistrictSearchRequestSchema))
+    @Get('districtSearch')
+    @ApiOperation({
+        summary: '搜索城市',
+        description: '根据关键词搜索城市',
+    })
+    @ApiQueries(DistrictSearchRequestSchema)
+    @ApiSuccessResponse(DistrictSearchResponseSchema, {
+        description: '成功获取城市搜索结果',
+    })
+    async districtSearch(@Query() query: DistrictSearchRequest) {
+        return await this.addressService.districtSearch(query.keyword);
+    }
+
+    @Get('explore')
+    @ApiOperation({
+        summary: '探索周边地点',
+        description: '探索周边地点',
+    })
+    @ApiQueries(LocationSchema)
+    @ApiSuccessResponse(EcplortPoiSchema, {
+        description: '成功获取城市搜索结果',
+    })
+    async explore(@Query() query: { lat: number; lng: number }) {
+        return await this.addressService.explore(query);
+    }
+
+    @UseGuards(AuthGuard)
     @UsePipes(new ZodValidationPipe(CreateUserAddressSchema))
     @ApiOperation({
         summary: '创建用户地址',
@@ -152,6 +182,7 @@ export class AddressController {
         });
     }
 
+    @UseGuards(AuthGuard)
     @UsePipes(new ZodValidationPipe(UpdateUserAddressSchema))
     @ApiOperation({
         summary: '更新用户地址',
@@ -161,7 +192,6 @@ export class AddressController {
     @ApiSuccessResponse(UserAddressesSchema, {
         description: '成功更新用户地址',
     })
-    @ApiErrorResponses()
     @Post('update')
     async updateUserAddress(
         @Body() body: UpdateUserAddress,
@@ -173,17 +203,18 @@ export class AddressController {
         });
     }
 
+    @UseGuards(AuthGuard)
     @ApiOperation({
         summary: '删除用户地址',
         description: '删除用户地址',
     })
     @ApiParam({ name: 'id', description: '用户地址ID' })
-    @ApiErrorResponses()
     @Delete(':id')
     deleteUserAddress(@Param('id') id: string) {
         return this.addressService.deleteAddress(id);
     }
 
+    @UsePipes(new ZodValidationPipe(UpdateUserAddressSchema))
     @ApiOperation({
         summary: '获取用户地址列表',
         description: '获取当前用户的所有地址(需登录后使用)',

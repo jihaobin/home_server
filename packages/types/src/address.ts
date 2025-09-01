@@ -21,11 +21,13 @@ export type AddressQuery = z.infer<typeof AddressQuerySchema>;
  * 地址逆解析服务
  */
 
-// 位置信息 Schema
+/* 位置信息 Schema */
 export const LocationSchema = z.object({
     lat: z.number().describe('纬度'),
     lng: z.number().describe('经度'),
 });
+
+export type Location = z.infer<typeof LocationSchema>;
 
 // 行政区划信息 Schema
 export const AdInfoSchema = z.object({
@@ -315,3 +317,252 @@ export type SuggestionResponse = z.infer<typeof SuggestionResponseSchema>;
 
 // 子地点信息类型
 export type SubPoi = z.infer<typeof SubPoiSchema>;
+
+/**
+ * 地址解析（地址转坐标）服务
+ */
+
+// 地址解析请求参数 Schema
+export const GeocodeRequestSchema = z.object({
+    address: z.string("请输入城市名称").min(1).describe('要解析获取坐标及相关信息的输入地址，请至少包含城市名称'),
+    policy: z.enum(['0', '1']).optional().describe('解析策略：0[默认]标准，为保证准确，地址中须包含城市；1宽松，允许地址中缺失城市'),
+    output: z.enum(['json', 'jsonp']).optional().describe('返回格式，默认JSON'),
+    callback: z.string().optional().describe('JSONP方式回调函数'),
+});
+
+// 地址解析结果 Schema
+export const GeocodeResultSchema = z.object({
+    location: LocationSchema.describe('解析到的坐标（GCJ02坐标系）'),
+    address_components: z.object({
+        province: z.string().describe('省'),
+        city: z.string().describe('市'),
+        district: z.string().describe('区，可能为空字符串'),
+        street: z.string().describe('街道/道路，可能为空字符串'),
+        street_number: z.string().describe('门牌，可能为空字符串'),
+    }).describe('解析后的地址部件'),
+    ad_info: z.object({
+        adcode: z.string().describe('行政区划代码'),
+    }).describe('行政区划信息'),
+    reliability: z.number().describe('可信度参考：值范围 1 <低可信> - 10 <高可信>'),
+    level: z.number().optional().describe('解析精度级别，分为11个级别，一般>=9即可采用（定位到点，精度较高）'),
+});
+
+/** 地址解析响应结果 Schema */
+export const GeocodeResponseSchema = z.object({
+    status: z.number().describe('状态码，0为正常，其它为异常'),
+    message: z.string().describe('状态说明'),
+    request_id: z.string().describe('本次请求的唯一标识'),
+    result: GeocodeResultSchema.describe('地址解析结果'),
+});
+
+/**
+ * 城市和上级城市和省份信息
+ */
+export const ParentInfoSchema = z.object({
+    province: z.string().describe('省'),
+    city: z.string().describe('市'),
+    district: z.string().describe('区'),
+    location: z.object({
+        lng: z.number().describe('经度'),
+        lat: z.number().describe('纬度'),
+    }).describe('位置信息'),
+});
+
+// 地址解析请求参数类型
+export type GeocodeRequest = z.infer<typeof GeocodeRequestSchema>;
+
+// 地址解析结果类型
+export type GeocodeResult = z.infer<typeof GeocodeResultSchema>;
+
+// 地址解析响应结果类型
+export type GeocodeResponse = z.infer<typeof GeocodeResponseSchema>;
+
+/**
+ * 城市和上级城市和省份信息
+ */
+export type ParentInfo = z.infer<typeof ParentInfoSchema>;
+
+/**
+ * 行政区域搜索服务
+ */
+
+// 行政区域搜索请求参数 Schema
+export const DistrictSearchRequestSchema = z.object({
+    keyword: z.string("请输入搜索关键词").min(1).describe('搜索关键词：1.支持输入一个文本关键词 2.支持多个行政区划代码(adcode)，英文逗号分隔'),
+    get_polygon: z.enum(['0', '1', '2']).optional().describe('返回行政区划轮廓点串，0=默认不返回，1=固定3公里抽稀粒度，2=支持多种抽稀粒度'),
+    max_offset: z.enum(['100', '500', '1000', '3000']).optional().describe('轮廓点串的抽稀精度（仅对get_polygon=2时支持），单位米'),
+    output: z.enum(['json', 'jsonp']).optional().describe('返回格式，默认JSON'),
+    callback: z.string().optional().describe('JSONP方式回调函数'),
+});
+
+// 行政区域数据项 Schema
+export const DistrictDataSchema = z.object({
+    id: z.string().describe('行政区划唯一标识（adcode）'),
+    name: z.string().optional().describe('简称，如"内蒙古"'),
+    fullname: z.string().describe('全称，如"内蒙古自治区"'),
+    location: LocationSchema.describe('经纬度'),
+    pinyin: z.array(z.string()).optional().describe('行政区划拼音，每一下标为一个字的全拼'),
+    level: z.number().describe('行政区划级别，仅行政区划搜索接口返回此字段'),
+    cidx: z.array(z.number()).optional().describe('子级行政区划在下级数组中的下标位置'),
+    polygon: z.array(z.array(z.number())).optional().describe('该行政区划的轮廓经纬度点串，数组每一项为一个多边形'),
+    address: z.string().describe('完整区划信息，仅行政区划搜索接口返回此字段'),
+});
+
+// 行政区域搜索响应结果 Schema
+export const DistrictSearchResponseSchema = z.object({
+    status: z.number().describe('状态码，0为正常，其它为异常'),
+    message: z.string().describe('状态说明'),
+    request_id: z.string().describe('本次请求的唯一标识'),
+    result: z.array(DistrictDataSchema).describe('结果数组，第0项代表一级行政区划，第1项代表二级行政区划，以此类推'),
+});
+
+// 行政区域搜索请求参数类型
+export type DistrictSearchRequest = z.infer<typeof DistrictSearchRequestSchema>;
+
+// 行政区域数据项类型
+export type DistrictData = z.infer<typeof DistrictDataSchema>;
+
+// 行政区域搜索响应结果类型
+export type DistrictSearchResponse = z.infer<typeof DistrictSearchResponseSchema>;
+
+/**
+ * 周边推荐（explore）API相关Schema定义
+ */
+
+// 周边推荐POI行政区划信息 Schema（简化版，基于文档规范）
+export const ExploreAdInfoSchema = z.object({
+    adcode: z.number().describe('行政区划代码'),
+    province: z.string().describe('省'),
+    city: z.string().describe('市，如果当前城市为省直辖县级区划，city与district字段均会返回此城市'),
+    district: z.string().describe('区'),
+});
+
+// 周边推荐POI信息 Schema（基于腾讯地图explore API文档）
+export const ExploreApiPoiSchema = z.object({
+    id: z.string().describe('POI（地点）唯一标识'),
+    title: z.string().describe('POI（地点）名称'),
+    address: z.string().describe('地址'),
+    category: z.string().describe('POI（地点）分类'),
+    location: LocationSchema.describe('坐标'),
+    _distance: z.number().describe('与boundary传入的经纬度的直线距离，单位：米'),
+    ad_info: ExploreAdInfoSchema.describe('行政区划信息'),
+});
+
+/* 在ExploreApiPoiSchema的基础上扩展了临近用户数量字段 */
+export const EcplortPoiSchema = ExploreApiPoiSchema.extend({
+    neighborCount: z.number().describe("临近用户数量")
+})
+
+// 周边推荐边界参数 Schema
+export const ExploreBoundarySchema = z.object({
+    lat: z.number()
+        .min(-90)
+        .max(90)
+        .describe('搜索中心点纬度'),
+    lng: z.number()
+        .min(-180)
+        .max(180)
+        .describe('搜索中心点经度'),
+    radius: z.number()
+        .int()
+        .min(200)
+        .max(1000)
+        .describe('搜索半径，单位：米，取值范围：200到1000'),
+    auto_extend: z.boolean()
+        .optional()
+        .default(true)
+        .describe('当前范围无结果时，是否自动扩大范围，默认true'),
+});
+
+// 周边推荐筛选条件 Schema
+export const ExploreFilterSchema = z.object({
+    categories: z.array(z.string())
+        .max(5)
+        .optional()
+        .describe('指定分类筛选，分类词数量建议不超过5个'),
+});
+
+// 周边推荐请求参数 Schema
+export const ExploreRequestSchema = z.object({
+    boundary: ExploreBoundarySchema
+        .describe('搜索边界参数'),
+    filter: ExploreFilterSchema
+        .optional()
+        .describe('筛选条件'),
+    policy: z.enum(['1', '2'])
+        .optional()
+        .default('1')
+        .describe('搜索策略：1[默认]地点签到场景，2位置共享场景'),
+    orderby: z.literal('_distance')
+        .optional()
+        .describe('排序，支持按距离由近到远排序，固定值_distance'),
+    location_mode: z.enum(['0', '1'])
+        .optional()
+        .default('0')
+        .describe('返回的POI坐标模式：0[默认]返回搜索中心点坐标，1返回POI标注位置坐标'),
+    address_format: z.enum(['short'])
+        .optional()
+        .describe('地址格式，short=返回不包含省市区的短地址'),
+    page_size: z.number()
+        .int()
+        .min(1)
+        .max(20)
+        .optional()
+        .default(10)
+        .describe('每页条目数，最大限制为20条，默认为10条'),
+    page_index: z.number()
+        .int()
+        .min(1)
+        .optional()
+        .default(1)
+        .describe('第x页，默认第1页'),
+    output: z.enum(['json', 'jsonp'])
+        .optional()
+        .default('json')
+        .describe('返回格式，支持JSON/JSONP，默认JSON'),
+    callback: z.string()
+        .optional()
+        .describe('JSONP方式回调函数'),
+});
+
+// 周边推荐响应结果 Schema
+export const ExploreResponseSchema = z.object({
+    status: z.number().describe('状态码，0为正常，其它为异常'),
+    message: z.string().describe('状态说明'),
+    count: z.number().describe('本次搜索结果总数，另外本服务限制最多返回200条数据'),
+    request_id: z.string().describe('本次请求的唯一标识，由系统自动生成'),
+    data: z.array(ExploreApiPoiSchema).describe('搜索结果POI（地点）数组，每项为一个POI（地点）对象'),
+});
+
+/**
+ * 周边推荐边界参数类型
+ */
+export type ExploreBoundary = z.infer<typeof ExploreBoundarySchema>;
+
+/**
+ * 周边推荐筛选条件类型
+ */
+export type ExploreFilter = z.infer<typeof ExploreFilterSchema>;
+
+/** 周边推荐请求参数类型 **/
+export type ExploreRequest = z.infer<typeof ExploreRequestSchema>;
+
+/**
+ * 周边推荐POI信息类型
+ * */
+export type ExplorePoi = z.infer<typeof ExploreApiPoiSchema>;
+
+/**
+ * 扩展周边推荐POI信息类型，增加临近用户数量字段
+ */
+export type EcplortPoi = z.infer<typeof EcplortPoiSchema>;
+
+/**
+ * 周边推荐POI行政区划信息类型
+ * */
+export type ExploreAdInfo = z.infer<typeof ExploreAdInfoSchema>;
+
+/**
+ * 周边推荐响应结果类型
+ */
+export type ExploreResponse = z.infer<typeof ExploreResponseSchema>;
