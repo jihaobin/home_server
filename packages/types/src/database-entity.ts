@@ -1,4 +1,4 @@
-import { z } from 'zod/v4';
+import { optional, z } from 'zod/v4';
 
 
 // ==================== 枚举定义 ====================
@@ -77,6 +77,10 @@ export const UsersSchema = z.object({
     name: z.string().max(50, '姓名长度不能超过50个字符').default('').meta({
         description: '用户的姓名',
         title: '姓名'
+    }),
+    sex: z.boolean().default(true).meta({
+        description: '用户的性别，true-男，false-女',
+        title: '性别'
     }),
     phoneNumber: z.string()
         .max(20, '手机号长度不能超过20个字符')
@@ -495,42 +499,51 @@ export const UserAddressesSchema = z.object({
         description: '用户ID',
         title: '用户ID'
     }),
-    detailedAddress: z.string("detailedAddress 不能为空").max(255, "detailedAddress 不能超过255个字符").meta({
+    detailedAddress: z.string("地址不能为空").max(255, "detailedAddress 不能超过255个字符").meta({
         description: '详细地址',
         title: '详细地址'
     }),
-    homeNumber: z.string("homeNumber 不能为空").max(50, "homeNumber 不能超过50个字符").meta({
+    addressName: z.string().max(100, "地点名称不能超过100个字符").optional().meta({
+        description: '地点名称',
+        title: '地点名称，如xx小区,xx餐馆'
+    }),
+    homeNumber: z.string().max(50, "门牌号不能超过50个字符").optional().meta({
         description: '门牌号',
         title: '门牌号'
     }),
-    geom: z.string().optional().meta({
-        description: '几何点数据',
-        title: '几何点数据'
+    geom: z.array(z.number()).length(2).optional().meta({
+        description: '[经度, 纬度]',
+        title: '[经度, 纬度]'
     }),
-    recipientName: z.string("recipientName 不能为空").max(50, "recipientName 不能超过50个字符").meta({
+    recipientName: z.string("收件人不能为空").max(50, "收件人姓名不能超过50个字符").meta({
         description: '收件人姓名',
         title: '收件人姓名'
     }),
-    recipientPhone: z.string("recipientPhone 不能为空").max(20, "recipientPhone 不能超过20个字符").regex(/^1[3-9]\d{9}$/, '请输入有效的手机号码').meta({
+    sex: z.boolean().default(true).meta({
+        description: '收货人的性别，true-男，false-女',
+        title: '性别'
+    }),
+    recipientPhone: z.string("收件人手机号码不能为空").max(20, "收件人手机号码不能超过20个字符").regex(/^1[3-9]\d{9}$/, '请输入有效的手机号码').meta({
         description: '收件人手机号码',
         title: '收件人手机号码'
     }),
-    isDefault: z.boolean("isDefault 不能为空").default(false).meta({
+    isDefault: z.boolean("是否为默认地址不能为空").default(false).meta({
         description: '是否为默认地址',
         title: '默认地址状态'
     }),
-    province: z.string("province 不能为空").max(100, "province 不能超过100个字符").meta({
+    province: z.string("省份不能为空").max(100, "省份不能超过100个字符").meta({
         description: '省份',
         title: '省份'
     }),
-    district: z.string("district 不能为空").max(100, "district 不能超过100个字符").meta({
+    city: z.string().max(100, "城市不能超过100个字符").optional().meta({
+        description: '市',
+        title: '市'
+    }),
+    district: z.string("district 不能为空").max(100, "区/县不能超过100个字符").optional().meta({
         description: '区/县',
         title: '区/县'
     }),
-    county: z.string("county 不能为空").max(100, "county 不能超过100个字符").meta({
-        description: '乡镇',
-        title: '乡镇'
-    }),
+
 }).meta({
     title: '用户地址表',
     description: '存储用户地址信息的表'

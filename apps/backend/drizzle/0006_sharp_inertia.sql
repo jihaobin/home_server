@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "sex" boolean DEFAULT true NOT NULL;

@@ -1,0 +1,1 @@
+ALTER TABLE "user_addresses" ALTER COLUMN "is_default" SET NOT NULL;

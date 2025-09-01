@@ -1,0 +1,1 @@
+ALTER TABLE "user_addresses" ADD COLUMN "sex" boolean DEFAULT true NOT NULL;

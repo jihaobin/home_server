@@ -24,15 +24,21 @@ export const userAddresses = pgTable(
         userId: varchar('user_id', { length: 255 })
             .notNull()
             .references(() => users.id, { onDelete: 'cascade' }), // 关联的用户 ID
-        detailedAddress: varchar('address_line1', { length: 255 }).notNull(), // 详细地址
-        homeNumber: varchar('home_number', { length: 50 }).notNull(), // 门牌号
+        detailedAddress: varchar('detailed_ddress', { length: 255 }).notNull(), // 详细地址
+        addressName: varchar('address_name', { length: 100 }), // 地点的招牌，如xx小区,xx餐馆
+        homeNumber: varchar('home_number', { length: 50 }), // 门牌号
         province: varchar('province', { length: 100 }).notNull(), // 省份
-        district: varchar('district', { length: 100 }).notNull(), // 市区
-        county: varchar('county', { length: 100 }).notNull(), // 区县
-        geom: geometry('geom', { type: 'point' }), // 地址地理位置（PostGIS Point 类型）
+        city: varchar('city', { length: 100 }), // 市区
+        district: varchar('district', { length: 100 }), // 区县
+        geom: geometry('geom', {
+            type: 'point',
+            mode: 'tuple',
+            srid: 4326,
+        }).notNull(), // 地址地理位置（PostGIS Point 类型）
         recipientName: varchar('recipient_name', { length: 50 }).notNull(), // 收货人姓名
+        sex: boolean('sex').default(true).notNull(), // 收货人性别 true-男，false-女
         recipientPhone: varchar('recipient_phone', { length: 20 }).notNull(), // 收货人电话
-        isDefault: boolean('is_default').default(false), // 是否为默认地址
+        isDefault: boolean('is_default').default(false).notNull(), // 是否为默认地址
     },
     (table) => [
         // 地理位置空间索引 - 用于附近地址查询
@@ -47,14 +53,14 @@ export const userAddresses = pgTable(
         // 省份索引 - 用于按省份筛选地址
         index('idx_user_addresses_province').on(table.province),
         // 市区索引 - 用于按市区筛选地址
-        index('idx_user_addresses_district').on(table.district),
+        index('idx_user_addresses_city').on(table.city),
         // 区县索引 - 用于按区县筛选地址
-        index('idx_user_addresses_county').on(table.county),
+        index('idx_user_addresses_district').on(table.district),
         // 省市区组合索引 - 用于按地理位置层级查询
         index('idx_user_addresses_geo_hierarchy').on(
             table.province,
             table.district,
-            table.county,
+            table.city,
         ),
     ],
 );

@@ -35,6 +35,7 @@ export const users = pgTable(
             .$defaultFn(() => false)
             .notNull(),
         name: varchar('name', { length: 50 }).default(''),
+        sex: boolean('sex').default(true).notNull(), // true-男，false-女
         phoneNumber: varchar('phone_number', { length: 20 }).unique(), // 手机号码
         role: roleEnum('role').default('customer'),
         isActive: boolean('is_active').default(true), // 账户是否激活
