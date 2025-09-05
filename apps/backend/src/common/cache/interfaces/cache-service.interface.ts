@@ -290,6 +290,7 @@ export interface IRedisSortedSetOperations {
 /**
  * Redis分布式锁操作接口
  * 定义了基于Redis实现的分布式锁操作
+ * 支持可重入性、自动续期和详细的错误信息
  */
 export interface IRedisLockOperations {
     /**
@@ -299,6 +300,7 @@ export interface IRedisLockOperations {
      * @param retryTimes 重试次数
      * @param retryDelay 重试延迟（毫秒）
      * @returns 锁标识符（用于解锁）或null（如果无法获取锁）
+     * @throws Error 含有详细失败原因的错误信息
      */
     acquireLock(
         lockName: string,
@@ -312,8 +314,29 @@ export interface IRedisLockOperations {
      * @param lockName 锁名称
      * @param lockId 锁标识符
      * @returns 是否成功释放锁
+     * @throws Error 含有详细失败原因的错误信息
      */
     releaseLock(lockName: string, lockId: string): Promise<boolean>;
+
+    /**
+     * 手动续期锁
+     * @param lockName 锁名称
+     * @param lockId 锁标识符
+     * @param ttl 新的过期时间（秒）
+     * @returns 是否成功续期
+     */
+    renewLock(lockName: string, lockId: string, ttl: number): Promise<boolean>;
+
+    /**
+     * 查询锁状态
+     * @param lockName 锁名称
+     * @returns 锁状态信息
+     */
+    getLockInfo(lockName: string): Promise<{
+        exists: boolean;
+        holder?: string;
+        ttl?: number;
+    }>;
 }
 
 /**

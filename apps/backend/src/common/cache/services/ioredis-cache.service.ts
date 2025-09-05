@@ -516,6 +516,9 @@ export class IoRedisCacheService implements IAdvancedCacheService {
 
     // IRedisLockOperations 实现 =================================================================
 
+    // 存储锁的自动续期定时器
+    private readonly lockRenewalTimers = new Map<string, NodeJS.Timeout>();
+
     async acquireLock(
         lockName: string,
         ttl: number,
@@ -523,69 +526,395 @@ export class IoRedisCacheService implements IAdvancedCacheService {
         retryDelay = 200,
     ): Promise<string | null> {
         const lockId = randomUUID();
+        const instanceId = process.pid.toString(); // 使用进程ID作为实例标识
+        const lockValue = `${instanceId}:${lockId}`;
         let acquired = false;
         let retries = 0;
 
-        // 尝试使用Lua脚本原子性地设置锁
-        const setLockScript = `
-      return redis.call('SET', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[2])
-    `;
+        // 使用Lua脚本实现原子性的锁获取和重入支持
+        const acquireLockScript = `
+            local lockKey = KEYS[1]
+            local lockValue = ARGV[1]
+            local ttl = tonumber(ARGV[2])
+            local instanceId = ARGV[3]
+
+            -- 检查锁是否存在
+            local lockInfo = redis.call('HMGET', lockKey, 'holder', 'count')
+            local currentHolder = lockInfo[1]
+            local currentCount = tonumber(lockInfo[2]) or 0
+
+            if currentHolder then
+                -- 锁已存在，检查是否为重入
+                if string.find(currentHolder, instanceId) then
+                    -- 重入锁：增加计数并更新TTL
+                    redis.call('HMSET', lockKey, 'holder', lockValue, 'count', currentCount + 1)
+                    redis.call('EXPIRE', lockKey, ttl)
+                    return {status = 'REENTRANT', count = currentCount + 1}
+                else
+                    -- 锁被其他实例持有
+                    local remainingTtl = redis.call('TTL', lockKey)
+                    return {status = 'LOCKED', holder = currentHolder, ttl = remainingTtl}
+                end
+            else
+                -- 锁不存在，尝试获取
+                redis.call('HMSET', lockKey, 'holder', lockValue, 'count', 1)
+                redis.call('EXPIRE', lockKey, ttl)
+                return {status = 'ACQUIRED', count = 1}
+            end
+        `;
 
         try {
             // 第一次尝试获取锁
+            let result = (await this.client.eval(
+                acquireLockScript,
+                1,
+                lockName,
+                lockValue,
+                ttl,
+                instanceId,
+            )) as {
+                status: string;
+                count?: number;
+                holder?: string;
+                ttl?: number;
+            };
+
             acquired =
-                (await this.client.eval(
-                    setLockScript,
-                    1,
-                    lockName,
-                    lockId,
-                    ttl,
-                )) === 'OK';
+                result.status === 'ACQUIRED' || result.status === 'REENTRANT';
 
             // 如果第一次没获取到锁且需要重试
             while (!acquired && retries < retryTimes) {
                 // 等待一段时间再尝试
                 await new Promise((resolve) => setTimeout(resolve, retryDelay));
+
+                result = (await this.client.eval(
+                    acquireLockScript,
+                    1,
+                    lockName,
+                    lockValue,
+                    ttl,
+                    instanceId,
+                )) as {
+                    status: string;
+                    count?: number;
+                    holder?: string;
+                    ttl?: number;
+                };
+
                 acquired =
-                    (await this.client.eval(
-                        setLockScript,
-                        1,
-                        lockName,
-                        lockId,
-                        ttl,
-                    )) === 'OK';
+                    result.status === 'ACQUIRED' ||
+                    result.status === 'REENTRANT';
                 retries++;
             }
 
-            return acquired ? lockId : null;
+            if (acquired) {
+                // 启动自动续期机制（只在首次获取时启动）
+                if (result.status === 'ACQUIRED') {
+                    this.startLockRenewal(lockName, lockValue, ttl);
+                }
+
+                this.logger.log(
+                    `分布式锁获取成功: ${lockName}, lockId: ${lockId}, 类型: ${result.status}, 重入次数: ${result.count}`,
+                );
+                return lockId;
+            } else {
+                // 分析失败原因
+                const errorMessage = result.holder
+                    ? `锁已被持有，当前持有者: ${result.holder}，剩余时间: ${result.ttl || 'unknown'}秒`
+                    : `获取锁失败，重试${retryTimes}次后仍无法获取`;
+
+                this.logger.warn(
+                    `获取分布式锁失败: ${lockName} - ${errorMessage}`,
+                );
+                throw new Error(errorMessage);
+            }
         } catch (error) {
             this.logger.error(`获取分布式锁失败: ${lockName}`, error);
-            return null;
+            if (error instanceof Error) {
+                throw error; // 保留原始错误信息
+            }
+            throw new Error(`获取分布式锁失败: ${String(error)}`);
         }
     }
 
     async releaseLock(lockName: string, lockId: string): Promise<boolean> {
-        // 使用Lua脚本，确保释放的是自己的锁
+        const instanceId = process.pid.toString();
+        const lockValue = `${instanceId}:${lockId}`;
+
+        // 使用Lua脚本实现原子性的锁释放和重入支持
         const releaseLockScript = `
-      if redis.call('GET', KEYS[1]) == ARGV[1] then
-        return redis.call('DEL', KEYS[1])
-      else
-        return 0
-      end
-    `;
+            local lockKey = KEYS[1]
+            local expectedValue = ARGV[1]
+            local instanceId = ARGV[2]
+
+            -- 获取锁信息
+            local lockInfo = redis.call('HMGET', lockKey, 'holder', 'count')
+            local currentHolder = lockInfo[1]
+            local currentCount = tonumber(lockInfo[2]) or 0
+
+            if not currentHolder then
+                return {status = 'NOT_EXISTS'}
+            end
+
+            -- 检查锁持有者
+            if currentHolder ~= expectedValue then
+                return {status = 'WRONG_HOLDER', current = currentHolder}
+            end
+
+            -- 检查重入计数
+            if currentCount > 1 then
+                -- 减少重入计数，但不释放锁
+                redis.call('HSET', lockKey, 'count', currentCount - 1)
+                return {status = 'REENTRANT_DECREASED', count = currentCount - 1}
+            else
+                -- 释放锁
+                redis.call('DEL', lockKey)
+                return {status = 'RELEASED'}
+            end
+        `;
 
         try {
-            return (
-                (await this.client.eval(
-                    releaseLockScript,
-                    1,
-                    lockName,
-                    lockId,
-                )) === 1
-            );
+            const result = (await this.client.eval(
+                releaseLockScript,
+                1,
+                lockName,
+                lockValue,
+                instanceId,
+            )) as { status: string; count?: number; current?: string };
+
+            switch (result.status) {
+                case 'RELEASED': {
+                    // 停止自动续期
+                    this.stopLockRenewal(lockName);
+                    this.logger.log(`分布式锁释放成功: ${lockName}`);
+                    return true;
+                }
+
+                case 'REENTRANT_DECREASED': {
+                    this.logger.log(
+                        `减少重入计数: ${lockName}, 剩余重入次数: ${result.count}`,
+                    );
+                    return true;
+                }
+
+                case 'NOT_EXISTS': {
+                    const notExistsMessage = '锁不存在或已过期';
+                    this.logger.warn(
+                        `释放分布式锁失败: ${lockName} - ${notExistsMessage}`,
+                    );
+                    throw new Error(notExistsMessage);
+                }
+
+                case 'WRONG_HOLDER': {
+                    const wrongHolderMessage = `锁持有者不匹配，当前持有者: ${result.current}`;
+                    this.logger.warn(
+                        `释放分布式锁失败: ${lockName} - ${wrongHolderMessage}`,
+                    );
+                    throw new Error(wrongHolderMessage);
+                }
+
+                default: {
+                    this.logger.warn(
+                        `释放分布式锁失败: ${lockName} - 未知结果: ${result.status}`,
+                    );
+                    return false;
+                }
+            }
         } catch (error) {
             this.logger.error(`释放分布式锁失败: ${lockName}`, error);
+            if (error instanceof Error) {
+                throw error; // 保留原始错误信息
+            }
+            throw new Error(`释放分布式锁失败: ${String(error)}`);
+        }
+    }
+
+    /**
+     * 手动续期锁
+     * @param lockName 锁名称
+     * @param lockId 锁标识符
+     * @param ttl 新的过期时间（秒）
+     * @returns 是否成功续期
+     */
+    async renewLock(
+        lockName: string,
+        lockId: string,
+        ttl: number,
+    ): Promise<boolean> {
+        const instanceId = process.pid.toString();
+        const lockValue = `${instanceId}:${lockId}`;
+
+        const renewScript = `
+            local lockKey = KEYS[1]
+            local expectedValue = ARGV[1]
+            local newTtl = tonumber(ARGV[2])
+
+            -- 检查锁持有者
+            local currentHolder = redis.call('HGET', lockKey, 'holder')
+            if currentHolder == expectedValue then
+                redis.call('EXPIRE', lockKey, newTtl)
+                return 1
+            else
+                return 0
+            end
+        `;
+
+        try {
+            const result = await this.client.eval(
+                renewScript,
+                1,
+                lockName,
+                lockValue,
+                ttl,
+            );
+
+            const success = result === 1;
+            if (success) {
+                this.logger.log(`锁续期成功: ${lockName}, 新TTL: ${ttl}秒`);
+            } else {
+                this.logger.warn(
+                    `锁续期失败: ${lockName} - 锁不存在或持有者不匹配`,
+                );
+            }
+
+            return success;
+        } catch (error) {
+            this.logger.error(`锁续期失败: ${lockName}`, error);
             return false;
+        }
+    }
+
+    /**
+     * 查询锁状态
+     * @param lockName 锁名称
+     * @returns 锁状态信息
+     */
+    async getLockInfo(lockName: string): Promise<{
+        exists: boolean;
+        holder?: string;
+        count?: number;
+        ttl?: number;
+    }> {
+        const infoScript = `
+            local lockKey = KEYS[1]
+
+            local exists = redis.call('EXISTS', lockKey)
+            if exists == 1 then
+                local lockInfo = redis.call('HMGET', lockKey, 'holder', 'count')
+                local ttl = redis.call('TTL', lockKey)
+                return {lockInfo[1], tonumber(lockInfo[2]) or 0, ttl}
+            else
+                return {nil, 0, -1}
+            end
+        `;
+
+        try {
+            const result = (await this.client.eval(
+                infoScript,
+                1,
+                lockName,
+            )) as [string | null, number, number];
+
+            if (result[0]) {
+                return {
+                    exists: true,
+                    holder: result[0],
+                    count: result[1],
+                    ttl: result[2],
+                };
+            } else {
+                return {
+                    exists: false,
+                };
+            }
+        } catch (error) {
+            this.logger.error(`查询锁状态失败: ${lockName}`, error);
+            return {
+                exists: false,
+            };
+        }
+    }
+
+    /**
+     * 启动锁的自动续期机制
+     * @param lockName 锁名称
+     * @param lockValue 锁值
+     * @param ttl 初始TTL
+     */
+    private startLockRenewal(
+        lockName: string,
+        lockValue: string,
+        ttl: number,
+    ): void {
+        // 在TTL的2/3时间后开始续期
+        const renewalInterval = Math.max(1000, (ttl * 1000 * 2) / 3);
+
+        const renewalTimer = setInterval(() => {
+            // 使用非 async 函数避免 Promise 警告
+            this.performLockRenewal(lockName, lockValue, ttl).catch((error) => {
+                this.logger.error(`锁自动续期错误: ${lockName}`, error);
+                this.stopLockRenewal(lockName);
+            });
+        }, renewalInterval);
+
+        this.lockRenewalTimers.set(lockName, renewalTimer);
+        this.logger.debug(
+            `启动锁自动续期: ${lockName}, 间隔: ${renewalInterval}ms`,
+        );
+    }
+
+    /**
+     * 执行锁续期操作
+     * @param lockName 锁名称
+     * @param lockValue 锁值
+     * @param ttl TTL
+     */
+    private async performLockRenewal(
+        lockName: string,
+        lockValue: string,
+        ttl: number,
+    ): Promise<void> {
+        const renewScript = `
+            local lockKey = KEYS[1]
+            local expectedValue = ARGV[1]
+            local newTtl = tonumber(ARGV[2])
+
+            -- 检查锁持有者
+            local currentHolder = redis.call('HGET', lockKey, 'holder')
+            if currentHolder == expectedValue then
+                redis.call('EXPIRE', lockKey, newTtl)
+                return 1
+            else
+                return 0
+            end
+        `;
+
+        const result = await this.client.eval(
+            renewScript,
+            1,
+            lockName,
+            lockValue,
+            ttl,
+        );
+
+        if (result === 1) {
+            this.logger.debug(`锁自动续期成功: ${lockName}`);
+        } else {
+            this.logger.warn(`锁自动续期失败，停止续期: ${lockName}`);
+            this.stopLockRenewal(lockName);
+        }
+    }
+
+    /**
+     * 停止锁的自动续期机制
+     * @param lockName 锁名称
+     */
+    private stopLockRenewal(lockName: string): void {
+        const timer = this.lockRenewalTimers.get(lockName);
+        if (timer) {
+            clearInterval(timer);
+            this.lockRenewalTimers.delete(lockName);
+            this.logger.debug(`停止锁自动续期: ${lockName}`);
         }
     }
 
@@ -718,7 +1047,8 @@ export class IoRedisCacheService implements IAdvancedCacheService {
                 result !== null &&
                 'err' in result
             ) {
-                throw new Error(`Redis操作失败: ${(result as any).err}`);
+                const errorInfo = result as { err: string };
+                throw new Error(`Redis操作失败: ${errorInfo.err}`);
             }
 
             return result as number;
@@ -790,7 +1120,8 @@ export class IoRedisCacheService implements IAdvancedCacheService {
                 result !== null &&
                 'err' in result
             ) {
-                throw new Error(`Redis操作失败: ${(result as any).err}`);
+                const errorInfo = result as { err: string };
+                throw new Error(`Redis操作失败: ${errorInfo.err}`);
             }
 
             return result as number;
