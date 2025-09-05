@@ -38,7 +38,11 @@ export const shops = pgTable(
         province: varchar('province', { length: 100 }), // 省份
         district: varchar('district', { length: 100 }), // 市区
         county: varchar('county', { length: 100 }), // 区县
-        geom: geometry('geom', { type: 'point' }), // 店铺地理位置（PostGIS Point 类型）
+        geom: geometry('geom', {
+            type: 'point',
+            mode: 'tuple',
+            srid: 4326,
+        }), // 店铺地理位置（PostGIS Point 类型）
         createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
     },

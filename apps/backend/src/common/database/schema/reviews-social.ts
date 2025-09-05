@@ -32,7 +32,7 @@ export const reviews = pgTable(
         reviewerId: varchar('reviewer_id', { length: 255 })
             .notNull()
             .references(() => users.id, { onDelete: 'cascade' }), // 评价者（客户）的用户 ID
-        targetId: varchar('target_id', { length: 15 }).notNull(), // 被评价对象 ID (服务人员或店铺)
+        targetId: varchar('target_id', { length: 255 }).notNull(), // 被评价对象 ID (服务人员或店铺)
         targetType: varchar('target_type', { length: 50 }).notNull(), // 被评价对象类型 ('personnel' or 'shop')
         rating: integer('rating').notNull(), // 评分 (1-5星)
         comment: text('comment'), // 评价内容

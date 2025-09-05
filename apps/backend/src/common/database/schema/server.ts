@@ -35,6 +35,11 @@ export const serviceCategories = pgTable(
         isActive: boolean('is_active').default(true),
     },
     (table) => [
+        foreignKey({
+            name: 'fk_sc_parent',
+            columns: [table.parentId],
+            foreignColumns: [table.id],
+        }).onDelete('set null'),
         // 父分类索引 - 用于查询子分类
         index('idx_service_categories_parent')
             .on(table.parentId, table.id)
@@ -54,12 +59,13 @@ export const services = pgTable(
             .primaryKey()
             .$default(() => createId())
             .unique(),
-        categoryId: varchar('category_id', { length: 15 })
+        categoryId: varchar('category_id', { length: 255 })
             .notNull()
             .references(() => serviceCategories.id, { onDelete: 'restrict' }), // 所属分类 ID
         name: varchar('name', { length: 100 }).notNull(), // 服务名称
         description: text('description'), // 服务详细描述
-        basePrice: decimal('base_price', { precision: 10, scale: 2 }).notNull(), // 基础价格
+        basePrice: decimal('base_price', { precision: 18, scale: 2 }).notNull(), // 基础价格
+        currency: varchar('currency', { length: 3 }).default('CNY').notNull(), // 币种代码
         estimatedDurationMinutes: integer('estimated_duration_minutes'), // 预计服务时长（分钟）
         isActive: boolean('is_active').default(true), // 服务是否上架
     },

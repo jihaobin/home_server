@@ -62,20 +62,20 @@ export const coupons = pgTable(
         description: text('description'), // 优惠券描述
         type: couponTypeEnum('type').notNull(), // 优惠券类型
         discountValue: decimal('discount_value', {
-            precision: 10,
+            precision: 18,
             scale: 2,
         }).notNull(), // 折扣值（金额或百分比）
         minOrderAmount: decimal('min_order_amount', {
-            precision: 10,
+            precision: 18,
             scale: 2,
         }).default('0'), // 最低订单金额要求
         maxDiscountAmount: decimal('max_discount_amount', {
-            precision: 10,
+            precision: 18,
             scale: 2,
         }), // 最大折扣金额（用于百分比折扣）
+        currency: varchar('currency', { length: 3 }).default('CNY').notNull(), // 币种代码
         usageLimit: integer('usage_limit').default(1), // 单个用户使用次数限制，null表示无限制
         totalUsageLimit: integer('total_usage_limit'), // 优惠券总使用次数限制，null表示无限制
-        currentUsageCount: integer('current_usage_count').default(0), // 当前已使用次数
         isMultiUse: boolean('is_multi_use').default(false), // 是否可多次使用
         validFrom: timestamp('valid_from', { withTimezone: true }).notNull(), // 有效期开始时间
         validUntil: timestamp('valid_until', { withTimezone: true }).notNull(), // 有效期结束时间
@@ -122,10 +122,10 @@ export const couponCategoryRestrictions = pgTable(
             .primaryKey()
             .$default(() => createId())
             .unique(),
-        couponId: varchar('coupon_id', { length: 15 })
+        couponId: varchar('coupon_id', { length: 255 })
             .notNull()
             .references(() => coupons.id, { onDelete: 'cascade' }), // 关联优惠券
-        categoryId: varchar('category_id', { length: 15 })
+        categoryId: varchar('category_id', { length: 255 })
             .notNull()
             .references(() => serviceCategories.id, { onDelete: 'cascade' }), // 关联服务分类
     },
@@ -151,10 +151,10 @@ export const couponServiceRestrictions = pgTable(
             .primaryKey()
             .$default(() => createId())
             .unique(),
-        couponId: varchar('coupon_id', { length: 15 })
+        couponId: varchar('coupon_id', { length: 255 })
             .notNull()
             .references(() => coupons.id, { onDelete: 'cascade' }), // 关联优惠券
-        serviceId: varchar('service_id', { length: 15 })
+        serviceId: varchar('service_id', { length: 255 })
             .notNull()
             .references(() => services.id, { onDelete: 'cascade' }), // 关联具体服务
     },
@@ -180,10 +180,10 @@ export const userCoupons = pgTable(
             .primaryKey()
             .$default(() => createId())
             .unique(), // 用户优惠券关联唯一标识
-        userId: varchar('user_id', { length: 15 })
+        userId: varchar('user_id', { length: 255 })
             .notNull()
             .references(() => users.id, { onDelete: 'cascade' }), // 关联用户
-        couponId: varchar('coupon_id', { length: 15 })
+        couponId: varchar('coupon_id', { length: 255 })
             .notNull()
             .references(() => coupons.id, { onDelete: 'cascade' }), // 关联优惠券
         status: userCouponStatusEnum('status').default('available'), // 用户优惠券状态
@@ -217,24 +217,25 @@ export const couponUsageRecords = pgTable(
             .primaryKey()
             .$default(() => createId())
             .unique(), // 使用记录唯一标识
-        userCouponId: varchar('user_coupon_id', { length: 15 })
+        userCouponId: varchar('user_coupon_id', { length: 255 })
             .notNull()
             .references(() => userCoupons.id, { onDelete: 'cascade' }), // 关联用户优惠券
-        orderId: varchar('order_id', { length: 15 })
+        orderId: varchar('order_id', { length: 255 })
             .notNull()
             .references(() => orders.id, { onDelete: 'cascade' }), // 关联订单
         discountAmount: decimal('discount_amount', {
-            precision: 10,
+            precision: 18,
             scale: 2,
         }).notNull(), // 实际折扣金额
         originalAmount: decimal('original_amount', {
-            precision: 10,
+            precision: 18,
             scale: 2,
         }).notNull(), // 原始订单金额
         finalAmount: decimal('final_amount', {
-            precision: 10,
+            precision: 18,
             scale: 2,
         }).notNull(), // 使用优惠券后的最终金额
+        currency: varchar('currency', { length: 3 }).default('CNY').notNull(), // 币种代码
         usedAt: timestamp('used_at', { withTimezone: true }).defaultNow(), // 使用时间
     },
     (table) => [

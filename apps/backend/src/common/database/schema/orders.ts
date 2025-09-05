@@ -35,25 +35,26 @@ export const orders = pgTable(
         customerId: varchar('customer_id', { length: 255 })
             .notNull()
             .references(() => users.id, { onDelete: 'cascade' }), // 下单客户的用户 ID
-        serviceId: varchar('service_id', { length: 15 })
+        serviceId: varchar('service_id', { length: 255 })
             .notNull()
             .references(() => services.id, { onDelete: 'restrict' }), // 购买的服务项目 ID
-        addressId: varchar('address_id', { length: 15 })
+        addressId: varchar('address_id', { length: 255 })
             .notNull()
             .references(() => userAddresses.id, { onDelete: 'restrict' }), // 服务地址 ID
         status: orderStatusEnum('status').notNull().default('pending_payment'), // 订单当前状态
         originalAmount: decimal('original_amount', {
-            precision: 10,
+            precision: 18,
             scale: 2,
         }).notNull(), // 原始订单金额（使用优惠券前）
         discountAmount: decimal('discount_amount', {
-            precision: 10,
+            precision: 18,
             scale: 2,
         }).default('0'), // 优惠券折扣金额
         totalAmount: decimal('total_amount', {
-            precision: 10,
+            precision: 18,
             scale: 2,
         }).notNull(), // 订单总金额（使用优惠券后）
+        currency: varchar('currency', { length: 3 }).default('CNY').notNull(), // 币种代码
         couponCode: varchar('coupon_code', { length: 50 }), // 使用的优惠券代码
         appointmentTime: timestamp('appointment_time', {
             withTimezone: true,
@@ -99,9 +100,9 @@ export const orderAssignments = pgTable(
             .unique()
             .references(() => orders.id, { onDelete: 'cascade' }), // 关联的订单 ID，一个订单只应有一个最终分配
         servicePersonnelId: varchar('service_personnel_id', {
-            length: 15,
+            length: 255,
         }).references(() => servicePersonnel.userId, { onDelete: 'cascade' }), // 分配的服务人员 ID
-        shopId: varchar('shop_id', { length: 15 }).references(() => shops.id, {
+        shopId: varchar('shop_id', { length: 255 }).references(() => shops.id, {
             onDelete: 'cascade',
         }), // 分配的店铺 ID (如果按店铺分配)
         assignmentType: assignmentTypeEnum('assignment_type').notNull(), // 分配方式
@@ -139,7 +140,8 @@ export const payments = pgTable(
         orderId: varchar('order_id', { length: 255 })
             .notNull()
             .references(() => orders.id, { onDelete: 'cascade' }), // 关联的订单 ID
-        amount: decimal('amount', { precision: 10, scale: 2 }).notNull(), // 支付金额
+        amount: decimal('amount', { precision: 18, scale: 2 }).notNull(), // 支付金额
+        currency: varchar('currency', { length: 3 }).default('CNY').notNull(), // 币种代码
         paymentMethod: paymentMethodEnum('payment_method').notNull(), // 支付方式 (如 'wechat_pay', 'alipay')
         transactionId: varchar('transaction_id', { length: 255 }), // 第三方支付平台的交易号
         status: paymentStatusEnum('status').notNull().default('pending'), // 支付状态
