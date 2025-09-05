@@ -1,0 +1,1 @@
+ALTER TABLE "service_categories" ALTER COLUMN "parent_id" SET DATA TYPE varchar(255);

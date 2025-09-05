@@ -396,6 +396,14 @@ export const ServiceCategoriesSchema = z.object({
         description: '服务分类描述',
         title: '服务分类描述'
     }),
+    dep: z.number().int().min(1).optional().meta({
+        description: '服务分类深度',
+        title: '服务分类深度'
+    }),
+    isActive: z.boolean().default(true).meta({
+        description: '服务分类是否启用',
+        title: '服务分类是否启用'
+    }),
 }).meta({
     title: '服务分类表',
     description: '存储服务分类信息的表'

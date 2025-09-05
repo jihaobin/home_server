@@ -28,16 +28,13 @@ export const serviceCategories = pgTable(
             .primaryKey()
             .$default(() => createId())
             .unique(),
-        parentId: varchar('parent_id', { length: 15 }), // 父分类 ID，用于实现无限级分类
+        parentId: varchar('parent_id', { length: 255 }), // 父分类 ID，用于实现无限级分类
         name: varchar('name', { length: 100 }).notNull(), // 分类名称
+        dep: integer('dep').notNull(), // 分类层级深度
         description: text('description'), // 分类描述
+        isActive: boolean('is_active').default(true),
     },
     (table) => [
-        foreignKey({
-            name: 'fk_sc_parent',
-            columns: [table.parentId],
-            foreignColumns: [table.id],
-        }).onDelete('set null'),
         // 父分类索引 - 用于查询子分类
         index('idx_service_categories_parent')
             .on(table.parentId, table.id)
