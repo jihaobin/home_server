@@ -11,6 +11,7 @@
       "env": {
         "NODE_ENV": "development"
       },
+      "experimentalNetworking": "off",
       "envFile": "${workspaceFolder}/apps/api/.env.development",
       "runtimeExecutable": "dotenvx",
       "runtimeArgs": ["run", "-f", ".env.development", "--"],
