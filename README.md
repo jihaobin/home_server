@@ -1,164 +1,375 @@
-# Home Server Monorepo
+# 家庭服务平台 (Home Server)
 
-家庭服务平台的 monorepo 项目，包含后端 API、移动应用和管理后台。
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8.3-blue)](https://www.typescriptlang.org/)
+[![NestJS](https://img.shields.io/badge/NestJS-10.0.0-red)](https://nestjs.com/)
+[![Next.js](https://img.shields.io/badge/Next.js-14.0.0-black)](https://nextjs.org/)
+[![React Native](https://img.shields.io/badge/React%20Native-Expo-blue)](https://expo.dev/)
+[![Turborepo](https://img.shields.io/badge/Turborepo-2.5.5-orange)](https://turbo.build/)
 
-## Using this example
+基于现代化全栈技术栈构建的家庭服务平台，采用 Turborepo Monorepo 架构，包含后端 API 服务、管理后台、用户移动应用和工作人员移动应用。
 
-Run the following command:
+## 📋 目录
 
-```sh
-npx create-turbo@latest
+- [项目概述](#-项目概述)
+- [技术架构](#️-技术架构)
+- [项目结构](#-项目结构)
+- [环境要求](#-环境要求)
+- [快速开始](#-快速开始)
+- [开发指南](#-开发指南)
+- [部署指南](#-部署指南)
+- [API 文档](#-api-文档)
+- [贡献指南](#-贡献指南)
+
+## 🎯 项目概述
+
+家庭服务平台是一个综合性的服务预约和管理系统，为用户提供便捷的家庭服务预约体验，为工作人员提供高效的工作管理工具，为管理员提供完善的运营管理后台。
+
+### 核心功能
+
+- 🏠 **家庭服务预约**：用户可以浏览服务分类、预约服务、管理订单
+- 👥 **工作人员管理**：工作人员接单、服务执行、收益管理
+- 🎛️ **管理后台**：服务管理、用户管理、订单管理、数据统计
+- 📱 **移动端支持**：iOS/Android 原生体验
+- 🔐 **统一认证**：基于 better-auth 的多端身份认证
+- 🗺️ **地理位置**：基于腾讯地图的位置服务
+
+### 目标用户
+
+- **普通用户**：需要家庭服务的个人和家庭
+- **服务人员**：提供家庭服务的专业工作者
+- **平台管理员**：负责平台运营和管理的工作人员
+
+## 🏗️ 技术架构
+
+### 整体架构
+
+```mermaid
+graph TB
+    subgraph "前端应用"
+        A[管理后台 Next.js]
+        B[用户移动应用 RN]
+        C[工作人员应用 RN]
+    end
+
+    subgraph "后端服务"
+        D[NestJS API 服务]
+        E[身份认证服务]
+    end
+
+    subgraph "数据存储"
+        F[(PostgreSQL + PostGIS)]
+        G[(Redis 缓存)]
+        H[RustFS 对象存储]
+    end
+
+    subgraph "共享库"
+        I["@repo/types"]
+        J["@repo/web-ui"]
+        K["@repo/mobile-ui"]
+        L["@repo/utils"]
+    end
+
+    A --> D
+    B --> D
+    C --> D
+    D --> F
+    D --> G
+    D --> H
+    D --> E
+
+    A --> J
+    B --> K
+    C --> K
+    A -.-> I
+    B -.-> I
+    C -.-> I
+    D -.-> I
 ```
 
-## What's inside?
+### 技术选型
 
-This Turborepo includes the following packages/apps:
+#### 后端技术栈
 
-### Apps and Packages
+- **框架**：NestJS + TypeScript
+- **数据库**：PostgreSQL + PostGIS (地理空间支持)
+- **搜索引擎**：PGroonga (全文搜索)
+- **缓存**：Redis + ioredis
+- **ORM**：Drizzle ORM
+- **认证**：better-auth
+- **API 文档**：Swagger + Scalar
+- **分布式锁**：基于 Redis 的可重入分布式锁
 
-- `backend`: NestJS 后端 API 服务
-- `admin-web`: Next.js 管理后台应用
-- `mobile-user`: React Native Expo 用户移动应用
-- `mobile-worker`: React Native Expo 工作人员移动应用
-- `@repo/web-ui`: 共享的 React 组件库
-- `@repo/types`: 共享的 TypeScript 类型定义
-- `@repo/utils`: 共享的工具函数库
-- `@repo/eslint-config`: ESLint 配置
-- `@repo/typescript-config`: TypeScript 配置
+#### 前端技术栈
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+- **管理后台**：Next.js + App Router + Tailwind CSS
+- **移动应用**：React Native + Expo
+- **状态管理**：React Context + Zustand
+- **UI 组件**：shadcn/ui + NativeWind
+- **地图服务**：腾讯地图 SDK
 
-### Utilities
+#### 开发工具链
 
-This Turborepo has some additional tools already setup for you:
+- **构建工具**：Turborepo
+- **包管理**：pnpm
+- **代码规范**：ESLint + Prettier
+- **类型检查**：TypeScript
+- **容器化**：Docker + Docker Compose
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
+## 📁 项目结构
 
-### Build
+```text
+.
+├── apps/                           # 应用程序目录
+│   ├── backend/                    # NestJS 后端 API 服务
+│   │   ├── src/
+│   │   │   ├── modules/           # 业务模块
+│   │   │   ├── common/           # 通用组件
+│   │   │   ├── lib/              # 核心库
+│   │   │   └── main.ts           # 应用入口
+│   │   ├── drizzle/              # 数据库迁移文件
+│   │   └── auth.ts               # 认证配置
+│   ├── admin-web/                # Next.js 管理后台
+│   │   └── src/
+│   │       ├── app/              # App Router 页面
+│   │       ├── components/       # React 组件
+│   │       └── lib/              # 工具库
+│   ├── mobile-user/              # 用户移动应用 (React Native)
+│   │   ├── app/                  # Expo Router 页面
+│   │   ├── components/           # RN 组件
+│   │   └── hooks/                # 自定义 Hooks
+│   └── mobile-worker/            # 工作人员移动应用
+├── packages/                      # 共享包目录
+│   ├── types/                    # TypeScript 类型定义
+│   ├── web-ui/                   # Web UI 组件库
+│   ├── mobile-ui/                # Mobile UI 组件库
+│   ├── utils/                    # 工具函数库
+│   ├── eslint-config/            # ESLint 配置
+│   └── typescript-config/        # TypeScript 配置
+├── docker-images/                # Docker 镜像定义
+├── env/                         # 环境配置
+└── docker-compose.yaml          # 容器编排配置
+```
 
-To build all apps and packages, run the following command:
+### 应用和包说明
+
+#### 核心应用
+
+- **`backend`**：基于 NestJS 的后端 API 服务，提供 RESTful API
+- **`admin-web`**：基于 Next.js 的管理后台，支持 SSR/SSG
+- **`mobile-user`**：基于 React Native Expo 的用户端移动应用
+- **`mobile-worker`**：基于 React Native Expo 的工作人员端移动应用
+
+#### 共享包
+
+- **`@repo/types`**：全项目共享的 TypeScript 类型定义
+- **`@repo/web-ui`**：基于 shadcn/ui 的 Web 端组件库
+- **`@repo/mobile-ui`**：基于 NativeWind 的移动端组件库
+- **`@repo/utils`**：跨平台工具函数库
+- **`@repo/eslint-config`**：统一的 ESLint 代码规范配置
+- **`@repo/typescript-config`**：统一的 TypeScript 编译配置
+
+## 🔧 环境要求
+
+### 必需环境
+
+- **Node.js**: >=18.0.0
+- **pnpm**: >=9.0.0
+- **Docker**: >=20.0.0 (用于数据库和缓存服务)
+- **Docker Compose**: >=2.0.0
+
+### 可选工具
+
+- **Turbo CLI**: 全局安装可提升构建性能
+- **Expo CLI**: 用于移动应用开发和预览
+
+## 🚀 快速开始
+
+### 1. 克隆项目
 
 ```bash
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build
-yarn dlx turbo build
-pnpm exec turbo build
+git clone <repository-url>
+cd home_server
 ```
 
-You can build a specific package by using a [filter](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters):
-
-```bash
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build --filter=docs
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build --filter=docs
-yarn exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-```
-
-### Develop
-
-To develop all apps and packages, run the following command:
-
-```bash
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev
-yarn exec turbo dev
-pnpm exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters):
-
-```bash
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev --filter=web
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev --filter=web
-yarn exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-```bash
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo login
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo login
-yarn exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-```bash
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo link
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo link2
-yarn exec turbo link
-pnpm exec turbo link
-```
-
-## 快速开始
-
-### 安装依赖
+### 2. 安装依赖
 
 ```bash
 pnpm install
 ```
 
-### 启动开发环境
+### 3. 启动基础服务
+
+```bash
+# 启动 PostgreSQL、Redis 和对象存储服务
+docker-compose up -d
+```
+
+### 4. 配置环境变量
+
+```bash
+# 设置环境变量（参考各应用的 .env.example 文件）
+cp apps/backend/.env.example apps/backend/.env.development
+cp apps/admin-web/.env.example apps/admin-web/.env.development
+```
+
+### 5. 数据库初始化
+
+```bash
+# 运行数据库迁移
+cd apps/backend
+pnpm db:migrate
+```
+
+### 6. 启动开发服务
 
 ```bash
 # 启动所有服务
 pnpm dev
 
 # 或者启动特定服务
-pnpm backend:dev      # 后端 API
-pnpm admin:dev        # 管理后台
+pnpm backend:dev      # 后端 API (http://localhost:5050)
+pnpm admin:dev        # 管理后台 (http://localhost:3000)
 pnpm mobile-user:dev  # 用户移动应用
 pnpm mobile-worker:dev # 工作人员移动应用
 ```
 
-## 故障排除
+## 💻 开发指南
 
-如果在开发过程中遇到问题，请查看 [故障排除指南](./docs/troubleshooting.md)。
+### 构建项目
 
-## Useful Links
+```bash
+# 构建所有应用和包
+turbo build
 
-Learn more about the power of Turborepo:
+# 构建特定应用
+turbo build --filter=backend
+turbo build --filter=admin-web
+```
 
-- [Tasks](https://turborepo.com/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.com/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.com/docs/reference/configuration)
-- [CLI Usage](https://turborepo.com/docs/reference/command-line-reference)
+### 运行测试
+
+```bash
+# 运行所有测试
+turbo test
+
+# 运行特定应用的测试
+turbo test --filter=backend
+```
+
+### 代码规范检查
+
+```bash
+# 运行 ESLint 检查
+turbo lint
+
+# 自动修复代码格式
+turbo lint:fix
+```
+
+### 类型检查
+
+```bash
+# 运行 TypeScript 类型检查
+turbo type-check
+```
+
+## 🚀 部署指南
+
+### 生产环境部署
+
+#### 1. 容器化部署（推荐）
+
+```bash
+# 构建生产镜像
+docker-compose -f docker-compose.prod.yaml build
+
+# 启动生产环境
+docker-compose -f docker-compose.prod.yaml up -d
+```
+
+#### 2. 传统部署
+
+```bash
+# 构建生产版本
+turbo build
+
+# 启动后端服务
+cd apps/backend && pnpm start:prod
+
+# 启动前端服务
+cd apps/admin-web && pnpm start
+```
+
+### 环境配置
+
+生产环境需要配置以下服务：
+
+- **数据库**: PostgreSQL + PostGIS + PGroonga
+- **缓存**: Redis
+- **对象存储**: RustFS 或兼容 S3 的存储服务
+- **反向代理**: Nginx (可选)
+
+## 📚 API 文档
+
+启动后端服务后，可以访问以下地址查看 API 文档：
+
+- **Swagger UI**: <http://localhost:5050/api/docs>
+- **Scalar UI**: <http://localhost:5050/api/scalar>
+
+## 🔍 核心功能模块
+
+### 用户认证与授权
+
+- 多端统一认证（Web + 移动端）
+- 微信登录集成
+- 实名认证功能
+- 基于角色的权限控制
+
+### 服务管理
+
+- 服务分类层级管理
+- 服务项目CRUD
+- 全文搜索支持
+- 地理位置服务
+
+### 订单管理
+
+- 订单状态机设计
+- 支付集成
+- 评价系统
+- 财务对账
+
+### 数据分析
+
+- 业务数据统计
+- 收益分析
+- 用户行为分析
+
+## 🤝 贡献指南
+
+### 开发流程
+
+1. Fork 项目到您的 GitHub 账号
+2. 创建功能分支：`git checkout -b feature/amazing-feature`
+3. 提交更改：`git commit -m 'Add some amazing feature'`
+4. 推送到分支：`git push origin feature/amazing-feature`
+5. 提交 Pull Request
+
+### 代码规范
+
+- 遵循 ESLint 和 Prettier 配置
+- 使用 TypeScript 严格模式
+- 编写单元测试覆盖核心功能
+- 遵循 Git 提交信息规范
+
+### 问题反馈
+
+如果您发现 bug 或有功能建议，请通过 GitHub Issues 提交。
+
+## 🔗 相关链接
+
+- [Turborepo 文档](https://turbo.build/repo/docs)
+- [NestJS 文档](https://docs.nestjs.com/)
+- [Next.js 文档](https://nextjs.org/docs)
+- [React Native 文档](https://reactnative.dev/docs/getting-started)
+- [Expo 文档](https://docs.expo.dev/)
