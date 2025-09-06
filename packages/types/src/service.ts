@@ -9,6 +9,7 @@ export const ServiceCategoryRequestSchema = z.object({
         })
         .optional()
         .describe("分类层级"),
+    keyword: z.string().optional().describe("搜索关键字"),
 });
 
 export type ServiceCategoryRequest = z.infer<

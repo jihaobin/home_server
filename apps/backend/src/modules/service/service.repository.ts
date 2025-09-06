@@ -59,50 +59,61 @@ export class ServiceRepository {
 
     async getServiceCategories(
         dep?: number,
+        keyword?: string,
     ): Promise<ServiceCategoryTree[] | ServiceCategory[]> {
         if (dep) {
             return await this.db
                 .select()
                 .from(serviceCategories)
                 .where(eq(serviceCategories.dep, dep));
-        } else {
-            // 返回树状结构的全部分类数据
-            const categories = await this.db
-                .select()
-                .from(serviceCategories)
-                .where(eq(serviceCategories.isActive, true));
-
-            // 构建树状结构
-            const categoryMap = new Map<string, ServiceCategoryTree>();
-            const rootCategories: ServiceCategoryTree[] = [];
-
-            // 先将所有分类转换为树节点格式
-            categories.forEach((category) => {
-                const treeNode: ServiceCategoryTree = {
-                    ...category,
-                    children: [],
-                };
-                categoryMap.set(category.id, treeNode);
-            });
-
-            // 构建父子关系
-            categories.forEach((category) => {
-                const treeNode = categoryMap.get(category.id)!;
-
-                if (category.parentId) {
-                    // 有父节点，添加到父节点的children中
-                    const parent = categoryMap.get(category.parentId);
-                    if (parent) {
-                        parent.children.push(treeNode);
-                    }
-                } else {
-                    // 没有父节点，是根节点
-                    rootCategories.push(treeNode);
-                }
-            });
-
-            return rootCategories;
         }
+
+        if (keyword) {
+            const s = sql`${serviceCategories.name} &@~ ${keyword}`;
+
+            if (dep) {
+                s.append(sql`AND ${serviceCategories.dep} = ${dep}`);
+            }
+            // 模糊匹配
+            return await this.db.select().from(serviceCategories).where(s);
+        }
+
+        // 返回树状结构的全部分类数据
+        const categories = await this.db
+            .select()
+            .from(serviceCategories)
+            .where(eq(serviceCategories.isActive, true));
+
+        // 构建树状结构
+        const categoryMap = new Map<string, ServiceCategoryTree>();
+        const rootCategories: ServiceCategoryTree[] = [];
+
+        // 先将所有分类转换为树节点格式
+        categories.forEach((category) => {
+            const treeNode: ServiceCategoryTree = {
+                ...category,
+                children: [],
+            };
+            categoryMap.set(category.id, treeNode);
+        });
+
+        // 构建父子关系
+        categories.forEach((category) => {
+            const treeNode = categoryMap.get(category.id)!;
+
+            if (category.parentId) {
+                // 有父节点，添加到父节点的children中
+                const parent = categoryMap.get(category.parentId);
+                if (parent) {
+                    parent.children.push(treeNode);
+                }
+            } else {
+                // 没有父节点，是根节点
+                rootCategories.push(treeNode);
+            }
+        });
+
+        return rootCategories;
     }
 
     async createServiceCategory(

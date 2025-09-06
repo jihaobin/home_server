@@ -7,8 +7,8 @@ export class ServiceService {
     @Inject(ServiceRepository)
     private readonly serviceRepository: ServiceRepository;
 
-    async getServiceCategories(dep?: number) {
-        return await this.serviceRepository.getServiceCategories(dep);
+    async getServiceCategories(dep?: number, keyword?: string) {
+        return await this.serviceRepository.getServiceCategories(dep, keyword);
     }
 
     async createServiceCategory(data: CreateServiceCategory) {

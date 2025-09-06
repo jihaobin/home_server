@@ -47,7 +47,8 @@ export class ServiceController {
     @ApiErrorResponses()
     async getServiceCategories(@Query() query: ServiceCategoryRequest) {
         const dep = query.dep ? +query.dep : 0;
-        return await this.serviceService.getServiceCategories(dep);
+        const keyword = query.keyword ? query.keyword : '';
+        return await this.serviceService.getServiceCategories(dep, keyword);
     }
 
     @Post('categories')
