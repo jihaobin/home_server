@@ -44,11 +44,14 @@ export const serviceCategories = pgTable(
         index('idx_service_categories_parent')
             .on(table.parentId, table.id)
             .where(sql`parent_id IS NOT NULL`),
-        // 分类名称全文搜索索引
-        index('idx_service_categories_name').using(
-            'gin',
-            sql`name gin_trgm_ops`,
-        ),
+        // 分类名称PGroonga全文搜索索引 - 仅为激活的分类建立索引
+        index('idx_service_categories_name_active')
+            .using('pgroonga', table.name)
+            .where(sql`is_active = true`),
+        // 分类描述PGroonga全文搜索索引 - 仅为激活且有描述的分类建立索引
+        index('idx_service_categories_desc_active')
+            .using('pgroonga', table.description)
+            .where(sql`is_active = true AND description IS NOT NULL`),
     ],
 );
 
@@ -78,10 +81,18 @@ export const services = pgTable(
         index('idx_services_price_range')
             .on(table.basePrice, table.isActive)
             .where(sql`is_active = true`),
-        // 服务名称全文搜索索引
-        index('idx_services_name_search')
-            .using('gin', sql`name gin_trgm_ops`)
+        // 服务名称PGroonga全文搜索索引 - 仅为激活的服务建立索引
+        index('idx_services_name_active')
+            .using('pgroonga', table.name)
             .where(sql`is_active = true`),
+        // 服务描述PGroonga全文搜索索引 - 仅为激活且有描述的服务建立索引
+        index('idx_services_desc_active')
+            .using('pgroonga', table.description)
+            .where(sql`is_active = true AND description IS NOT NULL`),
+        // 服务多字段组合搜索索引 - 仅为激活的服务建立索引
+        index('idx_services_search_active')
+            .using('pgroonga', sql`(ARRAY[name, description])`)
+            .where(sql`is_active = true AND description IS NOT NULL`),
         // 服务时长索引 - 用于按时长筛选服务
         index('idx_services_duration')
             .on(table.estimatedDurationMinutes, table.isActive)

@@ -69,6 +69,12 @@ export const orders = pgTable(
             table.status,
             table.createdAt.desc(),
         ),
+        // 订单流水号PGroonga搜索索引 - 支持模糊查询订单号
+        index('idx_orders_serial_search').using('pgroonga', table.orderSerial),
+        // 优惠券代码PGroonga搜索索引 - 仅为使用了优惠券的订单建立索引
+        index('idx_orders_coupon_search')
+            .using('pgroonga', table.couponCode)
+            .where(sql`coupon_code IS NOT NULL`),
         // 待分配和进行中订单的预约时间索引
         index('idx_orders_status_appointment')
             .on(table.status, table.appointmentTime)

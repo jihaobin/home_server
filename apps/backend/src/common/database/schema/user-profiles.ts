@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
     pgTable,
     varchar,
@@ -37,6 +37,10 @@ export const userProfiles = pgTable(
     (table) => [
         // 用户id索引
         index('users_email_idx').on(table.userId),
+        // 用户真实姓名PGroonga搜索索引 - 仅为有真实姓名的用户建立索引
+        index('idx_user_profiles_realname_search')
+            .using('pgroonga', table.realName)
+            .where(sql`real_name IS NOT NULL AND real_name != ''`),
         // 用户身份证号索引 - 用于查询用户
         index('idx_user_profiles_user_id').on(table.userId, table.idCardNumber),
         // 用户人脸信息索引

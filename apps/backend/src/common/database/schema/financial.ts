@@ -63,6 +63,10 @@ export const financialTransactions = pgTable(
             table.userId,
             table.createdAt.desc(),
         ),
+        // 交易描述PGroonga全文搜索索引 - 仅为有描述的交易记录建立索引
+        index('idx_financial_transactions_desc_search')
+            .using('pgroonga', table.description)
+            .where(sql`description IS NOT NULL AND description != ''`),
         // 交易类型时间索引 - 用于统计分析
         index('idx_financial_transactions_type_time').on(
             table.transactionType,

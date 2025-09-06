@@ -50,6 +50,10 @@ export const reviews = pgTable(
             table.rating.desc(),
             table.createdAt.desc(),
         ),
+        // 评价内容PGroonga全文搜索索引 - 仅为有评价内容的记录建立索引
+        index('idx_reviews_comment_search')
+            .using('pgroonga', table.comment)
+            .where(sql`comment IS NOT NULL AND comment != ''`),
 
         // 被评价对象的订单索引
         index('idx_reviews_order_unique').on(table.orderId),

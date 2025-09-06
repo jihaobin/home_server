@@ -51,6 +51,19 @@ export const shops = pgTable(
         index('idx_shops_location')
             .using('gist', table.geom)
             .where(sql`geom IS NOT NULL`),
+        // 店铺名称PGroonga全文搜索索引
+        index('idx_shops_name_search').using('pgroonga', table.name),
+        // 店铺描述PGroonga全文搜索索引 - 仅为有描述的店铺建立索引
+        index('idx_shops_desc_search')
+            .using('pgroonga', table.description)
+            .where(sql`description IS NOT NULL`),
+        // 店铺多字段组合搜索索引 - 包含名称、描述和地址信息
+        index('idx_shops_search_combined')
+            .using(
+                'pgroonga',
+                sql`(ARRAY[${table.name}, ${table.description}, ${table.detailedAddress}])`,
+            )
+            .where(sql`description IS NOT NULL`),
         // 店主创建时间索引 - 用于查询店主的店铺列表
         index('idx_shops_owner_active').on(
             table.ownerId,
@@ -93,6 +106,10 @@ export const servicePersonnel = pgTable(
         index('idx_service_personnel_available')
             .on(table.isAvailable, table.shopId, table.userId)
             .where(sql`is_available = true`),
+        // 服务人员简介PGroonga全文搜索索引 - 仅为可用且有简介的服务人员建立索引
+        index('idx_service_personnel_bio_available')
+            .using('pgroonga', table.bio)
+            .where(sql`is_available = true AND bio IS NOT NULL`),
         // 店铺可用服务人员索引 - 用于查找特定店铺的可用服务人员
         index('idx_service_personnel_shop_available')
             .on(table.shopId, table.isAvailable)
