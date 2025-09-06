@@ -17,7 +17,6 @@ class DistributedLockExample {
                 redisOptions: {
                     host: 'localhost',
                     port: 6379,
-                    retryDelayOnFailover: 100,
                 },
             },
             this.logger,
@@ -193,7 +192,7 @@ class DistributedLockExample {
 
             // 模拟另一个实例尝试获取同一个锁（使用不同的instanceId）
             const originalPid = process.pid;
-            // @ts-ignore - 仅供演示用途
+            // @ts-expect-error - 仅供演示用途
             process.pid = 9999; // 模拟不同的进程ID
 
             try {
@@ -204,7 +203,8 @@ class DistributedLockExample {
             }
 
             // 恢复原有PID
-            // @ts-ignore
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-expect-error
             process.pid = originalPid;
 
             // 尝试用错误的lockId释放锁
