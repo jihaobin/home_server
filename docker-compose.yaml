@@ -1,10 +1,17 @@
 services:
   home_server_postgres_container:
-    image: postgis/postgis:latest
+    # 使用自己构建的包含PostGIS和PGroonga的PostgreSQL镜像
+    build:
+      context: ./docker-images
+      dockerfile: Dockerfile
+    # 或者如果你已经构建好了镜像，可以直接使用镜像名
+    # image: postgres-pgroonga:latest
     ports:
       - "15432:5432"
     volumes:
       - E:\home_server_data\database_data:/var/lib/postgresql/data
+      # 挂载初始化脚本，数据库启动时会自动执行
+      - ./docker-images/init-pgroonga.sql:/docker-entrypoint-initdb.d/init-pgroonga.sql
     environment:
       POSTGRES_DB: home_server
       POSTGRES_USER: root
