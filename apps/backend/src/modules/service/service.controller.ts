@@ -18,6 +18,15 @@ import {
     CreateServiceCategory,
     UpdateServiceCategorySchema,
     UpdateServiceCategory,
+    ServiceListRequest,
+    ServiceListRequestSchema,
+    ServiceListResponseSchema,
+    CreateService,
+    CreateServiceSchema,
+    UpdateService,
+    UpdateServiceSchema,
+    ServiceDetailSchema,
+    ServiceStatsSchema,
 } from '@repo/types';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import {
@@ -153,5 +162,148 @@ export class ServiceController {
     @ApiErrorResponses()
     async getServiceCategoryById(@Param('id') id: string) {
         return await this.serviceService.getServiceCategoryById(id);
+    }
+
+    // ========== 服务项目相关API ==========
+
+    @Get('services')
+    @UsePipes(new ZodValidationPipe(ServiceListRequestSchema))
+    @ApiOperation({
+        summary: '获取服务项目列表',
+        description: '获取服务项目列表，支持分页和筛选',
+    })
+    @ApiQueries(ServiceListRequestSchema)
+    @ApiSuccessResponse(ServiceListResponseSchema, {
+        description: '服务项目列表',
+    })
+    @ApiErrorResponses()
+    async getServices(@Query() query: ServiceListRequest) {
+        return await this.serviceService.getServices(query);
+    }
+
+    @Get('services/stats')
+    @ApiOperation({
+        summary: '获取服务统计信息',
+        description: '获取服务项目相关统计数据',
+    })
+    @ApiSuccessResponse(ServiceStatsSchema, {
+        description: '服务统计信息',
+    })
+    @ApiErrorResponses()
+    async getServiceStats() {
+        return await this.serviceService.getServiceStats();
+    }
+
+    @Get('services/:id')
+    @ApiOperation({
+        summary: '获取指定服务项目',
+        description: '根据ID获取指定的服务项目详情',
+    })
+    @ApiParam({ name: 'id', description: '服务项目ID' })
+    @ApiSuccessResponse(ServiceDetailSchema, {
+        description: '服务项目详情',
+    })
+    @ApiErrorResponses()
+    async getServiceById(@Param('id') id: string) {
+        return await this.serviceService.getServiceById(id);
+    }
+
+    @Post('services')
+    @UsePipes(new ZodValidationPipe(CreateServiceSchema))
+    @ApiOperation({
+        summary: '创建服务项目',
+        description: '创建新的服务项目',
+    })
+    @ApiBodies(CreateServiceSchema)
+    @ApiSuccessResponse(ServiceDetailSchema, {
+        description: '成功创建服务项目',
+    })
+    @ApiErrorResponses()
+    async createService(@Body() body: CreateService) {
+        return await this.serviceService.createService(body);
+    }
+
+    @Put('services/:id')
+    @UsePipes(
+        createMultiZodPipe({
+            params: z.string().max(255).min(1, 'ID不能为空').meta({
+                description: '服务项目ID',
+                title: '服务项目ID',
+            }),
+            body: UpdateServiceSchema.omit({ id: true }),
+        }),
+    )
+    @ApiOperation({
+        summary: '更新服务项目',
+        description: '更新指定的服务项目',
+    })
+    @ApiParam({ name: 'id', description: '服务项目ID' })
+    @ApiBodies(
+        z.object({
+            categoryId: z.string().max(255).optional().meta({
+                description: '服务分类ID',
+                title: '服务分类ID',
+            }),
+            name: z.string().max(100).optional().meta({
+                description: '服务名称',
+                title: '服务名称',
+            }),
+            description: z.string().optional().meta({
+                description: '服务描述',
+                title: '服务描述',
+            }),
+            basePrice: z.number().min(0).optional().meta({
+                description: '基础价格',
+                title: '基础价格',
+            }),
+            currency: z.string().max(3).optional().meta({
+                description: '币种代码',
+                title: '币种代码',
+            }),
+            estimatedDurationMinutes: z.number().int().min(1).optional().meta({
+                description: '预估服务时长（分钟）',
+                title: '预估服务时长（分钟）',
+            }),
+            isActive: z.boolean().optional().meta({
+                description: '是否激活',
+                title: '是否激活',
+            }),
+        }),
+    )
+    @ApiSuccessResponse(ServiceDetailSchema, {
+        description: '成功更新服务项目',
+    })
+    @ApiErrorResponses()
+    async updateService(
+        @Param('id') id: string,
+        @Body() body: Partial<UpdateService>,
+    ) {
+        return await this.serviceService.updateService(id, body);
+    }
+
+    @Delete('services/:id')
+    @ApiOperation({
+        summary: '删除服务项目',
+        description: '删除指定的服务项目',
+    })
+    @ApiParam({ name: 'id', description: '服务项目ID' })
+    @ApiSuccessResponse(
+        z.object({
+            success: z.boolean().meta({
+                description: '是否成功',
+                title: '是否成功',
+            }),
+            message: z.string().meta({
+                description: '操作消息',
+                title: '操作消息',
+            }),
+        }),
+        {
+            description: '成功删除服务项目',
+        },
+    )
+    @ApiErrorResponses()
+    async deleteService(@Param('id') id: string) {
+        return await this.serviceService.deleteService(id);
     }
 }
