@@ -1,5 +1,6 @@
 import z from "zod/v4";
-import { ServiceCategoriesSchema } from "./database-entity";
+import { ServiceCategoriesSchema, ServicesSchema } from "./database-entity";
+import { PaginationQuerySchema, PaginatedDataSchema, PaginationMetaSchema } from "./common";
 
 export const ServiceCategoryRequestSchema = z.object({
     dep: z
@@ -52,3 +53,119 @@ export const serviceCategoriesSchema = ServiceCategoriesSchema.extend({
 }).meta({id: "serviceCategoriesSchema"});
 
 export type ServiceCategory = z.infer<typeof serviceCategoriesSchema>;
+
+// ========== 服务项目相关Schema ==========
+
+// 服务项目列表查询请求Schema（继承通用分页参数）
+export const ServiceListRequestSchema = PaginationQuerySchema.extend({
+    categoryId: z.string().max(255).optional().meta({
+        description: '服务分类ID',
+        title: '服务分类ID'
+    }),
+    keyword: z.string().optional().meta({
+        description: '搜索关键字',
+        title: '搜索关键字'
+    }),
+    minPrice: z.number().min(0).optional().meta({
+        description: '最低价格',
+        title: '最低价格'
+    }),
+    maxPrice: z.number().min(0).optional().meta({
+        description: '最高价格',
+        title: '最高价格'
+    }),
+    isActive: z.boolean().optional().meta({
+        description: '是否激活',
+        title: '是否激活'
+    })
+}).meta({
+    title: '服务项目列表查询请求',
+    description: '获取服务项目列表的查询参数'
+});
+
+export type ServiceListRequest = z.infer<typeof ServiceListRequestSchema>;
+
+// 创建服务项目Schema
+export const CreateServiceSchema = ServicesSchema.omit({ id: true }).meta({
+    title: '创建服务项目',
+    description: '创建服务项目的请求参数'
+});
+
+export type CreateService = z.infer<typeof CreateServiceSchema>;
+
+// 更新服务项目Schema
+export const UpdateServiceSchema = ServicesSchema.partial().required({ id: true }).meta({
+    title: '更新服务项目',
+    description: '更新服务项目的请求参数'
+});
+
+export type UpdateService = z.infer<typeof UpdateServiceSchema>;
+
+// 删除服务项目Schema
+export const DeleteServiceSchema = z.object({
+    id: z.string().max(255).min(1, 'ID不能为空').meta({
+        description: '服务项目ID',
+        title: '服务项目ID'
+    })
+}).meta({
+    title: '删除服务项目',
+    description: '删除服务项目的请求参数'
+});
+
+export type DeleteService = z.infer<typeof DeleteServiceSchema>;
+
+// 服务项目详情Schema（包含分类信息）
+export const ServiceDetailSchema = ServicesSchema.extend({
+    category: ServiceCategoriesSchema.nullable().meta({
+        description: '服务分类信息',
+        title: '服务分类信息'
+    })
+}).meta({
+    title: '服务项目详情',
+    description: '包含分类信息的服务项目详情'
+});
+
+export type ServiceDetail = z.infer<typeof ServiceDetailSchema>;
+
+// 服务项目列表响应Schema（使用通用分页数据结构）
+export const ServiceListResponseSchema = z.object({
+    items: z.array(ServiceDetailSchema)
+        .meta({
+            description: '数据列表',
+            title: '数据列表'
+        }),
+    meta: PaginationMetaSchema.meta({
+        description: '分页元数据',
+        title: '分页元数据'
+    })
+}).meta({
+    title: '服务项目列表响应',
+    description: '分页服务项目列表响应数据'
+});
+
+export type ServiceListResponse = z.infer<typeof ServiceListResponseSchema>;
+
+// 服务项目统计Schema
+export const ServiceStatsSchema = z.object({
+    totalServices: z.number().int().min(0).meta({
+        description: '总服务数量',
+        title: '总服务数量'
+    }),
+    activeServices: z.number().int().min(0).meta({
+        description: '激活服务数量',
+        title: '激活服务数量'
+    }),
+    categoriesCount: z.number().int().min(0).meta({
+        description: '分类数量',
+        title: '分类数量'
+    }),
+    averagePrice: z.number().min(0).meta({
+        description: '平均价格',
+        title: '平均价格'
+    })
+}).meta({
+    title: '服务项目统计',
+    description: '服务项目相关统计数据'
+});
+
+export type ServiceStats = z.infer<typeof ServiceStatsSchema>;

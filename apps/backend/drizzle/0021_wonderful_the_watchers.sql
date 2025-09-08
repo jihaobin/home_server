@@ -1,0 +1,1 @@
+ALTER TABLE "services" ALTER COLUMN "is_active" SET NOT NULL;

@@ -91,13 +91,13 @@ export const UsersSchema = z.object({
         }),
     role: UserRoleEnum.default('customer').meta({
         description: '用户角色',
-        examples:[
+        examples: [
             'customer (客户)',
             'service_personnel (服务人员)',
             'shop_owner (店主)',
             'admin (管理员)',
         ]
-        }),
+    }),
     isActive: z.boolean().default(true).meta({
         title: "该用户是否可用"
     }),
@@ -384,7 +384,7 @@ export const ServiceCategoriesSchema = z.object({
         description: '服务分类ID',
         title: '服务分类ID'
     }),
-    parentId: z.string().max(15).optional().meta({
+    parentId: z.string().max(255).nullable().meta({
         description: '父分类ID，根分类为null',
         title: '父分类ID'
     }),
@@ -392,15 +392,15 @@ export const ServiceCategoriesSchema = z.object({
         description: '服务分类名称',
         title: '服务分类名称'
     }),
-    description: z.string().optional().meta({
+    description: z.string().nullable().meta({
         description: '服务分类描述',
         title: '服务分类描述'
     }),
-    dep: z.number().int().min(1).optional().meta({
+    dep: z.number().int().min(1).meta({
         description: '服务分类深度',
         title: '服务分类深度'
     }),
-    isActive: z.boolean().default(true).meta({
+    isActive: z.boolean().meta({
         description: '服务分类是否启用',
         title: '服务分类是否启用'
     }),
@@ -415,7 +415,7 @@ export const ServicesSchema = z.object({
         description: '服务ID',
         title: '服务ID'
     }),
-    categoryId: z.string().max(15).meta({
+    categoryId: z.string().max(255).meta({
         description: '服务分类ID',
         title: '服务分类ID'
     }),
@@ -423,21 +423,25 @@ export const ServicesSchema = z.object({
         description: '服务名称',
         title: '服务名称'
     }),
-    description: z.string().optional().meta({
+    description: z.string().nullable().meta({
         description: '服务描述',
         title: '服务描述'
     }),
-    basePrice: z.number().meta({
-        description: '服务基础价格',
-        title: '服务基础价格'
-    })
-        .multipleOf(0.01, '价格精度为分')
-        .min(0, '价格不能为负数'),
-    estimatedDurationMinutes: z.number().int().min(1, '预估时长必须大于0分钟').optional().meta({
+    basePrice: z.string()
+        .regex(/^\d+(\.\d{1,2})?$/, '价格格式不正确')
+        .meta({
+            description: '服务基础价格（字符串格式）',
+            title: '服务基础价格'
+        }),
+    currency: z.string().max(3).meta({
+        description: '币种代码',
+        title: '币种代码'
+    }),
+    estimatedDurationMinutes: z.number().int().min(1, '预估时长必须大于0分钟').meta({
         description: '预估服务时长（分钟）',
         title: '预估服务时长（分钟）'
     }),
-    isActive: z.boolean().default(true).meta({
+    isActive: z.boolean().meta({
         description: '服务是否可用',
         title: '服务可用状态'
     }),
@@ -895,10 +899,10 @@ export const PaymentsSchema = z.object({
         description: '支付状态',
         title: '支付状态',
         examples: [
-           'pending (待支付)',
-           'completed (已完成)',
-           'failed (支付失败)',
-           'refunded (已退款)'
+            'pending (待支付)',
+            'completed (已完成)',
+            'failed (支付失败)',
+            'refunded (已退款)'
         ]
     }),
     paidAt: z.date().optional().meta({
@@ -1033,10 +1037,10 @@ export const WithdrawalsSchema = z.object({
         description: '提现状态',
         title: '提现状态',
         examples: [
-           'pending (待处理)',
-           'approved (已批准)',
-           'rejected (已拒绝)',
-           'completed (已完成)'
+            'pending (待处理)',
+            'approved (已批准)',
+            'rejected (已拒绝)',
+            'completed (已完成)'
         ]
     }),
     requestedAt: z.date().default(() => new Date()).meta({

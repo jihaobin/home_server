@@ -148,6 +148,20 @@
       "when": 1757147152241,
       "tag": "0020_numerous_luke_cage",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1757302978073,
+      "tag": "0021_wonderful_the_watchers",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1757313088380,
+      "tag": "0022_slippery_emma_frost",
+      "breakpoints": true
     }
   ]
 }

@@ -32,7 +32,7 @@ export const serviceCategories = pgTable(
         name: varchar('name', { length: 100 }).notNull(), // 分类名称
         dep: integer('dep').notNull(), // 分类层级深度
         description: text('description'), // 分类描述
-        isActive: boolean('is_active').default(true),
+        isActive: boolean('is_active').default(true).notNull(),
     },
     (table) => [
         foreignKey({
@@ -69,8 +69,10 @@ export const services = pgTable(
         description: text('description'), // 服务详细描述
         basePrice: decimal('base_price', { precision: 18, scale: 2 }).notNull(), // 基础价格
         currency: varchar('currency', { length: 3 }).default('CNY').notNull(), // 币种代码
-        estimatedDurationMinutes: integer('estimated_duration_minutes'), // 预计服务时长（分钟）
-        isActive: boolean('is_active').default(true), // 服务是否上架
+        estimatedDurationMinutes: integer(
+            'estimated_duration_minutes',
+        ).notNull(), // 预计服务时长（分钟）
+        isActive: boolean('is_active').default(true).notNull(), // 服务是否上架
     },
     (table) => [
         // 分类活跃服务索引 - 用于按分类查询上架的服务
