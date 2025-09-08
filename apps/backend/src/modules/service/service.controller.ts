@@ -90,30 +90,7 @@ export class ServiceController {
         description: '更新指定的服务分类',
     })
     @ApiParam({ name: 'id', description: '服务分类ID' })
-    @ApiBodies(
-        z.object({
-            name: z.string().max(100).optional().meta({
-                description: '服务分类名称',
-                title: '服务分类名称',
-            }),
-            description: z.string().optional().meta({
-                description: '服务分类描述',
-                title: '服务分类描述',
-            }),
-            parentId: z.string().max(255).optional().meta({
-                description: '父分类ID',
-                title: '父分类ID',
-            }),
-            dep: z.number().int().min(1).max(3).optional().meta({
-                description: '服务分类深度',
-                title: '服务分类深度',
-            }),
-            isActive: z.boolean().optional().meta({
-                description: '服务分类是否启用',
-                title: '服务分类是否启用',
-            }),
-        }),
-    )
+    @ApiBodies(UpdateServiceCategorySchema.omit({ id: true }))
     @ApiSuccessResponse(ServiceCategoriesSchema, {
         description: '成功更新服务分类',
     })
@@ -238,38 +215,7 @@ export class ServiceController {
         description: '更新指定的服务项目',
     })
     @ApiParam({ name: 'id', description: '服务项目ID' })
-    @ApiBodies(
-        z.object({
-            categoryId: z.string().max(255).optional().meta({
-                description: '服务分类ID',
-                title: '服务分类ID',
-            }),
-            name: z.string().max(100).optional().meta({
-                description: '服务名称',
-                title: '服务名称',
-            }),
-            description: z.string().optional().meta({
-                description: '服务描述',
-                title: '服务描述',
-            }),
-            basePrice: z.number().min(0).optional().meta({
-                description: '基础价格',
-                title: '基础价格',
-            }),
-            currency: z.string().max(3).optional().meta({
-                description: '币种代码',
-                title: '币种代码',
-            }),
-            estimatedDurationMinutes: z.number().int().min(1).optional().meta({
-                description: '预估服务时长（分钟）',
-                title: '预估服务时长（分钟）',
-            }),
-            isActive: z.boolean().optional().meta({
-                description: '是否激活',
-                title: '是否激活',
-            }),
-        }),
-    )
+    @ApiBodies(UpdateServiceSchema.omit({ id: true }))
     @ApiSuccessResponse(ServiceDetailSchema, {
         description: '成功更新服务项目',
     })

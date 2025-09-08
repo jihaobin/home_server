@@ -11,23 +11,10 @@ import {
     ServiceListRequest,
     ServiceDetail,
     ServiceStats,
+    ServiceCategoryTree,
+    ServiceCategory,
 } from '@repo/types';
 import { PgColumn } from 'drizzle-orm/pg-core';
-
-// 定义服务分类基础类型
-type ServiceCategory = {
-    id: string;
-    parentId: string | null;
-    name: string;
-    dep: number;
-    description: string | null;
-    isActive: boolean | null;
-};
-
-// 定义树状结构的服务分类类型
-type ServiceCategoryTree = ServiceCategory & {
-    children: ServiceCategoryTree[];
-};
 
 @Injectable()
 export class ServiceRepository {
@@ -35,7 +22,6 @@ export class ServiceRepository {
     private readonly db: DbType;
 
     private async isExist(id: string) {
-        console.log('userId:', id);
         const s = sql`SELECT EXISTS (SELECT 1 FROM ${serviceCategories} WHERE ${serviceCategories.id} = ${id}) AS has_service_category`;
         const result = await this.db.execute<{
             has_service_category: boolean;
