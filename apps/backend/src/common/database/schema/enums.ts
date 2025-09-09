@@ -1,36 +1,17 @@
 import { pgEnum } from 'drizzle-orm/pg-core';
 
 /**
- * 订单状态枚举
+ * 订单状态枚举 - MVP简化版本
  * 对应 SQL: CREATE TYPE order_status AS ENUM (...)
- * 包含完整的业务流程和异常处理状态
+ * 专注核心业务流程，避免过度复杂化
  */
 export const orderStatusEnum = pgEnum('order_status', [
-    // 正常流程
     'pending_payment', // 待支付
-    'pending_assignment', // 待分配/待接单
-    'service_in_progress', // 服务中
-    'service_paused', // 服务暂停
-    'pending_acceptance', // 待验收
-    'pending_review', // 待评价
-    'completed', // 已完成
-
-    // 异常流程 - 取消场景
-    'user_cancelled', // 用户取消
-    'service_cancelled', // 服务方取消
-    'system_cancelled', // 系统取消
-
-    // 异常流程 - 退款相关
-    'refund_requested', // 申请退款
-    'refund_processing', // 退款处理中
-    'refund_approved', // 退款批准
-    'refund_rejected', // 退款拒绝
+    'paid', // 已支付（待分配服务人员）
+    'in_progress', // 服务中
+    'completed', // 已完成（包含已评价和未评价）
+    'cancelled', // 已取消（各种原因的取消统一处理）
     'refunded', // 已退款
-
-    // 异常流程 - 其他
-    'partially_completed', // 部分完成
-    'expired', // 订单过期
-    'force_closed', // 强制关闭
 ]);
 
 /**
@@ -77,7 +58,7 @@ export const notificationTypeEnum = pgEnum('notification_type', [
  */
 export const assignmentTypeEnum = pgEnum('assignment_type', [
     'system_auto', // 系统自动派单
-    'shop_dispatch', // 店铺指派
+    // 'shop_dispatch', // 店铺指派
     'customer_designated', // 用户指定
     'grab', // 服务人员抢单
 ]);
@@ -91,4 +72,12 @@ export const roleEnum = pgEnum('user_role', [
     'shop_admin', // 店铺管理员
     'admin', // 管理员
     'super_admin', // 超级管理员
+]);
+
+/**
+ * 评价目标类型枚举
+ */
+export const reviewTargetTypeEnum = pgEnum('review_target_type', [
+    'personnel', // 服务人员
+    'shop', // 店铺
 ]);

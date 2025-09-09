@@ -11,7 +11,7 @@ import { createId } from '.';
 import { users } from './auth-user';
 import { services } from './server';
 import { userAddresses } from './addresses';
-import { servicePersonnel, shops } from './shops-service';
+import { servicePersonnel } from './shops-service';
 import { couponUsageRecords } from './coupons';
 import {
     orderStatusEnum,
@@ -108,9 +108,10 @@ export const orderAssignments = pgTable(
         servicePersonnelId: varchar('service_personnel_id', {
             length: 255,
         }).references(() => servicePersonnel.userId, { onDelete: 'cascade' }), // 分配的服务人员 ID
-        shopId: varchar('shop_id', { length: 255 }).references(() => shops.id, {
-            onDelete: 'cascade',
-        }), // 分配的店铺 ID (如果按店铺分配)
+        // MVP阶段注释店铺分配字段
+        // shopId: varchar('shop_id', { length: 255 }).references(() => shops.id, {
+        //     onDelete: 'cascade',
+        // }), // 分配的店铺 ID (如果按店铺分配)
         assignmentType: assignmentTypeEnum('assignment_type').notNull(), // 分配方式
         assignedAt: timestamp('assigned_at').defaultNow(), // 分配时间
     },
@@ -121,9 +122,9 @@ export const orderAssignments = pgTable(
             table.assignedAt.desc(),
         ),
         // 店铺分配时间索引 - 用于查询店铺的订单历史
-        index('idx_order_assignments_shop_time')
-            .on(table.shopId, table.assignedAt.desc())
-            .where(sql`shop_id IS NOT NULL`),
+        // index('idx_order_assignments_shop_time')
+        //     .on(table.shopId, table.assignedAt.desc())
+        //     .where(sql`shop_id IS NOT NULL`),
         // 分配类型时间索引 - 用于统计不同分配方式的效果
         index('idx_order_assignments_type_time').on(
             table.assignmentType,
@@ -201,10 +202,11 @@ export const orderAssignmentsRelations = relations(
             fields: [orderAssignments.servicePersonnelId],
             references: [servicePersonnel.userId],
         }),
-        shop: one(shops, {
-            fields: [orderAssignments.shopId],
-            references: [shops.id],
-        }),
+        // MVP阶段注释店铺关系
+        // shop: one(shops, {
+        //     fields: [orderAssignments.shopId],
+        //     references: [shops.id],
+        // }),
     }),
 );
 

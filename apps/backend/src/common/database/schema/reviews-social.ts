@@ -4,6 +4,7 @@ import {
     varchar,
     text,
     integer,
+    boolean,
     timestamp,
     primaryKey,
     check,
@@ -13,10 +14,11 @@ import {
 import { createId } from '.';
 import { users } from './auth-user';
 import { orders } from './orders';
+import { reviewTargetTypeEnum } from './enums';
 
 /**
  * 评价表 (reviews)
- * 存储用户对服务人员或店铺的评价
+ * 存储用户对服务人员，订单或店铺的评价
  */
 export const reviews = pgTable(
     'reviews',
@@ -33,15 +35,34 @@ export const reviews = pgTable(
             .notNull()
             .references(() => users.id, { onDelete: 'cascade' }), // 评价者（客户）的用户 ID
         targetId: varchar('target_id', { length: 255 }).notNull(), // 被评价对象 ID (服务人员或店铺)
-        targetType: varchar('target_type', { length: 50 }).notNull(), // 被评价对象类型 ('personnel' or 'shop')
-        rating: integer('rating').notNull(), // 评分 (1-5星)
+        targetType: reviewTargetTypeEnum('target_type').notNull(), // 被评价对象类型
+        rating: integer('rating').notNull(), // 总体评分 (1-5星)
+        serviceQuality: integer('service_quality'), // 服务质量评分 (1-5星)
+        attitude: integer('attitude'), // 服务态度评分 (1-5星)
+        punctuality: integer('punctuality'), // 时间准时性评分 (1-5星)
         comment: text('comment'), // 评价内容
+        isAnonymous: boolean('is_anonymous').default(false), // 是否匿名评价
+        helpfulCount: integer('helpful_count').default(0), // 有用评价数
+        unhelpfulCount: integer('unhelpful_count').default(0), // 无用评价数
         createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     },
     (table) => [
+        // 评分范围检查
         check(
             'rating_check',
             sql`${table.rating} >= 1 AND ${table.rating} <= 5`,
+        ),
+        check(
+            'service_quality_check',
+            sql`${table.serviceQuality} IS NULL OR (${table.serviceQuality} >= 1 AND ${table.serviceQuality} <= 5)`,
+        ),
+        check(
+            'attitude_check',
+            sql`${table.attitude} IS NULL OR (${table.attitude} >= 1 AND ${table.attitude} <= 5)`,
+        ),
+        check(
+            'punctuality_check',
+            sql`${table.punctuality} IS NULL OR (${table.punctuality} >= 1 AND ${table.punctuality} <= 5)`,
         ),
         // 被评价对象评分索引 - 用于查询对象的评价列表，按评分和时间排序
         index('idx_reviews_target_rating').on(

@@ -11,7 +11,7 @@ import {
 
 import { createId } from '.';
 import { roleEnum } from './enums';
-import { servicePersonnel, shops } from './shops-service';
+import { servicePersonnel } from './shops-service';
 import { userProfiles } from './user-profiles';
 import { userAddresses } from './addresses';
 import { orders } from './orders';
@@ -119,7 +119,8 @@ export const verifications = pgTable('verifications', {
 export const userRelations = relations(users, ({ many, one }) => ({
     accounts: many(accounts),
     sessions: many(sessions),
-    shops: many(shops),
+    // MVP阶段注释店铺关系
+    // shops: many(shops),
     servicePersonnelInfo: one(servicePersonnel, {
         fields: [users.id],
         references: [servicePersonnel.userId],
