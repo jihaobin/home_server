@@ -556,6 +556,10 @@ export const ServicePersonnelSchema = z
             description: "区/县",
             title: "区/县",
         }),
+        geom: z.array(z.number()).length(2).meta({
+            description: "地理位置（PostGIS Point），格式为 [经度, 纬度]",
+            title: "地理位置",
+        }),
         yearsOfExperience: z
             .number()
             .int()
@@ -566,21 +570,13 @@ export const ServicePersonnelSchema = z
                 title: "服务人员工作经验（年）",
             }),
         workStartTime: z
-            .string()
-            .regex(
-                /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/,
-                "请输入有效的时间格式 HH:MM",
-            )
+            .iso.time()
             .meta({
                 description: "服务人员工作开始时间",
                 title: "服务人员工作开始时间",
             }),
         workEndTime: z
-            .string()
-            .regex(
-                /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/,
-                "请输入有效的时间格式 HH:MM",
-            )
+            .iso.time()
             .meta({
                 description: "服务人员工作结束时间",
                 title: "服务人员工作结束时间",
@@ -589,6 +585,30 @@ export const ServicePersonnelSchema = z
             description: "服务人员是否可用",
             title: "服务人员可用状态",
         }),
+        workDays: z
+            .string()
+            .max(7)
+            .regex(/^[1-7]{1,7}$/, "工作日格式不正确，应为1-7的组合，如：1234567")
+            .default('1234567')
+            .meta({
+                description: "工作日设定，1-7代表周一到周日",
+                title: "工作日",
+            }),
+        currentStatus: z
+            .enum(['available', 'busy', 'offline'])
+            .default('available')
+            .meta({
+                description: "当前状态：available(可接单), busy(忙碌), offline(离线)",
+                title: "当前状态",
+            }),
+        lastActiveAt: z
+            .date()
+            .default(() => new Date())
+            .optional()
+            .meta({
+                description: "最后活跃时间",
+                title: "最后活跃时间",
+            }),
     })
     .refine(
         (data) => {

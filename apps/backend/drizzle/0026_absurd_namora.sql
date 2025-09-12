@@ -1,0 +1,1 @@
+ALTER TABLE "service_personnel" ALTER COLUMN "geom" SET NOT NULL;

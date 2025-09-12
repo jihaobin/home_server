@@ -105,34 +105,54 @@ export const servicePersonnel = pgTable(
             type: 'point',
             mode: 'tuple',
             srid: 4326,
-        }), // 地理位置（PostGIS Point 类型）
+        }).notNull(), // 地理位置（PostGIS Point 类型）
         yearsOfExperience: integer('years_of_experience').default(0).notNull(), // 从业年限
         workStartTime: time('work_start_time').notNull(), // 可工作开始时间
         workEndTime: time('work_end_time').notNull(), // 可工作结束时间
         isAvailable: boolean('is_available').default(true).notNull(), // 是否当前可接受派单
+        workDays: varchar('work_days', { length: 7 })
+            .default('1234567')
+            .notNull(), // 工作日，1-7代表周一到周日
+        currentStatus: varchar('current_status', { length: 20 })
+            .default('available')
+            .notNull(), // 当前状态：available, busy, offline
+        lastActiveAt: timestamp('last_active_at', {
+            withTimezone: true,
+        })
+            .defaultNow()
+            .notNull(), // 最后活跃时间
     },
     (table) => [
         // 可用服务人员索引 - 用于快速查找可接单的服务人员
         index('idx_service_personnel_available')
-            // .on(table.isAvailable, table.shopId, table.userId)
-            .on(table.isAvailable, table.userId)
-            .where(sql`is_available = true`),
+            .on(table.isAvailable, table.currentStatus, table.userId)
+            .where(sql`is_available = true AND current_status = 'available'`),
         // 服务人员简介PGroonga全文搜索索引 - 仅为可用且有简介的服务人员建立索引
         index('idx_service_personnel_bio_available')
             .using('pgroonga', table.bio)
             .where(sql`is_available = true AND bio IS NOT NULL`),
-        // 店铺可用服务人员索引 - 用于查找特定店铺的可用服务人员
-        // index('idx_service_personnel_shop_available')
-        //     .on(table.shopId, table.isAvailable)
-        //     .where(sql`shop_id IS NOT NULL`),
-        // 工作时间索引 - 用于根据时间段查找可用服务人员
-        index('idx_service_personnel_work_time')
-            .on(table.workStartTime, table.workEndTime, table.isAvailable)
-            .where(sql`is_available = true`),
-        // 地理位置索引 - 用于地域筛选
-        index('idx_service_personnel_location')
+        // 工作时间和状态索引 - 用于根据时间段和状态查找可用服务人员
+        index('idx_service_personnel_work_schedule')
+            .on(
+                table.workStartTime,
+                table.workEndTime,
+                table.workDays,
+                table.currentStatus,
+                table.isAvailable,
+            )
+            .where(sql`is_available = true AND current_status = 'available'`),
+        // 地理位置和服务半径索引 - 用于地域筛选和半径匹配
+        index('idx_service_personnel_location_radius')
             .on(table.province, table.district, table.county, table.isAvailable)
             .where(sql`is_available = true`),
+        // PostGIS地理位置空间索引 - 用于精确的地理位置查询
+        index('idx_service_personnel_geom')
+            .using('gist', table.geom)
+            .where(sql`geom IS NOT NULL AND is_available = true`),
+        // 最后活跃时间索引 - 用于查找活跃的服务人员
+        index('idx_service_personnel_active')
+            .on(table.lastActiveAt.desc(), table.currentStatus)
+            .where(sql`current_status != 'offline'`),
     ],
 );
 
