@@ -27,7 +27,11 @@ export class WorkSkillRepository {
      * @returns 返回创建或更新后的工作人员信息
      * @throws 参数无效时抛出异常
      */
-    async upsertWorkInfo(info: ServicePersonnel) {
+    async upsertWorkInfo(
+        info: Omit<ServicePersonnel, 'geom'> & {
+            location: { lng: number; lat: number };
+        },
+    ) {
         // 检查用户是否存在于users表中
         if (!(await this.isUserExists(info.userId))) {
             throw new BadRequestException('用户不存在，无法创建服务人员信息');
@@ -36,7 +40,7 @@ export class WorkSkillRepository {
         // 使用 onConflictDoUpdate 实现 upsert 操作
         const result = await this.db
             .insert(servicePersonnel)
-            .values(info)
+            .values({ ...info, geom: [info.location.lng, info.location.lat] })
             .onConflictDoUpdate({
                 target: servicePersonnel.userId,
                 set: {

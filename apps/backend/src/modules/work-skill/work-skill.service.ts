@@ -23,20 +23,14 @@ export class WorkSkillService {
         userId: string,
         workInfo: UpsertWorkInfoRequest,
     ): Promise<ServicePersonnel> {
-        const fullWorkInfo: ServicePersonnel = {
+        const fullWorkInfo = {
             userId,
-            yearsOfExperience: workInfo.yearsOfExperience,
-            workStartTime: workInfo.workStartTime,
-            workEndTime: workInfo.workEndTime,
-            isAvailable: workInfo.isAvailable,
-            // 将null转换为undefined以符合类型定义
-            bio: workInfo.bio ?? undefined,
-            province: workInfo.province ?? undefined,
-            district: workInfo.district ?? undefined,
-            county: workInfo.county ?? undefined,
+            ...workInfo,
         };
 
-        return await this.workSkillRepository.upsertWorkInfo(fullWorkInfo);
+        return (await this.workSkillRepository.upsertWorkInfo(
+            fullWorkInfo,
+        )) as ServicePersonnel;
     }
 
     /**
