@@ -1,40 +1,56 @@
 import { applyDecorators } from '@nestjs/common';
 import type { ApiQueryOptions } from '@nestjs/swagger';
 import { ApiQuery } from '@nestjs/swagger';
-import { z, toJSONSchema } from 'zod/v4';
+import { z } from 'zod/v4';
+import type { SchemaObject } from '@nestjs/swagger/dist/interfaces/open-api-spec.interface';
+
+// 将 JSONSchema 转换为 OpenAPI SchemaObject
+const convertToSchemaObject = (jsonSchema: any): SchemaObject => {
+    const { $schema, ...schemaObject } = jsonSchema;
+    return schemaObject as SchemaObject;
+};
 
 export const ApiQueries = <T extends z.ZodObject<z.ZodRawShape>>(
     zodObject: T,
     options?: Omit<ApiQueryOptions, 'schema'>,
 ) => {
     const optionsList = Object.keys(zodObject.shape).reduce<
-        Array<ApiQueryOptions & { schema: ReturnType<typeof toJSONSchema> }>
+        Array<ApiQueryOptions>
     >((acc, name) => {
         const zodType = zodObject.shape[name] as z.ZodTypeAny;
 
-        // 获取字段的元数据
-        let metadata: Record<string, any> | undefined;
-        try {
-            // 安全地调用 meta() 方法
-            if (typeof zodType.meta === 'function') {
-                metadata = zodType.meta();
-            }
-        } catch {
-            // 如果获取元数据失败，继续执行但不添加元数据
-            metadata = undefined;
-        }
-
         if (zodType) {
+            const jsonSchema = z.toJSONSchema(zodType, {
+                metadata: z.globalRegistry,
+                unrepresentable: 'any',
+                override(ctx) {
+                    const def = ctx.zodSchema._zod.def;
+                    const meta = (
+                        ctx.zodSchema as unknown as z.ZodTypeAny
+                    ).meta();
+                    if (def.type === 'date') {
+                        ctx.jsonSchema.type = 'string';
+                        ctx.jsonSchema.format = 'date-time';
+                    }
+                    ctx.jsonSchema.title = meta?.title;
+                    ctx.jsonSchema.description = meta?.description;
+                    ctx.jsonSchema.examples = meta?.examples as string[];
+                    ctx.jsonSchema.required = Object.keys(
+                        zodObject.shape,
+                    ).reduce<string[]>((acc, key) => {
+                        const field = zodObject.shape[key];
+                        if (!field['~standard']) {
+                            acc.push(key);
+                        }
+                        return acc;
+                    }, []);
+                },
+            });
+
             acc.push({
                 name,
                 required: zodType.isOptional() ? false : true,
-                schema: z.toJSONSchema(zodType) as unknown as ReturnType<
-                    typeof toJSONSchema
-                >,
-                // 如果元数据中有描述信息，可以添加到选项中
-                ...(metadata?.description
-                    ? { description: metadata.description as string }
-                    : {}),
+                schema: convertToSchemaObject(jsonSchema),
                 ...options,
             });
         }
