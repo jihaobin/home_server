@@ -87,6 +87,14 @@ export class ZodValidationPipe implements PipeTransform {
                 } else if (value === '') {
                     // 空字符串转换为 undefined
                     processed[key] = undefined;
+                } else if (this.isNumericString(value)) {
+                    // 尝试转换数字
+                    const numValue = Number(value);
+                    if (!isNaN(numValue) && isFinite(numValue)) {
+                        processed[key] = numValue;
+                    } else {
+                        processed[key] = value;
+                    }
                 } else {
                     processed[key] = value;
                 }
@@ -96,6 +104,19 @@ export class ZodValidationPipe implements PipeTransform {
         }
 
         return processed;
+    }
+
+    /**
+     * 检查字符串是否是有效的数字格式
+     */
+    private isNumericString(str: string): boolean {
+        if (str.trim() === '') {
+            return false;
+        }
+
+        // 匹配整数、浮点数（包括负数）
+        const numericRegex = /^-?\d+(\.\d+)?$/;
+        return numericRegex.test(str.trim());
     }
 }
 
@@ -217,6 +238,14 @@ export class MultiZodValidationPipe implements PipeTransform {
                 } else if (value === '') {
                     // 空字符串转换为 undefined
                     processed[key] = undefined;
+                } else if (this.isNumericString(value)) {
+                    // 尝试转换数字
+                    const numValue = Number(value);
+                    if (!isNaN(numValue) && isFinite(numValue)) {
+                        processed[key] = numValue;
+                    } else {
+                        processed[key] = value;
+                    }
                 } else {
                     processed[key] = value;
                 }
@@ -226,6 +255,19 @@ export class MultiZodValidationPipe implements PipeTransform {
         }
 
         return processed;
+    }
+
+    /**
+     * 检查字符串是否是有效的数字格式
+     */
+    private isNumericString(str: string): boolean {
+        if (str.trim() === '') {
+            return false;
+        }
+
+        // 匹配整数、浮点数（包括负数）
+        const numericRegex = /^-?\d+(\.\d+)?$/;
+        return numericRegex.test(str.trim());
     }
 }
 
