@@ -56,8 +56,11 @@ export class WorkSkillService {
      * @param personnelId 工作人员用户ID
      * @returns 返回工作人员信息及其技能列表，不存在时返回null
      */
-    async getPersonnelInfo(personnelId: string) {
-        return await this.workSkillRepository.getPersonnelInfo(personnelId);
+    async getPersonnelInfo(personnelId: string, serviceId?: string) {
+        return await this.workSkillRepository.getPersonnelInfo(
+            personnelId,
+            serviceId,
+        );
     }
 
     /**

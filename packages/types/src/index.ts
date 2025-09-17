@@ -5,3 +5,4 @@ export * from "./database-entity"
 export * from './userAuthRealName';
 export * from './service';
 export * from "./work-skill";
+export * from './order';

@@ -1527,36 +1527,6 @@ export const CouponUsageRecordsSchema = z
         description: "存储用户优惠券使用记录的表",
     });
 
-// ==================== 创建和更新 Schema ====================
-
-// 创建用户 Schema（排除自动生成字段）
-export const CreateUserSchema = UsersSchema.omit({
-    createdAt: true,
-    updatedAt: true,
-});
-
-// 更新用户 Schema（所有字段可选，排除ID）
-export const UpdateUserSchema = UsersSchema.omit({
-    id: true,
-    createdAt: true,
-}).partial();
-
-// 创建订单 Schema
-export const CreateOrderSchema = OrdersSchema.omit({
-    id: true,
-    orderSerial: true,
-    createdAt: true,
-    updatedAt: true,
-});
-
-// 更新订单 Schema
-export const UpdateOrderSchema = OrdersSchema.omit({
-    id: true,
-    orderSerial: true,
-    customerId: true,
-    createdAt: true,
-}).partial();
-
 // ==================== 导出所有类型 ====================
 
 export type Users = z.infer<typeof UsersSchema>;
@@ -1589,8 +1559,3 @@ export type UserCoupons = z.infer<typeof UserCouponsSchema>;
 export type CouponUsageRecords = z.infer<typeof CouponUsageRecordsSchema>;
 export type ChinaCity = z.infer<typeof ChinaCitySchema>;
 
-// 创建和更新类型
-export type CreateUser = z.infer<typeof CreateUserSchema>;
-export type UpdateUser = z.infer<typeof UpdateUserSchema>;
-export type CreateOrder = z.infer<typeof CreateOrderSchema>;
-export type UpdateOrder = z.infer<typeof UpdateOrderSchema>;

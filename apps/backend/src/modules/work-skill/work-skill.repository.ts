@@ -130,13 +130,13 @@ export class WorkSkillRepository {
      * @returns 返回工作人员信息及其技能列表，不存在时返回null
      * @throws 参数无效时抛出异常
      */
-    async getPersonnelInfo(personnelId: string) {
+    async getPersonnelInfo(personnelId: string, serviceId?: string) {
         // 参数验证
         if (!personnelId || typeof personnelId !== 'string') {
             throw new Error('工作人员ID不能为空');
         }
 
-        return await this.db.query.servicePersonnel.findFirst({
+        const result = await this.db.query.servicePersonnel.findFirst({
             where: (servicePersonnel, { eq }) =>
                 eq(servicePersonnel.userId, personnelId),
             with: {
@@ -144,9 +144,43 @@ export class WorkSkillRepository {
                     with: {
                         service: true, // 包含服务详细信息
                     },
+                    where: (servicePersonnelSkills, { eq, and }) => {
+                        if (serviceId) {
+                            return and(
+                                eq(servicePersonnelSkills.serviceId, serviceId),
+                            );
+                        }
+                    },
                 },
+                pricing: true,
             },
         });
+
+        // 如果没有找到结果，直接返回
+        if (!result) {
+            return null;
+        }
+
+        // 重构数据结构，将定价信息合并到技能信息中
+        const { pricing, skills, ...personnelInfo } = result;
+
+        // 创建定价映射，便于快速查找
+        const pricingMap = new Map(pricing.map((p) => [p.serviceId, p]));
+
+        // 合并技能和定价信息
+        const skillsWithPrice = skills.map((skill) => {
+            const priceInfo = pricingMap.get(skill.serviceId);
+            return {
+                ...skill.service,
+                price: priceInfo,
+            };
+        });
+
+        // 返回新的数据结构
+        return {
+            ...personnelInfo,
+            skills: skillsWithPrice,
+        };
     }
 
     /**

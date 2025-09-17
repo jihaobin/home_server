@@ -22,3 +22,33 @@ export function extractParams(utcTimeStr: Date): {
 
     return { weekday, timeStr };
 }
+
+/**
+ * 判断给定时间是否在指定的时间区间内（支持跨天情况）
+ *
+ * @param userTime 用户时间 (格式: HH:MM:SS)
+ * @param startTime 开始时间 (格式: HH:MM:SS)
+ * @param endTime 结束时间 (格式: HH:MM:SS)
+ * @returns 如果用户时间在区间内返回true，否则返回false
+ */
+
+export function isTimeInRange(
+    userTime: string,
+    startTime: string,
+    endTime: string,
+): boolean {
+    // 将时间字符串转换为数值进行比较 (例如 "09:30:00" => 93000)
+    const userTimeValue = parseInt(userTime.replace(/:/g, ''), 10);
+    const startTimeValue = parseInt(startTime.replace(/:/g, ''), 10);
+    const endTimeValue = parseInt(endTime.replace(/:/g, ''), 10);
+
+    // 普通情况：开始时间 < 结束时间
+    if (startTimeValue <= endTimeValue) {
+        return userTimeValue >= startTimeValue && userTimeValue <= endTimeValue;
+    }
+
+    // 跨天情况：开始时间 > 结束时间
+    // 用户时间 >= 开始时间 (例如 22:00:00 <= 用户时间 <= 23:59:59)
+    // 或者用户时间 <= 结束时间 (例如 00:00:00 <= 用户时间 <= 06:00:00)
+    return userTimeValue >= startTimeValue || userTimeValue <= endTimeValue;
+}
