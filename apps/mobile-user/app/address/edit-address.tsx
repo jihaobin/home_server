@@ -17,7 +17,6 @@ import { useShallow } from "zustand/react/shallow";
 import { useSession } from "@/hooks/useAuth";
 import { UseCreateAddress } from "@/hooks/api/address";
 import { toast } from "sonner-native";
-import { is } from "zod/v4/locales";
 
 // 性别选择组件 - 使用RadioGroup但保持原有按钮样式
 function GenderSelection({

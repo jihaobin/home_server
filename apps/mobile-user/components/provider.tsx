@@ -16,6 +16,7 @@ import { Toaster } from 'sonner-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ErrorBoundary } from 'react-error-boundary';
 import { SessionProvider } from './SessionProvider';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 const onCopy = async (text: string) => {
     try {
@@ -51,42 +52,44 @@ export function Provider({ children }: { children: React.ReactNode }) {
 
     return (
         <GestureHandlerRootView>
-            <QueryErrorResetBoundary>
-                {({ reset }) => (
-                    <ErrorBoundary
-                        fallbackRender={({ error, resetErrorBoundary }) => (
-                            <View className="flex-1 items-center justify-center px-5 bg-white">
-                                <Text className="text-xl font-semibold text-red-500 mb-4 text-center">
-                                    应用遇到了问题
-                                </Text>
-                                <Text className="text-gray-600 mb-4 text-center">
-                                    {error.message || '发生了未知错误，请稍后重试'}
-                                </Text>
-                                <Pressable
-                                    onPress={() => resetErrorBoundary()}
-                                    className="bg-primary px-4 py-2 rounded"
-                                >
-                                    <Text className="text-primary-foreground">重新尝试</Text>
-                                </Pressable>
-                            </View>
-                        )}
-                        onReset={reset}
-                    >
-                        <QueryClientProvider client={queryClient}>
-                            <SessionProvider>
-                                {children}
-                            </SessionProvider>
-                            <DevToolsBubble onCopy={onCopy} queryClient={queryClient} />
-                            <Toaster
-                                position="top-center"
-                                duration={3000}
-                                swipeToDismissDirection="up"
-                                richColors
-                            />
-                        </QueryClientProvider>
-                    </ErrorBoundary>
-                )}
-            </QueryErrorResetBoundary>
+            <SafeAreaProvider>
+                <QueryErrorResetBoundary>
+                    {({ reset }) => (
+                        <ErrorBoundary
+                            fallbackRender={({ error, resetErrorBoundary }) => (
+                                <View className="flex-1 items-center justify-center px-5 bg-white">
+                                    <Text className="text-xl font-semibold text-red-500 mb-4 text-center">
+                                        应用遇到了问题
+                                    </Text>
+                                    <Text className="text-gray-600 mb-4 text-center">
+                                        {error.message || '发生了未知错误，请稍后重试'}
+                                    </Text>
+                                    <Pressable
+                                        onPress={() => resetErrorBoundary()}
+                                        className="bg-primary px-4 py-2 rounded"
+                                    >
+                                        <Text className="text-primary-foreground">重新尝试</Text>
+                                    </Pressable>
+                                </View>
+                            )}
+                            onReset={reset}
+                        >
+                            <QueryClientProvider client={queryClient}>
+                                <SessionProvider>
+                                    {children}
+                                </SessionProvider>
+                                <DevToolsBubble onCopy={onCopy} queryClient={queryClient} />
+                                <Toaster
+                                    position="top-center"
+                                    duration={3000}
+                                    swipeToDismissDirection="up"
+                                    richColors
+                                />
+                            </QueryClientProvider>
+                        </ErrorBoundary>
+                    )}
+                </QueryErrorResetBoundary>
+            </SafeAreaProvider>
         </GestureHandlerRootView>
     );
 }
