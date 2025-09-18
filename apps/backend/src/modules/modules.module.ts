@@ -5,6 +5,7 @@ import { ServiceModule } from './service/service.module';
 import { WorkSkillModule } from './work-skill/work-skill.module';
 import { ServicePersonnelModule } from './service-personnel/service-personnel.module';
 import { OrderModule } from './order/order.module';
+import { PayModule } from './pay/pay.module';
 
 @Module({
     imports: [
@@ -14,6 +15,7 @@ import { OrderModule } from './order/order.module';
         WorkSkillModule,
         ServicePersonnelModule,
         OrderModule,
+        PayModule,
     ],
 })
 export class ModulesModule {}

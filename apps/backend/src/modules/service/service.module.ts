@@ -6,5 +6,6 @@ import { ServiceRepository } from './service.repository';
 @Module({
     controllers: [ServiceController],
     providers: [ServiceService, ServiceRepository],
+    exports: [ServiceService],
 })
 export class ServiceModule {}

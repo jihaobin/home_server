@@ -61,7 +61,6 @@
         "expo-image": "~3.0.8",
         "expo-linking": "~8.0.8",
         "expo-location": "^19.0.7",
-        "expo-native-alipay": "^0.1.1",
         "expo-network": "^8.0.7",
         "expo-qq-location": "^0.1.1",
         "expo-router": "~6.0.6",

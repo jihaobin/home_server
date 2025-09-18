@@ -6,5 +6,6 @@ import { WorkSkillRepository } from './work-skill.repository';
 @Module({
     controllers: [WorkSkillController],
     providers: [WorkSkillService, WorkSkillRepository],
+    exports: [WorkSkillService],
 })
 export class WorkSkillModule {}
