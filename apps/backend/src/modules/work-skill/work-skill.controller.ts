@@ -1,88 +1,85 @@
 import {
-    Body,
-    Controller,
-    Delete,
-    Get,
-    Param,
-    Post,
-    Put,
-    Req,
-    UseGuards,
-    UsePipes,
-} from '@nestjs/common';
-import { WorkSkillService } from './work-skill.service';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+	Body,
+	Controller,
+	Delete,
+	Get,
+	Param,
+	Post,
+	Put,
+	Req,
+	UseGuards,
+	UsePipes,
+} from "@nestjs/common";
+import { ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
 import {
-    UpsertWorkInfoRequest,
-    UpsertWorkInfoRequestSchema,
-    UpdatePersonnelSkillsRequest,
-    UpdatePersonnelSkillsRequestSchema,
-    UpsertPersonnelPricingRequest,
-    UpsertPersonnelPricingRequestSchema,
-    ServicePersonnelSchema,
-    SkillUpdateResultSchema,
-    PersonnelDetailInfoSchema,
-    PersonnelPricingInfoSchema,
-} from '@repo/types';
-import { z } from 'zod/v4';
-import { ApiErrorResponses, ApiSuccessResponse } from 'src/common/decorator';
-import { ApiBodies } from 'src/common/decorator/swagger-api-bodies';
-import { ZodValidationPipe } from 'src/common/pipes';
-import { AuthGuard } from '../auth/auth.guard';
-import { Request } from 'express';
+	PersonnelDetailInfoSchema,
+	PersonnelPricingInfoSchema,
+	ServicePersonnelSchema,
+	SkillUpdateResultSchema,
+	type UpdatePersonnelSkillsRequest,
+	UpdatePersonnelSkillsRequestSchema,
+	type UpsertPersonnelPricingRequest,
+	UpsertPersonnelPricingRequestSchema,
+	type UpsertWorkInfoRequest,
+	UpsertWorkInfoRequestSchema,
+} from "@repo/types";
+import type { Request } from "express";
+import { ApiErrorResponses, ApiSuccessResponse } from "src/common/decorator";
+import { ApiBodies } from "src/common/decorator/swagger-api-bodies";
+import { ZodValidationPipe } from "src/common/pipes";
+import { z } from "zod/v4";
+import { AuthGuard } from "../auth/auth.guard";
+import type { WorkSkillService } from "./work-skill.service";
 
-@ApiTags('工作技能管理')
-@Controller('workSkill')
+@ApiTags("工作技能管理")
+@Controller("workSkill")
 export class WorkSkillController {
-    constructor(private readonly workSkillService: WorkSkillService) {}
+	constructor(private readonly workSkillService: WorkSkillService) {}
 
-    @UseGuards(AuthGuard)
-    @Post('workInfo')
-    @UsePipes(new ZodValidationPipe(UpsertWorkInfoRequestSchema))
-    @ApiOperation({
-        summary: '创建或更新工作人员信息',
-        description:
-            '创建或更新当前用户的工作人员信息，如果工作人员不存在则创建新记录，已存在则更新现有记录',
-    })
-    @ApiBodies(UpsertWorkInfoRequestSchema)
-    @ApiSuccessResponse(ServicePersonnelSchema, {
-        description: '成功创建或更新工作人员信息',
-    })
-    @ApiErrorResponses()
-    async upsertWorkInfo(
-        @Body() workInfo: UpsertWorkInfoRequest,
-        @Req() req: Request,
-    ) {
-        return await this.workSkillService.upsertWorkInfo(
-            req.user.id,
-            workInfo,
-        );
-    }
+	@UseGuards(AuthGuard)
+	@Post("workInfo")
+	@UsePipes(new ZodValidationPipe(UpsertWorkInfoRequestSchema))
+	@ApiOperation({
+		summary: "创建或更新工作人员信息",
+		description:
+			"创建或更新当前用户的工作人员信息，如果工作人员不存在则创建新记录，已存在则更新现有记录",
+	})
+	@ApiBodies(UpsertWorkInfoRequestSchema)
+	@ApiSuccessResponse(ServicePersonnelSchema, {
+		description: "成功创建或更新工作人员信息",
+	})
+	@ApiErrorResponses()
+	async upsertWorkInfo(
+		@Body() workInfo: UpsertWorkInfoRequest,
+		@Req() req: Request,
+	) {
+		return await this.workSkillService.upsertWorkInfo(req.user.id, workInfo);
+	}
 
-    @UseGuards(AuthGuard)
-    @Put('skills')
-    @UsePipes(new ZodValidationPipe(UpdatePersonnelSkillsRequestSchema))
-    @ApiOperation({
-        summary: '更新工作人员技能',
-        description:
-            '更新当前用户的技能列表，支持新增、删除和完整更新。传入空数组将清除所有技能',
-    })
-    @ApiBodies(UpdatePersonnelSkillsRequestSchema)
-    @ApiSuccessResponse(SkillUpdateResultSchema, {
-        description: '成功更新技能，返回操作统计',
-    })
-    @ApiErrorResponses()
-    async updatePersonnelSkills(
-        @Body() skillsData: UpdatePersonnelSkillsRequest,
-        @Req() req: Request,
-    ) {
-        return await this.workSkillService.updatePersonnelSkills(
-            req.user.id,
-            skillsData,
-        );
-    }
+	@UseGuards(AuthGuard)
+	@Put("skills")
+	@UsePipes(new ZodValidationPipe(UpdatePersonnelSkillsRequestSchema))
+	@ApiOperation({
+		summary: "更新工作人员技能",
+		description:
+			"更新当前用户的技能列表，支持新增、删除和完整更新。传入空数组将清除所有技能",
+	})
+	@ApiBodies(UpdatePersonnelSkillsRequestSchema)
+	@ApiSuccessResponse(SkillUpdateResultSchema, {
+		description: "成功更新技能，返回操作统计",
+	})
+	@ApiErrorResponses()
+	async updatePersonnelSkills(
+		@Body() skillsData: UpdatePersonnelSkillsRequest,
+		@Req() req: Request,
+	) {
+		return await this.workSkillService.updatePersonnelSkills(
+			req.user.id,
+			skillsData,
+		);
+	}
 
-    @Get('personnel/:personnelId')
+	@Get('personnel/:personnelId')
     @ApiOperation({
         summary: '获取工作人员信息',
         description: '获取指定工作人员的完整信息，包括基本信息和技能列表',
@@ -105,32 +102,32 @@ export class WorkSkillController {
         return personnel;
     }
 
-    @UseGuards(AuthGuard)
-    @Post('pricing')
-    @UsePipes(new ZodValidationPipe(UpsertPersonnelPricingRequestSchema))
-    @ApiOperation({
-        summary: '设置或更新服务人员定价',
-        description:
-            '设置或更新当前用户对某个服务的个人定价，如果已存在则更新，不存在则创建',
-    })
-    @ApiBodies(UpsertPersonnelPricingRequestSchema)
-    @ApiSuccessResponse(PersonnelPricingInfoSchema, {
-        description: '成功设置或更新定价',
-    })
-    @ApiErrorResponses()
-    async upsertPersonnelPricing(
-        @Body() pricingData: UpsertPersonnelPricingRequest,
-        @Req() req: Request,
-    ) {
-        return await this.workSkillService.upsertPersonnelPricing(
-            req.user.id,
-            pricingData.serviceId,
-            pricingData.price,
-            pricingData.currency,
-        );
-    }
+	@UseGuards(AuthGuard)
+	@Post("pricing")
+	@UsePipes(new ZodValidationPipe(UpsertPersonnelPricingRequestSchema))
+	@ApiOperation({
+		summary: "设置或更新服务人员定价",
+		description:
+			"设置或更新当前用户对某个服务的个人定价，如果已存在则更新，不存在则创建",
+	})
+	@ApiBodies(UpsertPersonnelPricingRequestSchema)
+	@ApiSuccessResponse(PersonnelPricingInfoSchema, {
+		description: "成功设置或更新定价",
+	})
+	@ApiErrorResponses()
+	async upsertPersonnelPricing(
+		@Body() pricingData: UpsertPersonnelPricingRequest,
+		@Req() req: Request,
+	) {
+		return await this.workSkillService.upsertPersonnelPricing(
+			req.user.id,
+			pricingData.serviceId,
+			pricingData.price,
+			pricingData.currency,
+		);
+	}
 
-    @UseGuards(AuthGuard)
+	@UseGuards(AuthGuard)
     @Get('pricing')
     @ApiOperation({
         summary: '获取当前用户的所有定价',
@@ -144,28 +141,28 @@ export class WorkSkillController {
         return await this.workSkillService.getPersonnelPricing(req.user.id);
     }
 
-    @UseGuards(AuthGuard)
-    @Delete('pricing/:serviceId')
-    @ApiOperation({
-        summary: '删除服务人员定价',
-        description: '删除当前用户对某个服务的个人定价',
-    })
-    @ApiParam({
-        name: 'serviceId',
-        description: '服务ID',
-        type: 'string',
-    })
-    @ApiSuccessResponse(z.boolean(), {
-        description: '成功删除定价，返回是否成功',
-    })
-    @ApiErrorResponses()
-    async removePersonnelPricing(
-        @Param('serviceId') serviceId: string,
-        @Req() req: Request,
-    ) {
-        return await this.workSkillService.removePersonnelPricing(
-            req.user.id,
-            serviceId,
-        );
-    }
+	@UseGuards(AuthGuard)
+	@Delete("pricing/:serviceId")
+	@ApiOperation({
+		summary: "删除服务人员定价",
+		description: "删除当前用户对某个服务的个人定价",
+	})
+	@ApiParam({
+		name: "serviceId",
+		description: "服务ID",
+		type: "string",
+	})
+	@ApiSuccessResponse(z.boolean(), {
+		description: "成功删除定价，返回是否成功",
+	})
+	@ApiErrorResponses()
+	async removePersonnelPricing(
+		@Param('serviceId') serviceId: string,
+		@Req() req: Request,
+	) {
+		return await this.workSkillService.removePersonnelPricing(
+			req.user.id,
+			serviceId,
+		);
+	}
 }

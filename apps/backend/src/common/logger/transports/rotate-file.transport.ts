@@ -1,11 +1,11 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from "fs";
+import * as path from "path";
 
-import * as winston from 'winston';
-import DailyRotateFile from 'winston-daily-rotate-file';
+import * as winston from "winston";
+import DailyRotateFile from "winston-daily-rotate-file";
 
-import { LogLevel } from '../logger.constants';
-import { RotateFileTransportOptions } from '../logger.interface';
+import { LogLevel } from "../logger.constants";
+import { RotateFileTransportOptions } from "../logger.interface";
 
 /**
  * 创建轮转文件日志传输器
@@ -13,29 +13,29 @@ import { RotateFileTransportOptions } from '../logger.interface';
  * @returns Winston轮转文件传输器
  */
 export const createRotateFileTransport = (
-    options: RotateFileTransportOptions,
+	options: RotateFileTransportOptions,
 ): winston.transport => {
-    const {
-        filename,
-        level = LogLevel.INFO,
-        maxSize = '20m',
-        datePattern = 'YYYY-MM-DD',
-        maxDays = 14,
-        zippedArchive = true,
-    } = options;
+	const {
+		filename,
+		level = LogLevel.INFO,
+		maxSize = "20m",
+		datePattern = "YYYY-MM-DD",
+		maxDays = 14,
+		zippedArchive = true,
+	} = options;
 
-    // 确保日志目录存在
-    const dirname = path.dirname(filename);
-    if (!fs.existsSync(dirname)) {
-        fs.mkdirSync(dirname, { recursive: true });
-    }
+	// 确保日志目录存在
+	const dirname = path.dirname(filename);
+	if (!fs.existsSync(dirname)) {
+		fs.mkdirSync(dirname, { recursive: true });
+	}
 
-    return new DailyRotateFile({
-        filename,
-        datePattern,
-        level,
-        maxSize,
-        maxFiles: `${maxDays}d`,
-        zippedArchive,
-    });
+	return new DailyRotateFile({
+		filename,
+		datePattern,
+		level,
+		maxSize,
+		maxFiles: `${maxDays}d`,
+		zippedArchive,
+	});
 };

@@ -1,40 +1,25 @@
 {
-  "$schema": "https://turbo.build/schema.json",
-  "extends": ["//"],
-  "tasks": {
-    "build": {
-      "outputs": ["dist/**"],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "!**/*.test.*",
-        "!**/*.spec.*",
-        "!test/**"
-      ],
-      "env": [
-        "DATABASE_URL",
-        "REDIS_URL",
-        "JWT_SECRET"
-      ]
-    },
-    "dev": {
-      "cache": false,
-      "persistent": true
-    },
-    "start": {
-      "dependsOn": ["build"]
-    },
-    "test": {
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "test/**"
-      ]
-    },
-    "test:e2e": {
-      "dependsOn": ["build"],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "test/**"
-      ]
-    }
-  }
+	"$schema": "https://turbo.build/schema.json",
+	"extends": ["//"],
+	"tasks": {
+		"build": {
+			"outputs": ["dist/**"],
+			"inputs": ["$TURBO_DEFAULT$", "!**/*.test.*", "!**/*.spec.*", "!test/**"],
+			"env": ["DATABASE_URL", "REDIS_URL", "JWT_SECRET"]
+		},
+		"dev": {
+			"cache": false,
+			"persistent": true
+		},
+		"start": {
+			"dependsOn": ["build"]
+		},
+		"test": {
+			"inputs": ["$TURBO_DEFAULT$", "test/**"]
+		},
+		"test:e2e": {
+			"dependsOn": ["build"],
+			"inputs": ["$TURBO_DEFAULT$", "test/**"]
+		}
+	}
 }

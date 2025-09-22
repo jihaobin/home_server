@@ -1,7 +1,7 @@
-import { format } from 'winston';
-import type { Logform } from 'winston';
+import { format } from "winston";
+import type { Logform } from "winston";
 
-import { LogFormatterOptions } from '../logger.interface';
+import { LogFormatterOptions } from "../logger.interface";
 
 /**
  * 创建JSON格式的日志格式化器
@@ -9,13 +9,13 @@ import { LogFormatterOptions } from '../logger.interface';
  * @returns Winston格式化器
  */
 export const createJsonFormatter = (
-    options: LogFormatterOptions,
+	options: LogFormatterOptions,
 ): Logform.Format => {
-    const { timestamp = true } = options;
+	const { timestamp = true } = options;
 
-    return format.combine(
-        timestamp ? format.timestamp() : format.simple(),
-        format.errors({ stack: true }),
-        format.json(),
-    );
+	return format.combine(
+		timestamp ? format.timestamp() : format.simple(),
+		format.errors({ stack: true }),
+		format.json(),
+	);
 };

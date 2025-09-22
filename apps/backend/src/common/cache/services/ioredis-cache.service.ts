@@ -155,7 +155,7 @@ export class IoRedisCacheService implements IAdvancedCacheService {
             // 反序列化所有值
             const result: Record<string, unknown> = {};
             for (const field in data) {
-                if (Object.prototype.hasOwnProperty.call(data, field)) {
+                if (Object.hasOwn(data, field)) {
                     try {
                         result[field] = JSON.parse(data[field]);
                     } catch {

@@ -1,7 +1,7 @@
-import { format } from 'winston';
-import type { Logform } from 'winston';
+import { format } from "winston";
+import type { Logform } from "winston";
 
-import { LogFormatterOptions } from '../logger.interface';
+import { LogFormatterOptions } from "../logger.interface";
 
 /**
  * 创建详细格式的日志格式化器
@@ -9,29 +9,29 @@ import { LogFormatterOptions } from '../logger.interface';
  * @returns Winston格式化器
  */
 export const createDetailedFormatter = (
-    options: LogFormatterOptions,
+	options: LogFormatterOptions,
 ): Logform.Format => {
-    const { timestamp = true, colors = true } = options;
+	const { timestamp = true, colors = true } = options;
 
-    return format.combine(
-        format.errors({ stack: true }),
-        timestamp
-            ? format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' })
-            : format.simple(),
-        format.printf((info) => {
-            const { timestamp, level, message, context, stack, ...meta } = info;
-            const pid = process.pid;
-            const contextStr = context ? `[${context}] ` : '';
-            const timestampStr = timestamp ? `${timestamp} ` : '';
-            const stackStr = stack ? `\n${stack}` : '';
+	return format.combine(
+		format.errors({ stack: true }),
+		timestamp
+			? format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" })
+			: format.simple(),
+		format.printf((info) => {
+			const { timestamp, level, message, context, stack, ...meta } = info;
+			const pid = process.pid;
+			const contextStr = context ? `[${context}] ` : "";
+			const timestampStr = timestamp ? `${timestamp} ` : "";
+			const stackStr = stack ? `\n${stack}` : "";
 
-            let metaStr = '';
-            if (Object.keys(meta).length) {
-                metaStr = `\n${JSON.stringify(meta, null, 2)}`;
-            }
+			let metaStr = "";
+			if (Object.keys(meta).length) {
+				metaStr = `\n${JSON.stringify(meta, null, 2)}`;
+			}
 
-            return `${timestampStr}[${pid}] ${level.toUpperCase()} ${contextStr}${message}${stackStr}${metaStr}`;
-        }),
-        colors ? format.colorize({ all: true }) : format.simple(),
-    );
+			return `${timestampStr}[${pid}] ${level.toUpperCase()} ${contextStr}${message}${stackStr}${metaStr}`;
+		}),
+		colors ? format.colorize({ all: true }) : format.simple(),
+	);
 };

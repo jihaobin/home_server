@@ -1,13 +1,13 @@
-import { INestApplication } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { apiReference } from '@scalar/nestjs-api-reference';
-import { SwaggerModels } from './common/swagger/swagger-models';
+import { INestApplication } from "@nestjs/common";
+import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { apiReference } from "@scalar/nestjs-api-reference";
+import { SwaggerModels } from "./common/swagger/swagger-models";
 
 export function setupScalarSwagger(app: INestApplication) {
-    const config = new DocumentBuilder()
-        .setTitle('后端 API 文档 - Scalar')
-        .setDescription(
-            `Cow Course 平台 API 文档
+	const config = new DocumentBuilder()
+		.setTitle("后端 API 文档 - Scalar")
+		.setDescription(
+			`Cow Course 平台 API 文档
 
 ## 认证说明
 
@@ -47,28 +47,27 @@ export function setupScalarSwagger(app: INestApplication) {
 - **ErrorCode**: 详细错误代码枚举
 
 这些模型在下方的 "Models" 部分有详细定义，可供参考。`,
-        )
-        .setVersion('1.0')
-        .addCookieAuth('session', {
-            type: 'apiKey',
-            in: 'cookie',
-            name: 'session',
-            description:
-                'Session cookie authentication - 基于数据库存储的会话认证',
-        })
-        .addServer('http://localhost:5050/api', '开发环境')
-        .addServer('https://api.cow-course.com/api', '生产环境')
-        .build();
+		)
+		.setVersion("1.0")
+		.addCookieAuth("session", {
+			type: "apiKey",
+			in: "cookie",
+			name: "session",
+			description: "Session cookie authentication - 基于数据库存储的会话认证",
+		})
+		.addServer("http://localhost:5050/api", "开发环境")
+		.addServer("https://api.cow-course.com/api", "生产环境")
+		.build();
 
-    const document = SwaggerModule.createDocument(app, config);
+	const document = SwaggerModule.createDocument(app, config);
 
-    // 添加公共模型到文档中
-    SwaggerModels.addToDocument(document);
+	// 添加公共模型到文档中
+	SwaggerModels.addToDocument(document);
 
-    app.use(
-        '/api-docs',
-        apiReference({
-            content: document,
-        }),
-    );
+	app.use(
+		"/api-docs",
+		apiReference({
+			content: document,
+		}),
+	);
 }

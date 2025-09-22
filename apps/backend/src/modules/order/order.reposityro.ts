@@ -1,345 +1,333 @@
-import { orderAssignments, orders } from 'src/common/database/schema/orders';
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { and, between, eq, gte, lte, SQL } from 'drizzle-orm';
-import { DB } from 'src/common/database/database.provider';
-import { DbType } from 'src/common/database/db';
-import { CreateOrder } from '@repo/types';
+import { orderAssignments, orders } from "src/common/database/schema/orders";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { and, between, eq, gte, lte, SQL } from "drizzle-orm";
+import { DB } from "src/common/database/database.provider";
+import { DbType } from "src/common/database/db";
+import { CreateOrder } from "@repo/types";
 
 export type OrderStatus = (typeof orders.status.enumValues)[number];
 
 @Injectable()
 export class OrderRepository {
-    @Inject(DB)
-    private readonly db: DbType;
+	@Inject(DB)
+	private readonly db: DbType;
 
-    // 定义合法的状态转换
-    // key: 当前状态, value: 可转换到的下一个状态数组
-    private readonly validStatusTransitions: Record<
-        OrderStatus,
-        OrderStatus[]
-    > = {
-        pending_payment: ['paid', 'cancelled'],
-        paid: ['in_progress', 'cancelled'],
-        in_progress: ['completed', 'cancelled'],
-        completed: ['refunded'], // 假设完成的订单可以退款
-        cancelled: [], // 取消的订单不能再改变状态
-        refunded: [], // 退款的订单不能再改变状态
-    };
+	// 定义合法的状态转换
+	// key: 当前状态, value: 可转换到的下一个状态数组
+	private readonly validStatusTransitions: Record<OrderStatus, OrderStatus[]> =
+		{
+			pending_payment: ["paid", "cancelled"],
+			paid: ["in_progress", "cancelled"],
+			in_progress: ["completed", "cancelled"],
+			completed: ["refunded"], // 假设完成的订单可以退款
+			cancelled: [], // 取消的订单不能再改变状态
+			refunded: [], // 退款的订单不能再改变状态
+		};
 
-    /**
-     * 获取客户的订单列表
-     */
-    async getOrdersByCustomerId({
-        page = 1,
-        limit = 10,
-        status,
-        customerId,
-        startTime,
-        endTime,
-        sortBy = 'createdAt',
-        sortOrder = 'desc',
-    }: {
-        page?: number;
-        limit?: number;
-        status?: OrderStatus;
-        customerId: string;
-        startTime?: Date;
-        endTime?: Date;
-        sortBy?: string;
-        sortOrder?: 'asc' | 'desc';
-    }) {
-        if (!(sortBy in orders)) {
-            throw new BadRequestException('请输入有效的排序字段');
-        }
-        // 构建查询条件
-        const conditions: SQL[] = [eq(orders.customerId, customerId)];
+	/**
+	 * 获取客户的订单列表
+	 */
+	async getOrdersByCustomerId({
+		page = 1,
+		limit = 10,
+		status,
+		customerId,
+		startTime,
+		endTime,
+		sortBy = "createdAt",
+		sortOrder = "desc",
+	}: {
+		page?: number;
+		limit?: number;
+		status?: OrderStatus;
+		customerId: string;
+		startTime?: Date;
+		endTime?: Date;
+		sortBy?: string;
+		sortOrder?: "asc" | "desc";
+	}) {
+		if (!(sortBy in orders)) {
+			throw new BadRequestException("请输入有效的排序字段");
+		}
+		// 构建查询条件
+		const conditions: SQL[] = [eq(orders.customerId, customerId)];
 
-        if (status) {
-            conditions.push(eq(orders.status, status));
-        }
+		if (status) {
+			conditions.push(eq(orders.status, status));
+		}
 
-        if (startTime && !endTime) {
-            conditions.push(gte(orders.appointmentTime, startTime));
-        } else if (endTime && !startTime) {
-            conditions.push(lte(orders.appointmentTime, endTime));
-        } else if (startTime && endTime) {
-            conditions.push(
-                between(orders.appointmentTime, startTime, endTime),
-            );
-        }
+		if (startTime && !endTime) {
+			conditions.push(gte(orders.appointmentTime, startTime));
+		} else if (endTime && !startTime) {
+			conditions.push(lte(orders.appointmentTime, endTime));
+		} else if (startTime && endTime) {
+			conditions.push(between(orders.appointmentTime, startTime, endTime));
+		}
 
-        const [data, totalCount] = await Promise.all([
-            this.db.query.orders.findMany({
-                where: and(...conditions),
-                with: {
-                    service: true,
-                    assignment: {
-                        with: {
-                            servicePersonnel: true,
-                        },
-                    },
-                    address: true,
-                    payments: true,
-                    couponUsageRecords: true,
-                },
-                limit,
-                offset: (page - 1) * limit,
-                orderBy: (orders, { desc, asc }) => {
-                    const sortColumn = orders[sortBy as keyof typeof orders];
-                    if (sortOrder === 'desc') {
-                        return desc(sortColumn);
-                    } else {
-                        return asc(sortColumn);
-                    }
-                },
-            }),
-            this.db.$count(orders, and(...conditions)),
-        ]);
+		const [data, totalCount] = await Promise.all([
+			this.db.query.orders.findMany({
+				where: and(...conditions),
+				with: {
+					service: true,
+					assignment: {
+						with: {
+							servicePersonnel: true,
+						},
+					},
+					address: true,
+					payments: true,
+					couponUsageRecords: true,
+				},
+				limit,
+				offset: (page - 1) * limit,
+				orderBy: (orders, { desc, asc }) => {
+					const sortColumn = orders[sortBy as keyof typeof orders];
+					if (sortOrder === "desc") {
+						return desc(sortColumn);
+					} else {
+						return asc(sortColumn);
+					}
+				},
+			}),
+			this.db.$count(orders, and(...conditions)),
+		]);
 
-        return {
-            data,
-            totalCount,
-            page,
-            limit,
-        };
-    }
+		return {
+			data,
+			totalCount,
+			page,
+			limit,
+		};
+	}
 
-    /**
-     * 根据订单ID获取单个订单信息
-     * @param id 订单ID
-     * @returns 订单详情对象，如果未找到则返回null
-     */
-    async getOrderById(id: string) {
-        const order = await this.db.query.orders.findFirst({
-            where: eq(orders.id, id),
-            with: {
-                service: true,
-                assignment: {
-                    with: {
-                        servicePersonnel: true,
-                    },
-                },
-                address: true,
-                payments: true,
-                couponUsageRecords: true,
-            },
-        });
+	/**
+	 * 根据订单ID获取单个订单信息
+	 * @param id 订单ID
+	 * @returns 订单详情对象，如果未找到则返回null
+	 */
+	async getOrderById(id: string) {
+		const order = await this.db.query.orders.findFirst({
+			where: eq(orders.id, id),
+			with: {
+				service: true,
+				assignment: {
+					with: {
+						servicePersonnel: true,
+					},
+				},
+				address: true,
+				payments: true,
+				couponUsageRecords: true,
+			},
+		});
 
-        return order || null;
-    }
+		return order || null;
+	}
 
-    /**
-     * 获取指定服务人员在特定时间范围内的订单
-     * @param personnelId 服务人员ID
-     * @param startTime 时间范围开始时间
-     * @param endTime 时间范围结束时间
-     * @returns 订单列表
-     */
-    async getOrdersByPersonnelAndTimeRange(
-        personnelId: string,
-        startTime: Date,
-        endTime: Date,
-    ) {
-        // 查询条件：指定服务人员且时间有重叠的订单
-        // 时间重叠条件：订单开始时间 <= 查询结束时间 且 订单结束时间 >= 查询开始时间
-        const conditions = and(
-            eq(orderAssignments.servicePersonnelId, personnelId),
-            // 时间重叠条件：订单开始时间 <= 查询结束时间 且 订单结束时间 >= 查询开始时间
-            lte(orders.appointmentTime, endTime),
-            // 注意：这里只检查了订单开始时间，订单结束时间需要在service中计算
-        );
+	/**
+	 * 获取指定服务人员在特定时间范围内的订单
+	 * @param personnelId 服务人员ID
+	 * @param startTime 时间范围开始时间
+	 * @param endTime 时间范围结束时间
+	 * @returns 订单列表
+	 */
+	async getOrdersByPersonnelAndTimeRange(
+		personnelId: string,
+		startTime: Date,
+		endTime: Date,
+	) {
+		// 查询条件：指定服务人员且时间有重叠的订单
+		// 时间重叠条件：订单开始时间 <= 查询结束时间 且 订单结束时间 >= 查询开始时间
+		const conditions = and(
+			eq(orderAssignments.servicePersonnelId, personnelId),
+			// 时间重叠条件：订单开始时间 <= 查询结束时间 且 订单结束时间 >= 查询开始时间
+			lte(orders.appointmentTime, endTime),
+			// 注意：这里只检查了订单开始时间，订单结束时间需要在service中计算
+		);
 
-        return await this.db.query.orders.findMany({
-            where: conditions,
-            with: {
-                service: true,
-                assignment: true,
-            },
-        });
-    }
+		return await this.db.query.orders.findMany({
+			where: conditions,
+			with: {
+				service: true,
+				assignment: true,
+			},
+		});
+	}
 
-    /**
-     * 更新订单状态
-     * @param id 订单ID
-     * @param newStatus 新的订单状态
-     * @returns 更新后的订单信息
-     */
-    async updateOrderStatus(id: string, newStatus: OrderStatus) {
-        // 1. 获取当前订单状态
-        const order = await this.db.query.orders.findFirst({
-            where: eq(orders.id, id),
-            columns: { status: true },
-        });
+	/**
+	 * 更新订单状态
+	 * @param id 订单ID
+	 * @param newStatus 新的订单状态
+	 * @returns 更新后的订单信息
+	 */
+	async updateOrderStatus(id: string, newStatus: OrderStatus) {
+		// 1. 获取当前订单状态
+		const order = await this.db.query.orders.findFirst({
+			where: eq(orders.id, id),
+			columns: { status: true },
+		});
 
-        if (!order) {
-            throw new BadRequestException('订单不存在');
-        }
+		if (!order) {
+			throw new BadRequestException("订单不存在");
+		}
 
-        const currentStatus = order.status;
+		const currentStatus = order.status;
 
-        // 2. 验证状态转换是否合法
-        if (!this.isValidStatusTransition(currentStatus, newStatus)) {
-            throw new BadRequestException(
-                `将状态${currentStatus} 变更为 ${newStatus} 是非法的`,
-            );
-        }
+		// 2. 验证状态转换是否合法
+		if (!this.isValidStatusTransition(currentStatus, newStatus)) {
+			throw new BadRequestException(
+				`将状态${currentStatus} 变更为 ${newStatus} 是非法的`,
+			);
+		}
 
-        // 3. 更新订单状态
-        const updatedOrders = await this.db
-            .update(orders)
-            .set({
-                status: newStatus,
-                updatedAt: new Date(),
-            })
-            .where(eq(orders.id, id))
-            .returning();
+		// 3. 更新订单状态
+		const updatedOrders = await this.db
+			.update(orders)
+			.set({
+				status: newStatus,
+				updatedAt: new Date(),
+			})
+			.where(eq(orders.id, id))
+			.returning();
 
-        // 4. 验证更新结果
-        if (updatedOrders.length === 0) {
-            throw new BadRequestException('订单状态更新失败');
-        }
+		// 4. 验证更新结果
+		if (updatedOrders.length === 0) {
+			throw new BadRequestException("订单状态更新失败");
+		}
 
-        return updatedOrders[0];
-    }
+		return updatedOrders[0];
+	}
 
-    /**
-     * 验证状态转换是否合法
-     * @param currentStatus 当前订单状态
-     * @param newStatus 目标订单状态
-     * @returns 如果转换合法返回true，否则返回false
-     */
-    private isValidStatusTransition(
-        currentStatus: OrderStatus,
-        newStatus: OrderStatus,
-    ): boolean {
-        // 获取当前状态允许的所有下一状态
-        const allowedNextStatuses = this.validStatusTransitions[currentStatus];
+	/**
+	 * 验证状态转换是否合法
+	 * @param currentStatus 当前订单状态
+	 * @param newStatus 目标订单状态
+	 * @returns 如果转换合法返回true，否则返回false
+	 */
+	private isValidStatusTransition(
+		currentStatus: OrderStatus,
+		newStatus: OrderStatus,
+	): boolean {
+		// 获取当前状态允许的所有下一状态
+		const allowedNextStatuses = this.validStatusTransitions[currentStatus];
 
-        // 检查目标状态是否在允许的下一状态列表中
-        return allowedNextStatuses
-            ? allowedNextStatuses.includes(newStatus)
-            : false;
-    }
+		// 检查目标状态是否在允许的下一状态列表中
+		return allowedNextStatuses
+			? allowedNextStatuses.includes(newStatus)
+			: false;
+	}
 
-    /**
-     * 创建订单
-     * @param data 订单数据
-     * @returns 创建的订单信息
-     */
-    async createOrder(data: CreateOrder) {
-        // 生成订单流水号 (格式: ORD + YYYYMMDD + 8位随机字符)
-        const now = new Date();
-        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-        const randomStr = Math.random()
-            .toString(36)
-            .substring(2, 10)
-            .toUpperCase();
-        const orderSerial = `ORD${dateStr}${randomStr}`;
+	/**
+	 * 创建订单
+	 * @param data 订单数据
+	 * @returns 创建的订单信息
+	 */
+	async createOrder(data: CreateOrder) {
+		// 生成订单流水号 (格式: ORD + YYYYMMDD + 8位随机字符)
+		const now = new Date();
+		const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+		const randomStr = Math.random().toString(36).substring(2, 10).toUpperCase();
+		const orderSerial = `ORD${dateStr}${randomStr}`;
 
-        try {
-            const result = await this.db
-                .insert(orders)
-                .values({
-                    ...data,
-                    orderSerial,
-                    originalAmount: data.originalAmount.toString(),
-                    discountAmount: data.discountAmount.toString(),
-                    totalAmount: data.totalAmount.toString(),
-                    createdAt: now,
-                    updatedAt: now,
-                })
-                .returning();
+		try {
+			const result = await this.db
+				.insert(orders)
+				.values({
+					...data,
+					orderSerial,
+					originalAmount: data.originalAmount.toString(),
+					discountAmount: data.discountAmount.toString(),
+					totalAmount: data.totalAmount.toString(),
+					createdAt: now,
+					updatedAt: now,
+				})
+				.returning();
 
-            if (result.length === 0) {
-                throw new BadRequestException('订单创建失败');
-            }
+			if (result.length === 0) {
+				throw new BadRequestException("订单创建失败");
+			}
 
-            return result[0];
-        } catch (error) {
-            throw new BadRequestException(
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                `创建订单时发生错误: ${error.message}`,
-            );
-        }
-    }
+			return result[0];
+		} catch (error) {
+			throw new BadRequestException(
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+				`创建订单时发生错误: ${error.message}`,
+			);
+		}
+	}
 
-    /**
-     * 创建用户指定服务人员的订单
-     * @param data 创建订单所需的数据
-     * @returns 创建结果，包含订单ID
-     */
-    async createOrderWithDesignatedPersonnel(data: {
-        customerId: string;
-        serviceId: string;
-        addressId: string;
-        appointmentTime: Date;
-        discountAmount: string;
-        designatedPersonnelId: string;
-        price: string;
-    }) {
-        // 生成订单流水号 (格式: ORD + YYYYMMDD + 8位随机字符)
-        const now = new Date();
-        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-        const randomStr = Math.random()
-            .toString(36)
-            .substring(2, 10)
-            .toUpperCase();
-        const orderSerial = `ORD${dateStr}${randomStr}`;
+	/**
+	 * 创建用户指定服务人员的订单
+	 * @param data 创建订单所需的数据
+	 * @returns 创建结果，包含订单ID
+	 */
+	async createOrderWithDesignatedPersonnel(data: {
+		customerId: string;
+		serviceId: string;
+		addressId: string;
+		appointmentTime: Date;
+		discountAmount: string;
+		designatedPersonnelId: string;
+		price: string;
+	}) {
+		// 生成订单流水号 (格式: ORD + YYYYMMDD + 8位随机字符)
+		const now = new Date();
+		const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+		const randomStr = Math.random().toString(36).substring(2, 10).toUpperCase();
+		const orderSerial = `ORD${dateStr}${randomStr}`;
 
-        try {
-            const result = await this.db.transaction(async (tx) => {
-                // 计算订单总金额
-                const originalAmount = parseFloat(data.price);
-                const discountAmount = parseFloat(data.discountAmount);
-                const totalAmount = originalAmount - discountAmount;
+		try {
+			const result = await this.db.transaction(async (tx) => {
+				// 计算订单总金额
+				const originalAmount = parseFloat(data.price);
+				const discountAmount = parseFloat(data.discountAmount);
+				const totalAmount = originalAmount - discountAmount;
 
-                // 创建订单记录
-                const [order] = await tx
-                    .insert(orders)
-                    .values({
-                        orderSerial,
-                        customerId: data.customerId,
-                        serviceId: data.serviceId,
-                        addressId: data.addressId,
-                        status: 'pending_payment', // 初始状态为待支付
-                        originalAmount: originalAmount.toString(),
-                        discountAmount: discountAmount.toString(),
-                        totalAmount: totalAmount.toString(),
-                        currency: 'CNY',
-                        appointmentTime: data.appointmentTime,
-                    })
-                    .returning({ id: orders.id });
+				// 创建订单记录
+				const [order] = await tx
+					.insert(orders)
+					.values({
+						orderSerial,
+						customerId: data.customerId,
+						serviceId: data.serviceId,
+						addressId: data.addressId,
+						status: "pending_payment", // 初始状态为待支付
+						originalAmount: originalAmount.toString(),
+						discountAmount: discountAmount.toString(),
+						totalAmount: totalAmount.toString(),
+						currency: "CNY",
+						appointmentTime: data.appointmentTime,
+					})
+					.returning({ id: orders.id });
 
-                // 验证订单是否创建成功
-                if (!order || !order.id) {
-                    throw new Error('订单创建失败');
-                }
+				// 验证订单是否创建成功
+				if (!order || !order.id) {
+					throw new Error("订单创建失败");
+				}
 
-                // 创建订单分配记录
-                const assignmentResult = await tx
-                    .insert(orderAssignments)
-                    .values({
-                        orderId: order.id,
-                        servicePersonnelId: data.designatedPersonnelId,
-                        assignmentType: 'customer_designated', // 用户指定
-                        assignedAt: now,
-                    });
+				// 创建订单分配记录
+				const assignmentResult = await tx.insert(orderAssignments).values({
+					orderId: order.id,
+					servicePersonnelId: data.designatedPersonnelId,
+					assignmentType: "customer_designated", // 用户指定
+					assignedAt: now,
+				});
 
-                // 验证分配记录是否创建成功
-                if (assignmentResult.rowCount === 0) {
-                    throw new Error('订单分配记录创建失败');
-                }
+				// 验证分配记录是否创建成功
+				if (assignmentResult.rowCount === 0) {
+					throw new Error("订单分配记录创建失败");
+				}
 
-                // 返回订单ID
-                return { orderId: order.id };
-            });
+				// 返回订单ID
+				return { orderId: order.id };
+			});
 
-            return result;
-        } catch (error) {
-            throw new BadRequestException(
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                `创建指定服务人员订单时发生错误: ${error.message}`,
-            );
-        }
-    }
+			return result;
+		} catch (error) {
+			throw new BadRequestException(
+				// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+				`创建指定服务人员订单时发生错误: ${error.message}`,
+			);
+		}
+	}
 }

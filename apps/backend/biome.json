@@ -46,7 +46,7 @@
 				"useArrayLiterals": "error",
 				"useAsConstAssertion": "error",
 				"useBlockStatements": "off",
-                "useImportType": "off"
+				"useImportType": "off"
 			},
 			"suspicious": {
 				"noAsyncPromiseExecutor": "error",

@@ -1,10 +1,10 @@
-import * as fs from 'fs';
-import * as path from 'path';
+import * as fs from "fs";
+import * as path from "path";
 
-import * as winston from 'winston';
+import * as winston from "winston";
 
-import { LogLevel } from '../logger.constants';
-import { FileTransportOptions } from '../logger.interface';
+import { LogLevel } from "../logger.constants";
+import { FileTransportOptions } from "../logger.interface";
 
 /**
  * 创建文件日志传输器
@@ -12,29 +12,29 @@ import { FileTransportOptions } from '../logger.interface';
  * @returns Winston文件传输器
  */
 export const createFileTransport = (
-    options: FileTransportOptions,
+	options: FileTransportOptions,
 ): winston.transport => {
-    const {
-        filename,
-        level = LogLevel.INFO,
-        maxSize = '20m',
-        maxFiles = 5,
-        zippedArchive = false,
-    } = options;
+	const {
+		filename,
+		level = LogLevel.INFO,
+		maxSize = "20m",
+		maxFiles = 5,
+		zippedArchive = false,
+	} = options;
 
-    // 确保日志目录存在
-    const dirname = path.dirname(filename);
-    if (!fs.existsSync(dirname)) {
-        fs.mkdirSync(dirname, { recursive: true });
-    }
+	// 确保日志目录存在
+	const dirname = path.dirname(filename);
+	if (!fs.existsSync(dirname)) {
+		fs.mkdirSync(dirname, { recursive: true });
+	}
 
-    return new winston.transports.File({
-        filename,
-        level,
-        maxsize: parseFileSize(maxSize),
-        maxFiles,
-        zippedArchive,
-    });
+	return new winston.transports.File({
+		filename,
+		level,
+		maxsize: parseFileSize(maxSize),
+		maxFiles,
+		zippedArchive,
+	});
 };
 
 /**
@@ -43,20 +43,20 @@ export const createFileTransport = (
  * @returns 字节数
  */
 function parseFileSize(size: string): number {
-    const units = {
-        b: 1,
-        k: 1024,
-        m: 1024 * 1024,
-        g: 1024 * 1024 * 1024,
-    };
+	const units = {
+		b: 1,
+		k: 1024,
+		m: 1024 * 1024,
+		g: 1024 * 1024 * 1024,
+	};
 
-    const match = size.match(/^(\d+)([bkmg])$/i);
-    if (!match) {
-        return 20 * 1024 * 1024; // 默认20MB
-    }
+	const match = size.match(/^(\d+)([bkmg])$/i);
+	if (!match) {
+		return 20 * 1024 * 1024; // 默认20MB
+	}
 
-    const value = parseInt(match[1], 10);
-    const unit = match[2].toLowerCase();
+	const value = parseInt(match[1], 10);
+	const unit = match[2].toLowerCase();
 
-    return value * units[unit];
+	return value * units[unit];
 }
