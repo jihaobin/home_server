@@ -242,7 +242,8 @@ export const BaseResponseSchema = z.object({
  * 成功响应 Schema
  */
 export const SuccessResponseSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
-  BaseResponseSchema.extend({
+  z.object({
+      ...BaseResponseSchema.shape,
       code: z.literal(ApiStatusCode.SUCCESS).meta({
           description: '成功状态码',
           title: '状态码'
@@ -256,7 +257,8 @@ export const SuccessResponseSchema = <T extends z.ZodTypeAny>(dataSchema: T) =>
 /**
  * 错误响应 Schema
  */
-export const ErrorResponseSchema = BaseResponseSchema.extend({
+export const ErrorResponseSchema = z.object({
+    ...BaseResponseSchema.shape,
     code: z.union([
         ErrorCodeSchema,
     ]).meta({

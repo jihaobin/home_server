@@ -169,7 +169,8 @@ export const BaseRequestFieldsSchema = z.object({
 });
 
 // 逆地址解析请求参数 Schema（支持字符串和结构化POI选项）
-export const ReverseGeocodeRequestSchema = BaseRequestFieldsSchema.extend({
+export const ReverseGeocodeRequestSchema = z.object({
+    ...BaseRequestFieldsSchema.shape,
     poi_options: z
         .union([z.string(), PoiOptionsSchema])
         .optional()
@@ -281,7 +282,8 @@ export const SuggestionResponseSchema = z.object({
 });
 
 // 新建用户地址schema
-export const CreateUserAddressSchema = UserAddressesSchema.omit({ geom: true, id: true }).extend({
+export const CreateUserAddressSchema = z.object({
+    ...UserAddressesSchema.omit({ geom: true, id: true }).shape,
     /**
      * 经度
      */
@@ -295,7 +297,8 @@ export const CreateUserAddressSchema = UserAddressesSchema.omit({ geom: true, id
     path: ['lat', 'lng'],
 });
 
-export const UpdateUserAddressSchema = CreateUserAddressSchema.partial().extend({
+export const UpdateUserAddressSchema = z.object({
+    ...CreateUserAddressSchema.partial().shape,
     id: z.string("id 不能为空").max(255, "id 不能超过255个字符").meta({
         description: '地址ID',
         title: '地址ID'
@@ -449,7 +452,8 @@ export const ExploreApiPoiSchema = z.object({
 });
 
 /* 在ExploreApiPoiSchema的基础上扩展了临近用户数量字段 */
-export const EcplortPoiSchema = ExploreApiPoiSchema.extend({
+export const EcplortPoiSchema = z.object({
+    ...ExploreApiPoiSchema.shape,
     neighborCount: z.number().describe("临近用户数量")
 })
 

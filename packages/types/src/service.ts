@@ -65,7 +65,8 @@ export type ServiceCategory = Omit<ServiceCategoryTree, "children">;
 // ========== 服务项目相关Schema ==========
 
 // 服务项目列表查询请求Schema（继承通用分页参数）
-export const ServiceListRequestSchema = PaginationQuerySchema.extend({
+export const ServiceListRequestSchema = z.object({
+    ...PaginationQuerySchema.shape,
     categoryId: z.string().max(255).optional().meta({
         description: '服务分类ID',
         title: '服务分类ID'
@@ -123,7 +124,8 @@ export const DeleteServiceSchema = z.object({
 export type DeleteService = z.infer<typeof DeleteServiceSchema>;
 
 // 服务项目详情Schema（包含分类信息）
-export const ServiceDetailSchema = ServicesSchema.extend({
+export const ServiceDetailSchema = z.object({
+    ...ServicesSchema.shape,
     category: ServiceCategoriesSchema.nullable().meta({
         description: '服务分类信息',
         title: '服务分类信息'
