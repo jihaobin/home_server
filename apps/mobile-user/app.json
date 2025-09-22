@@ -61,7 +61,13 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "native-expo-alipay",
+        {
+          "appId": "9021000153675106"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
