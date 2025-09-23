@@ -1,9 +1,9 @@
-import { orderAssignments, orders } from "src/common/database/schema/orders";
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, between, eq, gte, lte, SQL } from "drizzle-orm";
+import type { CreateOrder } from "@repo/types";
+import { and, between, eq, gte, lte, type SQL } from "drizzle-orm";
 import { DB } from "src/common/database/database.provider";
-import { DbType } from "src/common/database/db";
-import { CreateOrder } from "@repo/types";
+import type { DbType } from "src/common/database/db";
+import { orderAssignments, orders } from "src/common/database/schema/orders";
 
 export type OrderStatus = (typeof orders.status.enumValues)[number];
 
@@ -160,9 +160,11 @@ export class OrderRepository {
 	 * @param newStatus 新的订单状态
 	 * @returns 更新后的订单信息
 	 */
-	async updateOrderStatus(id: string, newStatus: OrderStatus) {
+	async updateOrderStatus(id: string, newStatus: OrderStatus,executor?: DbType) {
+        const db = executor ?? this.db;
+
 		// 1. 获取当前订单状态
-		const order = await this.db.query.orders.findFirst({
+		const order = await db.query.orders.findFirst({
 			where: eq(orders.id, id),
 			columns: { status: true },
 		});

@@ -5,6 +5,7 @@ import { WorkSkillService } from "../work-skill/work-skill.service";
 import { CreateOrder, OrderListRequest, OrderStatus } from "@repo/types";
 import { CreateDesignatedOrder } from "@repo/types";
 import { extractParams, isTimeInRange } from "src/lib/utlis";
+import { DbType } from "src/common/database/db";
 
 @Injectable()
 export class OrderService {
@@ -289,88 +290,13 @@ export class OrderService {
 	}
 
 	/**
-	 * 分配订单给服务人员
-	 * @param orderId 订单ID
-	 * @param personnelId 服务人员ID
-	 * @param assignmentType 分配类型
-	 * @param assignedBy 分配人ID（用于权限验证）
-	 * @returns 分配结果
-	 */
-	async assignOrderToPersonnel(
-		orderId: string,
-		personnelId: string,
-		assignmentType:
-			| "system_auto"
-			| "customer_designated"
-			| "grab" = "system_auto",
-		assignedBy?: string,
-	) {
-		// 参数验证
-		if (!orderId) {
-			throw new BadRequestException("订单ID不能为空");
-		}
-
-		if (!personnelId) {
-			throw new BadRequestException("服务人员ID不能为空");
-		}
-
-		try {
-			// 1. 验证订单是否存在
-			const order = await this.orderRepository.getOrderById(orderId);
-			if (!order) {
-				throw new BadRequestException("订单不存在");
-			}
-
-			// 2. 验证订单状态是否允许分配
-			if (order.status !== "paid") {
-				throw new BadRequestException("只有已支付的订单才能分配服务人员");
-			}
-
-			// 3. 验证服务人员是否存在
-			const personnelExists =
-				await this.workSkillService.isServicePersonnelExists(personnelId);
-
-			if (!personnelExists) {
-				throw new BadRequestException("指定的服务人员不存在");
-			}
-
-			// 4. 验证服务人员是否掌握该服务技能
-			// TODO: 需要实现具体的技能验证逻辑
-
-			// 5. 验证服务人员是否可用
-			// TODO: 需要实现服务人员可用性检查
-
-			// 6. 创建订单分配记录
-			// TODO: 需要实现具体的分配逻辑
-
-			// 7. 更新订单状态为已分配
-			const updatedOrder = await this.orderRepository.updateOrderStatus(
-				orderId,
-				"in_progress",
-			);
-
-			return {
-				success: true,
-				message: "订单分配成功",
-				order: updatedOrder,
-			};
-		} catch (error) {
-			if (error instanceof BadRequestException) {
-				throw error;
-			}
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-			throw new BadRequestException("订单分配失败: " + error.message);
-		}
-	}
-
-	/**
 	 * 更新订单状态
 	 * @param id 订单ID
 	 * @param newStatus 新的订单状态
 	 * @param userId 用户ID（用于权限验证）
 	 * @returns 更新后的订单信息
 	 */
-	async updateOrderStatus(id: string, newStatus: OrderStatus, userId?: string) {
+	async updateOrderStatus(id: string, newStatus: OrderStatus,{tx}:{tx?: DbType}) {
 		// 参数验证
 		if (!id) {
 			throw new BadRequestException("订单ID不能为空");
@@ -387,16 +313,11 @@ export class OrderService {
 				throw new BadRequestException("订单不存在");
 			}
 
-			// 验证用户是否有权限更新此订单状态
-			if (userId && order.customerId !== userId) {
-				// TODO: 这里应该检查更多权限，比如管理员权限或服务人员权限
-				throw new BadRequestException("您没有权限更新此订单状态");
-			}
-
 			// 更新订单状态
 			const updatedOrder = await this.orderRepository.updateOrderStatus(
 				id,
 				newStatus,
+                tx,
 			);
 
 			return updatedOrder;

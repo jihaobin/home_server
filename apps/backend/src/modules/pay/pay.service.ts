@@ -1,46 +1,334 @@
-import { Injectable } from "@nestjs/common";
-import { PayNotification } from "@repo/types";
-import { AlipaySdk } from "alipay-sdk";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import type { PayNotification } from "@repo/types";
+import { and, eq, sql } from "drizzle-orm";
+import { DB } from "src/common/database/database.provider";
+import type { DbType } from "src/common/database/db";
+import { orders, type payments, users } from "src/common/database/schema";
+import { CACHE_SERVICE, type IAdvancedCacheService } from "src/common/cache";
+import { createAliPaySdk } from "src/lib/alipaySdk";
+import { OrderService } from "../order/order.service";
+import { PayRepository } from "./pay.repository";
+
+type PaymentInsert = typeof payments.$inferInsert;
+
+type PaymentStatus = (typeof payments.status.enumValues)[number];
+
+type TradeStatus = PayNotification["trade_status"];
+
+const TRADE_STATUS_TO_PAYMENT_STATUS: Record<TradeStatus, PaymentStatus> = {
+	WAIT_BUYER_PAY: "pending",
+	TRADE_SUCCESS: "succeeded",
+	TRADE_FINISHED: "succeeded",
+	TRADE_CLOSED: "failed",
+};
+
+function parseAlipayTime(value?: string) {
+	if (!value) {
+		return undefined;
+	}
+
+	return new Date(`${value.replace(" ", "T")}+08:00`);
+}
 
 @Injectable()
 export class PayService {
 	// 实例化客户端
-	private alipaySdk = new AlipaySdk({
-		// 设置应用 ID
-		appId: "9021000153675106",
-		signType: "RSA2",
-		// 设置应用私钥
-		privateKey:
-			"MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCuPEu4ejPIM1E5mGG6aGH2UYOfFCoiTkdMdJWzixM/7tG56rP6g77LdDxRMqUTLWfyjrDGfyOTHgQbP8JoR+8fO1IOPGAtGuT+oi2yIHWSkObJvuLjSItjTpf2y6f1zrfhV1Vv+6S13jr3XMuc6t6qazNhR0CFoSM6o4to6ggu48X8F5eMfjev9I4bFD5gY1LohxvDAsRR3f7yCTUSrPSKScuIx3cq2I5imA5aQCS5zCvpjacAoV+xTGvDyaeFbNsD7iXP3fTbJiHjwSBc31u266jvCc967eHksXoYDP2YlW355X6sZVLEhaxAs8Uw1dXoV4gWjNwUaeiZJ6h7J0PPAgMBAAECggEABiWKZk+pU/67dtSxXeogypfFlO8ZLWylh0T1owfc/fxm2bA1+Th8mqDXH+YxfKO1bxEpm1cQ4jfE3VE6goNHJErrciUfH3g7a+A8zHPoser6uVNKncoJYM98/O/iVQGd6w0xrmmqPeBBJEjZxgdjI4/0mBHzbMNqgr8SQ/k9oKnJfS2A2GwDBE0EEaGdNkKbgZe4ejPTRGo/e7TDZjPIWUR5wFONcQS6IILhrdN4tnTfUafHo2rJwW9vRDzn3ndTce66QUG72SjUmxGEZgyrDQKNh2y8wnOWBvyav8VjFjzbQU1YD+AqxpGZ0dJorg9MYgsh6QRorcHmnI37+B/ngQKBgQDfuSlEUELEe5Z34FW6F3HChD6qDKX73GvXK/J0n9I6DFyF2LQKclvXSHS6+nRY1z5Uvhg+PLW2kbeumixPQQqi96fpmbScMY+2gOxzPEugq0itNJdHx6OtUMHhgRGHSM4zQ5iywpfBv9gTxmhnMvgXKSnJw2box4RBysy7sMME6QKBgQDHX2N4q06OoVGk/sP1rtUFvWSPnfgUnLJjWYyp+ZauaspkKNhShqQ6ghv/JMMZn3/p71K4Im8S9AtcM8hLfgz4IUsWH5MUIm0IoQun3EBXpgiSGPp7Y4dGAl8ELKtsKpSSnIuJyQCmavKlYsuIdXQQF9BLmG2DcrOP8iolsSjv9wKBgQCzoqsd7QwPU+S3kGuFJnnzY9glFk7Ycl4swV7GgeV9Mpu/5QZ7NOPFcqo30A5Hn1yvEovIvVpyo4JHMgfOAz2VKSGsEfzRRYJNWiuBQ7K96YpLeOTXf9dOvH9QoCAA7laTFv2u20ybB31qM291HZnSjvy8wqcI1dq+MSY+tmmAsQKBgEbXnynGfSBzM+aT3B+VYv4qIOxjLj5su3pP3IqdNCx/p7DVTqBsVTiw+K+9aVHWegYu0s649YzfiJXXlIk2nfchJWQUDhfub53MU67utTIvvgXjuEVVxUBcIVUDZloF+0rpMy/fa0q238dihn3Tdk0tmQbzf55giGtSmiVQgQJbAoGBAL6ayj1Bx00uOEU9Jp2CuzcuSPszkFwQ5rKNs5cBfaftFQrzeghNfixVGmMAN3679rWITiKBS6346PDgA8R0ZhbNSQ+tmXzLoFiDHVvRV56LvMT+Kpf+awF41QOaJ+5pEkjuV6TO1UQS3Fr2kDHjvlONlGmXF/Svm+o/zlXIQS6Z",
+	private alipaySdk = createAliPaySdk();
 
-		// 设置支付宝公钥
-		alipayPublicKey:
-			"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3ln/fUhYapD0Qj9tonGMD/gdl0iYwyl23NB2VQCTnZtE/BLlQYlsI8XgCMFM+YnTx+E08T7SWNgPv8G2gBH4SKz0umusBO91wP6SaGb44jKI2D/8894gMzrD8cPEci/6Oir4cCI2deAe96G1Kt/4UYx64+IyeXwdjLqKGG+0sQikXJNnWEp/msAW1FVanRdvQaYOhLCKXDMlTY5xSe92ZzA9//gerT3qcvhFdqaxn3sJhQ/d3IwqSGtDxaQYh3lKufEYjnwiRCN3iOXxojgCkgd6garVIkJpD7NwmJ0KW42MWz1q+zgwvexl6TgVbieoYzCZAGSlZi5QaNd6DRn9NQIDAQAB",
+	@Inject(DB)
+	private db: DbType;
 
-		// 密钥类型，请与生成的密钥格式保持一致，参考平台配置一节
+	@Inject(OrderService)
+	private order: OrderService;
 
-		// keyType: 'PKCS1',
+	@Inject(PayRepository)
+	private payRepository: PayRepository;
 
-		// 设置网关地址，默认是 https://openapi.alipay.com
+	@Inject(CACHE_SERVICE)
+	private cacheService: IAdvancedCacheService;
 
-		endpoint: "https://openapi-sandbox.dl.alipaydev.com/gateway.do",
-	});
+	private readonly paymentLockTtl = 30; // 秒
 
-	async pay({}: {
+	private getPaymentLockKey(orderId: string) {
+		return `lock:payment:order:${orderId}`;
+	}
+
+	private async isUserExist(id: string) {
+		const statement = sql`SELECT EXISTS (SELECT 1 FROM ${users} WHERE ${users.id} = ${id} AND ${users.role} = 'customer') AS has_user`;
+		const result = await this.db.execute<{ has_user: boolean }>(statement);
+
+		return result.rows[0]?.has_user === true;
+	}
+
+	async pay({
+		displayAmount,
+		payType,
+		orderId,
+		userId,
+	}: {
 		displayAmount: number;
 		payType: "wechat_pay" | "alipay" | "bank_transfer";
 		orderId: string;
 		userId: string;
 	}) {
-		// 查询是否有订单
-		// 检查客户端传入的金额和数据库中定义的金额是否相同，如果不相同则提示用户刷新商品页面
-		// 绑定支付记录
-		//
+		if (!userId) {
+			throw new BadRequestException("用户信息缺失");
+		}
+
+		const userExists = await this.isUserExist(userId);
+		if (!userExists) {
+			throw new BadRequestException("用户不存在");
+		}
+
+		const orderInfo = await this.order.getOrderById(orderId, userId);
+		let payableAmount = Number(orderInfo.totalAmount);
+
+		if (!Number.isFinite(payableAmount) || payableAmount <= 0) {
+			throw new BadRequestException("订单金额异常，无法发起支付");
+		}
+
+		if (
+			displayAmount !== undefined &&
+			Math.abs(displayAmount - payableAmount) > 0.01
+		) {
+			throw new BadRequestException("显示金额与应付金额不一致");
+		}
+
+		if (orderInfo.status !== "pending_payment") {
+			throw new BadRequestException("当前状态不支持发起支付");
+		}
+
+		if (payType !== "alipay") {
+			throw new BadRequestException("当前暂不支持该支付方式");
+		}
+
+		const lockKey = this.getPaymentLockKey(orderInfo.id);
+		let lockId: string | null = null;
+
+		try {
+			lockId = await this.cacheService.acquireLock(
+				lockKey,
+				this.paymentLockTtl,
+				10,
+				200,
+			);
+			if (!lockId) {
+				throw new BadRequestException("系统繁忙，请稍后重试");
+			}
+
+			const paymentRecord = await this.db.transaction(async (tx) => {
+				const currentOrder = await tx.query.orders.findFirst({
+					where: eq(orders.id, orderId),
+				});
+
+				if (!currentOrder) {
+					throw new BadRequestException("订单不存在");
+				}
+
+				if (currentOrder.status !== "pending_payment") {
+					throw new BadRequestException("当前状态不支持发起支付");
+				}
+
+				payableAmount = Number(currentOrder.totalAmount);
+				if (!Number.isFinite(payableAmount) || payableAmount <= 0) {
+					throw new BadRequestException("订单金额异常，无法发起支付");
+				}
+
+				if (
+					displayAmount !== undefined &&
+					Math.abs(displayAmount - payableAmount) > 0.01
+				) {
+					throw new BadRequestException("显示金额与应付金额不一致");
+				}
+
+				const existingPayments = await this.payRepository.findByOrderId(
+					orderId,
+					tx,
+				);
+
+				if (
+					existingPayments.some(
+						(payment) => payment.status === "succeeded",
+					)
+				) {
+					throw new BadRequestException("该订单已完成支付");
+				}
+
+				let paymentRecord = existingPayments.find(
+					(payment) =>
+						payment.status === "pending" && payment.paymentMethod === payType,
+				);
+
+				if (!paymentRecord) {
+					paymentRecord = await this.payRepository.createPayment(
+						{
+							orderId,
+							amount: currentOrder.totalAmount,
+							currency: currentOrder.currency ?? "CNY",
+							paymentMethod: payType,
+							status: "pending",
+						},
+						tx,
+					);
+
+					if (!paymentRecord) {
+						throw new BadRequestException("创建支付记录失败");
+					}
+				}
+
+				return paymentRecord;
+			});
+
+			const outTradeNo = orderInfo.orderSerial ?? orderInfo.id;
+			const orderSubject =
+				orderInfo.service?.name ??
+				`订单支付-${orderInfo.orderSerial ?? orderInfo.id}`;
+			const orderBody = orderInfo.service?.description ?? "";
+
+			const orderString = this.alipaySdk.sdkExecute("alipay.trade.app.pay", {
+				bizContent: {
+					out_trade_no: outTradeNo,
+					total_amount: payableAmount.toFixed(2),
+					subject: orderSubject,
+					product_code: "QUICK_MSECURITY_PAY",
+					body: orderBody,
+				},
+				notify_url: process.env.ALIPAY_NOTIFY_URL,
+			});
+
+			return {
+				paymentId: paymentRecord.id,
+				orderString,
+				payType,
+				outTradeNo,
+				amount: payableAmount,
+				currency: orderInfo.currency ?? "CNY",
+			};
+		} finally {
+			if (lockId) {
+				await this.cacheService
+					.releaseLock(lockKey, lockId)
+					.catch((error) => {
+						console.warn(
+							`[PayService] release payment lock failed: ${lockKey}`,
+							error instanceof Error ? error.message : error,
+						);
+					});
+			}
+		}
 	}
 
 	async payNotify(payInfo: PayNotification) {
-		// 调用支付宝SDK验证签名
-		// 查找是否存在订单
-		// 根据通知的信息设定支付状态和绑定支付宝交易号
+		const signatureValid = this.alipaySdk.checkNotifySign(payInfo);
+		if (!signatureValid) {
+			return "fail";
+		}
+
+		const order = await this.db.query.orders.findFirst({
+			where: eq(orders.orderSerial, payInfo.out_trade_no),
+		});
+
+		if (!order) {
+			return "fail";
+		}
+
+		const mappedStatus = TRADE_STATUS_TO_PAYMENT_STATUS[payInfo.trade_status];
+		if (!mappedStatus) {
+			return "success";
+		}
+
+		const lockKey = this.getPaymentLockKey(order.id);
+		let lockId: string | null = null;
+
+		try {
+			lockId = await this.cacheService.acquireLock(
+				lockKey,
+				this.paymentLockTtl,
+				15,
+				200,
+			);
+			if (!lockId) {
+				return "fail";
+			}
+
+			const paidAt =
+				mappedStatus === "succeeded"
+					? parseAlipayTime(payInfo.gmt_payment || payInfo.notify_time)
+					: undefined;
+
+			await this.db.transaction(async (tx) => {
+				const latestOrder = await tx.query.orders.findFirst({
+					where: eq(orders.id, order.id),
+				});
+
+				if (!latestOrder) {
+					return;
+				}
+
+				const currentPayment =
+					await this.payRepository.findLatestByOrderAndMethod(
+						order.id,
+						"alipay",
+						tx,
+					);
+
+				if (!currentPayment) {
+					const newPayment: PaymentInsert = {
+						orderId: order.id,
+						amount: latestOrder.totalAmount,
+						currency: latestOrder.currency ?? "CNY",
+						paymentMethod: "alipay",
+						status: mappedStatus,
+						paidAt,
+					};
+
+					if (payInfo.trade_no) {
+						newPayment.transactionId = payInfo.trade_no;
+					}
+
+					await this.payRepository.createPayment(newPayment, tx);
+				} else if (currentPayment.status !== "succeeded") {
+					const updateData: Partial<Omit<PaymentInsert, "id" | "orderId">> = {
+						status: mappedStatus,
+						paidAt,
+					};
+
+					if (payInfo.trade_no) {
+						updateData.transactionId = payInfo.trade_no;
+					}
+
+					await this.payRepository.updatePaymentById(
+						currentPayment.id,
+						updateData,
+						tx,
+					);
+				}
+
+				if (mappedStatus === "succeeded") {
+                    this.order.updateOrderStatus(latestOrder.id,"paid",{tx: tx})
+				}
+			});
+
+			return "success";
+		} catch (error) {
+			console.warn(
+				"[PayService] 支付回调处理失败",
+				error instanceof Error ? error.message : error,
+			);
+			return "fail";
+		} finally {
+			if (lockId) {
+				await this.cacheService
+					.releaseLock(lockKey, lockId)
+					.catch((releaseError) => {
+						console.warn(
+							`[PayService] release payment lock failed: ${lockKey}`,
+							releaseError instanceof Error
+								? releaseError.message
+								: releaseError,
+						);
+					});
+			}
+		}
 	}
 }

@@ -23,13 +23,13 @@ import {
 	type UpsertWorkInfoRequest,
 	UpsertWorkInfoRequestSchema,
 } from "@repo/types";
-import type { Request } from "express";
+import { Request } from "express";
 import { ApiErrorResponses, ApiSuccessResponse } from "src/common/decorator";
 import { ApiBodies } from "src/common/decorator/swagger-api-bodies";
 import { ZodValidationPipe } from "src/common/pipes";
 import { z } from "zod/v4";
 import { AuthGuard } from "../auth/auth.guard";
-import type { WorkSkillService } from "./work-skill.service";
+import { WorkSkillService } from "./work-skill.service";
 
 @ApiTags("工作技能管理")
 @Controller("workSkill")

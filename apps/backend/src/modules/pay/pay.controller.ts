@@ -1,53 +1,149 @@
-import { Body, Controller, Get, Param, Post } from "@nestjs/common";
-import { AlipaySdk } from "alipay-sdk";
+import {
+	Body,
+	Controller,
+	HttpCode,
+	HttpStatus,
+	Param,
+	Post,
+	Req,
+	UsePipes,
+} from "@nestjs/common";
+import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+	PaymentMethodEnum,
+	type PayNotification,
+	payNotificationSchema,
+} from "@repo/types";
+import type { Request } from "express";
+import { ApiSuccessResponse } from "src/common/decorator";
+import { ApiBodies } from "src/common/decorator/swagger-api-bodies";
 import { SkipTransform } from "src/common/interceptors";
-import type { PayService } from "./pay.service";
+import { createMultiZodPipe, createZodPipe } from "src/common/pipes";
+import { z } from "zod/v4";
+import { Public } from "../auth/decorators";
+import { PayService } from "./pay.service";
 
-// 实例化客户端
-const alipaySdk = new AlipaySdk({
-	// 设置应用 ID
-	appId: "9021000153675106",
-	signType: "RSA2",
-	// 设置应用私钥
-	privateKey:
-		"MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCuPEu4ejPIM1E5mGG6aGH2UYOfFCoiTkdMdJWzixM/7tG56rP6g77LdDxRMqUTLWfyjrDGfyOTHgQbP8JoR+8fO1IOPGAtGuT+oi2yIHWSkObJvuLjSItjTpf2y6f1zrfhV1Vv+6S13jr3XMuc6t6qazNhR0CFoSM6o4to6ggu48X8F5eMfjev9I4bFD5gY1LohxvDAsRR3f7yCTUSrPSKScuIx3cq2I5imA5aQCS5zCvpjacAoV+xTGvDyaeFbNsD7iXP3fTbJiHjwSBc31u266jvCc967eHksXoYDP2YlW355X6sZVLEhaxAs8Uw1dXoV4gWjNwUaeiZJ6h7J0PPAgMBAAECggEABiWKZk+pU/67dtSxXeogypfFlO8ZLWylh0T1owfc/fxm2bA1+Th8mqDXH+YxfKO1bxEpm1cQ4jfE3VE6goNHJErrciUfH3g7a+A8zHPoser6uVNKncoJYM98/O/iVQGd6w0xrmmqPeBBJEjZxgdjI4/0mBHzbMNqgr8SQ/k9oKnJfS2A2GwDBE0EEaGdNkKbgZe4ejPTRGo/e7TDZjPIWUR5wFONcQS6IILhrdN4tnTfUafHo2rJwW9vRDzn3ndTce66QUG72SjUmxGEZgyrDQKNh2y8wnOWBvyav8VjFjzbQU1YD+AqxpGZ0dJorg9MYgsh6QRorcHmnI37+B/ngQKBgQDfuSlEUELEe5Z34FW6F3HChD6qDKX73GvXK/J0n9I6DFyF2LQKclvXSHS6+nRY1z5Uvhg+PLW2kbeumixPQQqi96fpmbScMY+2gOxzPEugq0itNJdHx6OtUMHhgRGHSM4zQ5iywpfBv9gTxmhnMvgXKSnJw2box4RBysy7sMME6QKBgQDHX2N4q06OoVGk/sP1rtUFvWSPnfgUnLJjWYyp+ZauaspkKNhShqQ6ghv/JMMZn3/p71K4Im8S9AtcM8hLfgz4IUsWH5MUIm0IoQun3EBXpgiSGPp7Y4dGAl8ELKtsKpSSnIuJyQCmavKlYsuIdXQQF9BLmG2DcrOP8iolsSjv9wKBgQCzoqsd7QwPU+S3kGuFJnnzY9glFk7Ycl4swV7GgeV9Mpu/5QZ7NOPFcqo30A5Hn1yvEovIvVpyo4JHMgfOAz2VKSGsEfzRRYJNWiuBQ7K96YpLeOTXf9dOvH9QoCAA7laTFv2u20ybB31qM291HZnSjvy8wqcI1dq+MSY+tmmAsQKBgEbXnynGfSBzM+aT3B+VYv4qIOxjLj5su3pP3IqdNCx/p7DVTqBsVTiw+K+9aVHWegYu0s649YzfiJXXlIk2nfchJWQUDhfub53MU67utTIvvgXjuEVVxUBcIVUDZloF+0rpMy/fa0q238dihn3Tdk0tmQbzf55giGtSmiVQgQJbAoGBAL6ayj1Bx00uOEU9Jp2CuzcuSPszkFwQ5rKNs5cBfaftFQrzeghNfixVGmMAN3679rWITiKBS6346PDgA8R0ZhbNSQ+tmXzLoFiDHVvRV56LvMT+Kpf+awF41QOaJ+5pEkjuV6TO1UQS3Fr2kDHjvlONlGmXF/Svm+o/zlXIQS6Z",
+type PaymentMethod = z.infer<typeof PaymentMethodEnum>;
 
-	// 设置支付宝公钥
-	alipayPublicKey:
-		"MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3ln/fUhYapD0Qj9tonGMD/gdl0iYwyl23NB2VQCTnZtE/BLlQYlsI8XgCMFM+YnTx+E08T7SWNgPv8G2gBH4SKz0umusBO91wP6SaGb44jKI2D/8894gMzrD8cPEci/6Oir4cCI2deAe96G1Kt/4UYx64+IyeXwdjLqKGG+0sQikXJNnWEp/msAW1FVanRdvQaYOhLCKXDMlTY5xSe92ZzA9//gerT3qcvhFdqaxn3sJhQ/d3IwqSGtDxaQYh3lKufEYjnwiRCN3iOXxojgCkgd6garVIkJpD7NwmJ0KW42MWz1q+zgwvexl6TgVbieoYzCZAGSlZi5QaNd6DRn9NQIDAQAB",
+const initiatePaymentParamsSchema = z
+	.object({
+		orderId: z
+			.string()
+			.min(1, "订单ID不能为空")
+			.max(255, "订单ID长度不能超过255")
+			.meta({
+				title: "订单ID",
+				description: "待发起支付的订单ID",
+			}),
+	})
+	.meta({
+		title: "支付路径参数",
+	});
 
-	// 密钥类型，请与生成的密钥格式保持一致，参考平台配置一节
+const initiatePaymentBodySchema = z
+	.object({
+		payType: PaymentMethodEnum.refine(
+			(value: PaymentMethod) => value === "alipay",
+			"当前仅支持支付宝支付",
+		).meta({
+			title: "支付方式",
+			description: "当前仅支持 alipay",
+			examples: ["alipay"],
+		}),
+		displayAmount: z.coerce
+			.number("displayAmount 需为数字")
+			.positive("显示金额必须大于 0")
+			.meta({
+				title: "显示金额",
+				description: "客户端展示的支付金额，用于发起前的二次校验",
+				examples: [199.99],
+			}),
+	})
+	.meta({
+		title: "发起支付请求体",
+	});
 
-	// keyType: 'PKCS1',
+type InitiatePaymentBody = z.infer<typeof initiatePaymentBodySchema>;
 
-	// 设置网关地址，默认是 https://openapi.alipay.com
+const initiatePaymentResponseSchema = z
+	.object({
+		paymentId: z.string().min(1).meta({
+			title: "支付记录ID",
+			description: "用于后续查询或对账的支付记录主键",
+		}),
+		orderString: z.string().min(1).meta({
+			title: "支付宝订单串",
+			description: "客户端直接唤起支付宝所需的签名串",
+		}),
+		payType: PaymentMethodEnum.meta({ title: "支付方式" }),
+		outTradeNo: z
+			.string()
+			.min(1)
+			.meta({ title: "外部订单号", description: "订单流水号/商户订单号" }),
+		amount: z.number().positive().meta({
+			title: "支付金额",
+			description: "本次支付的订单金额（单位：元）",
+		}),
+		currency: z
+			.string()
+			.min(1)
+			.meta({ title: "币种", description: "货币单位，默认 CNY" }),
+	})
+	.meta({ title: "发起支付响应" });
 
-	endpoint: "https://openapi-sandbox.dl.alipaydev.com/gateway.do",
+const alipayNotifyResponseSchema = z.enum(["success", "fail"]).meta({
+	title: "支付宝回调响应",
+	description: "支付宝要求返回 success 或 fail",
 });
 
+@ApiTags("支付")
 @Controller("pay")
 export class PayController {
-	// constructor(private readonly payService: PayService) {}
+	constructor(private readonly payService: PayService) {}
 
-	@Get()
-	getPayInfo() {
-		const orderStr = alipaySdk.sdkExecute("alipay.trade.app.pay", {
-			bizContent: {
-				out_trade_no: "asdpouarivobsfdgoprutdsf",
-				product_code: "234dvbxvpugiouretpufgsp",
-				subject: "abc",
-				body: "234",
-				total_amount: "0.01",
-			},
-			notify_url: " http://sfc9d8c6.natappfree.cc/api/pay/notify",
+	@Post("orders/:orderId")
+	@HttpCode(HttpStatus.OK)
+	@UsePipes(
+		createMultiZodPipe({
+			params: initiatePaymentParamsSchema,
+			body: initiatePaymentBodySchema,
+			errorMessage: "发起支付参数校验失败",
+		}),
+	)
+	@ApiOperation({
+		summary: "发起订单支付",
+		description: "校验订单状态与金额后，生成支付宝支付串返回给客户端",
+	})
+	@ApiBodies(initiatePaymentBodySchema)
+	@ApiSuccessResponse(initiatePaymentResponseSchema, {
+		description: "返回支付记录信息及用于客户端唤起支付宝的订单串",
+	})
+	async initiatePayment(
+		@Param("orderId") orderId: string,
+		@Body() body: InitiatePaymentBody,
+		@Req() req: Request,
+	) {
+		return this.payService.pay({
+			orderId,
+			userId: req.user.id,
+			payType: body.payType,
+			displayAmount: body.displayAmount,
 		});
-		return orderStr;
 	}
 
-	@SkipTransform()
-	@Post("notify")
-	notify(@Body() info:{a:string}, @Param() param) {
-		console.log(info, param);
-		return "成功";
-	}
+	@Public()
+    @SkipTransform()
+    @Post("alipay/notify")
+    @HttpCode(HttpStatus.OK)
+    @UsePipes(createZodPipe(payNotificationSchema, "支付宝异步通知参数校验失败"))
+    @ApiOperation({
+        summary: "支付宝异步通知回调(不要在应用中进行调用)",
+        description: "消费支付宝服务器推送的异步通知，并同步更新支付状态",
+    })
+    @ApiSuccessResponse(alipayNotifyResponseSchema, {
+        description: "处理完成后需返回 success 或 fail 给支付宝",
+    })
+    async handleAlipayNotify(@Body() payload: PayNotification) {
+        return this.payService.payNotify(payload);
+    }
 }

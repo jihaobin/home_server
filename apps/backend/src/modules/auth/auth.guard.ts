@@ -1,26 +1,25 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import type { CanActivate, ExecutionContext } from '@nestjs/common';
-
-import { AUTH_INSTANCE_KEY } from './symbols';
-import { APIError } from 'better-auth/api';
-import type { getSession } from 'better-auth/api';
-import { fromNodeHeaders } from 'better-auth/node';
-import type { Auth } from 'better-auth/auth';
+import type { CanActivate, ExecutionContext } from "@nestjs/common";
+import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import type { getSession } from "better-auth/api";
+import { APIError } from "better-auth/api";
+import type { Auth } from "better-auth/auth";
+import { fromNodeHeaders } from "better-auth/node";
+import { AUTH_INSTANCE_KEY } from "./symbols";
 
 /**
  * Type representing a valid user session after authentication
  * Excludes null and undefined values from the session return type
  */
 export type UserSession = NonNullable<
-    Awaited<ReturnType<ReturnType<typeof getSession>>>
+	Awaited<ReturnType<ReturnType<typeof getSession>>>
 >;
 
-declare module 'express' {
-    interface Request {
-        session: UserSession;
-        user: UserSession['user'];
-    }
+declare module "express" {
+	interface Request {
+		session: UserSession;
+		user: UserSession["user"];
+	}
 }
 
 /**
@@ -29,50 +28,50 @@ declare module 'express' {
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
-    constructor(
+	constructor(
         @Inject(Reflector)
         private readonly reflector: Reflector,
         @Inject(AUTH_INSTANCE_KEY)
         private readonly auth: Auth,
     ) {}
 
-    /**
-     * Validates if the current request is authenticated
-     * Attaches session and user information to the request object
-     * @param context - The execution context of the current request
-     * @returns True if the request is authorized to proceed, throws an error otherwise
-     */
-    async canActivate(context: ExecutionContext): Promise<boolean> {
-        const request = context.switchToHttp().getRequest();
-        const session = await this.auth.api.getSession({
-            headers: fromNodeHeaders(request.headers),
-        });
+	/**
+	 * Validates if the current request is authenticated
+	 * Attaches session and user information to the request object
+	 * @param context - The execution context of the current request
+	 * @returns True if the request is authorized to proceed, throws an error otherwise
+	 */
+	async canActivate(context: ExecutionContext): Promise<boolean> {
+		const request = context.switchToHttp().getRequest();
+		const session = await this.auth.api.getSession({
+			headers: fromNodeHeaders(request.headers),
+		});
 
-        if (!session || !session.user) {
-            throw new UnauthorizedException({
-                code: 'UNAUTHORIZED',
-                message: '当前用户未登录',
-            });
-        }
+		if (!session || !session.user) {
+			throw new UnauthorizedException({
+				code: "UNAUTHORIZED",
+				message: "当前用户未登录或者不存在",
+			});
+		}
 
-        request.session = session!;
-        request.user = session.user; // useful for observability tools like Sentry
+		request.session = session!;
+		request.user = session.user; // useful for observability tools like Sentry
 
-        const isPublic = this.reflector.get('PUBLIC', context.getHandler());
+		const isPublic = this.reflector.get("PUBLIC", context.getHandler());
 
-        if (isPublic) return true;
+		if (isPublic) return true;
 
-        const isOptional = this.reflector.get('OPTIONAL', context.getHandler());
+		const isOptional = this.reflector.get("OPTIONAL", context.getHandler());
 
-        if (isOptional && !session) return true;
+		if (isOptional && !session) return true;
 
-        if (!session) {
-            throw new UnauthorizedException({
-                code: 'UNAUTHORIZED',
-                message: '当前用户未登录',
-            });
-        }
+		if (!session) {
+			throw new UnauthorizedException({
+				code: "UNAUTHORIZED",
+				message: "当前用户未登录",
+			});
+		}
 
-        return true;
-    }
+		return true;
+	}
 }
