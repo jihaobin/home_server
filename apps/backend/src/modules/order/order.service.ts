@@ -1,11 +1,19 @@
-import { Inject, Injectable, BadRequestException } from "@nestjs/common";
-import { OrderRepository } from "./order.reposityro";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import type {
+	CreateDesignatedOrder,
+	CreateOrder,
+	OrderListRequest,
+	OrderStatus,
+} from "@repo/types";
+import type { DbType } from "src/common/database/db";
+import { extractParams, isTimeInRange } from "src/lib/utlis";
 import { ServiceService } from "../service/service.service";
 import { WorkSkillService } from "../work-skill/work-skill.service";
-import { CreateOrder, OrderListRequest, OrderStatus } from "@repo/types";
-import { CreateDesignatedOrder } from "@repo/types";
-import { extractParams, isTimeInRange } from "src/lib/utlis";
-import { DbType } from "src/common/database/db";
+import { OrderRepository } from "./order.reposityro";
+import {
+	type GenerateQrResult,
+	OrderCheckinService,
+} from "./order-checkin.service";
 
 @Injectable()
 export class OrderService {
@@ -17,6 +25,9 @@ export class OrderService {
 
 	@Inject(WorkSkillService)
 	private readonly workSkillService: WorkSkillService;
+
+	@Inject(OrderCheckinService)
+	private readonly orderCheckinService: OrderCheckinService;
 
 	/**
 	 * 获取客户的订单列表
@@ -45,8 +56,7 @@ export class OrderService {
 				sortOrder: params.sortOrder || "desc",
 			});
 		} catch (error) {
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-			throw new BadRequestException("获取订单列表失败: " + error.message);
+			throw new BadRequestException(`获取订单列表失败: ${error.message}`);
 		}
 	}
 
@@ -56,7 +66,7 @@ export class OrderService {
 	 * @param userId 用户ID（用于权限验证）
 	 * @returns 订单详情
 	 */
-	async getOrderById(id: string, userId?: string) {
+	async getOrderById(id: string, userId?: string, isPrvite: boolean = true) {
 		// 参数验证
 		if (!id) {
 			throw new BadRequestException("订单ID不能为空");
@@ -74,13 +84,22 @@ export class OrderService {
 				throw new BadRequestException("您没有权限查看此订单");
 			}
 
-			return order;
+			let checkInQr: GenerateQrResult | null = null;
+			if (isPrvite) {
+				if (userId && order.customerId === userId) {
+					checkInQr = await this.orderCheckinService.generateQrCode({
+						orderId: id,
+						requesterId: userId,
+					});
+				}
+			}
+
+			return { ...order, checkInQr };
 		} catch (error) {
 			if (error instanceof BadRequestException) {
 				throw error;
 			}
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-			throw new BadRequestException("获取订单详情失败: " + error.message);
+			throw new BadRequestException(`获取订单详情失败: ${error.message}`);
 		}
 	}
 
@@ -136,8 +155,7 @@ export class OrderService {
 			if (error instanceof BadRequestException) {
 				throw error;
 			}
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-			throw new BadRequestException("创建订单失败: " + error.message);
+			throw new BadRequestException(`创建订单失败: ${error.message}`);
 		}
 	}
 
@@ -283,8 +301,7 @@ export class OrderService {
 			};
 		} catch (error) {
 			throw new BadRequestException(
-				// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-				"创建指定服务人员订单失败: " + error.message,
+				`创建指定服务人员订单失败: ${error.message}`,
 			);
 		}
 	}
@@ -296,7 +313,11 @@ export class OrderService {
 	 * @param userId 用户ID（用于权限验证）
 	 * @returns 更新后的订单信息
 	 */
-	async updateOrderStatus(id: string, newStatus: OrderStatus,{tx}:{tx?: DbType}) {
+	async updateOrderStatus(
+		id: string,
+		newStatus: OrderStatus,
+		{ tx }: { tx?: DbType },
+	) {
 		// 参数验证
 		if (!id) {
 			throw new BadRequestException("订单ID不能为空");
@@ -317,7 +338,7 @@ export class OrderService {
 			const updatedOrder = await this.orderRepository.updateOrderStatus(
 				id,
 				newStatus,
-                tx,
+				tx,
 			);
 
 			return updatedOrder;
@@ -325,8 +346,7 @@ export class OrderService {
 			if (error instanceof BadRequestException) {
 				throw error;
 			}
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-			throw new BadRequestException("更新订单状态失败: " + error.message);
+			throw new BadRequestException(`更新订单状态失败: ${error.message}`);
 		}
 	}
 }

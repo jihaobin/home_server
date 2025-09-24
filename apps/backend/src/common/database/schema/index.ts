@@ -7,6 +7,7 @@ export * from "./shops-service";
 export * from "./server";
 export * from "./addresses";
 export * from "./orders";
+export * from "./order-checkins";
 export * from "./reviews-social";
 export * from "./financial";
 export * from "./notifications";

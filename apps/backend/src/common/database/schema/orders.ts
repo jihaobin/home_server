@@ -13,6 +13,7 @@ import { services } from "./server";
 import { userAddresses } from "./addresses";
 import { servicePersonnel } from "./shops-service";
 import { couponUsageRecords } from "./coupons";
+import { orderCheckins } from "./order-checkins";
 import {
 	orderStatusEnum,
 	paymentStatusEnum,
@@ -186,6 +187,7 @@ export const ordersRelations = relations(orders, ({ one, many }) => ({
 	}),
 	payments: many(payments),
 	couponUsageRecords: many(couponUsageRecords),
+	checkIns: many(orderCheckins),
 }));
 
 // 订单分配关系定义

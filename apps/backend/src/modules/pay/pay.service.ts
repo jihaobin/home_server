@@ -147,9 +147,7 @@ export class PayService {
 				);
 
 				if (
-					existingPayments.some(
-						(payment) => payment.status === "succeeded",
-					)
+					existingPayments.some((payment) => payment.status === "succeeded")
 				) {
 					throw new BadRequestException("该订单已完成支付");
 				}
@@ -206,14 +204,12 @@ export class PayService {
 			};
 		} finally {
 			if (lockId) {
-				await this.cacheService
-					.releaseLock(lockKey, lockId)
-					.catch((error) => {
-						console.warn(
-							`[PayService] release payment lock failed: ${lockKey}`,
-							error instanceof Error ? error.message : error,
-						);
-					});
+				await this.cacheService.releaseLock(lockKey, lockId).catch((error) => {
+					console.warn(
+						`[PayService] release payment lock failed: ${lockKey}`,
+						error instanceof Error ? error.message : error,
+					);
+				});
 			}
 		}
 	}
@@ -305,7 +301,9 @@ export class PayService {
 				}
 
 				if (mappedStatus === "succeeded") {
-                    this.order.updateOrderStatus(latestOrder.id,"paid",{tx: tx})
+					this.order.updateOrderStatus(latestOrder.id, "paid", {
+						tx: tx,
+					});
 				}
 			});
 

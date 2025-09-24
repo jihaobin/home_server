@@ -5,8 +5,8 @@ import { PayRepository } from "./pay.repository";
 import { PayService } from "./pay.service";
 
 @Module({
-    controllers: [PayController],
-    providers: [PayService, PayRepository],
-    imports: [OrderModule],
+	controllers: [PayController],
+	providers: [PayService, PayRepository],
+	imports: [OrderModule],
 })
 export class PayModule {}

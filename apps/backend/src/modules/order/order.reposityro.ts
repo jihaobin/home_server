@@ -160,8 +160,12 @@ export class OrderRepository {
 	 * @param newStatus 新的订单状态
 	 * @returns 更新后的订单信息
 	 */
-	async updateOrderStatus(id: string, newStatus: OrderStatus,executor?: DbType) {
-        const db = executor ?? this.db;
+	async updateOrderStatus(
+		id: string,
+		newStatus: OrderStatus,
+		executor?: DbType,
+	) {
+		const db = executor ?? this.db;
 
 		// 1. 获取当前订单状态
 		const order = await db.query.orders.findFirst({

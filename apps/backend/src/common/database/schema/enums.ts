@@ -81,3 +81,12 @@ export const reviewTargetTypeEnum = pgEnum("review_target_type", [
 	"personnel", // 服务人员
 	"shop", // 店铺
 ]);
+/**
+ * 订单到场核验状态枚举
+ */
+export const orderCheckinStatusEnum = pgEnum("order_checkin_status", [
+	"pending", // 待核验
+	"verified", // 已核验
+	"revoked", // 主动作废
+	"expired", // 已过期
+]);

@@ -163,3 +163,29 @@ export const CreateDesignatedOrderSchema = z
 	});
 
 export type CreateDesignatedOrder = z.infer<typeof CreateDesignatedOrderSchema>;
+
+export const GenerateOrderCheckinSchema = z
+	.object({
+		orderId: z.string().min(1, "订单 ID 不能为空"),
+	})
+	.meta({
+		title: "生成订单核验二维码",
+		description: "生成订单核验二维码请求参数",
+	});
+
+export type GenerateOrderCheckinDto = z.infer<typeof GenerateOrderCheckinSchema>;
+
+export const VerifyOrderCheckinSchema = z
+	.object({
+		token: z.string().min(1, "二维码令牌不能为空"),
+		latitude: z.number().gte(-90).lte(90),
+		longitude: z.number().gte(-180).lte(180),
+		orderId: z.string().min(1).optional(),
+		remark: z.string().max(200).optional(),
+	})
+	.meta({
+		title: "核验订单二维码",
+		description: "核验订单二维码请求参数",
+	});
+
+export type VerifyOrderCheckinDto = z.infer<typeof VerifyOrderCheckinSchema>;

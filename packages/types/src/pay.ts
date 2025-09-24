@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { PaymentMethodEnum } from "./database-entity";
 
 const PAY_DATETIME_SECONDS_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 const PAY_DATETIME_MILLIS_PATTERN =
@@ -542,3 +543,83 @@ export const payRequestSchema = z
 		],
 	});
 export type PayRequest = z.infer<typeof payRequestSchema>;
+
+
+export const InitiatePaymentParamsSchema = z
+	.object({
+		orderId: z
+			.string()
+			.min(1, "订单ID不能为空")
+			.max(255, "订单ID长度不能超过255")
+			.meta({
+				title: "订单ID",
+				description: "待发起支付的订单ID",
+			}),
+	})
+	.meta({
+		title: "支付路径参数",
+		description: "发起订单支付接口的路径参数",
+	});
+
+export type InitiatePaymentParams = z.infer<typeof InitiatePaymentParamsSchema>;
+
+export const InitiatePaymentBodySchema = z
+	.object({
+		payType: PaymentMethodEnum.refine(
+			(value) => value === "alipay",
+			"当前仅支持支付宝支付",
+		).meta({
+			title: "支付方式",
+			description: "当前仅支持 alipay",
+			examples: ["alipay"],
+		}),
+		displayAmount: z.coerce
+			.number("displayAmount 必须为数字")
+			.positive("显示金额需大于 0")
+			.meta({
+				title: "显示金额",
+				description: "客户端展示的支付金额，用于发起前的订单校验",
+				examples: [199.99],
+			}),
+	})
+	.meta({
+		title: "发起支付请求体",
+		description: "发起订单支付接口的请求体",
+	});
+
+export type InitiatePaymentBody = z.infer<typeof InitiatePaymentBodySchema>;
+
+export const InitiatePaymentResponseSchema = z
+	.object({
+		paymentId: z.string().min(1).meta({
+			title: "支付记录ID",
+			description: "用于后续查询或调试的支付记录标识",
+		}),
+		orderString: z.string().min(1).meta({
+			title: "支付订单串",
+			description: "客户端直接用于发起支付的订单字符串签名",
+		}),
+		payType: PaymentMethodEnum.meta({ title: "支付方式" }),
+		outTradeNo: z.string().min(1).meta({
+			title: "外部订单号",
+			description: "支付流水号/商户订单号",
+		}),
+		amount: z.number().positive().meta({
+			title: "支付金额",
+			description: "本次支付的订单金额（单位：元）",
+		}),
+		currency: z
+			.string()
+			.min(1)
+			.meta({ title: "币种", description: "默认使用 CNY" }),
+	})
+	.meta({ title: "发起支付响应" });
+
+export type InitiatePaymentResponse = z.infer<typeof InitiatePaymentResponseSchema>;
+
+export const AlipayNotifyResponseSchema = z.enum(["success", "fail"]).meta({
+	title: "支付宝回调响应",
+	description: "支付宝要求返回 success 或 fail",
+});
+
+export type AlipayNotifyResponse = z.infer<typeof AlipayNotifyResponseSchema>;
