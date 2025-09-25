@@ -5,15 +5,15 @@ import {
 	Injectable,
 	Logger,
 } from "@nestjs/common";
-import type { ConfigService } from "@nestjs/config";
-import type {
+import { ConfigService } from "@nestjs/config";
+import {
 	GenerateOrderCheckinDto,
 	VerifyOrderCheckinDto,
 } from "@repo/types";
 import QRCode from "qrcode";
-import type { GeoLocationService } from "src/common/services/geo-location.service";
-import type { OrderRepository } from "./order.reposityro";
-import type { OrderCheckinRepository } from "./order-checkin.repository";
+import { GeoLocationService } from "src/common/services/geo-location.service";
+import { OrderRepository } from "./order.reposityro";
+import { OrderCheckinRepository } from "./order-checkin.repository";
 
 export interface GenerateQrResult {
 	orderId: string;

@@ -544,6 +544,327 @@ export const payRequestSchema = z
 	});
 export type PayRequest = z.infer<typeof payRequestSchema>;
 
+const ALIPAY_WITHDRAW_BIZ_SCENES = [
+	"DIRECT_TRANSFER",
+	"PERSONAL_COLLECTION",
+	"CAE_TRANSFER",
+	"DIRECT_ALLOCATION",
+	"DIRECT_ALLOCATION_TRANSFER",
+	"ENTRUST_ALLOCATION",
+	"ENTRUST_ALLOCATION_TRANSFER",
+	"ENTRUST_TRANSFER",
+	"OVERSEA_FCY_TRANSFER",
+	"THIRDPARTY_PERSONAL_COLLECTION",
+	"THIRDPARTY_PERSONAL_COLLECTION_CONFIRM",
+	"UNLIMITED_PAY",
+] as const;
+
+export const alipayWithdrawBizSceneSchema = z.enum(ALIPAY_WITHDRAW_BIZ_SCENES).meta({
+	title: "转账场景枚举",
+	description: "biz_scene 字段的可选值列表，文档默认示例为 DIRECT_TRANSFER。",
+	examples: ["DIRECT_TRANSFER"],
+});
+export type AlipayWithdrawBizScene = z.infer<typeof alipayWithdrawBizSceneSchema>;
+
+export const alipayWithdrawProductCodeSchema = z.literal("TRANS_ACCOUNT_NO_PWD").meta({
+	title: "产品码",
+	description: "product_code 固定为 TRANS_ACCOUNT_NO_PWD。",
+	examples: ["TRANS_ACCOUNT_NO_PWD"],
+});
+export type AlipayWithdrawProductCode = z.infer<typeof alipayWithdrawProductCodeSchema>;
+
+const ALIPAY_WITHDRAW_PAYEE_IDENTITY_TYPES = [
+	"ALIPAY_USER_ID",
+	"ALIPAY_LOGON_ID",
+	"ALIPAY_OPEN_ID",
+] as const;
+
+export const alipayWithdrawPayeeIdentityTypeSchema = z
+	.enum(ALIPAY_WITHDRAW_PAYEE_IDENTITY_TYPES)
+	.meta({
+		title: "收款方标识类型",
+		description: "identity_type 的枚举值，与文档保持一致。",
+		examples: ["ALIPAY_USER_ID"],
+	});
+export type AlipayWithdrawPayeeIdentityType = z.infer<
+	typeof alipayWithdrawPayeeIdentityTypeSchema
+>;
+
+const alipayWithdrawPayeeSchemaBase = z
+	.object({
+		identity: createBoundedString(128, "identity"),
+		identity_type: alipayWithdrawPayeeIdentityTypeSchema,
+		name: createBoundedString(128, "name").optional(),
+	})
+	.meta({
+		title: "收款方信息",
+		description: "对应 alipay_withdraw.txt 中的 payee_info 结构，包含标识与姓名。",
+		examples: [
+			{
+				identity: "2088123412341234",
+				identity_type: "ALIPAY_USER_ID",
+				name: "黄龙国际有限公司",
+			},
+		],
+	});
+
+export const alipayWithdrawPayeeSchema = alipayWithdrawPayeeSchemaBase.superRefine(
+	(value, ctx) => {
+		if (value.identity_type === "ALIPAY_LOGON_ID" && !value.name) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ["name"],
+				message: "identity_type 为 ALIPAY_LOGON_ID 时，name 为必填项",
+			});
+		}
+	},
+);
+export type AlipayWithdrawPayee = z.infer<typeof alipayWithdrawPayeeSchema>;
+
+const alipayWithdrawAmountSchema = payAmountTextSchema
+	.refine((value) => {
+		const numeric = Number(value);
+		return Number.isFinite(numeric) && numeric >= 0.1 && numeric <= 100000000;
+	}, "trans_amount 必须在 0.1 到 100000000 之间")
+	.meta({
+		title: "转账金额",
+		description: "单位为元，精确到小数点后两位，范围 [0.1, 100000000]。",
+		examples: ["23.00"],
+	});
+
+const alipayWithdrawRemarkSchema = z
+	.string()
+	.max(200, "remark 最大长度 200")
+	.optional();
+
+const alipayWithdrawBusinessParamsSchema = z
+	.string()
+	.max(2048, "business_params 最大长度 2048")
+	.optional();
+
+export const alipayWithdrawRequestSchema = z
+	.object({
+		out_biz_no: createBoundedString(64, "out_biz_no"),
+		trans_amount: alipayWithdrawAmountSchema,
+		biz_scene: alipayWithdrawBizSceneSchema,
+		product_code: alipayWithdrawProductCodeSchema,
+		order_title: createBoundedString(128, "order_title"),
+		payee_info: alipayWithdrawPayeeSchema,
+		remark: alipayWithdrawRemarkSchema,
+		business_params: alipayWithdrawBusinessParamsSchema,
+	})
+	.meta({
+		title: "支付宝单笔无密转账请求",
+		description: "根据 alipay_withdraw.txt 中的业务请求参数生成。",
+		examples: [
+			{
+				out_biz_no: "201806300001",
+				trans_amount: "23.00",
+				biz_scene: "DIRECT_TRANSFER",
+				product_code: "TRANS_ACCOUNT_NO_PWD",
+				order_title: "201905工资",
+				payee_info: {
+					identity: "2088123412341234",
+					identity_type: "ALIPAY_USER_ID",
+					name: "黄龙国际有限公司",
+				},
+				remark: "201905工资",
+				business_params: {"payer_show_name_use_alias":"true"},
+			},
+		],
+	});
+export type AlipayWithdrawRequest = z.infer<typeof alipayWithdrawRequestSchema>;
+
+const ALIPAY_WITHDRAW_STATUS_VALUES = ["SUCCESS", "FAIL"] as const;
+
+export const alipayWithdrawStatusSchema = z
+	.enum(ALIPAY_WITHDRAW_STATUS_VALUES)
+	.meta({
+		title: "转账状态",
+		description: "SUCCESS 表示转账成功，FAIL 表示转账失败。",
+		examples: ["SUCCESS"],
+	});
+export type AlipayWithdrawStatus = z.infer<typeof alipayWithdrawStatusSchema>;
+
+const ALIPAY_WITHDRAW_ERROR_CODES = [
+	"SYSTEM_ERROR",
+	"INVALID_PARAMETER",
+	"AUTHOREE_IS_NOT_MATCH",
+	"BALANCE_IS_NOT_ENOUGH",
+	"BIZ_UNIQUE_EXCEPTION",
+	"BLOCK_USER_FORBBIDEN_RECIEVE",
+	"BLOCK_USER_FORBBIDEN_SEND",
+	"CHECK_RECEIVER_CERT_NOT_ALLOW",
+	"CURRENCY_NOT_SUPPORT",
+	"EXCEED_LIMIT_DC_RECEIVED",
+	"EXCEED_LIMIT_DM_AMOUNT",
+	"EXCEED_LIMIT_DM_MAX_AMOUNT",
+	"EXCEED_LIMIT_ENT_SM_AMOUNT",
+	"EXCEED_LIMIT_MM_AMOUNT",
+	"EXCEED_LIMIT_MM_MAX_AMOUNT",
+	"EXCEED_LIMIT_PERSONAL_SM_AMOUNT",
+	"EXCEED_LIMIT_SM_AMOUNT",
+	"EXCEED_LIMIT_SM_MIN_AMOUNT",
+	"EXCEED_LIMIT_UNRN_DM_AMOUNT",
+	"EXPAND_INDIRECT_VERIFY_FAIL",
+	"IDENTITY_FUND_RELATION_NOT_FOUND",
+	"ILLEGAL_OPERATION",
+	"INST_PAY_UNABLE",
+	"INVALID_PAYER_ACCOUNT",
+	"ISV_AUTH_ERROR",
+	"MEMO_REQUIRED_IN_TRANSFER_ERROR",
+	"MONEY_PAY_CLOSED",
+	"MRCHPROD_QUERY_ERROR",
+	"NOT_IN_WHITE_LIST",
+	"NOT_SUPPORT_PAYER_ACCOUNT_TYPE",
+	"NO_ACCOUNTBOOK_PERMISSION",
+	"NO_ACCOUNT_PAYMENT_PERMISSION",
+	"NO_ACCOUNT_RECEIVE_PERMISSION",
+	"NO_ACCOUNT_USER_FORBBIDEN_RECIEVE",
+	"NO_AVAILABLE_PAYMENT_TOOLS",
+	"NO_ORDER_PERMISSION",
+	"NO_PERMISSION_ACCOUNT",
+	"ORDER_NOT_EXIST",
+	"ORDER_STATUS_INVALID",
+	"OVERSEA_TRANSFER_CLOSE",
+	"PARAM_ILLEGAL",
+	"PAYCARD_UNABLE_PAYMENT",
+	"PAYEE_ACCOUNT_NOT_EXSIT",
+	"PAYEE_ACCOUNT_STATUS_ERROR",
+	"PAYEE_ACC_OCUPIED",
+	"PAYEE_CERT_INFO_ERROR",
+	"PAYEE_NOT_EXIST",
+	"PAYEE_NOT_RELNAME_CERTIFY",
+	"PAYEE_TRUSTEESHIP_ACC_OVER_LIMIT",
+	"PAYEE_USERINFO_STATUS_ERROR",
+	"PAYEE_USER_TYPE_ERROR",
+	"PAYER_BALANCE_NOT_ENOUGH",
+	"PAYER_CERTIFY_CHECK_FAIL",
+	"PAYER_NOT_EQUAL_PAYEE_ERROR",
+	"PAYER_NOT_EXIST",
+	"PAYER_PAYEE_CANNOT_SAME",
+	"PAYER_PERMLIMIT_CHECK_FAILURE",
+	"PAYER_REQUESTER_RELATION_INVALID",
+	"PAYER_STATUS_ERROR",
+	"PAYER_USERINFO_NOT_EXSIT",
+	"PAYER_USER_INFO_ERROR",
+	"PAYMENT_FAIL",
+	"PAYMENT_INFO_INCONSISTENCY",
+	"PAYMENT_TIME_EXPIRE",
+	"PERMIT_CHECK_PERM_AML_CERT_EXPIRED",
+	"PERMIT_CHECK_PERM_IDENTITY_THEFT",
+	"PERMIT_CHECK_PERM_LIMITED",
+	"PERMIT_CHECK_RECEIVE_LIMIT",
+	"PERMIT_LIMIT_PAYEE",
+	"PERMIT_NON_BANK_LIMIT_PAYEE",
+	"PERMIT_PAYER_FORBIDDEN",
+	"PERM_AML_NOT_REALNAME_REV",
+	"PERM_PAY_CUSTOMER_DAILY_QUOTA_ORG_BALANCE_LIMIT",
+	"PERM_PAY_CUSTOMER_MONTH_QUOTA_ORG_BALANCE_LIMIT",
+	"PERM_PAY_USER_DAILY_QUOTA_ORG_BALANCE_LIMIT",
+	"PERM_PAY_USER_MONTH_QUOTA_ORG_BALANCE_LIMIT",
+	"PROCESS_FAIL",
+	"PRODUCT_NOT_SIGN",
+	"RELEASE_USER_FORBBIDEN_RECIEVE",
+	"REMARK_HAS_SENSITIVE_WORD",
+	"REQUEST_PROCESSING",
+	"RESOURCE_LIMIT_EXCEED",
+	"SECURITY_CHECK_FAILED",
+	"SIGN_AGREEMENT_NO_INCONSISTENT",
+	"SIGN_INVALID",
+	"SIGN_INVOKE_PID_INCONSISTENT",
+	"SIGN_NOT_ALLOW_SKIP",
+	"SIGN_PARAM_INVALID",
+	"SIGN_QUERY_AGGREMENT_ERROR",
+	"SIGN_QUERY_APP_INFO_ERROR",
+	"TRUSTEESHIP_ACCOUNT_NOT_EXIST",
+	"TRUSTEESHIP_RECIEVE_QUOTA_LIMIT",
+	"USER_AGREEMENT_VERIFY_FAIL",
+	"USER_NOT_EXIST",
+	"USER_RISK_FREEZE",
+] as const;
+
+export const alipayWithdrawErrorCodeSchema = z
+	.enum(ALIPAY_WITHDRAW_ERROR_CODES)
+	.meta({
+		title: "转账业务错误码",
+		description: "sub_code 可能出现的业务错误码列表。",
+		examples: ["SYSTEM_ERROR"],
+	});
+export type AlipayWithdrawErrorCode = z.infer<
+	typeof alipayWithdrawErrorCodeSchema
+>;
+
+const alipayWithdrawBaseResponseSchema = z
+	.object({
+		code: createBoundedString(16, "code"),
+		msg: z.string().min(1, "msg 不能为空").max(128, "msg 最大长度 128"),
+		sub_code: alipayWithdrawErrorCodeSchema.optional(),
+		sub_msg: z.string().min(1).max(512, "sub_msg 最大长度 512").optional(),
+		trace_id: createOptionalBoundedString(64, "trace_id"),
+		traceId: createOptionalBoundedString(64, "traceId"),
+	})
+	.meta({
+		title: "转账接口基础响应",
+		description: "所有转账响应均包含的标准字段。",
+	});
+
+export const alipayWithdrawSuccessResponseSchema = alipayWithdrawBaseResponseSchema
+	.extend({
+		out_biz_no: createBoundedString(64, "out_biz_no"),
+		order_id: createBoundedString(32, "order_id"),
+		pay_fund_order_id: createBoundedString(32, "pay_fund_order_id"),
+		trans_date: payDateTimeSecondsSchema,
+		status: alipayWithdrawStatusSchema.optional(),
+	})
+	.meta({
+		title: "转账成功响应",
+		description: "业务处理成功时返回的核心字段。",
+		examples: [
+			{
+				code: "10000",
+				msg: "Success",
+				out_biz_no: "201806300001",
+				order_id: "20190801110070000006380000250621",
+				pay_fund_order_id: "20190801110070001506380000251556",
+				trans_date: "2019-08-21 00:00:00",
+				status: "SUCCESS",
+			},
+		],
+	});
+export type AlipayWithdrawSuccessResponse = z.infer<
+	typeof alipayWithdrawSuccessResponseSchema
+>;
+
+export const alipayWithdrawErrorResponseSchema = alipayWithdrawBaseResponseSchema
+	.extend({
+		sub_code: alipayWithdrawErrorCodeSchema,
+	})
+	.meta({
+		title: "转账失败响应",
+		description: "业务失败时将包含 sub_code 及 sub_msg 等信息。",
+		examples: [
+			{
+				code: "20000",
+				msg: "Service Currently Unavailable",
+				sub_code: "SYSTEM_ERROR",
+				sub_msg: "系统繁忙",
+			},
+		],
+	});
+export type AlipayWithdrawErrorResponse = z.infer<
+	typeof alipayWithdrawErrorResponseSchema
+>;
+
+export const alipayWithdrawResponseSchema = z
+	.union([alipayWithdrawSuccessResponseSchema, alipayWithdrawErrorResponseSchema])
+	.meta({
+		title: "转账接口响应",
+		description: "根据 code 可判断业务是否成功。",
+	});
+export type AlipayWithdrawResponse = z.infer<
+	typeof alipayWithdrawResponseSchema
+>;
 
 export const InitiatePaymentParamsSchema = z
 	.object({
