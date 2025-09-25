@@ -1,24 +1,28 @@
 import { createSign } from "node:crypto";
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { createId } from "@paralleldrive/cuid2";
-import type { PayNotification } from "@repo/types";
-import { AlipaySdk } from "alipay-sdk";
+import {
+	alipayWithdrawResponseSchema,
+	alipayWithdrawSuccessResponseSchema,
+	type PayNotification,
+	type UserWithdrawBody,
+	type UserWithdrawResponse,
+} from "@repo/types";
 import Decimal from "decimal.js";
-import { and, eq, sql } from "drizzle-orm";
-import { CACHE_SERVICE, type IAdvancedCacheService } from "src/common/cache";
+import { eq, sql } from "drizzle-orm";
+import { CACHE_SERVICE, IAdvancedCacheService } from "src/common/cache";
 import { DB } from "src/common/database/database.provider";
-import type { DbType } from "src/common/database/db";
+import { DbType } from "src/common/database/db";
 import {
 	earnings,
 	financialTransactions,
 	orderAssignments,
 	orders,
-	type payments,
+	payments,
 	userBalances,
 	users,
 } from "src/common/database/schema";
 import { createAliPaySdk } from "src/lib/alipaySdk";
-import { uuidv4 } from "zod";
 import { OrderService } from "../order/order.service";
 import { PayRepository } from "./pay.repository";
 
@@ -662,52 +666,290 @@ export class PayService {
 		}
 	}
 
-	// 用户提现(微信，支付宝)
-	async withdraw() {
-		// 用户是否存在
-		// 检查用户余额是否有那么多钱
-		// 用户是否绑定了提现的方式，如果没有客户端提示用户对提现平台进行绑定
-        // 转账
-        // 流水记录，记录用户提现记录
+	// 用户提现（当前仅支持支付宝）
+	async withdraw(
+		userId: string,
+		payload: UserWithdrawBody,
+	): Promise<UserWithdrawResponse> {
+		if (!userId) {
+			throw new BadRequestException("用户信息缺失");
+		}
 
-		const alipaySdk = new AlipaySdk({
-			appId: "9021000153675106",
-			privateKey:
-				"MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCgQy3+QtBHZvoF3e2v9xjRyYt6GmRQJhTDPXBDHvQnIN1WrcdrGG0+/Zubh+TwhWiK0WXXEqSd240tnUEFzHPibj/HAXZnNQVWtuvSjCajZ4sBjy1+vtifM3ojJPq945yyJsQs1pVZ97nPAQm2Z0ELkCivrPMDk3CBd/Q/5jhNmiAbvS7sawD2Gv4K2BtBGWkjKJsjnmW0atyI7Ob5tPwzaem+P4C9/3X2w8mt6JnnmSX+9XI+H/sDBIVckCA3Rg7BIqveudHmXH/b3XWHc7guID5vvsNd3aQ5bjyi0Agrj/K0o2XE/TxVlqHeJl7cpCmL1RE//gm1L4BI8cUNenGrAgMBAAECggEABEPFZY7BnCTRYnaVbKlWr759R7KMGNXql4d7BU49kQz+1t+o/uCXh6WYDnt/TCdAsPEBlMeaOdkt2JjmshDOxKfKarFPRU/T5IrZm7C/Fnoa6N+2hjjt6s6j4WuKgKMd+F+vuMG9F7fP6gJND92PjY84hfREQ0QZKljW1xx5Qxdb2CDES+Lv0xxp3bMA9eb4Mtn0dWNSKtuPpVFE69L4m0ozeoNxlFVMPDkV1GFMdT0m0ZY5hRXMeFfyQmmk2EveudAasUq67yzu8RcdhXj4gkuE100920lPKdAlOG47bVGMjgMA2n0pcT7yp29M9EmCBW44coXE5kCdt+B6O5U1AQKBgQD8kk2T3XdKBYbKqJEYyRl9/wF6kx2slRN1UgZ9WRbDa6GDIFcHdtXAP8CafP4i/qVRz771IR+Q3YjQWwRkeYYjY71/HK6uQBcEbScmFFxAG6kiisUlk4Nz/lx7tPnF8Xu/cDA8J/C8CFdXinpVPtHISKat+wq/+52x6LBXcl3XCQKBgQCicBk7QY9adKdu9rM+OcV7UHXoS0AzhKppbyH5UfR4ctH541nH/ViZTuRZ1p8vfdqSm678oJ/kjCylZMoUtEAQG84zmVIm5IeFHfhGjlJ7HZ388sLXQRSLXmZyKmT1YBnL/g5Wmv3VFf9OFlIlRflhaxKECn8dr12Nt2tkyiqcEwKBgH91kaLKQ7XePhytnrOkYLH965AhB/udK7msEExXli4+db6HpoPEy6/+PEN6SoH8gg9cSKDJ+3UO50lGdVwDG9dmMS4hmmGjRDpen0APTFKp4tvkrgL9g3wY5DElrlrfN7Tvd9gTy+AIUZOC9aNpVVK+nybzpoQmBXnP1JX8yDCJAoGAGQ7t9YQxlySzx5xrHkhPPKy247ToHIp0t3sbZJjN+97KoZ/+86kTh+LxuyIuwGbL1x4JKpOk1t8A7CrWOcdsso93ieI3GCTc+x4adNfzxWZWPvU8NXSmtLFFYItFs8y1bhCtKZMTYVHZZrRuy601wV+BJblwzqWE6x3GhW/ijt0CgYA7SZ6EgjRqMYg0/w1zOQsNiig6pA6n14+S+ialgQfTtPDS62QO54oFV4s2di3Jy3iRnSDmZ9/JTcKFqb4+eYQpnrKngN1TrCPMPzscNZ3Ad/SWo2xZK04Xa3X6LTyIKkeh+5qeyXWg6f0I9eLc6Bi3g2M8wehB/Ay4FN86c+kdbg==",
-			gateway: "https://openapi-sandbox.dl.alipaydev.com/gateway.do",
-		});
-		const result = await alipaySdk.exec("alipay.fund.trans.uni.transfer", {
-			bizContent: {
-				out_biz_no: "fghdftytry",
-				trans_amount: "23.00",
-				biz_scene: "DIRECT_TRANSFER",
-				product_code: "TRANS_ACCOUNT_NO_PWD",
-				payee_info: {
-					identity: "2088722080157608",
-					identity_type: "ALIPAY_USER_ID",
-					bankcard_ext_info: {
-						inst_name: "招商银行",
-						account_type: "1",
-					},
+		const userExists = await this.isUserExist(userId);
+		if (!userExists) {
+			throw new BadRequestException("用户不存在");
+		}
+
+		const { amount, currency, payType, payee, remark } = payload;
+		if (payType !== "alipay") {
+			throw new BadRequestException("当前仅支持支付宝提现");
+		}
+
+		const amountDecimal = new Decimal(amount).toDecimalPlaces(
+			2,
+			Decimal.ROUND_HALF_UP,
+		);
+		const amountText = amountDecimal.toFixed(2);
+
+		// 1. 在数据库中冻结余额并创建提现记录
+		const freezeContext = await this.db.transaction(async (tx) => {
+			const balanceRecord = await this.payRepository.findUserBalanceByUserId(
+				userId,
+				tx,
+			);
+
+			if (!balanceRecord) {
+				throw new BadRequestException("账户余额不存在或未初始化");
+			}
+
+			const availableBefore = new Decimal(
+				balanceRecord.availableBalance ?? "0",
+			);
+			const frozenBefore = new Decimal(balanceRecord.frozenBalance ?? "0");
+			const totalBefore = new Decimal(balanceRecord.totalBalance ?? "0");
+
+			if (availableBefore.lt(amountDecimal)) {
+				throw new BadRequestException("可用余额不足");
+			}
+
+			// 使用 Decimal 避免浮点运算误差
+			const availableAfterFreeze = availableBefore.minus(amountDecimal);
+			const frozenAfterFreeze = frozenBefore.plus(amountDecimal);
+			const totalAfterFreeze = availableAfterFreeze.plus(frozenAfterFreeze);
+
+			const updatedBalance = await this.payRepository.updateUserBalanceById(
+				balanceRecord.id,
+				{
+					availableBalance: availableAfterFreeze.toFixed(2),
+					frozenBalance: frozenAfterFreeze.toFixed(2),
+					totalBalance: totalAfterFreeze.toFixed(2),
 				},
-			},
+				tx,
+			);
+
+			if (!updatedBalance) {
+				throw new BadRequestException("余额更新失败");
+			}
+
+			const withdrawalRecord = await this.payRepository.createWithdrawal(
+				{
+					userId,
+					amount: amountText,
+					currency,
+					status: "pending",
+				},
+				tx,
+			);
+
+			if (!withdrawalRecord) {
+				throw new BadRequestException("创建提现记录失败");
+			}
+
+			return {
+				withdrawal: withdrawalRecord,
+				balanceId: balanceRecord.id,
+				balanceBefore: {
+					available: availableBefore,
+					frozen: frozenBefore,
+					total: totalBefore,
+				},
+				balanceAfterFreeze: {
+					available: availableAfterFreeze,
+					frozen: frozenAfterFreeze,
+					total: totalAfterFreeze,
+				},
+			};
 		});
-		return result;
+
+		const outBizNo = freezeContext.withdrawal.id;
+		const bizContent: Record<string, unknown> = {
+			out_biz_no: outBizNo,
+			trans_amount: amountText,
+			biz_scene: "DIRECT_TRANSFER",
+			product_code: "TRANS_ACCOUNT_NO_PWD",
+			order_title: "用户余额提现",
+			payee_info: {
+				identity: payee.identity,
+				identity_type: payee.identity_type,
+				...(payee.name ? { name: payee.name } : {}),
+			},
+		};
+
+		if (remark) {
+			Object.assign(bizContent, { remark });
+		}
+
+		// 2. 调用支付宝转账接口
+		let alipayResponseRaw: unknown;
+		try {
+			alipayResponseRaw = await this.alipaySdk.exec(
+				"alipay.fund.trans.uni.transfer",
+				{
+					bizContent,
+				},
+			);
+		} catch (error) {
+			await this.rollbackWithdrawalOnFailure({
+				balanceId: freezeContext.balanceId,
+				withdrawalId: freezeContext.withdrawal.id,
+				balanceBefore: freezeContext.balanceBefore,
+			});
+			throw new BadRequestException("提现请求失败，请稍后重试");
+		}
+
+		const parsedResponse =
+			alipayWithdrawResponseSchema.parse(alipayResponseRaw);
+		const successResult =
+			alipayWithdrawSuccessResponseSchema.safeParse(parsedResponse);
+
+		if (
+			!successResult.success ||
+			(successResult.data.status && successResult.data.status === "FAIL")
+		) {
+			const errorMessage =
+				"sub_msg" in parsedResponse && parsedResponse.sub_msg
+					? parsedResponse.sub_msg
+					: parsedResponse.msg;
+
+			await this.rollbackWithdrawalOnFailure({
+				balanceId: freezeContext.balanceId,
+				withdrawalId: freezeContext.withdrawal.id,
+				balanceBefore: freezeContext.balanceBefore,
+			});
+
+			throw new BadRequestException(`支付宝提现失败：${errorMessage}`);
+		}
+
+		const successResponse = successResult.data;
+		const referenceId =
+			successResponse.pay_fund_order_id ?? successResponse.order_id;
+		const processedAt = new Date();
+
+		// 3. 根据返回结果落库并生成流水
+		const finalizeResult = await this.db.transaction(async (tx) => {
+			const frozenAfterSuccess = freezeContext.balanceBefore.frozen;
+			const totalAfterSuccess =
+				freezeContext.balanceAfterFreeze.available.plus(frozenAfterSuccess);
+
+			const balanceRecord = await this.payRepository.updateUserBalanceById(
+				freezeContext.balanceId,
+				{
+					availableBalance:
+						freezeContext.balanceAfterFreeze.available.toFixed(2),
+					frozenBalance: frozenAfterSuccess.toFixed(2),
+					totalBalance: totalAfterSuccess.toFixed(2),
+				},
+				tx,
+			);
+
+			if (!balanceRecord) {
+				throw new BadRequestException("更新余额失败");
+			}
+
+			const withdrawalRecord = await this.payRepository.updateWithdrawalById(
+				freezeContext.withdrawal.id,
+				{
+					status: "completed",
+					processedAt,
+				},
+				tx,
+			);
+
+			if (!withdrawalRecord) {
+				throw new BadRequestException("更新提现状态失败");
+			}
+
+			await this.payRepository.createFinancialTransaction(
+				{
+					userId,
+					withdrawalId: freezeContext.withdrawal.id,
+					transactionType: "withdrawal",
+					amount: amountDecimal.negated().toFixed(2),
+					currency,
+					balanceBefore: freezeContext.balanceBefore.available.toFixed(2),
+					balanceAfter: freezeContext.balanceAfterFreeze.available.toFixed(2),
+					description: `提现至支付宝账号 ${payee.identity}`.slice(0, 120),
+					referenceId,
+					metadata: JSON.stringify({
+						outBizNo,
+						orderId: successResponse.order_id,
+						remark,
+						payee,
+					}),
+				},
+				tx,
+			);
+
+			return { balanceRecord, withdrawalRecord };
+		});
+
+		const { balanceRecord, withdrawalRecord } = finalizeResult;
+
+		const response: UserWithdrawResponse = {
+			withdrawalId: withdrawalRecord.id,
+			status: withdrawalRecord.status as UserWithdrawResponse["status"],
+			amount: amountDecimal.toNumber(),
+			currency,
+			balance: {
+				available: Number(balanceRecord.availableBalance ?? "0"),
+				frozen: Number(balanceRecord.frozenBalance ?? "0"),
+				total: Number(balanceRecord.totalBalance ?? "0"),
+			},
+			outBizNo,
+			alipayOrderId: referenceId,
+		};
+
+		return response;
 	}
 
-	// 生成请求第三方平台授权登录时的校验信息
+	private async rollbackWithdrawalOnFailure({
+		balanceId,
+		withdrawalId,
+		balanceBefore,
+	}: {
+		balanceId: string;
+		withdrawalId: string;
+		balanceBefore: {
+			available: Decimal;
+			frozen: Decimal;
+			total: Decimal;
+		};
+	}) {
+		// 失败时需恢复余额并标记提现状态
+		await this.db.transaction(async (tx) => {
+			await this.payRepository.updateUserBalanceById(
+				balanceId,
+				{
+					availableBalance: balanceBefore.available.toFixed(2),
+					frozenBalance: balanceBefore.frozen.toFixed(2),
+					totalBalance: balanceBefore.total.toFixed(2),
+				},
+				tx,
+			);
+
+			await this.payRepository.updateWithdrawalById(
+				withdrawalId,
+				{
+					status: "rejected",
+					processedAt: new Date(),
+				},
+				tx,
+			);
+		});
+	}
+
 	async generateAuthString() {
 		const targetId = createId();
 		return this.alipaySdk.sdkExecute("alipay.open.auth.sdk.code.get", {
-            apiname: "com.alipay.account.auth",
-            appId: process.env.ALIPAY_APP_ID!,
+			apiname: "com.alipay.account.auth",
+			appId: process.env.ALIPAY_APP_ID!,
 			pid: "2088721080157591",
 			targetId,
-            app_name: "mc",
-            biz_type: "openservice",
-            product_id: "kuaijie",
-            auth_type: "AUTHACCOUNT",
-            sign_type: "RSA2"
+			app_name: "mc",
+			biz_type: "openservice",
+			product_id: "kuaijie",
+			auth_type: "AUTHACCOUNT",
+			sign_type: "RSA2",
 		});
 	}
 }

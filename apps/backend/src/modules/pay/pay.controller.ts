@@ -18,6 +18,9 @@ import {
 	InitiatePaymentResponseSchema,
 	type PayNotification,
 	payNotificationSchema,
+	type UserWithdrawBody,
+	UserWithdrawBodySchema,
+	UserWithdrawResponseSchema,
 } from "@repo/types";
 import type { Request } from "express";
 import { ApiSuccessResponse } from "src/common/decorator";
@@ -82,11 +85,16 @@ export class PayController {
 
 	@ApiOperation({
 		summary: "用户提现",
-		description: "消费支付宝服务器推送的异步通知，并同步更新支付状态",
+		description: "校验余额并立即发起支付宝转账，成功后记录提现流水",
 	})
 	@Post("withdraw")
-	async withdraw() {
-		return this.payService.withdraw();
+	@UsePipes(createZodPipe(UserWithdrawBodySchema, "用户提现参数校验失败"))
+	@ApiBodies(UserWithdrawBodySchema)
+	@ApiSuccessResponse(UserWithdrawResponseSchema, {
+		description: "返回提现记录及余额快照",
+	})
+	async withdraw(@Body() body: UserWithdrawBody, @Req() req: Request) {
+		return this.payService.withdraw(req.user.id, body);
 	}
 
 	@Get("getAuthSign")

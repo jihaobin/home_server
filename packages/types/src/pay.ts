@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { PaymentMethodEnum } from "./database-entity";
+import { PaymentMethodEnum, WithdrawalStatusEnum } from "./database-entity";
 
 const PAY_DATETIME_SECONDS_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 const PAY_DATETIME_MILLIS_PATTERN =
@@ -944,3 +944,71 @@ export const AlipayNotifyResponseSchema = z.enum(["success", "fail"]).meta({
 });
 
 export type AlipayNotifyResponse = z.infer<typeof AlipayNotifyResponseSchema>;
+
+
+const withdrawAmountNumberSchema = z
+	.number( "提现金额必须为数字")
+	.refine((value) => Number.isFinite(value), "提现金额格式有误")
+	.refine((value) => value > 0, "提现金额必须大于 0")
+	.refine(
+		(value) => Math.round(value * 100) === value * 100,
+		"提现金额最多保留两位小数",
+	);
+
+const withdrawCurrencySchema = z
+	.string()
+	.min(1, "币种不能为空")
+	.max(3, "币种长度不能超过 3")
+	.transform((value) => value.toUpperCase())
+	.default("CNY");
+
+export const UserWithdrawBodySchema = z
+	.object({
+		amount: withdrawAmountNumberSchema,
+		currency: withdrawCurrencySchema,
+		payType: PaymentMethodEnum.refine(
+			(value) => value === "alipay",
+			"当前仅支持支付宝提现",
+		),
+		payee: alipayWithdrawPayeeSchema,
+		remark: alipayWithdrawRemarkSchema,
+	})
+	.meta({
+		title: "用户提现请求体",
+		description: "前端提交的提现金额与收款账户信息",
+	});
+
+export type UserWithdrawBody = z.infer<typeof UserWithdrawBodySchema>;
+
+export const UserWithdrawResponseSchema = z
+	.object({
+		withdrawalId: z.string().min(1, "提现记录 ID 不能为空").meta({
+			title: "提现记录 ID",
+			description: "数据库中生成的提现记录主键",
+		}),
+		status: WithdrawalStatusEnum.meta({ title: "提现状态" }),
+		amount: z.number().positive().meta({
+			title: "提现金额",
+			description: "已提交的提现金额，单位元",
+		}),
+		currency: z.string().min(1).meta({ title: "币种" }),
+		balance: z
+			.object({
+				available: z.number().nonnegative(),
+				frozen: z.number().nonnegative(),
+				total: z.number().nonnegative(),
+			})
+			.meta({ title: "提现后余额快照" }),
+		outBizNo: z.string().min(1, "业务单号不能为空").meta({
+			title: "支付宝业务单号",
+			description: "传给支付宝的 out_biz_no",
+		}),
+		alipayOrderId: z
+			.string()
+			.min(1)
+			.optional()
+			.meta({ title: "支付宝订单号" }),
+	})
+	.meta({ title: "用户提现响应" });
+
+export type UserWithdrawResponse = z.infer<typeof UserWithdrawResponseSchema>;
