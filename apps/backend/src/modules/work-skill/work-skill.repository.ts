@@ -241,8 +241,6 @@ export class WorkSkillRepository {
 				currency,
 				isActive: true,
 				effectiveFrom: now,
-				createdAt: now,
-				updatedAt: now,
 			})
 			.onConflictDoUpdate({
 				target: [
@@ -254,7 +252,6 @@ export class WorkSkillRepository {
 					currency,
 					isActive: true,
 					effectiveFrom: now,
-					updatedAt: now,
 				},
 			})
 			.returning();

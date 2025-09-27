@@ -1,15 +1,16 @@
 import { relations, sql } from "drizzle-orm";
 import {
-	pgTable,
-	timestamp,
-	varchar,
-	text,
-	integer,
 	boolean,
-	time,
-	index,
 	decimal,
 	geometry,
+	index,
+	integer,
+	pgTable,
+	text,
+	time,
+	timestamp,
+	uniqueIndex,
+	varchar,
 } from "drizzle-orm/pg-core";
 
 import { createId, users } from ".";
@@ -176,9 +177,10 @@ export const servicePersonnelPricing = pgTable(
 		}).defaultNow(), // 定价生效时间
 		effectiveTo: timestamp("effective_to", { withTimezone: true }), // 定价失效时间
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
-		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().$onUpdateFn(() => new Date()),
 	},
 	(table) => [
+        uniqueIndex("uq_personnel_pricing_user_service").on(table.userId, table.serviceId),
 		// 服务人员服务定价查询索引
 		index("idx_personnel_pricing_user_service")
 			.on(table.userId, table.serviceId, table.isActive)

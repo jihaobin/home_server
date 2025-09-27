@@ -16,9 +16,6 @@ export function createAliPaySdk(isSandBox: boolean = false) {
 		alipayPublicKey: process.env.ALIPAY_PUBLIC_KEY || "",
 
 		// 密钥类型，请与生成的密钥格式保持一致，参考平台配置一节
-
-		// keyType: 'PKCS1',
-
 		// 设置网关地址，默认是 https://openapi.alipay.com
 
 		endpoint: isSandBox

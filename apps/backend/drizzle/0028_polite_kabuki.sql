@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "uq_personnel_pricing_user_service" ON "service_personnel_pricing" USING btree ("user_id","service_id");

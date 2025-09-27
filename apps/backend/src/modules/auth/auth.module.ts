@@ -80,8 +80,6 @@ export class AuthModule implements NestModule, OnModuleInit {
                 this.setupHooks(providerMethod);
             }
         }
-
-        throw new Error('Method not implemented.');
     }
     configure(consumer: MiddlewareConsumer) {
         const trustedOrigins = this.auth.options.trustedOrigins;
@@ -128,10 +126,6 @@ export class AuthModule implements NestModule, OnModuleInit {
         this.adapter.httpAdapter
             .getInstance() // 获取底层的 Express 应用实例
             .use(`${basePath}/*splat`, (req: Request, res: Response) => {
-                // 重要：恢复完整的请求路径
-                // NestJS 在设置全局前缀时会修改 req.url，移除前缀部分
-                // better-auth 需要完整的 URL 来进行内部路由匹配，所以这里恢复原始路径
-                req.url = req.originalUrl;
                 // 将请求交给 better-auth 处理器处理
                 return handler(req, res);
             });

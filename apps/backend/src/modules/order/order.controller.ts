@@ -6,6 +6,7 @@ import {
     Param,
     Post,
     Req,
+    UseGuards,
     UsePipes,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -22,6 +23,7 @@ import {
     VerifyOrderCheckinSchema,
     type VerifyOrderCheckinDto,
 } from '@repo/types';
+import { AuthGuard } from '../auth/auth.guard';
 
 
 @ApiTags('订单模块')
@@ -32,13 +34,14 @@ export class OrderController {
         private readonly orderCheckinService: OrderCheckinService,
     ) {}
 
+    @UseGuards(AuthGuard)
     @Get(':id')
     @ApiOperation({
         summary: '获取订单详情',
         description: '返回订单基础信息并附带最新核验二维码',
     })
     async getOrderDetail(@Param('id') id: string, @Req() req: Request) {
-        return await this.orderService.getOrderById(id, req.user.id);
+        return await this.orderService.getOrderById(id, req.user.id,false);
     }
 
     @Get(':id/check-in')

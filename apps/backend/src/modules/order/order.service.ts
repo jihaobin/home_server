@@ -85,7 +85,7 @@ export class OrderService {
 			}
 
 			let checkInQr: GenerateQrResult | null = null;
-			if (isPrvite) {
+			if (!isPrvite) {
 				if (userId && order.customerId === userId) {
 					checkInQr = await this.orderCheckinService.generateQrCode({
 						orderId: id,
@@ -165,6 +165,7 @@ export class OrderService {
 	async createOrderWithDesignatedPersonnel(
 		createOrderDto: CreateDesignatedOrder,
 	) {
+        const appointmentTime = new Date(createOrderDto.appointmentTime);
 		// 数据验证
 		const ServicePersonnel = await this.workSkillService.getPersonnelInfo(
 			createOrderDto.designatedPersonnelId,
@@ -190,7 +191,7 @@ export class OrderService {
 		}
 
 		// 4. 申请的服务时间是否在工作人员的工作时间内
-		const { weekday, timeStr } = extractParams(createOrderDto.appointmentTime);
+		const { weekday, timeStr } = extractParams(appointmentTime);
 
 		// 检查是否是工作日
 		if (!ServicePersonnel.workDays.includes(weekday.toString())) {
@@ -272,11 +273,19 @@ export class OrderService {
 		 * 3. 如果用户传入的定价和最新定价之间的差距在±30%之外，则触发警告，让用户刷新页面后重新下单
 		 */
 		const userPrice = createOrderDto.displayPrice; // 用户看到的价格
-		const latestPrice = service.basePrice; // 最新定价
+		const targetSkill = ServicePersonnel.skills.find(
+			(skill) => skill.id === createOrderDto.serviceId,
+		);
+		const personnelPriceRaw = targetSkill?.price?.price?.toString();
+		const latestPriceRaw = personnelPriceRaw ?? service.basePrice?.toString();
+		const latestPrice = latestPriceRaw ? parseFloat(latestPriceRaw) : NaN;
+		if (!Number.isFinite(latestPrice) || latestPrice <= 0) {
+			throw new BadRequestException("服务定价信息异常，请稍后重试");
+		}
 
 		// 计算价格差异百分比
 		const priceDifference =
-			Math.abs(userPrice - parseFloat(latestPrice)) / parseFloat(latestPrice);
+			Math.abs(userPrice - latestPrice) / latestPrice;
 
 		// 如果价格差异超过30%，则抛出异常
 		if (priceDifference > 0.3) {
@@ -290,8 +299,8 @@ export class OrderService {
 					customerId: createOrderDto.customerId,
 					serviceId: createOrderDto.serviceId,
 					addressId: createOrderDto.addressId,
-					appointmentTime: createOrderDto.appointmentTime,
-					discountAmount: createOrderDto.discountAmount.toString(),
+					appointmentTime: appointmentTime,
+					discountAmount: createOrderDto?.discountAmount?.toString() || "0",
 					designatedPersonnelId: createOrderDto.designatedPersonnelId,
 					price: userPrice.toString(), // 使用用户看到的价格
 				});

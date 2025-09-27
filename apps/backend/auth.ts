@@ -101,10 +101,10 @@ export function createAuth(
 			freshAge: 10,
 			expiresIn: 60 * 60 * 24 * 30, // 30 days
 			updateAge: 60 * 60 * 24, // 24 hours
-			cookieCache: {
-				enabled: true,
-				maxAge: 5 * 60, // Cache duration in seconds
-			},
+			// cookieCache: {
+			// 	enabled: true,
+			// 	maxAge: 5 * 60, // Cache duration in seconds
+			// },
 		},
 		user: {
 			// Additional custom fields that will be available in session

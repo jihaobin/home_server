@@ -7,7 +7,7 @@ import { pgEnum } from "drizzle-orm/pg-core";
  */
 export const orderStatusEnum = pgEnum("order_status", [
 	"pending_payment", // 待支付
-	"paid", // 已支付（待分配服务人员）
+	"paid", // 已支付（等待服务人员上门进行服务）
 	"in_progress", // 服务中
 	"completed", // 已完成（包含已评价和未评价）
 	"cancelled", // 已取消（各种原因的取消统一处理）

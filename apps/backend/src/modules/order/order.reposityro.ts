@@ -1,9 +1,25 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import type { CreateOrder } from "@repo/types";
-import { and, between, eq, gte, lte, type SQL } from "drizzle-orm";
+import {
+	and,
+	between,
+	eq,
+	gte,
+	lte,
+	getTableColumns,
+	type SQL,
+} from "drizzle-orm";
 import { DB } from "src/common/database/database.provider";
 import type { DbType } from "src/common/database/db";
-import { orderAssignments, orders } from "src/common/database/schema/orders";
+import {
+	orderAssignments,
+	orders,
+	payments,
+} from "src/common/database/schema/orders";
+import { services } from "src/common/database/schema/server";
+import { userAddresses } from "src/common/database/schema/addresses";
+import { couponUsageRecords } from "src/common/database/schema/coupons";
+import { servicePersonnel } from "src/common/database/schema/shops-service";
 
 export type OrderStatus = (typeof orders.status.enumValues)[number];
 
@@ -106,22 +122,62 @@ export class OrderRepository {
 	 * @returns 订单详情对象，如果未找到则返回null
 	 */
 	async getOrderById(id: string) {
-		const order = await this.db.query.orders.findFirst({
-			where: eq(orders.id, id),
-			with: {
-				service: true,
-				assignment: {
-					with: {
-						servicePersonnel: true,
-					},
-				},
-				address: true,
-				payments: true,
-				couponUsageRecords: true,
-			},
-		});
+		const orderColumns = getTableColumns(orders);
+		const serviceColumns = getTableColumns(services);
+		const addressColumns = getTableColumns(userAddresses);
+		const assignmentColumns = getTableColumns(orderAssignments);
+		const { geom, ...servicePersonnelColumns } = getTableColumns(
+			servicePersonnel,
+		);
 
-		return order || null;
+		const [orderRow] = await this.db
+			.select({
+				order: orderColumns,
+				service: serviceColumns,
+				address: addressColumns,
+				assignment: assignmentColumns,
+				servicePersonnel: servicePersonnelColumns,
+			})
+			.from(orders)
+			.leftJoin(services, eq(orders.serviceId, services.id))
+			.leftJoin(userAddresses, eq(orders.addressId, userAddresses.id))
+			.leftJoin(orderAssignments, eq(orders.id, orderAssignments.orderId))
+			.leftJoin(
+				servicePersonnel,
+				eq(orderAssignments.servicePersonnelId, servicePersonnel.userId),
+			)
+			.where(eq(orders.id, id))
+			.limit(1);
+
+		if (!orderRow) {
+			return null;
+		}
+
+		const paymentsRows = await this.db
+			.select(getTableColumns(payments))
+			.from(payments)
+			.where(eq(payments.orderId, id));
+
+		const couponRows = await this.db
+			.select(getTableColumns(couponUsageRecords))
+			.from(couponUsageRecords)
+			.where(eq(couponUsageRecords.orderId, id));
+
+		const assignmentWithPersonnel = orderRow.assignment
+			? {
+				...orderRow.assignment,
+				servicePersonnel: orderRow.servicePersonnel || null,
+			}
+			: null;
+
+		return {
+			...orderRow.order,
+			service: orderRow.service || null,
+			address: orderRow.address || null,
+			assignment: assignmentWithPersonnel,
+			payments: paymentsRows,
+			couponUsageRecords: couponRows,
+		};
 	}
 
 	/**
@@ -136,22 +192,29 @@ export class OrderRepository {
 		startTime: Date,
 		endTime: Date,
 	) {
-		// 查询条件：指定服务人员且时间有重叠的订单
-		// 时间重叠条件：订单开始时间 <= 查询结束时间 且 订单结束时间 >= 查询开始时间
-		const conditions = and(
-			eq(orderAssignments.servicePersonnelId, personnelId),
-			// 时间重叠条件：订单开始时间 <= 查询结束时间 且 订单结束时间 >= 查询开始时间
-			lte(orders.appointmentTime, endTime),
-			// 注意：这里只检查了订单开始时间，订单结束时间需要在service中计算
-		);
+		// 使用原始查询来连接订单和分配表
+		const results = await this.db
+			.select({
+				order: orders,
+				service: services,
+				assignment: orderAssignments,
+			})
+			.from(orders)
+			.leftJoin(services, eq(orders.serviceId, services.id))
+			.innerJoin(orderAssignments, eq(orders.id, orderAssignments.orderId))
+			.where(
+				and(
+					eq(orderAssignments.servicePersonnelId, personnelId),
+					lte(orders.appointmentTime, endTime),
+				)
+			);
 
-		return await this.db.query.orders.findMany({
-			where: conditions,
-			with: {
-				service: true,
-				assignment: true,
-			},
-		});
+		// 转换结果格式以匹配期望的类型
+		return results.map(result => ({
+			...result.order,
+			service: result.service,
+			assignment: result.assignment,
+		}));
 	}
 
 	/**

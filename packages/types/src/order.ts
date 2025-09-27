@@ -140,14 +140,14 @@ export const CreateDesignatedOrderSchema = z
 			description: "地址ID",
 			title: "地址ID",
 		}),
-		appointmentTime: z.date().meta({
+		appointmentTime: z.iso.datetime({offset: true,local: true}).meta({
 			description: "预约时间",
 			title: "预约时间",
 		}),
 		discountAmount: z.number().min(0).meta({
 			description: "折扣金额",
 			title: "折扣金额",
-		}),
+		}).optional(),
 		designatedPersonnelId: z.string().min(1, "指定服务人员ID不能为空").meta({
 			description: "指定服务人员ID",
 			title: "指定服务人员ID",

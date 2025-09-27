@@ -867,20 +867,13 @@ export type AlipayWithdrawResponse = z.infer<
 >;
 
 export const InitiatePaymentParamsSchema = z
-	.object({
-		orderId: z
 			.string()
 			.min(1, "订单ID不能为空")
 			.max(255, "订单ID长度不能超过255")
 			.meta({
 				title: "订单ID",
 				description: "待发起支付的订单ID",
-			}),
-	})
-	.meta({
-		title: "支付路径参数",
-		description: "发起订单支付接口的路径参数",
-	});
+			})
 
 export type InitiatePaymentParams = z.infer<typeof InitiatePaymentParamsSchema>;
 

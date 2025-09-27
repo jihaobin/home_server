@@ -7,6 +7,7 @@ import {
 	Param,
 	Post,
 	Req,
+	UseGuards,
 	UsePipes,
 } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
@@ -29,12 +30,14 @@ import { SkipTransform } from "src/common/interceptors";
 import { createMultiZodPipe, createZodPipe } from "src/common/pipes";
 import { Public } from "../auth/decorators";
 import { PayService } from "./pay.service";
+import { AuthGuard } from "../auth/auth.guard";
 
 @ApiTags("支付")
 @Controller("pay")
 export class PayController {
 	constructor(private readonly payService: PayService) {}
 
+    @UseGuards(AuthGuard)
 	@Post("orders/:orderId")
 	@HttpCode(HttpStatus.OK)
 	@UsePipes(

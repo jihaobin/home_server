@@ -11,6 +11,7 @@ import {
 export const UpsertWorkInfoRequestSchema = z.object({
 	...ServicePersonnelSchema.omit({
 		userId: true,
+        geom: true,
 	}).shape,
 	location: z.object({
 		lng: z

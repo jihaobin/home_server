@@ -1,17 +1,17 @@
 import { relations, sql } from "drizzle-orm";
 import {
-	pgTable,
-	varchar,
 	decimal,
-	timestamp,
 	index,
 	pgEnum,
+	pgTable,
+	timestamp,
+	varchar,
 } from "drizzle-orm/pg-core";
 
 import { createId } from ".";
 import { users } from "./auth-user";
-import { orders } from "./orders";
 import { withdrawalStatusEnum } from "./enums";
+import { orders } from "./orders";
 
 /**
  * 交易类型枚举
@@ -247,3 +247,15 @@ export const withdrawalsRelations = relations(withdrawals, ({ one }) => ({
 		references: [users.id],
 	}),
 }));
+
+
+// 用户选择服务和人员进行下单(假设订单结果100块)
+// 用户进行支付
+// 将用户支付的金额生成一条资金流水记录，同时订单状态更改paid(已支付)
+// 只有状态为已支付时，服务人员或用户才能够取消订单，订单取消时需要将用户支付的进行进行退款，同时生成资金流水记录
+// 服务人员扫描用户手机订单的二维码进行确认, 订单状态修改为in_progress(服务中)
+// 服务人员完成服务，订单状态修改为completed(已完成)
+// 计算服务人员收入，生成一条收入记录(平台收20%(20块)，服务人员得80%(80块))
+// 用户提现时，生成一条提现记录，提现状态修改为pending(待处理)
+// 提现成功，生成一条资金流水记录(减去用户提现的金额)，提现状态修改为approved(处理完成)
+// 提现失败，提现状态修改为rejected(处理失败), 提现用户重试，或者联系客服

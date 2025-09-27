@@ -1,20 +1,30 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { eq, sql, and, gte, lte, count, desc, asc, SQL } from "drizzle-orm";
-import { DB } from "src/common/database/database.provider";
-import { DbType } from "src/common/database/db";
-import { serviceCategories, services } from "src/common/database/schema";
-import {
-	CreateServiceCategory,
-	UpdateServiceCategory,
+import type {
 	CreateService,
-	UpdateService,
-	ServiceListRequest,
-	ServiceDetail,
-	ServiceStats,
-	ServiceCategoryTree,
+	CreateServiceCategory,
 	ServiceCategory,
+	ServiceCategoryTree,
+	ServiceDetail,
+	ServiceListRequest,
+	ServiceStats,
+	UpdateService,
+	UpdateServiceCategory,
 } from "@repo/types";
-import { PgColumn } from "drizzle-orm/pg-core";
+import {
+	and,
+	asc,
+	count,
+	desc,
+	eq,
+	gte,
+	lte,
+	type SQL,
+	sql,
+} from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
+import { DB } from "src/common/database/database.provider";
+import type { DbType } from "src/common/database/db";
+import { serviceCategories, services } from "src/common/database/schema";
 
 @Injectable()
 export class ServiceRepository {
@@ -317,7 +327,7 @@ export class ServiceRepository {
 				},
 			})
 			.from(services)
-			.leftJoin(
+			.innerJoin(
 				serviceCategories,
 				eq(services.categoryId, serviceCategories.id),
 			)

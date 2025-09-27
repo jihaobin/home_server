@@ -12,7 +12,7 @@ export class ServicePersonnelService {
 	 * 智能匹配服务人员
 	 * 根据用户位置、价格区间、服务类型等条件筛选合适的服务人员
 	 */
-	async findMatchedPersonnel(filters: ServicePersonnelFilterRequest) {
+	async findMatchedPersonnel(filters: ServicePersonnelFilterRequest & {userId: string}) {
 		// 调用Repository层执行复杂的数据查询
 		return await this.servicePersonnelRepository.findMatchedPersonnel(filters);
 	}
