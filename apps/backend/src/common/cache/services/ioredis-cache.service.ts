@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
 import { Redis, type RedisOptions } from "ioredis";
+import { Redlock, type Lock } from "@sesamecare-oss/redlock";
 import { AppLoggerService } from "src/common/logger";
 import type { IAdvancedCacheService } from "../interfaces/cache-service.interface";
 
@@ -17,6 +18,10 @@ interface IoRedisCacheOptions {
 export class IoRedisCacheService implements IAdvancedCacheService {
 	private readonly client: Redis;
 	private readonly pubSubClient: Redis;
+	private readonly redlock: Redlock;
+
+	// 存储当前进程持有的锁信息，用于实现可重入锁
+	private readonly reentrantLocks = new Map<string, { lockId: string; count: number; lock: Lock }>();
 
 	/**
 	 * 构造函数
@@ -33,6 +38,15 @@ export class IoRedisCacheService implements IAdvancedCacheService {
         if (options.enablePubSub) {
             this.pubSubClient = new Redis(options.redisOptions);
         }
+
+        // 初始化Redlock实例 with the Redis client
+        this.redlock = new Redlock([this.client], {
+            driftFactor: 0.01, // clock drift factor
+            retryCount: 10,    // max retry attempts
+            retryDelay: 200,   // delay between retries (ms)
+            retryJitter: 200,  // random jitter for retries (ms)
+            automaticExtensionThreshold: 500 // auto-extension threshold (ms)
+        });
 
         // 连接错误处理
         this.client.on('error', (error: Error) => {
@@ -493,212 +507,100 @@ export class IoRedisCacheService implements IAdvancedCacheService {
 
 	// IRedisLockOperations 实现 =================================================================
 
-	// 存储锁的自动续期定时器
-	private readonly lockRenewalTimers = new Map<string, NodeJS.Timeout>();
-
 	async acquireLock(
 		lockName: string,
 		ttl: number,
 		retryTimes = 0,
 		retryDelay = 200,
 	): Promise<string | null> {
-		const lockId = randomUUID();
-		const instanceId = process.pid.toString(); // 使用进程ID作为实例标识
-		const lockValue = `${instanceId}:${lockId}`;
-		let acquired = false;
-		let retries = 0;
-
-		// 使用Lua脚本实现原子性的锁获取和重入支持
-		const acquireLockScript = `
-            local lockKey = KEYS[1]
-            local lockValue = ARGV[1]
-            local ttl = tonumber(ARGV[2])
-            local instanceId = ARGV[3]
-
-            -- 检查锁是否存在
-            local lockInfo = redis.call('HMGET', lockKey, 'holder', 'count')
-            local currentHolder = lockInfo[1]
-            local currentCount = tonumber(lockInfo[2]) or 0
-
-            if currentHolder then
-                -- 锁已存在，检查是否为重入
-                if string.find(currentHolder, instanceId) then
-                    -- 重入锁：增加计数并更新TTL
-                    redis.call('HMSET', lockKey, 'holder', lockValue, 'count', currentCount + 1)
-                    redis.call('EXPIRE', lockKey, ttl)
-                    return {status = 'REENTRANT', count = currentCount + 1}
-                else
-                    -- 锁被其他实例持有
-                    local remainingTtl = redis.call('TTL', lockKey)
-                    return {status = 'LOCKED', holder = currentHolder, ttl = remainingTtl}
-                end
-            else
-                -- 锁不存在，尝试获取
-                redis.call('HMSET', lockKey, 'holder', lockValue, 'count', 1)
-                redis.call('EXPIRE', lockKey, ttl)
-                return {status = 'ACQUIRED', count = 1}
-            end
-        `;
-
-		try {
-			// 第一次尝试获取锁
-			let result = (await this.client.eval(
-				acquireLockScript,
-				1,
-				lockName,
-				lockValue,
-				ttl,
-				instanceId,
-			)) as {
-				status: string;
-				count?: number;
-				holder?: string;
-				ttl?: number;
-			};
-
-			acquired = result.status === "ACQUIRED" || result.status === "REENTRANT";
-
-			// 如果第一次没获取到锁且需要重试
-			while (!acquired && retries < retryTimes) {
-				// 等待一段时间再尝试
-				await new Promise((resolve) => setTimeout(resolve, retryDelay));
-
-				result = (await this.client.eval(
-					acquireLockScript,
-					1,
-					lockName,
-					lockValue,
-					ttl,
-					instanceId,
-				)) as {
-					status: string;
-					count?: number;
-					holder?: string;
-					ttl?: number;
-				};
-
-				acquired =
-					result.status === "ACQUIRED" || result.status === "REENTRANT";
-				retries++;
-			}
-
-			if (acquired) {
-				// 启动自动续期机制（只在首次获取时启动）
-				if (result.status === "ACQUIRED") {
-					this.startLockRenewal(lockName, lockValue, ttl);
-				}
-
-				this.logger.log(
-					`分布式锁获取成功: ${lockName}, lockId: ${lockId}, 类型: ${result.status}, 重入次数: ${result.count}`,
-				);
-				return lockId;
-			} else {
-				// 分析失败原因
-				const errorMessage = result.holder
-					? `锁已被持有，当前持有者: ${result.holder}，剩余时间: ${result.ttl || "unknown"}秒`
-					: `获取锁失败，重试${retryTimes}次后仍无法获取`;
-
-				this.logger.warn(`获取分布式锁失败: ${lockName} - ${errorMessage}`);
-				throw new Error(errorMessage);
-			}
-		} catch (error) {
-			this.logger.error(`获取分布式锁失败: ${lockName}`, error);
-			if (error instanceof Error) {
-				throw error; // 保留原始错误信息
-			}
-			throw new Error(`获取分布式锁失败: ${String(error)}`);
+		// 检查是否当前进程已经持有该锁（实现可重入）
+		const existingLock = this.reentrantLocks.get(lockName);
+		if (existingLock) {
+			// 锁已被当前进程持有，增加重入计数
+			existingLock.count++;
+			this.logger.log(
+				`分布式锁重入成功: ${lockName}, lockId: ${existingLock.lockId}, 重入次数: ${existingLock.count}`,
+			);
+			return existingLock.lockId;
 		}
+
+		// 首次获取锁，使用 Redlock with custom retry settings
+		const lockId = randomUUID();
+
+		// Create a temporary redlock instance with custom retry settings for this specific call
+		// to match the existing API behavior
+		const tempRedlock = new Redlock([this.client], {
+			driftFactor: 0.01,
+			retryCount: retryTimes,
+			retryDelay: retryDelay,
+			retryJitter: 100, // Add some jitter to avoid thundering herd
+			automaticExtensionThreshold: 500
+		});
+
+		let redlockInstance: Lock;
+		try {
+			redlockInstance = await tempRedlock.acquire([lockName], ttl * 1000); // ttl in milliseconds
+		} catch (error) {
+			// Redlock throws an error when it can't acquire the lock after all retries
+			this.logger.warn(`获取分布式锁失败: ${lockName} - ${error instanceof Error ? error.message : String(error)}`);
+			throw new Error(`获取分布式锁失败，重试${retryTimes}次后仍无法获取`);
+		}
+
+		// Store the lock info for reentrancy support
+		this.reentrantLocks.set(lockName, {
+			lockId,
+			count: 1,
+			lock: redlockInstance
+		});
+
+		this.logger.log(
+			`分布式锁获取成功: ${lockName}, lockId: ${lockId}, 类型: ACQUIRED, 重入次数: 1`,
+		);
+
+		return lockId;
 	}
 
 	async releaseLock(lockName: string, lockId: string): Promise<boolean> {
-		const instanceId = process.pid.toString();
-		const lockValue = `${instanceId}:${lockId}`;
+		const existingLock = this.reentrantLocks.get(lockName);
 
-		// 使用Lua脚本实现原子性的锁释放和重入支持
-		const releaseLockScript = `
-            local lockKey = KEYS[1]
-            local expectedValue = ARGV[1]
-            local instanceId = ARGV[2]
+		if (!existingLock) {
+			const notExistsMessage = "锁不存在或已过期";
+			this.logger.warn(
+				`释放分布式锁失败: ${lockName} - ${notExistsMessage}`,
+			);
+			throw new Error(notExistsMessage);
+		}
 
-            -- 获取锁信息
-            local lockInfo = redis.call('HMGET', lockKey, 'holder', 'count')
-            local currentHolder = lockInfo[1]
-            local currentCount = tonumber(lockInfo[2]) or 0
+		if (existingLock.lockId !== lockId) {
+			const wrongHolderMessage = `锁持有者不匹配，当前持有者: ${existingLock.lockId}`;
+			this.logger.warn(
+				`释放分布式锁失败: ${lockName} - ${wrongHolderMessage}`,
+			);
+			throw new Error(wrongHolderMessage);
+		}
 
-            if not currentHolder then
-                return {status = 'NOT_EXISTS'}
-            end
+		// Decrease the reentrancy counter
+		existingLock.count--;
 
-            -- 检查锁持有者
-            if currentHolder ~= expectedValue then
-                return {status = 'WRONG_HOLDER', current = currentHolder}
-            end
-
-            -- 检查重入计数
-            if currentCount > 1 then
-                -- 减少重入计数，但不释放锁
-                redis.call('HSET', lockKey, 'count', currentCount - 1)
-                return {status = 'REENTRANT_DECREASED', count = currentCount - 1}
-            else
-                -- 释放锁
-                redis.call('DEL', lockKey)
-                return {status = 'RELEASED'}
-            end
-        `;
-
-		try {
-			const result = (await this.client.eval(
-				releaseLockScript,
-				1,
-				lockName,
-				lockValue,
-				instanceId,
-			)) as { status: string; count?: number; current?: string };
-
-			switch (result.status) {
-				case "RELEASED": {
-					// 停止自动续期
-					this.stopLockRenewal(lockName);
-					this.logger.log(`分布式锁释放成功: ${lockName}`);
-					return true;
-				}
-
-				case "REENTRANT_DECREASED": {
-					this.logger.log(
-						`减少重入计数: ${lockName}, 剩余重入次数: ${result.count}`,
-					);
-					return true;
-				}
-
-				case "NOT_EXISTS": {
-					const notExistsMessage = "锁不存在或已过期";
-					this.logger.warn(
-						`释放分布式锁失败: ${lockName} - ${notExistsMessage}`,
-					);
-					throw new Error(notExistsMessage);
-				}
-
-				case "WRONG_HOLDER": {
-					const wrongHolderMessage = `锁持有者不匹配，当前持有者: ${result.current}`;
-					this.logger.warn(
-						`释放分布式锁失败: ${lockName} - ${wrongHolderMessage}`,
-					);
-					throw new Error(wrongHolderMessage);
-				}
-
-				default: {
-					this.logger.warn(
-						`释放分布式锁失败: ${lockName} - 未知结果: ${result.status}`,
-					);
-					return false;
-				}
+		if (existingLock.count > 0) {
+			// Still have reentrant calls, don't release the actual lock yet
+			this.logger.log(
+				`减少重入计数: ${lockName}, 剩余重入次数: ${existingLock.count}`,
+			);
+			return true;
+		} else {
+			// No more reentrant calls, release the actual redlock
+			try {
+				await existingLock.lock.release();
+				this.reentrantLocks.delete(lockName);
+				this.logger.log(`分布式锁释放成功: ${lockName}`);
+				return true;
+			} catch (error) {
+				// Try to clean up the local reference even if redlock release fails
+				this.reentrantLocks.delete(lockName);
+				this.logger.error(`释放分布式锁异常但已清理本地状态: ${lockName}`, error);
+				throw new Error(`释放分布式锁失败: ${error instanceof Error ? error.message : String(error)}`);
 			}
-		} catch (error) {
-			this.logger.error(`释放分布式锁失败: ${lockName}`, error);
-			if (error instanceof Error) {
-				throw error; // 保留原始错误信息
-			}
-			throw new Error(`释放分布式锁失败: ${String(error)}`);
 		}
 	}
 
@@ -714,43 +616,23 @@ export class IoRedisCacheService implements IAdvancedCacheService {
 		lockId: string,
 		ttl: number,
 	): Promise<boolean> {
-		const instanceId = process.pid.toString();
-		const lockValue = `${instanceId}:${lockId}`;
+		const existingLock = this.reentrantLocks.get(lockName);
 
-		const renewScript = `
-            local lockKey = KEYS[1]
-            local expectedValue = ARGV[1]
-            local newTtl = tonumber(ARGV[2])
-
-            -- 检查锁持有者
-            local currentHolder = redis.call('HGET', lockKey, 'holder')
-            if currentHolder == expectedValue then
-                redis.call('EXPIRE', lockKey, newTtl)
-                return 1
-            else
-                return 0
-            end
-        `;
+		if (!existingLock || existingLock.lockId !== lockId) {
+			this.logger.warn(`锁续期失败: ${lockName} - 锁不存在或持有者不匹配`);
+			return false;
+		}
 
 		try {
-			const result = await this.client.eval(
-				renewScript,
-				1,
-				lockName,
-				lockValue,
-				ttl,
-			);
+			// Extend the redlock with new TTL
+			const extendedLock = await existingLock.lock.extend(ttl * 1000); // ttl in milliseconds
+			// Update the lock reference in our cache
+			existingLock.lock = extendedLock;
 
-			const success = result === 1;
-			if (success) {
-				this.logger.log(`锁续期成功: ${lockName}, 新TTL: ${ttl}秒`);
-			} else {
-				this.logger.warn(`锁续期失败: ${lockName} - 锁不存在或持有者不匹配`);
-			}
-
-			return success;
+			this.logger.log(`锁续期成功: ${lockName}, 新TTL: ${ttl}秒`);
+			return true;
 		} catch (error) {
-			this.logger.error(`锁续期失败: ${lockName}`, error);
+			this.logger.warn(`锁续期失败: ${lockName}`, error);
 			return false;
 		}
 	}
@@ -766,126 +648,42 @@ export class IoRedisCacheService implements IAdvancedCacheService {
 		count?: number;
 		ttl?: number;
 	}> {
-		const infoScript = `
-            local lockKey = KEYS[1]
+		// Check if the lock is held by current process (reentrant locks)
+		const existingLock = this.reentrantLocks.get(lockName);
+		if (existingLock) {
+			// For reentrant locks, return local info
+			return {
+				exists: true,
+				holder: `${process.pid}:${existingLock.lockId}`,
+				count: existingLock.count,
+				// TTL info from Redis is complex to get with redlock, so we'll return -1
+				ttl: -1
+			};
+		}
 
-            local exists = redis.call('EXISTS', lockKey)
-            if exists == 1 then
-                local lockInfo = redis.call('HMGET', lockKey, 'holder', 'count')
-                local ttl = redis.call('TTL', lockKey)
-                return {lockInfo[1], tonumber(lockInfo[2]) or 0, ttl}
-            else
-                return {nil, 0, -1}
-            end
-        `;
-
+		// Check if the lock exists in Redis (not held by current process)
 		try {
-			const result = (await this.client.eval(infoScript, 1, lockName)) as [
-				string | null,
-				number,
-				number,
-			];
-
-			if (result[0]) {
+			const lockExists = await this.client.exists(lockName);
+			if (lockExists) {
+				const ttl = await this.client.ttl(lockName);
+				// Get lock holder info from Redis
+				const lockInfo = await this.client.get(`${lockName}:holder`);
 				return {
 					exists: true,
-					holder: result[0],
-					count: result[1],
-					ttl: result[2],
+					holder: lockInfo || undefined,
+					count: 0, // Other process holds it
+					ttl: ttl
 				};
 			} else {
 				return {
-					exists: false,
+					exists: false
 				};
 			}
 		} catch (error) {
 			this.logger.error(`查询锁状态失败: ${lockName}`, error);
 			return {
-				exists: false,
+				exists: false
 			};
-		}
-	}
-
-	/**
-	 * 启动锁的自动续期机制
-	 * @param lockName 锁名称
-	 * @param lockValue 锁值
-	 * @param ttl 初始TTL
-	 */
-	private startLockRenewal(
-		lockName: string,
-		lockValue: string,
-		ttl: number,
-	): void {
-		// 在TTL的2/3时间后开始续期
-		const renewalInterval = Math.max(1000, (ttl * 1000 * 2) / 3);
-
-		const renewalTimer = setInterval(() => {
-			// 使用非 async 函数避免 Promise 警告
-			this.performLockRenewal(lockName, lockValue, ttl).catch((error) => {
-				this.logger.error(`锁自动续期错误: ${lockName}`, error);
-				this.stopLockRenewal(lockName);
-			});
-		}, renewalInterval);
-
-		this.lockRenewalTimers.set(lockName, renewalTimer);
-		this.logger.debug(
-			`启动锁自动续期: ${lockName}, 间隔: ${renewalInterval}ms`,
-		);
-	}
-
-	/**
-	 * 执行锁续期操作
-	 * @param lockName 锁名称
-	 * @param lockValue 锁值
-	 * @param ttl TTL
-	 */
-	private async performLockRenewal(
-		lockName: string,
-		lockValue: string,
-		ttl: number,
-	): Promise<void> {
-		const renewScript = `
-            local lockKey = KEYS[1]
-            local expectedValue = ARGV[1]
-            local newTtl = tonumber(ARGV[2])
-
-            -- 检查锁持有者
-            local currentHolder = redis.call('HGET', lockKey, 'holder')
-            if currentHolder == expectedValue then
-                redis.call('EXPIRE', lockKey, newTtl)
-                return 1
-            else
-                return 0
-            end
-        `;
-
-		const result = await this.client.eval(
-			renewScript,
-			1,
-			lockName,
-			lockValue,
-			ttl,
-		);
-
-		if (result === 1) {
-			this.logger.debug(`锁自动续期成功: ${lockName}`);
-		} else {
-			this.logger.warn(`锁自动续期失败，停止续期: ${lockName}`);
-			this.stopLockRenewal(lockName);
-		}
-	}
-
-	/**
-	 * 停止锁的自动续期机制
-	 * @param lockName 锁名称
-	 */
-	private stopLockRenewal(lockName: string): void {
-		const timer = this.lockRenewalTimers.get(lockName);
-		if (timer) {
-			clearInterval(timer);
-			this.lockRenewalTimers.delete(lockName);
-			this.logger.debug(`停止锁自动续期: ${lockName}`);
 		}
 	}
 
@@ -1091,5 +889,20 @@ export class IoRedisCacheService implements IAdvancedCacheService {
 				`减少数值失败: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
+	}
+
+	/**
+	 * Clean up all active locks on service shutdown
+	 */
+	async cleanup(): Promise<void> {
+		for (const [lockName, lockInfo] of this.reentrantLocks.entries()) {
+			try {
+				await lockInfo.lock.release();
+				this.logger.log(`释放锁资源: ${lockName} on cleanup`);
+			} catch (error) {
+				this.logger.error(`清理锁资源失败: ${lockName}`, error);
+			}
+		}
+		this.reentrantLocks.clear();
 	}
 }
