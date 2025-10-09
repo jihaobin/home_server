@@ -16,7 +16,14 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.zhang3.mobileworker"
     },
     "web": {
       "bundler": "metro",
@@ -32,6 +39,14 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "允许 $(PRODUCT_NAME) 访问您的相机",
+          "microphonePermission": "允许 $(PRODUCT_NAME) 访问您的麦克风",
+          "recordAudioAndroid": true
         }
       ]
     ],
