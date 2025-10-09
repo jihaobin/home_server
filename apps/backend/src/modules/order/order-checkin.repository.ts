@@ -120,7 +120,7 @@ export class OrderCheckinRepository {
 	): Promise<boolean> {
 		const [row] = await this.db
 			.select({
-				within: sql<boolean>`ST_DWithin(${userAddresses.geom}, ${userPoint}, ${maxDistanceDegrees})`,
+				within: sql<boolean>`ST_DWithin(ST_SetSRID(${userAddresses.geom}, 4326), ${userPoint}, ${maxDistanceDegrees})`,
 			})
 			.from(orders)
 			.innerJoin(userAddresses, eq(orders.addressId, userAddresses.id))

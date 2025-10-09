@@ -24,6 +24,7 @@ export const transactionTypeEnum = pgEnum("transaction_type", [
 	"bonus", // 奖金
 	"penalty", // 罚金
 	"adjustment", // 手动调整
+	"payment_received", // 支付收款
 ]);
 
 /**
@@ -41,7 +42,6 @@ export const financialTransactions = pgTable(
 			onDelete: "cascade",
 		}), // 关联订单 (可为空)
 		paymentId: varchar("payment_id", { length: 255 }), // 关联支付记录 (可为空)
-		earningId: varchar("earning_id", { length: 255 }), // 关联收入记录 (可为空)
 		withdrawalId: varchar("withdrawal_id", { length: 255 }), // 关联提现记录 (可为空)
 		userId: varchar("user_id", { length: 255 })
 			.notNull()
@@ -49,8 +49,6 @@ export const financialTransactions = pgTable(
 		transactionType: transactionTypeEnum("transaction_type").notNull(), // 交易类型
 		amount: decimal("amount", { precision: 18, scale: 2 }).notNull(), // 交易金额 (正数为收入，负数为支出)
 		currency: varchar("currency", { length: 3 }).default("CNY").notNull(), // 币种代码
-		balanceBefore: decimal("balance_before", { precision: 18, scale: 2 }), // 交易前余额
-		balanceAfter: decimal("balance_after", { precision: 18, scale: 2 }), // 交易后余额
 		description: varchar("description", { length: 500 }), // 交易描述
 		referenceId: varchar("reference_id", { length: 255 }), // 外部引用 ID (如第三方支付号)
 		metadata: varchar("metadata", { length: 1000 }), // 额外元数据 (JSON 格式)
@@ -209,10 +207,6 @@ export const financialTransactionsRelations = relations(
 			fields: [financialTransactions.userId],
 			references: [users.id],
 		}),
-		earning: one(earnings, {
-			fields: [financialTransactions.earningId],
-			references: [earnings.id],
-		}),
 		withdrawal: one(withdrawals, {
 			fields: [financialTransactions.withdrawalId],
 			references: [withdrawals.id],
@@ -251,11 +245,12 @@ export const withdrawalsRelations = relations(withdrawals, ({ one }) => ({
 
 // 用户选择服务和人员进行下单(假设订单结果100块)
 // 用户进行支付
+// 用户未支付时，服务人员或用户可以取消订单，同时需要说明取消订单的原因。
 // 将用户支付的金额生成一条资金流水记录，同时订单状态更改paid(已支付)
-// 只有状态为已支付时，服务人员或用户才能够取消订单，订单取消时需要将用户支付的进行进行退款，同时生成资金流水记录
+// 状态为已支付时，服务人员或用户能够取消订单，同时需要说明取消订单的原因。订单取消时需要将用户支付的进行进行退款(退款方法暂时不用实现，但是需要留一个函数进行占位)，同时生成资金流水记录
 // 服务人员扫描用户手机订单的二维码进行确认, 订单状态修改为in_progress(服务中)
 // 服务人员完成服务，订单状态修改为completed(已完成)
 // 计算服务人员收入，生成一条收入记录(平台收20%(20块)，服务人员得80%(80块))
-// 用户提现时，生成一条提现记录，提现状态修改为pending(待处理)
-// 提现成功，生成一条资金流水记录(减去用户提现的金额)，提现状态修改为approved(处理完成)
-// 提现失败，提现状态修改为rejected(处理失败), 提现用户重试，或者联系客服
+// 服务人员提现时，生成一条提现记录，提现状态修改为pending(待处理)
+// 提现成功，生成一条资金流水记录(减去用户提现的金额)，提现状态修改为completed(审核完成)
+// 提现失败，提现状态修改为rejected(处理失败), 提示服务人员重试，或者让其联系客服

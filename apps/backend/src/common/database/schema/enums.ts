@@ -22,6 +22,7 @@ export const paymentStatusEnum = pgEnum("payment_status", [
 	"pending", // 待处理
 	"succeeded", // 成功
 	"failed", // 失败
+	"refunded", // 已退款
 ]);
 
 /**

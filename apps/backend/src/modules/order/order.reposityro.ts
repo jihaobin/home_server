@@ -10,7 +10,7 @@ import {
 	type SQL,
 } from "drizzle-orm";
 import { DB } from "src/common/database/database.provider";
-import type { DbType } from "src/common/database/db";
+import { DbType } from "src/common/database/db";
 import {
 	orderAssignments,
 	orders,
@@ -34,7 +34,7 @@ export class OrderRepository {
 		{
 			pending_payment: ["paid", "cancelled"],
 			paid: ["in_progress", "cancelled"],
-			in_progress: ["completed", "cancelled"],
+			in_progress: ["completed"], // 服务中状态不能再取消，只能完成
 			completed: ["refunded"], // 假设完成的订单可以退款
 			cancelled: [], // 取消的订单不能再改变状态
 			refunded: [], // 退款的订单不能再改变状态
@@ -262,6 +262,62 @@ export class OrderRepository {
 		// 4. 验证更新结果
 		if (updatedOrders.length === 0) {
 			throw new BadRequestException("订单状态更新失败");
+		}
+
+		return updatedOrders[0];
+	}
+
+	/**
+	 * 取消订单
+	 * @param id 订单ID
+	 * @param reason 取消原因
+	 * @param cancelledById 取消订单的用户ID
+	 * @param executor 可选的数据库执行器
+	 * @returns 取消后的订单信息
+	 */
+	async cancelOrder(
+		id: string,
+		reason: string,
+		cancelledById: string,
+		executor?: DbType,
+	) {
+		const db = executor ?? this.db;
+
+		// 1. 获取当前订单状态
+		const order = await db.query.orders.findFirst({
+			where: eq(orders.id, id),
+			columns: { status: true },
+		});
+
+		if (!order) {
+			throw new BadRequestException("订单不存在");
+		}
+
+		const currentStatus = order.status;
+
+		// 2. 验证状态转换是否合法 (只能从 pending_payment 或 paid 状态转换到 cancelled)
+		if (!this.isValidStatusTransition(currentStatus, "cancelled")) {
+			throw new BadRequestException(
+				`当前状态 ${currentStatus} 无法取消订单`,
+			);
+		}
+
+		// 3. 更新订单状态并设置取消信息
+		const updatedOrders = await db
+			.update(orders)
+			.set({
+				status: "cancelled",
+				cancelReason: reason,
+				cancelledBy: cancelledById,
+				cancelledAt: new Date(),
+				updatedAt: new Date(),
+			})
+			.where(eq(orders.id, id))
+			.returning();
+
+		// 4. 验证更新结果
+		if (updatedOrders.length === 0) {
+			throw new BadRequestException("订单取消失败");
 		}
 
 		return updatedOrders[0];

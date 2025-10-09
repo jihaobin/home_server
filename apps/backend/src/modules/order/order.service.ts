@@ -1,19 +1,16 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, forwardRef } from "@nestjs/common";
 import type {
 	CreateDesignatedOrder,
 	CreateOrder,
 	OrderListRequest,
 	OrderStatus,
 } from "@repo/types";
-import type { DbType } from "src/common/database/db";
+import { DbType } from "src/common/database/db";
 import { extractParams, isTimeInRange } from "src/lib/utlis";
+import { PayService } from "../pay/pay.service";
 import { ServiceService } from "../service/service.service";
 import { WorkSkillService } from "../work-skill/work-skill.service";
 import { OrderRepository } from "./order.reposityro";
-import {
-	type GenerateQrResult,
-	OrderCheckinService,
-} from "./order-checkin.service";
 
 @Injectable()
 export class OrderService {
@@ -26,8 +23,8 @@ export class OrderService {
 	@Inject(WorkSkillService)
 	private readonly workSkillService: WorkSkillService;
 
-	@Inject(OrderCheckinService)
-	private readonly orderCheckinService: OrderCheckinService;
+	@Inject(forwardRef(() => PayService))
+	private readonly payService: PayService;
 
 	/**
 	 * 获取客户的订单列表
@@ -66,7 +63,7 @@ export class OrderService {
 	 * @param userId 用户ID（用于权限验证）
 	 * @returns 订单详情
 	 */
-	async getOrderById(id: string, userId?: string, isPrvite: boolean = true) {
+	async getOrderById(id: string, userId?: string) {
 		// 参数验证
 		if (!id) {
 			throw new BadRequestException("订单ID不能为空");
@@ -84,17 +81,7 @@ export class OrderService {
 				throw new BadRequestException("您没有权限查看此订单");
 			}
 
-			let checkInQr: GenerateQrResult | null = null;
-			if (!isPrvite) {
-				if (userId && order.customerId === userId) {
-					checkInQr = await this.orderCheckinService.generateQrCode({
-						orderId: id,
-						requesterId: userId,
-					});
-				}
-			}
-
-			return { ...order, checkInQr };
+			return { ...order };
 		} catch (error) {
 			if (error instanceof BadRequestException) {
 				throw error;
@@ -166,6 +153,12 @@ export class OrderService {
 		createOrderDto: CreateDesignatedOrder,
 	) {
         const appointmentTime = new Date(createOrderDto.appointmentTime);
+
+		// 验证预约时间是否合理
+		if (appointmentTime < new Date()) {
+			throw new BadRequestException("预约时间不能是过去的时间");
+		}
+
 		// 数据验证
 		const ServicePersonnel = await this.workSkillService.getPersonnelInfo(
 			createOrderDto.designatedPersonnelId,
@@ -356,6 +349,117 @@ export class OrderService {
 				throw error;
 			}
 			throw new BadRequestException(`更新订单状态失败: ${error.message}`);
+		}
+	}
+
+	/**
+	 * 取消订单
+	 * @param id 订单ID
+	 * @param reason 取消原因
+	 * @param cancelledById 取消订单的用户ID
+	 * @returns 取消后的订单信息
+	 */
+	async cancelOrder(
+		id: string,
+		reason: string,
+		cancelledById: string,
+	) {
+		// 参数验证
+		if (!id) {
+			throw new BadRequestException("订单ID不能为空");
+		}
+
+		if (!reason) {
+			throw new BadRequestException("取消原因不能为空");
+		}
+
+		if (!cancelledById) {
+			throw new BadRequestException("取消订单的用户ID不能为空");
+		}
+
+		try {
+			// 验证订单是否存在
+			const order = await this.orderRepository.getOrderById(id);
+			if (!order) {
+				throw new BadRequestException("订单不存在");
+			}
+
+			// 如果订单已支付，需要发起退款并记录取消信息
+			if (order.status === "paid") {
+				// 调用退款占位函数
+				await this.payService.requestRefund(id, reason, cancelledById);
+
+				// 对于已支付的订单，仍标记为取消，但已发起退款
+				const cancelledOrder = await this.orderRepository.cancelOrder(
+					id,
+					reason,
+					cancelledById,
+				);
+				return cancelledOrder;
+			} else {
+				// 对于未支付的订单，直接取消
+				const cancelledOrder = await this.orderRepository.cancelOrder(
+					id,
+					reason,
+					cancelledById,
+				);
+
+				return cancelledOrder;
+			}
+		} catch (error) {
+			if (error instanceof BadRequestException) {
+				throw error;
+			}
+			throw new BadRequestException(`取消订单失败: ${error.message}`);
+		}
+	}
+
+	/**
+	 * 完成订单
+	 * @param id 订单ID
+	 * @returns 完成后的订单信息
+	 */
+	async completeOrder(
+		id: string,
+		userId?: string,
+	) {
+		// 参数验证
+		if (!id) {
+			throw new BadRequestException("订单ID不能为空");
+		}
+
+		try {
+			// 验证订单是否存在
+			const order = await this.orderRepository.getOrderById(id);
+			if (!order) {
+				throw new BadRequestException("订单不存在");
+			}
+
+			// 验证是否是订单发起者在完成订单
+			if (userId && order.customerId !== userId) {
+				throw new BadRequestException("只有订单发起者才能完成此订单");
+			}
+
+			// 验证订单状态是否可以完成
+			if (order.status !== "in_progress") {
+				throw new BadRequestException("订单必须处于服务中状态才能完成");
+			}
+
+			// 更新订单状态为 completed
+			const updatedOrder = await this.orderRepository.updateOrderStatus(
+				id,
+				"completed",
+			);
+
+			// 订单完成后处理收益分配
+			await this.payService.handleOrderCompletion(id);
+
+			return updatedOrder;
+		} catch (error) {
+			if (error instanceof BadRequestException) {
+				throw error;
+			}
+			throw new BadRequestException(`完成订单失败: ${error.message}`);
 		}
 	}
 }

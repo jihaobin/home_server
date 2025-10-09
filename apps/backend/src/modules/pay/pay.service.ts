@@ -1,5 +1,5 @@
 import { createSign } from "node:crypto";
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, forwardRef } from "@nestjs/common";
 import { createId } from "@paralleldrive/cuid2";
 import {
 	alipayWithdrawResponseSchema,
@@ -10,9 +10,9 @@ import {
 } from "@repo/types";
 import Decimal from "decimal.js";
 import { eq, sql } from "drizzle-orm";
-import { CACHE_SERVICE, type IAdvancedCacheService } from "src/common/cache";
+import { CACHE_SERVICE, IAdvancedCacheService } from "src/common/cache";
 import { DB } from "src/common/database/database.provider";
-import type { DbType } from "src/common/database/db";
+import { DbType } from "src/common/database/db";
 import {
 	earnings,
 	financialTransactions,
@@ -58,7 +58,7 @@ export class PayService {
 	@Inject(DB)
 	private db: DbType;
 
-	@Inject(OrderService)
+	@Inject(forwardRef(() => OrderService))
 	private order: OrderService;
 
 	@Inject(PayRepository)
@@ -447,8 +447,8 @@ export class PayService {
 				}
 
 				if (mappedStatus === "succeeded") {
-					// 支付成功后进入结算与分成流程
-					let orderForSettlement: OrderRecord = latestOrder;
+					// 支付成功后更新订单状态为 'paid'
+					let orderForPayment: OrderRecord = latestOrder;
 					try {
 						const updatedOrder = await this.order.updateOrderStatus(
 							latestOrder.id,
@@ -458,7 +458,7 @@ export class PayService {
 							},
 						);
 						if (updatedOrder) {
-							orderForSettlement = updatedOrder;
+							orderForPayment = updatedOrder;
 						}
 					} catch (error) {
 						console.warn(
@@ -466,6 +466,10 @@ export class PayService {
 							error instanceof Error ? error.message : error,
 						);
 					}
+
+					// 创建支付流水记录
+					const balanceBefore = new Decimal(orderForPayment.totalAmount);
+					const balanceAfter = new Decimal(0); // Customer balance doesn't change here, but we track the payment
 
 					// 再次查询以防并发导致支付记录落后
 					const finalPaymentRecord =
@@ -476,12 +480,21 @@ export class PayService {
 							tx,
 						));
 
-					await this.processServiceRevenue({
+					const transactionValues: typeof financialTransactions.$inferInsert = {
+						orderId: order.id,
+						paymentId: finalPaymentRecord?.id ?? null,
+						userId: order.customerId, // Payment from customer
+						transactionType: "payment_received", // New transaction type for payment received
+						amount: `+${orderForPayment.totalAmount}`,
+						currency: orderForPayment.currency ?? "CNY",
+						description: `客户支付订单${orderForPayment.orderSerial ?? orderForPayment.id}`,
+						referenceId: payInfo.trade_no ?? null,
+					};
+
+					await this.payRepository.createFinancialTransaction(
+						transactionValues,
 						tx,
-						order: orderForSettlement,
-						payment: finalPaymentRecord,
-						tradeNo: payInfo.trade_no,
-					});
+					);
 				}
 			});
 
@@ -508,12 +521,10 @@ export class PayService {
 		}
 	}
 
-	// 集中处理服务人员收益入账，需保证幂等与精确计算
-	private async processServiceRevenue({
+	// 处理服务完成后的收益分配
+	public async processServiceRevenueAndPlatformFee({
 		tx,
 		order,
-		payment,
-		tradeNo,
 	}: {
 		tx: DbType;
 		order: OrderRecord;
@@ -568,15 +579,11 @@ export class PayService {
 			.mul(80)
 			.div(100)
 			.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-		const platformShareDecimal = totalAmountDecimal
-			.minus(serviceShareDecimal)
-			.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
 		const serviceShare = serviceShareDecimal.toFixed(2);
-		const platformShare = platformShareDecimal.toFixed(2);
 		const currency = order.currency ?? "CNY";
 
-		// 使用数据库原子 upsert 累加余额，避免并发竞争
+		// 使用数据库原子 upsert 累加服务人员余额，避免并发竞争
 		const [balanceRow] = await tx
 			.insert(userBalances)
 			.values({
@@ -604,12 +611,7 @@ export class PayService {
 			return;
 		}
 
-		const balanceAfterDecimal = new Decimal(balanceRow.availableBalance ?? "0");
-		const balanceBeforeDecimal = Decimal.max(
-			balanceAfterDecimal.minus(serviceShareDecimal),
-			new Decimal(0),
-		);
-
+		// 记录服务人员收益
 		const [earningRecord] = await tx
 			.insert(earnings)
 			.values({
@@ -623,49 +625,54 @@ export class PayService {
 		if (!earningRecord) {
 			return;
 		}
+	}
 
-		// 在流水元数据中记录拆分详情，方便后续审计
-		const metadata = JSON.stringify({
-			orderId: order.id,
-			orderSerial: order.orderSerial,
-			totalAmount: totalAmountDecimal.toFixed(2),
-			serviceShare,
-			platformFee: platformShare,
-			rate: {
-				service: 0.8,
-				platform: 0.2,
-			},
+	/**
+	 * 订单完成后处理收益分配
+	 * @param orderId 订单ID
+	 */
+	async handleOrderCompletion(orderId: string) {
+		const order = await this.order.getOrderById(orderId);
+
+		if (!order) {
+			throw new BadRequestException("订单不存在");
+		}
+
+		if (order.status !== "completed") {
+			throw new BadRequestException("订单必须是已完成状态才能处理收益");
+		}
+
+		// 获取订单的支付记录
+		const payments = await this.payRepository.findByOrderId(orderId);
+		const payment = payments.find(p => p.status === "succeeded");
+
+		if (!payment) {
+			throw new BadRequestException("订单未完成有效支付，无法处理收益");
+		}
+
+		// 处理服务人员收益和平台费用
+		await this.db.transaction(async (tx) => {
+			await this.processServiceRevenueAndPlatformFee({
+				tx,
+				order: order as OrderRecord,
+				payment,
+				tradeNo: payment.transactionId || undefined,
+			});
 		});
+	}
 
-		const transactionValues: typeof financialTransactions.$inferInsert = {
-			orderId: order.id,
-			paymentId: payment?.id ?? null,
-			earningId: earningRecord.id,
-			userId: servicePersonnelId,
-			transactionType: "service_earning",
-			amount: serviceShare,
-			currency,
-			balanceBefore: balanceBeforeDecimal.toFixed(2),
-			balanceAfter: balanceAfterDecimal.toFixed(2),
-			description: `订单${order.orderSerial ?? order.id}服务人员收益入账`,
-			metadata,
-		};
+	/**
+	 * 请求退款占位函数（待实现）
+	 * @param orderId 订单ID
+	 * @param reason 退款原因
+	 * @param refundedById 退款操作人ID
+	 */
+	async requestRefund(orderId: string, reason: string, refundedById: string) {
+		// TODO: 实现退款逻辑，集成支付宝/微信退款API
+		console.log(`[TODO] 退款占位函数被调用 - 订单ID: ${orderId}, 原因: ${reason}, 操作人: ${refundedById}`);
 
-		if (tradeNo) {
-			transactionValues.referenceId = tradeNo;
-		}
-
-		const [transactionRecord] = await tx
-			.insert(financialTransactions)
-			.values(transactionValues)
-			.returning();
-
-		if (transactionRecord) {
-			await tx
-				.update(userBalances)
-				.set({ lastTransactionId: transactionRecord.id })
-				.where(eq(userBalances.id, balanceRow.id));
-		}
+		// 占位实现，返回成功
+		return { success: true, message: "退款请求已提交" };
 	}
 
 	// 用户提现（当前仅支持支付宝）
@@ -840,6 +847,7 @@ export class PayService {
 						freezeContext.balanceAfterFreeze.available.toFixed(2),
 					frozenBalance: frozenAfterSuccess.toFixed(2),
 					totalBalance: totalAfterSuccess.toFixed(2),
+                    lastTransactionId: successResult.data.order_id,
 				},
 				tx,
 			);
@@ -866,10 +874,8 @@ export class PayService {
 					userId,
 					withdrawalId: freezeContext.withdrawal.id,
 					transactionType: "withdrawal",
-					amount: amountDecimal.negated().toFixed(2),
+					amount: `-${amountDecimal.negated().toFixed(2)}`,
 					currency,
-					balanceBefore: freezeContext.balanceBefore.available.toFixed(2),
-					balanceAfter: freezeContext.balanceAfterFreeze.available.toFixed(2),
 					description: `提现至支付宝账号 ${payee.identity}`.slice(0, 120),
 					referenceId,
 					metadata: JSON.stringify({

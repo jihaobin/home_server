@@ -7,10 +7,9 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
-	GenerateOrderCheckinDto,
-	VerifyOrderCheckinDto,
+	type VerifyOrderCheckinDto,
 } from "@repo/types";
-import QRCode from "qrcode";
+import * as QRCode from "qrcode";
 import { GeoLocationService } from "src/common/services/geo-location.service";
 import { OrderRepository } from "./order.reposityro";
 import { OrderCheckinRepository } from "./order-checkin.repository";
@@ -50,9 +49,10 @@ export class OrderCheckinService {
 		);
 	}
 
-	async generateQrCode(
-		request: GenerateOrderCheckinDto & { requesterId: string },
-	): Promise<GenerateQrResult> {
+	async generateQrCode(request: {
+		requesterId: string;
+		orderId: string;
+	}): Promise<GenerateQrResult> {
 		const order = await this.orderRepository.getOrderById(request.orderId);
 		if (!order) {
 			throw new BadRequestException("订单不存在");
@@ -87,7 +87,7 @@ export class OrderCheckinService {
 			expiresAt,
 			ttlSeconds: Math.floor(this.ttlMs / 1000),
 			qrCodeDataUrl,
-			payload,
+			payload: JSON.parse(payload),
 		};
 	}
 
@@ -156,6 +156,14 @@ export class OrderCheckinService {
 			verifiedGeom: userPoint,
 		});
 
+		// 更新订单状态为 in_progress
+		if (order.status === "paid") {
+			await this.orderRepository.updateOrderStatus(
+				record.orderId,
+				"in_progress",
+			);
+		}
+
 		return {
 			orderId: record.orderId,
 			status: "verified",
@@ -164,20 +172,6 @@ export class OrderCheckinService {
 	}
 
 	private buildPayload(orderId: string, token: string): string {
-		const baseUrl = this.configService.get<string>("ORDER_CHECKIN_QR_BASE_URL");
-		if (baseUrl) {
-			try {
-				const url = new URL(baseUrl);
-				url.searchParams.set("orderId", orderId);
-				url.searchParams.set("token", token);
-				return url.toString();
-			} catch (error) {
-				this.logger.warn(
-					`ORDER_CHECKIN_QR_BASE_URL 配置无效: ${String(error)}`,
-				);
-			}
-		}
-
 		return JSON.stringify({ orderId, token });
 	}
 

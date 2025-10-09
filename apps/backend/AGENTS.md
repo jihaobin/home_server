@@ -1,5 +1,7 @@
 # Backend Agents 指南
 
+## 总是使用中文进行输出
+
 ## 快速概览
 
 - 基于 NestJS 11 的 REST API，入口位于 `src/main.ts`，全局前缀为 `api`

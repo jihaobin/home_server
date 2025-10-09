@@ -60,6 +60,10 @@ export const orders = pgTable(
 		appointmentTime: timestamp("appointment_time", {
 			withTimezone: true,
 		}).notNull(), // 预约服务时间
+		// 新增取消相关字段
+		cancelReason: varchar("cancel_reason", { length: 500 }), // 取消订单的原因
+		cancelledBy: varchar("cancelled_by", { length: 255 }).references(() => users.id, { onDelete: "set null" }), // 取消订单的用户 ID
+		cancelledAt: timestamp("cancelled_at", { withTimezone: true }), // 订单取消时间
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 	},
