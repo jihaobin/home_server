@@ -16,7 +16,7 @@ export type UserRole = z.infer<typeof UserRoleEnum>;
 // 订单状态枚举 - MVP简化版本
 export const OrderStatusEnum = z.enum([
     "pending_payment", // 待支付
-    "paid", // 已支付（待分配服务人员）
+    "paid", // 已支付（等待服务人员上门进行服务）
     "in_progress", // 服务中
     "completed", // 已完成（包含已评价和未评价）
     "cancelled", // 已取消（各种原因的取消统一处理）
@@ -25,14 +25,14 @@ export const OrderStatusEnum = z.enum([
 export type OrderStatus = z.infer<typeof OrderStatusEnum>;
 
 // 支付状态枚举
-export const PaymentStatusEnum = z.enum(["pending", "succeeded", "failed"]);
+export const PaymentStatusEnum = z.enum(["pending", "succeeded", "failed", "refunded"]);
 export type PaymentStatus = z.infer<typeof PaymentStatusEnum>;
 
 // 支付方法
 export const PaymentMethodEnum = z.enum([
-    "wechat_pay",
-    "alipay",
-    "bank_transfer",
+    "wechat_pay", // 微信支付
+    "alipay", // 支付宝
+    "bank_transfer", // 银行转账
 ]);
 export type PaymentMethod = z.infer<typeof PaymentMethodEnum>;
 
@@ -46,10 +46,10 @@ export type AssignmentType = z.infer<typeof AssignmentTypeEnum>;
 
 // 提现状态枚举
 export const WithdrawalStatusEnum = z.enum([
-    "pending",
-    "approved",
-    "rejected",
-    "completed",
+    "pending", // 待审核
+    "approved", // 审核通过
+    "rejected", // 审核拒绝
+    "completed", // 已完成
 ]);
 export type WithdrawalStatus = z.infer<typeof WithdrawalStatusEnum>;
 
@@ -63,18 +63,18 @@ export type NotificationType = z.infer<typeof NotificationTypeEnum>;
 
 // 优惠券类型枚举
 export const CouponTypeEnum = z.enum([
-    "fixed_amount",
-    "percentage",
-    "free_shipping",
+    "fixed_amount", // 固定金额折扣
+    "percentage", // 百分比折扣
+    "free_shipping", // 免费配送
 ]);
 export type CouponType = z.infer<typeof CouponTypeEnum>;
 
 // 优惠券状态枚举
 export const CouponStatusEnum = z.enum([
-    "active",
-    "inactive",
-    "expired",
-    "disabled",
+    "active", // 激活状态
+    "inactive", // 未激活
+    "expired", // 已过期
+    "disabled", // 已禁用
 ]);
 export type CouponStatus = z.infer<typeof CouponStatusEnum>;
 
@@ -85,6 +85,28 @@ export type ReviewTargetType = z.infer<typeof ReviewTargetTypeEnum>;
 // 用户优惠券状态枚举
 export const UserCouponStatusEnum = z.enum(["available", "used", "expired"]);
 export type UserCouponStatus = z.infer<typeof UserCouponStatusEnum>;
+
+// 订单到场核验状态枚举
+export const OrderCheckinStatusEnum = z.enum([
+    "pending", // 待核验
+    "verified", // 已核验
+    "revoked", // 主动作废
+    "expired", // 已过期
+]);
+export type OrderCheckinStatus = z.infer<typeof OrderCheckinStatusEnum>;
+
+// 交易类型枚举
+export const TransactionTypeEnum = z.enum([
+    "service_earning", // 服务收入
+    "platform_fee", // 平台手续费
+    "withdrawal", // 提现
+    "refund_paid", // 退款支出
+    "bonus", // 奖金
+    "penalty", // 罚金
+    "adjustment", // 手动调整
+    "payment_received", // 支付收款
+]);
+export type TransactionType = z.infer<typeof TransactionTypeEnum>;
 
 // ==================== 基础表 Schema ====================
 
@@ -106,6 +128,10 @@ export const UsersSchema = z
         emailVerified: z.boolean().default(false).meta({
             description: "邮箱是否已验证",
             title: "邮箱验证状态",
+        }),
+        phoneNumberVerified: z.boolean().default(false).meta({
+            description: "手机号码是否已验证",
+            title: "手机号码验证状态",
         }),
         name: z.string().max(50, "姓名长度不能超过50个字符").default("").meta({
             description: "用户的姓名",
@@ -129,8 +155,9 @@ export const UsersSchema = z
             examples: [
                 "customer (客户)",
                 "service_personnel (服务人员)",
-                "shop_owner (店主)",
+                "shop_admin (店铺管理员)",
                 "admin (管理员)",
+                "super_admin (超级管理员)",
             ],
         }),
         isActive: z.boolean().default(true).meta({
@@ -152,14 +179,148 @@ export const UsersSchema = z
             description: "用户更新时间",
             title: "更新时间",
         }),
-        phoneNumberVerified: z.boolean().meta({
-            description: "手机号码是否已验证",
-            title: "手机号码验证状态",
-        }),
     })
     .meta({
         title: "用户表",
         description: "存储用户信息的表",
+    });
+
+// 验证令牌表
+export const VerificationsSchema = z
+    .object({
+        id: z.string().max(255).meta({
+            description: "验证令牌的唯一标识符",
+            title: "验证ID",
+        }),
+        identifier: z.string().max(255).meta({
+            description: "验证标识符，例如邮箱地址",
+            title: "标识符",
+        }),
+        value: z.string().max(255).meta({
+            description: "验证令牌的值",
+            title: "值",
+        }),
+        expiresAt: z.date().meta({
+            description: "验证令牌过期时间",
+            title: "过期时间",
+        }),
+        createdAt: z
+            .date()
+            .default(() => new Date())
+            .meta({
+                description: "令牌创建时间",
+                title: "创建时间",
+            }),
+        updatedAt: z.date().optional().meta({
+            description: "令牌更新时间",
+            title: "更新时间",
+        }),
+    })
+    .meta({
+        title: "验证令牌表",
+        description: "存储用于邮箱验证或密码重置等一次性令牌",
+    });
+
+// 资金流水表
+export const FinancialTransactionsSchema = z
+    .object({
+        id: z.string().max(255).meta({
+            description: "交易流水唯一标识",
+            title: "交易流水ID",
+        }),
+        orderId: z.string().max(255).optional().nullable().meta({
+            description: "关联订单ID，可以为空",
+            title: "订单ID",
+        }),
+        paymentId: z.string().max(255).optional().nullable().meta({
+            description: "关联支付记录ID，可以为空",
+            title: "支付ID",
+        }),
+        withdrawalId: z.string().max(255).optional().nullable().meta({
+            description: "关联提现记录ID，可以为空",
+            title: "提现ID",
+        }),
+        userId: z.string().max(255).meta({
+            description: "关联的用户ID",
+            title: "用户ID",
+        }),
+        transactionType: TransactionTypeEnum.meta({
+            description: "交易类型",
+            title: "交易类型",
+        }),
+        amount: z.number().multipleOf(0.01).meta({
+            description: "交易金额 (正数为收入，负数为支出)",
+            title: "交易金额",
+        }),
+        currency: z.string().max(3).default("CNY").meta({
+            description: "币种代码",
+            title: "币种",
+        }),
+        description: z.string().max(500).optional().nullable().meta({
+            description: "交易描述",
+            title: "交易描述",
+        }),
+        referenceId: z.string().max(255).optional().nullable().meta({
+            description: "外部引用ID (如第三方支付号)",
+            title: "外部引用ID",
+        }),
+        metadata: z.string().max(1000).optional().nullable().meta({
+            description: "额外元数据 (JSON格式)",
+            title: "元数据",
+        }),
+        createdAt: z.date().meta({
+            description: "交易创建时间",
+            title: "创建时间",
+        }),
+    })
+    .meta({
+        title: "资金流水表",
+        description: "记录所有资金流动，实现财务对账机制",
+    });
+
+// 用户余额表
+export const UserBalancesSchema = z
+    .object({
+        id: z.string().max(255).meta({
+            description: "余额记录唯一标识",
+            title: "余额记录ID",
+        }),
+        userId: z.string().max(255).meta({
+            description: "关联的用户ID",
+            title: "用户ID",
+        }),
+        availableBalance: z.number().multipleOf(0.01).default(0).meta({
+            description: "可用余额",
+            title: "可用余额",
+        }),
+        frozenBalance: z.number().multipleOf(0.01).default(0).meta({
+            description: "冻结余额",
+            title: "冻结余额",
+        }),
+        totalBalance: z.number().multipleOf(0.01).default(0).meta({
+            description: "总余额 (可用 + 冻结)",
+            title: "总余额",
+        }),
+        currency: z.string().max(3).default("CNY").meta({
+            description: "币种代码",
+            title: "币种",
+        }),
+        lastTransactionId: z.string().max(255).optional().nullable().meta({
+            description: "最后一笔交易ID",
+            title: "最后交易ID",
+        }),
+        updatedAt: z.date().optional().meta({
+            description: "最后更新时间",
+            title: "更新时间",
+        }),
+        createdAt: z.date().meta({
+            description: "余额记录创建时间",
+            title: "创建时间",
+        }),
+    })
+    .meta({
+        title: "用户余额表",
+        description: "统一管理用户账户余额",
     });
 
 // 中国城市表
@@ -203,37 +364,53 @@ export const ChinaCitySchema = z
         description: "存储中国省市区数据的表",
     });
 
-// 验证表
-export const VerificationsSchema = z
+// 订单到场核验记录表
+export const OrderCheckinsSchema = z
     .object({
-        id: z.string().max(255),
-        identifier: z.string().meta({
-            description: "验证标识符",
-            title: "标识符",
+        id: z.string().max(255).meta({
+            description: "订单到场核验记录唯一标识",
+            title: "核验记录ID",
         }),
-        value: z.string().meta({
-            description: "验证值",
-            title: "值",
+        orderId: z.string().max(255).meta({
+            description: "关联的订单ID",
+            title: "订单ID",
+        }),
+        tokenHash: z.string().max(128).meta({
+            description: "核验令牌哈希值",
+            title: "令牌哈希",
+        }),
+        status: OrderCheckinStatusEnum.default("pending").meta({
+            description: "核验状态",
+            title: "核验状态",
         }),
         expiresAt: z.date().meta({
-            description: "过期时间",
+            description: "令牌过期时间",
             title: "过期时间",
         }),
-        createdAt: z
-            .date()
-            .default(() => new Date())
-            .meta({
-                description: "创建时间",
-                title: "创建时间",
-            }),
+        verifiedAt: z.date().optional().nullable().meta({
+            description: "核验完成时间",
+            title: "核验时间",
+        }),
+        verifiedBy: z.string().max(255).optional().nullable().meta({
+            description: "验证者（服务人员）用户ID，可以为空",
+            title: "验证者ID",
+        }),
+        verifiedGeom: z.array(z.number()).length(2).optional().nullable().meta({
+            description: "验证时的地理位置，格式为 [经度, 纬度]",
+            title: "验证时地理位置",
+        }),
+        createdAt: z.date().meta({
+            description: "创建时间",
+            title: "创建时间",
+        }),
         updatedAt: z.date().optional().meta({
             description: "更新时间",
             title: "更新时间",
         }),
     })
     .meta({
-        title: "验证表",
-        description: "存储用户验证信息的表",
+        title: "订单到场核验记录表",
+        description: "记录订单到场核验信息的表",
     });
 
 // ==================== 有外键关系的表 Schema ====================
@@ -569,21 +746,17 @@ export const ServicePersonnelSchema = z
                 description: "服务人员工作经验（年）",
                 title: "服务人员工作经验（年）",
             }),
-        workStartTime: z
-            .iso.time()
-            .meta({
-                description: "服务人员工作开始时间",
-                title: "服务人员工作开始时间",
-            }),
-        workEndTime: z
-            .iso.time()
-            .meta({
-                description: "服务人员工作结束时间",
-                title: "服务人员工作结束时间",
-            }),
+        workStartTime: z.string().meta({
+            description: "可工作开始时间",
+            title: "工作开始时间",
+        }),
+        workEndTime: z.string().meta({
+            description: "可工作结束时间",
+            title: "工作结束时间",
+        }),
         isAvailable: z.boolean().default(true).meta({
-            description: "服务人员是否可用",
-            title: "服务人员可用状态",
+            description: "是否当前可接受派单",
+            title: "是否可用",
         }),
         workDays: z
             .string()
@@ -591,24 +764,21 @@ export const ServicePersonnelSchema = z
             .regex(/^[1-7]{1,7}$/, "工作日格式不正确，应为1-7的组合，如：1234567")
             .default('1234567')
             .meta({
-                description: "工作日设定，1-7代表周一到周日",
+                description: "工作日，1-7代表周一到周日",
                 title: "工作日",
             }),
         currentStatus: z
-            .enum(['available', 'busy', 'offline'])
-            .default('available')
+            .string()
+            .max(20)
+            .default("available")
             .meta({
-                description: "当前状态：available(可接单), busy(忙碌), offline(离线)",
+                description: "当前状态：available, busy, offline",
                 title: "当前状态",
             }),
-        lastActiveAt: z
-            .date()
-            .default(() => new Date())
-            .optional()
-            .meta({
-                description: "最后活跃时间",
-                title: "最后活跃时间",
-            }),
+        lastActiveAt: z.date().default(() => new Date()).meta({
+            description: "最后活跃时间",
+            title: "最后活跃时间",
+        }),
     })
     .refine(
         (data) => {
@@ -638,6 +808,10 @@ export const ServicePersonnelPricingSchema = z
             description: "服务人员用户ID",
             title: "服务人员用户ID",
         }),
+        name: z.string().max(100).meta({
+            description: "定价的的简单描述",
+            title: "定价的的简单描述",
+        }).default("").nullish(),
         serviceId: z.string().max(255).meta({
             description: "服务项目ID",
             title: "服务项目ID",
@@ -742,6 +916,7 @@ export const UserAddressesSchema = z
             .string()
             .max(100, "地点名称不能超过100个字符")
             .optional()
+            .nullable()
             .meta({
                 description: "地点名称",
                 title: "地点名称，如xx小区,xx餐馆",
@@ -750,6 +925,7 @@ export const UserAddressesSchema = z
             .string()
             .max(50, "门牌号不能超过50个字符")
             .optional()
+            .nullable()
             .meta({
                 description: "门牌号",
                 title: "门牌号",
@@ -781,13 +957,10 @@ export const UserAddressesSchema = z
             description: "是否为默认地址",
             title: "默认地址状态",
         }),
-        province: z
-            .string("省份不能为空")
-            .max(100, "省份不能超过100个字符")
-            .meta({
-                description: "省份",
-                title: "省份",
-            }),
+        province: z.string("省份不能为空").max(100, "省份不能超过100个字符").meta({
+            description: "省份",
+            title: "省份",
+        }),
         city: z.string().max(100, "城市不能超过100个字符").optional().meta({
             description: "市",
             title: "市",
@@ -1056,9 +1229,8 @@ export const OrdersSchema = z
             title: "订单状态",
             examples: [
                 "pending_payment (待支付)",
-                "pending_assignment (待分配)",
-                "assigned (已分配)",
-                "service_in_progress (服务进行中)",
+                "paid (已支付)",
+                "in_progress (服务中)",
                 "completed (已完成)",
                 "cancelled (已取消)",
                 "refunded (已退款)",
@@ -1081,14 +1253,10 @@ export const OrdersSchema = z
                 title: "折扣金额",
                 description: "折扣金额",
             }),
-        totalAmount: z
-            .number()
-            .multipleOf(0.01)
-            .min(0, "总金额不能为负数")
-            .meta({
-                title: "总金额",
-                description: "总金额",
-            }),
+        totalAmount: z.number().multipleOf(0.01).min(0, "总金额不能为负数").meta({
+            title: "总金额",
+            description: "总金额",
+        }),
         couponCode: z.string().max(50).optional().meta({
             description: "使用的优惠券代码",
             title: "使用的优惠券代码",
@@ -1096,6 +1264,18 @@ export const OrdersSchema = z
         appointmentTime: z.date().meta({
             description: "服务预约时间",
             title: "服务预约时间",
+        }),
+        cancelReason: z.string().max(500).nullable().optional().meta({
+            description: "取消原因",
+            title: "取消原因",
+        }),
+        cancelledBy: z.string().max(255).nullable().optional().meta({
+            description: "取消人",
+            title: "取消人",
+        }),
+        cancelledAt: z.date().nullable().optional().meta({
+            description: "取消时间",
+            title: "取消时间",
         }),
         createdAt: z
             .date()
@@ -1200,7 +1380,7 @@ export const PaymentsSchema = z
             title: "支付状态",
             examples: [
                 "pending (待支付)",
-                "completed (已完成)",
+                "succeeded (支付成功)",
                 "failed (支付失败)",
                 "refunded (已退款)",
             ],
@@ -1558,4 +1738,6 @@ export type CouponServiceRestrictions = z.infer<typeof CouponServiceRestrictions
 export type UserCoupons = z.infer<typeof UserCouponsSchema>;
 export type CouponUsageRecords = z.infer<typeof CouponUsageRecordsSchema>;
 export type ChinaCity = z.infer<typeof ChinaCitySchema>;
-
+export type FinancialTransactions = z.infer<typeof FinancialTransactionsSchema>;
+export type UserBalances = z.infer<typeof UserBalancesSchema>;
+export type OrderCheckins = z.infer<typeof OrderCheckinsSchema>;

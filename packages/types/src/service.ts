@@ -1,5 +1,5 @@
 import z from "zod/v4";
-import { ServiceCategoriesSchema, ServicesSchema } from "./database-entity";
+import { ServiceCategories, ServiceCategoriesSchema, ServicesSchema } from "./database-entity";
 import { PaginationQuerySchema, PaginationMetaSchema } from "./common";
 
 export const ServiceCategoryRequestSchema = z.object({
@@ -52,13 +52,42 @@ export const DeleteServiceCategorySchema = z
 
 export type DeleteServiceCategory = z.infer<typeof DeleteServiceCategorySchema>;
 
-export const serviceCategoriesSchema = ServiceCategoriesSchema.extend({
-    get children(): z.ZodArray<typeof serviceCategoriesSchema> {
-        return z.array(serviceCategoriesSchema);
-    },
-}).meta({ id: "serviceCategoriesSchema" });
 
-export type ServiceCategoryTree = z.infer<typeof serviceCategoriesSchema>;
+/**
+ * 创建一个可控制最大层级的 ServiceCategoriesSchema
+ * @param maxDepth 最大层级（例如 3）
+ * @param current 当前层级（内部递归使用）
+ */
+function createServiceCategoriesSchema(
+  maxDepth: number,
+  current = 1
+): z.ZodType<any> {
+  // 基础结构（复用外部定义）
+  const baseShape = ServiceCategoriesSchema.shape;
+
+  // 如果还未达到最大层级，则允许继续嵌套 children
+  if (current < maxDepth) {
+    return z.object({
+      ...baseShape,
+      children: z
+        .array(createServiceCategoriesSchema(maxDepth, current + 1))
+        .describe("子分类列表"),
+    });
+  }
+
+  // 达到最大层级后，不再允许 children 字段
+  return z.object(baseShape);
+}
+
+// ✅ 生成可递归的 schema（最多 3 层）
+export const serviceCategoriesSchema = createServiceCategoriesSchema(3);
+
+// ✅ 注册 ID 以支持 JSON Schema 引用（推荐）
+z.globalRegistry.add(serviceCategoriesSchema, { id: "ServiceCategory" });
+
+export type ServiceCategoryTree = ServiceCategories & {
+    children: ServiceCategoryTree[];
+};
 
 export type ServiceCategory = Omit<ServiceCategoryTree, "children">;
 

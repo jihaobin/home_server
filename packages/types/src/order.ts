@@ -1,35 +1,41 @@
 import { z } from "zod/v4";
 import { PaginationMetaSchema, PaginationQuerySchema } from "./common";
 import {
+	CouponUsageRecordsSchema,
 	OrderAssignmentsSchema,
 	OrderStatusEnum,
 	OrdersSchema,
-    ServicePersonnelSchema,
+	PaymentsSchema,
+	ServicePersonnelSchema,
+	ServicesSchema,
+	UserAddressesSchema,
 } from "./database-entity";
 
 // 订单列表查询请求 Schema（继承通用分页参数）
-export const OrderListRequestSchema = z.object({
-	...PaginationQuerySchema.shape,
-	status: OrderStatusEnum.optional().meta({
-		description: "订单状态",
-		title: "订单状态",
-	}),
-	customerId: z.string().min(1, "客户ID不能为空").meta({
-		description: "客户ID",
-		title: "客户ID",
-	}),
-	startTime: z.date().optional().meta({
-		description: "开始时间",
-		title: "开始时间",
-	}),
-	endTime: z.date().optional().meta({
-		description: "结束时间",
-		title: "结束时间",
-	}),
-}).meta({
-	title: "订单列表查询请求",
-	description: "获取订单列表的查询参数",
-});
+export const OrderListRequestSchema = z
+	.object({
+		...PaginationQuerySchema.shape,
+		status: OrderStatusEnum.optional().meta({
+			description: "订单状态",
+			title: "订单状态",
+		}),
+		customerId: z.string().min(1, "客户ID不能为空").meta({
+			description: "客户ID",
+			title: "客户ID",
+		}),
+		startTime: z.date().optional().meta({
+			description: "开始时间",
+			title: "开始时间",
+		}),
+		endTime: z.date().optional().meta({
+			description: "结束时间",
+			title: "结束时间",
+		}),
+	})
+	.meta({
+		title: "订单列表查询请求",
+		description: "获取订单列表的查询参数",
+	});
 
 export type OrderListRequest = z.infer<typeof OrderListRequestSchema>;
 
@@ -57,7 +63,8 @@ export const UpdateOrderSchema = OrdersSchema.partial()
 export type UpdateOrder = z.infer<typeof UpdateOrderSchema>;
 
 // 订单详情 Schema
-export const OrderDetailSchema = OrdersSchema.safeExtend({
+export const OrderDetailSchema = z.object({
+	...OrdersSchema.shape,
 	service: z
 		.object({
 			id: z.string(),
@@ -69,16 +76,19 @@ export const OrderDetailSchema = OrdersSchema.safeExtend({
 			description: "服务信息",
 			title: "服务信息",
 		}),
-	assignment:  z.object({
-        ...OrderAssignmentsSchema.shape,
-        servicePersonnel: ServicePersonnelSchema.meta({
-                    description: "服务人员信息",
-                    title: "服务人员信息",
-                }),
-    }).nullable().meta({
-		description: "订单分配信息",
-		title: "订单分配信息",
-	}),
+	assignment: z
+		.object({
+			...OrderAssignmentsSchema.shape,
+			servicePersonnel: ServicePersonnelSchema.meta({
+				description: "服务人员信息",
+				title: "服务人员信息",
+			}),
+		})
+		.nullable()
+		.meta({
+			description: "订单分配信息",
+			title: "订单分配信息",
+		}),
 	address: z
 		.object({
 			id: z.string(),
@@ -113,10 +123,51 @@ export const OrderDetailSchema = OrdersSchema.safeExtend({
 
 export type OrderDetail = z.infer<typeof OrderDetailSchema>;
 
+export const OrderListResponseItemSchema = z.object({
+	...OrdersSchema.omit({
+		customerId: true,
+		serviceId: true,
+		addressId: true,
+		originalAmount: true,
+		discountAmount: true,
+		couponCode: true,
+		createdAt: true,
+	}).shape,
+	assignment: z.object({
+		...OrderAssignmentsSchema.omit({
+			id: true,
+			orderId: true,
+			servicePersonnelId: true,
+			assignmentType: true,
+		}).shape,
+		servicePersonnel: ServicePersonnelSchema.omit({
+			geom: true,
+			userId: true,
+			currentStatus: true,
+		}),
+	}),
+	service: ServicesSchema.omit({
+		categoryId: true,
+		basePrice: true,
+	}),
+	address: UserAddressesSchema.omit({
+		geom: true,
+		userId: true,
+	}),
+	payments: z.array(PaymentsSchema.omit({ orderId: true })),
+	couponUsageRecords: z.array(
+		CouponUsageRecordsSchema.omit({
+			orderId: true,
+		}),
+	),
+});
+
+export type OrderListResponseItem = z.infer<typeof OrderListResponseItemSchema>;
+
 // 订单列表响应 Schema
 export const OrderListResponseSchema = z
 	.object({
-		items: z.array(OrderDetailSchema).meta({
+		items: z.array(OrderListResponseItemSchema).meta({
 			description: "数据列表",
 			title: "数据列表",
 		}),
@@ -147,14 +198,18 @@ export const CreateDesignatedOrderSchema = z
 			description: "地址ID",
 			title: "地址ID",
 		}),
-		appointmentTime: z.iso.datetime({offset: true,local: true}).meta({
+		appointmentTime: z.iso.datetime({ offset: true, local: true }).meta({
 			description: "预约时间",
 			title: "预约时间",
 		}),
-		discountAmount: z.number().min(0).meta({
-			description: "折扣金额",
-			title: "折扣金额",
-		}).optional(),
+		discountAmount: z
+			.number()
+			.min(0)
+			.meta({
+				description: "折扣金额",
+				title: "折扣金额",
+			})
+			.optional(),
 		designatedPersonnelId: z.string().min(1, "指定服务人员ID不能为空").meta({
 			description: "指定服务人员ID",
 			title: "指定服务人员ID",
@@ -172,27 +227,29 @@ export const CreateDesignatedOrderSchema = z
 export type CreateDesignatedOrder = z.infer<typeof CreateDesignatedOrderSchema>;
 
 export const orderCheckinPayloadSchema = z.object({
-    orderId: z.string().min(1, "订单 ID 不能为空"),
-    token: z.string().min(1, "二维码令牌不能为空"),
-})
+	orderId: z.string().min(1, "订单 ID 不能为空"),
+	token: z.string().min(1, "二维码令牌不能为空"),
+});
 
-export type OrderCheckinPayload = z.infer<typeof orderCheckinPayloadSchema>
+export type OrderCheckinPayload = z.infer<typeof orderCheckinPayloadSchema>;
 
 export const GenerateOrderCheckinSchema = z
 	.object({
 		orderId: z.string().min(1, "订单 ID 不能为空"),
-        token: z.string().min(1, "二维码令牌不能为空"),
-        expiresAt: z.iso.datetime({offset: true,local: true}),
-        ttlSeconds: z.number().int().min(1),
-        qrCodeDataUrl: z.string().min(1, "二维码数据不能为空"),
-        payload: orderCheckinPayloadSchema.shape,
+		token: z.string().min(1, "二维码令牌不能为空"),
+		expiresAt: z.iso.datetime({ offset: true, local: true }),
+		ttlSeconds: z.number().int().min(1),
+		qrCodeDataUrl: z.string().min(1, "二维码数据不能为空"),
+		payload: orderCheckinPayloadSchema.shape,
 	})
 	.meta({
 		title: "生成订单核验二维码",
 		description: "生成订单核验二维码请求参数",
 	});
 
-export type GenerateOrderCheckinDto = z.infer<typeof GenerateOrderCheckinSchema>;
+export type GenerateOrderCheckinDto = z.infer<
+	typeof GenerateOrderCheckinSchema
+>;
 
 export const VerifyOrderCheckinSchema = z
 	.object({

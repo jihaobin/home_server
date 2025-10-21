@@ -233,7 +233,7 @@ export const ServicePersonnelFilterRequestSchema = z
 // 匹配的服务人员信息 Schema
 export const MatchedPersonnelSchema = z
 	.object({
-		...ServicePersonnelSchema.shape,
+        ...ServicePersonnelSchema.shape,
 		price: z.string().meta({
 			description: "个人定价（字符串格式）",
 			title: "个人定价",
@@ -250,11 +250,10 @@ export const MatchedPersonnelSchema = z
 			description: "服务人员头像URL",
 			title: "头像URL",
 		}),
-		// 技能信息
-		skills: z.array(PersonnelSkillSchema).meta({
-			description: "服务人员技能列表",
-			title: "技能列表",
-		}),
+        detailedAddress: z.string().optional().meta({
+            description: "服务人员详细地址",
+            title: "详细地址",
+        }),
 	})
 	.meta({
 		title: "匹配的服务人员信息",

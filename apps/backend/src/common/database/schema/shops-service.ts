@@ -102,6 +102,7 @@ export const servicePersonnel = pgTable(
 		province: varchar("province", { length: 100 }).notNull(), // 省份
 		district: varchar("district", { length: 100 }), // 市区
 		county: varchar("county", { length: 100 }), // 区县
+        detailedAddress: varchar("detailed_address", { length: 255 }), // 详细地址
 		geom: geometry("geom", {
 			type: "point",
 			mode: "tuple",
@@ -166,6 +167,7 @@ export const servicePersonnelPricing = pgTable(
 		userId: varchar("user_id", { length: 255 })
 			.notNull()
 			.references(() => servicePersonnel.userId, { onDelete: "cascade" }), // 服务人员ID
+        name: varchar("name", { length: 100 }).default(""), // 定价的的简单描述
 		serviceId: varchar("service_id", { length: 255 })
 			.notNull()
 			.references(() => services.id, { onDelete: "cascade" }), // 服务项目ID
