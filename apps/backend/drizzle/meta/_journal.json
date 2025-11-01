@@ -225,6 +225,34 @@
       "when": 1760950054859,
       "tag": "0031_great_thunderball",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1761028759087,
+      "tag": "0032_furry_gamma_corps",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1761031451286,
+      "tag": "0033_lame_khan",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1761269076110,
+      "tag": "0034_massive_harpoon",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1761960600269,
+      "tag": "0035_fix_order_status_transition",
+      "breakpoints": true
     }
   ]
 }

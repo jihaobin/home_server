@@ -177,6 +177,7 @@ export const servicePersonnelPricing = pgTable(
 		effectiveFrom: timestamp("effective_from", {
 			withTimezone: true,
 		}).defaultNow(), // 定价生效时间
+        estimatedDurationMinutes: integer("estimated_duration_minutes").notNull(), // 预计服务时长（分钟）
 		effectiveTo: timestamp("effective_to", { withTimezone: true }), // 定价失效时间
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().$onUpdateFn(() => new Date()),
@@ -195,6 +196,10 @@ export const servicePersonnelPricing = pgTable(
 		index("idx_personnel_pricing_effective")
 			.on(table.effectiveFrom, table.effectiveTo, table.isActive)
 			.where(sql`is_active = true`),
+        // 服务时长索引 - 用于按时长筛选服务
+        index("idx_services_duration")
+            .on(table.estimatedDurationMinutes, table.isActive)
+            .where(sql`is_active = true AND estimated_duration_minutes IS NOT NULL`),
 	],
 );
 

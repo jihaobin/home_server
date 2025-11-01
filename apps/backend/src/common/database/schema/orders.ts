@@ -11,7 +11,7 @@ import { createId } from ".";
 import { users } from "./auth-user";
 import { services } from "./server";
 import { userAddresses } from "./addresses";
-import { servicePersonnel } from "./shops-service";
+import { servicePersonnel, servicePersonnelPricing } from "./shops-service";
 import { couponUsageRecords } from "./coupons";
 import { orderCheckins } from "./order-checkins";
 import {
@@ -42,6 +42,9 @@ export const orders = pgTable(
 		addressId: varchar("address_id", { length: 255 })
 			.notNull()
 			.references(() => userAddresses.id, { onDelete: "restrict" }), // 服务地址 ID
+        specificationId: varchar("specification_id", { length: 255 })
+            .notNull()
+            .references(() => servicePersonnelPricing.id, { onDelete: "restrict" }), // 购买的服务规格 ID
 		status: orderStatusEnum("status").notNull().default("pending_payment"), // 订单当前状态
 		originalAmount: decimal("original_amount", {
 			precision: 18,
@@ -156,6 +159,13 @@ export const payments = pgTable(
 		transactionId: varchar("transaction_id", { length: 255 }), // 第三方支付平台的交易号
 		status: paymentStatusEnum("status").notNull().default("pending"), // 支付状态
 		paidAt: timestamp("paid_at", { withTimezone: true }), // 支付完成时间
+        createdAt: timestamp("created_at", { withTimezone: true })
+            .notNull()
+            .defaultNow(), // 记录创建时间
+        updatedAt: timestamp("updated_at", { withTimezone: true })
+            .notNull()
+            .defaultNow()
+            .$onUpdate(() => new Date()), // 记录更新时间
 	},
 	(table) => [
 		// 订单支付状态索引 - 用于查询订单的支付情况

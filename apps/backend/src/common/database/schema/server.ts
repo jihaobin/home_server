@@ -1,17 +1,16 @@
-import {
-	pgTable,
-	varchar,
-	text,
-	integer,
-	foreignKey,
-	decimal,
-	boolean,
-	primaryKey,
-	index,
-} from "drizzle-orm/pg-core";
-
-import { createId } from ".";
 import { relations, sql } from "drizzle-orm";
+import {
+    boolean,
+    decimal,
+    foreignKey,
+    index,
+    integer,
+    pgTable,
+	primaryKey,
+    text,
+    varchar,
+} from "drizzle-orm/pg-core";
+import { createId } from ".";
 import { servicePersonnel } from "./shops-service";
 
 // =================================================================
@@ -66,21 +65,11 @@ export const services = pgTable(
 			.notNull()
 			.references(() => serviceCategories.id, { onDelete: "restrict" }), // 所属分类 ID
 		name: varchar("name", { length: 100 }).notNull(), // 服务名称
-		description: text("description"), // 服务详细描述
-		basePrice: decimal("base_price", { precision: 18, scale: 2 }).notNull(), // 基础价格
-		currency: varchar("currency", { length: 3 }).default("CNY").notNull(), // 币种代码
-		estimatedDurationMinutes: integer("estimated_duration_minutes").notNull(), // 预计服务时长（分钟）
+        description: text("description"), // 服务详细描述
+        currency: varchar("currency", { length: 3 }).default("CNY").notNull(), // 币种代码
 		isActive: boolean("is_active").default(true).notNull(), // 服务是否上架
 	},
-	(table) => [
-		// 分类活跃服务索引 - 用于按分类查询上架的服务
-		index("idx_services_category_active")
-			.on(table.categoryId, table.isActive, table.basePrice)
-			.where(sql`is_active = true`),
-		// 价格范围索引 - 用于价格筛选
-		index("idx_services_price_range")
-			.on(table.basePrice, table.isActive)
-			.where(sql`is_active = true`),
+    (table) => [
 		// 服务名称PGroonga全文搜索索引 - 仅为激活的服务建立索引
 		index("idx_services_name_active")
 			.using("pgroonga", table.name)
@@ -92,11 +81,7 @@ export const services = pgTable(
 		// 服务多字段组合搜索索引 - 仅为激活的服务建立索引
 		index("idx_services_search_active")
 			.using("pgroonga", sql`(ARRAY[name, description])`)
-			.where(sql`is_active = true AND description IS NOT NULL`),
-		// 服务时长索引 - 用于按时长筛选服务
-		index("idx_services_duration")
-			.on(table.estimatedDurationMinutes, table.isActive)
-			.where(sql`is_active = true AND estimated_duration_minutes IS NOT NULL`),
+            .where(sql`is_active = true AND description IS NOT NULL`),
 	],
 );
 
@@ -109,6 +94,9 @@ export const servicePersonnelSkills = pgTable(
 		serviceId: varchar("service_id", { length: 255 })
 			.notNull()
 			.references(() => services.id, { onDelete: "cascade" }), // 服务项目 ID
+        description: text("description"), // 用于用户自定义服务详情页中的信息
+        // 服务了多少个订单
+        servicedCount: integer("serviced_count").default(0).notNull(),
 	},
 	(table) => [
 		primaryKey({
