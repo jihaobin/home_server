@@ -123,6 +123,67 @@ export const OrderDetailSchema = z.object({
 
 export type OrderDetail = z.infer<typeof OrderDetailSchema>;
 
+// 简化的订单列表项 Schema - 用于列表展示
+export const OrderListSimplifiedItemSchema = z.object({
+    id: z.string().meta({
+        description: "订单ID",
+        title: "订单ID",
+    }),
+    status: OrderStatusEnum.meta({
+        description: "订单状态",
+        title: "订单状态",
+    }),
+    totalAmount: z.string().meta({
+        description: "订单总金额",
+        title: "订单总金额",
+    }),
+    appointmentTime: z.date().meta({
+        description: "预约时间",
+        title: "预约时间",
+    }),
+    serviceName: z.string().meta({
+        description: "服务名称",
+        title: "服务名称",
+    }),
+    servicePersonnelName: z.string().meta({
+        description: "服务人员名称",
+        title: "服务人员名称",
+    }),
+    serviceSpecifications: z.string().meta({
+        description: "服务规格",
+        title: "服务规格",
+    }),
+    servicePersonnelImage: z.string().meta({
+        description: "服务人员图片",
+        title: "服务人员图片",
+    }),
+}).meta({
+    title: "简化订单列表项",
+    description: "用于订单列表展示的简化数据格式",
+});
+
+export type OrderListSimplifiedItem = z.infer<typeof OrderListSimplifiedItemSchema>;
+
+// 简化订单列表响应 Schema
+export const OrderListSimplifiedResponseSchema = z
+    .object({
+        items: z.array(OrderListSimplifiedItemSchema).meta({
+            description: "数据列表",
+            title: "数据列表",
+        }),
+        meta: PaginationMetaSchema.meta({
+            description: "分页元数据",
+            title: "分页元数据",
+        }),
+    })
+    .meta({
+        title: "简化订单列表响应",
+        description: "分页订单列表响应数据（简化格式）",
+    });
+
+export type OrderListSimplifiedResponse = z.infer<typeof OrderListSimplifiedResponseSchema>;
+
+// 原始完整的订单列表项 Schema（保留用于需要详细信息的场景）
 export const OrderListResponseItemSchema = z.object({
 	...OrdersSchema.omit({
 		customerId: true,
@@ -130,9 +191,12 @@ export const OrderListResponseItemSchema = z.object({
 		addressId: true,
 		originalAmount: true,
 		discountAmount: true,
-		couponCode: true,
-		createdAt: true,
+        couponCode: true,
 	}).shape,
+    totalAmount: z.string().meta({
+        description: "订单总金额，包含折扣后的最终金额",
+        title: "订单总金额",
+    }),
 	assignment: z.object({
 		...OrderAssignmentsSchema.omit({
 			id: true,
@@ -214,6 +278,10 @@ export const CreateDesignatedOrderSchema = z
 			description: "指定服务人员ID",
 			title: "指定服务人员ID",
 		}),
+        specificationId: z.string().min(1, "服务规格ID不能为空").meta({
+            description: "服务规格ID（service_personnel_pricing表的ID）",
+            title: "服务规格ID",
+        }),
 		displayPrice: z.number().min(0.01).meta({
 			description: "用户在应用中看到的价格",
 			title: "展示价格",

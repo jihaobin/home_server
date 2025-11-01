@@ -28,6 +28,43 @@ const payAmountTextSchema = z
 	.min(1, "金额不能为空")
 	.regex(PAY_AMOUNT_PATTERN, "金额格式必须为整数或保留两位小数");
 
+/**
+ * 支付渠道枚举
+ */
+export const fundChannelSchema = z
+    .enum([
+        "COUPON",
+        "ALIPAYACCOUNT",
+        "POINT",
+        "DISCOUNT",
+        "PCARD",
+        "MCARD",
+        "MDISCOUNT",
+        "MCOUPON",
+        "BANKCARD",
+        "MONEYFUND",
+        "VOUCHER",
+        "DCEP_ASSET",
+    ])
+    .meta({
+        title: "支付渠道",
+        description: `支付宝支付渠道类型
+COUPON: 支付宝红包
+ALIPAYACCOUNT: 支付宝账户
+POINT: 集分宝
+DISCOUNT: 折扣券
+PCARD: 预付卡
+MCARD: 商家储值卡
+MDISCOUNT: 商户优惠券
+MCOUPON: 商户红包
+BANKCARD: 银行卡
+MONEYFUND: 余额宝
+VOUCHER: 券
+DCEP_ASSET: 数字人民币`,
+        examples: ["ALIPAYACCOUNT"],
+    });
+export type FundChannel = z.infer<typeof fundChannelSchema>;
+
 export const payNotifyTypeSchema = z.enum(["trade_status_sync"]).meta({
 	title: "支付宝异步通知类型",
 	description: "notify_type 字段的取值范围，目前仅支持 trade_status_sync。",
@@ -53,7 +90,7 @@ export type PayTradeStatus = z.infer<typeof payTradeStatusSchema>;
 
 export const payFundBillSchema = z
 	.object({
-		fundChannel: z.string().min(1, "fundChannel不能为空"),
+        fundChannel: fundChannelSchema,
 		amount: payAmountTextSchema,
 	})
 	.meta({
@@ -1005,3 +1042,464 @@ export const UserWithdrawResponseSchema = z
 	.meta({ title: "用户提现响应" });
 
 export type UserWithdrawResponse = z.infer<typeof UserWithdrawResponseSchema>;
+
+export const QueryPaymentStatusResponseSchema = z.object({
+    orderId: z.string(),
+    orderSerial: z.string(),
+    paymentStatus: z.enum(["refunded", "pending", "succeeded", "failed"]),
+    tradeStatus: z.enum([
+        "WAIT_BUYER_PAY",
+        "TRADE_CLOSED",
+        "TRADE_SUCCESS",
+        "TRADE_FINISHED",
+    ]),
+    amount: z.string().optional(),
+    transactionId: z.string().optional(),
+    message: z.string(),
+});
+
+export type QueryPaymentStatusResponse = z.infer<typeof QueryPaymentStatusResponseSchema>;
+
+// ==================== 支付宝退款相关 Schema ====================
+
+/**
+ * 退分账账户类型枚举
+ */
+export const refundRoyaltyTransAccountTypeSchema = z
+    .enum(["userId", "loginName", "cardAliasNo"])
+    .meta({
+        title: "退分账账户类型",
+        description: "支付宝退分账时的账户标识类型",
+        examples: ["userId"],
+    });
+export type RefundRoyaltyTransAccountType = z.infer<
+    typeof refundRoyaltyTransAccountTypeSchema
+>;
+
+/**
+ * 退分账类型枚举
+ */
+export const refundRoyaltyTypeSchema = z
+    .enum(["transfer", "replenish"])
+    .meta({
+        title: "退分账类型",
+        description: "transfer: 分账, replenish: 营销补差",
+        examples: ["transfer"],
+    });
+export type RefundRoyaltyType = z.infer<typeof refundRoyaltyTypeSchema>;
+
+/**
+ * 退款查询选项枚举
+ */
+export const refundQueryOptionSchema = z
+    .enum(["refund_detail_item_list", "deposit_back_info", "refund_voucher_detail_list"])
+    .meta({
+        title: "退款查询选项",
+        description: "商户可选的额外返回信息字段",
+        examples: ["refund_detail_item_list"],
+    });
+export type RefundQueryOption = z.infer<typeof refundQueryOptionSchema>;
+
+/**
+ * 退款商品明细
+ */
+export const refundGoodsDetailSchema = z
+    .object({
+        goods_id: createBoundedString(32, "goods_id"),
+        refund_amount: payAmountTextSchema,
+        out_certificate_no_list: z
+            .array(z.string().max(128, "证书编号长度不能超过128"))
+            .optional()
+            .meta({
+                title: "外部凭证编号列表",
+                description: "外部商品凭证编号列表",
+            }),
+        out_item_id: createOptionalBoundedString(64, "out_item_id"),
+        out_sku_id: createOptionalBoundedString(64, "out_sku_id"),
+    })
+    .meta({
+        title: "退款商品明细",
+        description: "退款包含的商品列表信息",
+        examples: [
+            {
+                goods_id: "apple-01",
+                refund_amount: "19.50",
+                out_certificate_no_list: ["202407013232143241231243243423"],
+                out_item_id: "outItem_01",
+                out_sku_id: "outSku_01",
+            },
+        ],
+    });
+export type RefundGoodsDetail = z.infer<typeof refundGoodsDetailSchema>;
+
+/**
+ * 退分账明细信息
+ */
+export const refundRoyaltyParameterSchema = z
+    .object({
+        royalty_type: refundRoyaltyTypeSchema.optional(),
+        trans_out: createOptionalBoundedString(16, "trans_out"),
+        trans_out_type: refundRoyaltyTransAccountTypeSchema
+            .refine(
+                (value) => value === "userId" || value === "loginName",
+                "支出方账户类型仅支持 userId 或 loginName",
+            )
+            .optional(),
+        trans_in_type: refundRoyaltyTransAccountTypeSchema.optional(),
+        trans_in: createOptionalBoundedString(16, "trans_in"),
+        amount: payAmountTextSchema.optional(),
+        desc: createOptionalBoundedString(1000, "desc"),
+        royalty_scene: createOptionalBoundedString(256, "royalty_scene"),
+        trans_in_name: createOptionalBoundedString(64, "trans_in_name"),
+    })
+    .meta({
+        title: "退分账明细信息",
+        description: "直付通模式等场景下需要明确的退分账信息",
+        examples: [
+            {
+                royalty_type: "transfer",
+                trans_out: "2088101126765726",
+                trans_out_type: "userId",
+                trans_in_type: "userId",
+                trans_in: "2088101126708402",
+                amount: "0.1",
+                desc: "分账给2088101126708402",
+                royalty_scene: "达人佣金",
+                trans_in_name: "张三",
+            },
+        ],
+    });
+export type RefundRoyaltyParameter = z.infer<
+    typeof refundRoyaltyParameterSchema
+>;
+
+/**
+ * 支付宝退款请求 Schema
+ */
+export const alipayRefundRequestSchema = z
+    .object({
+        refund_amount: payAmountTextSchema,
+        out_trade_no: createOptionalBoundedString(64, "out_trade_no"),
+        trade_no: createOptionalBoundedString(64, "trade_no"),
+        refund_reason: createOptionalBoundedString(256, "refund_reason"),
+        out_request_no: createOptionalBoundedString(64, "out_request_no"),
+        refund_goods_detail: z.array(refundGoodsDetailSchema).optional(),
+        refund_royalty_parameters: z.array(refundRoyaltyParameterSchema).optional(),
+        query_options: z
+            .union([
+                z.string().max(1024, "query_options长度不能超过1024"),
+                z.array(refundQueryOptionSchema).min(1, "query_options至少包含一项"),
+            ])
+            .optional(),
+        related_settle_confirm_no: createOptionalBoundedString(
+            64,
+            "related_settle_confirm_no",
+        ),
+    })
+    .superRefine((value, ctx) => {
+        // 校验 out_trade_no 和 trade_no 至少有一个
+        if (!value.out_trade_no && !value.trade_no) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["out_trade_no"],
+                message: "out_trade_no 和 trade_no 至少需要传入一个",
+            });
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["trade_no"],
+                message: "out_trade_no 和 trade_no 至少需要传入一个",
+            });
+        }
+    })
+    .meta({
+        title: "支付宝退款请求",
+        description: "用于发起支付宝退款的请求参数",
+        examples: [
+            {
+                refund_amount: "200.12",
+                out_trade_no: "20150320010101001",
+                refund_reason: "正常退款",
+                out_request_no: "HZ01RF001",
+                refund_goods_detail: [
+                    {
+                        goods_id: "apple-01",
+                        refund_amount: "19.50",
+                    },
+                ],
+                query_options: ["refund_detail_item_list"],
+            },
+        ],
+    });
+export type AlipayRefundRequest = z.infer<typeof alipayRefundRequestSchema>;
+
+/**
+ * 支付宝退款错误码枚举
+ */
+export const alipayRefundErrorCodeSchema = z
+    .enum([
+        "ACQ.ALLOC_AMOUNT_VALIDATE_ERROR",
+        "ACQ.BUYER_ENABLE_STATUS_FORBID",
+        "ACQ.BUYER_ERROR",
+        "ACQ.BUYER_NOT_EXIST",
+        "ACQ.CURRENCY_NOT_SUPPORT",
+        "ACQ.CUSTOMER_VALIDATE_ERROR",
+        "ACQ.DISCORDANT_REPEAT_REQUEST",
+        "ACQ.ENTERPRISE_PAY_BIZ_ERROR",
+        "ACQ.INVALID_PARAMETER",
+        "ACQ.NOT_ALLOW_PARTIAL_REFUND",
+        "ACQ.ONLINE_TRADE_VOUCHER_NOT_ALLOW_REFUND",
+        "ACQ.OVERDRAFT_AGREEMENT_NOT_MATCH",
+        "ACQ.OVERDRAFT_ASSIGN_ACCOUNT_INVALID",
+        "ACQ.REASON_TRADE_BEEN_FREEZEN",
+        "ACQ.REASON_TRADE_REFUND_FEE_ERR",
+        "ACQ.REASON_TRADE_STATUS_INVALID",
+        "ACQ.REFUNDALLOC_UNAUTH_LIMIT",
+        "ACQ.REFUND_ACCOUNT_NOT_EXIST",
+        "ACQ.REFUND_AMT_NOT_EQUAL_TOTAL",
+        "ACQ.REFUND_CHARGE_ERROR",
+        "ACQ.REFUND_FEE_ERROR",
+        "ACQ.REFUND_ROYALTY_PAYEE_ACCOUNT_NOT_EXIST",
+        "ACQ.SELLER_BALANCE_NOT_ENOUGH",
+        "ACQ.SYSTEM_ERROR",
+        "ACQ.TRADE_HAS_CLOSE",
+        "ACQ.TRADE_HAS_FINISHED",
+        "ACQ.TRADE_NOT_ALLOW_REFUND",
+        "ACQ.TRADE_NOT_EXIST",
+        "ACQ.TRADE_SETTLE_ERROR",
+        "ACQ.TRADE_STATUS_ERROR",
+        "ACQ.USER_NOT_MATCH_ERR",
+    ])
+    .meta({
+        title: "支付宝退款错误码",
+        description: `支付宝退款业务错误码
+ACQ.ALLOC_AMOUNT_VALIDATE_ERROR: 退分账金额超限
+ACQ.BUYER_ENABLE_STATUS_FORBID: 买家状态异常
+ACQ.BUYER_ERROR: 买家状态异常
+ACQ.BUYER_NOT_EXIST: 买家不存在
+ACQ.CURRENCY_NOT_SUPPORT: 退款币种不支持
+ACQ.CUSTOMER_VALIDATE_ERROR: 账户已注销或者被冻结
+ACQ.DISCORDANT_REPEAT_REQUEST: 请求信息不一致
+ACQ.ENTERPRISE_PAY_BIZ_ERROR: 因公付业务异常
+ACQ.INVALID_PARAMETER: 参数无效
+ACQ.NOT_ALLOW_PARTIAL_REFUND: 不支持部分退款
+ACQ.ONLINE_TRADE_VOUCHER_NOT_ALLOW_REFUND: 交易不允许退款
+ACQ.OVERDRAFT_AGREEMENT_NOT_MATCH: 垫资退款接口传入模式和签约配置不一致
+ACQ.OVERDRAFT_ASSIGN_ACCOUNT_INVALID: 垫资退款出资账号和商户信息不一致
+ACQ.REASON_TRADE_BEEN_FREEZEN: 请求退款的交易被冻结
+ACQ.REASON_TRADE_REFUND_FEE_ERR: 退款金额无效
+ACQ.REASON_TRADE_STATUS_INVALID: 交易状态异常
+ACQ.REFUNDALLOC_UNAUTH_LIMIT: 分账接收方未开启分账回退
+ACQ.REFUND_ACCOUNT_NOT_EXIST: 退款出资账号不存在或账号异常
+ACQ.REFUND_AMT_NOT_EQUAL_TOTAL: 退款金额超限
+ACQ.REFUND_CHARGE_ERROR: 退收费异常
+ACQ.REFUND_FEE_ERROR: 交易退款金额有误
+ACQ.REFUND_ROYALTY_PAYEE_ACCOUNT_NOT_EXIST: 退分账收入方账户不存在
+ACQ.SELLER_BALANCE_NOT_ENOUGH: 卖家余额不足
+ACQ.SYSTEM_ERROR: 系统错误
+ACQ.TRADE_HAS_CLOSE: 交易已关闭
+ACQ.TRADE_HAS_FINISHED: 交易已完结
+ACQ.TRADE_NOT_ALLOW_REFUND: 当前交易不允许退款
+ACQ.TRADE_NOT_EXIST: 交易不存在
+ACQ.TRADE_SETTLE_ERROR: 交易结算异常
+ACQ.TRADE_STATUS_ERROR: 交易状态非法
+ACQ.USER_NOT_MATCH_ERR: 交易用户不匹配`,
+        examples: ["ACQ.TRADE_NOT_EXIST"],
+    });
+export type AlipayRefundErrorCode = z.infer<typeof alipayRefundErrorCodeSchema>;
+
+// ==================== 支付宝退款响应相关 Schema ====================
+
+/**
+ * 退款券类型枚举
+ */
+export const refundVoucherTypeSchema = z
+    .enum([
+        "ALIPAY_FIX_VOUCHER",
+        "ALIPAY_DISCOUNT_VOUCHER",
+        "ALIPAY_ITEM_VOUCHER",
+        "ALIPAY_CASH_VOUCHER",
+        "ALIPAY_BIZ_VOUCHER"
+    ])
+    .meta({
+        title: "退款券类型",
+        description: "券类型枚举，不排除将来新增其他类型的可能",
+        examples: ["ALIPAY_FIX_VOUCHER"],
+    });
+export type RefundVoucherType = z.infer<typeof refundVoucherTypeSchema>;
+
+/**
+ * 退款资金类型枚举
+ */
+export const refundFundTypeSchema = z
+    .enum(["DEBIT_CARD", "CREDIT_CARD", "MIXED_CARD"])
+    .meta({
+        title: "退款资金类型",
+        description: `渠道所使用的资金类型，仅在资金渠道是银行卡渠道时返回(借记卡: DEBIT_CARD
+信用卡: CREDIT_CARD
+借贷合一卡: MIXED_CARD)`,
+        examples: ["DEBIT_CARD"],
+    });
+export type RefundFundType = z.infer<typeof refundFundTypeSchema>;
+
+/**
+ * 退款使用的资金渠道明细
+ */
+export const refundDetailItemSchema = z
+    .object({
+        fund_channel: fundChannelSchema.describe("交易使用的资金渠道"),
+        amount: payAmountTextSchema.describe("本次退款使用的资金渠道金额"),
+        real_amount: payAmountTextSchema.optional().describe("实际退款金额"),
+        fund_type: refundFundTypeSchema.optional().describe("渠道所使用的资金类型"),
+    })
+    .meta({
+        title: "退款资金渠道明细",
+        description: "本次退款使用的资金渠道，需要在签约中指定或在query_options中指定",
+        examples: [
+            {
+                fund_channel: "ALIPAYACCOUNT",
+                amount: "10.00",
+                real_amount: "11.21",
+                fund_type: "DEBIT_CARD",
+            },
+        ],
+    });
+export type RefundDetailItem = z.infer<typeof refundDetailItemSchema>;
+
+/**
+ * 退费信息 - 组合支付退费明细
+ */
+export const refundSubFeeSchema = z
+    .object({
+        refund_charge_fee: payAmountTextSchema.optional().describe("实退费用"),
+        switch_fee_rate: createOptionalBoundedString(64, "switch_fee_rate").describe("签约费率"),
+    })
+    .meta({
+        title: "组合支付退费明细",
+        description: "组合支付的退费明细信息",
+    });
+export type RefundSubFee = z.infer<typeof refundSubFeeSchema>;
+
+/**
+ * 退费信息
+ */
+export const refundChargeInfoSchema = z
+    .object({
+        refund_charge_fee: payAmountTextSchema.optional().describe("实退费用"),
+        switch_fee_rate: createOptionalBoundedString(64, "switch_fee_rate").describe("签约费率"),
+        charge_type: createOptionalBoundedString(64, "charge_type").describe("手续费类型(收单手续费trade，花呗分期手续hbfq，其他手续费charge)"),
+        refund_sub_fee_detail_list: z.array(refundSubFeeSchema).optional().describe("组合支付退费明细"),
+    })
+    .meta({
+        title: "退费信息",
+        description: "退款的手续费相关信息",
+        examples: [
+            {
+                refund_charge_fee: "0.01",
+                switch_fee_rate: "0.01",
+                charge_type: "trade",
+            },
+        ],
+    });
+export type RefundChargeInfo = z.infer<typeof refundChargeInfoSchema>;
+
+/**
+ * 优惠券其他出资方明细（退款响应）
+ */
+export const refundVoucherContributeDetailSchema = z
+    .object({
+        contribute_type: z.enum(["PLATFORM", "BRAND", "MALL"]).meta({
+            title: "出资方类型",
+            description: `平台出资: PLATFORM
+品牌商出资: BRAND
+商圈出资 : MALL`,
+            examples: ["PLATFORM"],
+        }),
+        contribute_amount: payAmountTextSchema,
+    })
+    .meta({
+        title: "优惠券其他出资方明细",
+        description: "券的其他出资方明细信息",
+    });
+export type RefundVoucherContributeDetail = z.infer<
+    typeof refundVoucherContributeDetailSchema
+>;
+
+/**
+ * 退款券明细
+ */
+export const refundVoucherDetailSchema = z
+    .object({
+        id: createBoundedString(32, "id"),
+        name: createBoundedString(64, "name"),
+        type: createBoundedString(32, "type"),
+        amount: payAmountTextSchema,
+        merchant_contribute: payAmountTextSchema.optional(),
+        other_contribute: payAmountTextSchema.optional(),
+        memo: createOptionalBoundedString(256, "memo"),
+        template_id: createOptionalBoundedString(64, "template_id"),
+        other_contribute_detail: z
+            .array(refundVoucherContributeDetailSchema)
+            .max(512, "other_contribute_detail最多512项")
+            .optional(),
+        purchase_buyer_contribute: payAmountTextSchema.optional(),
+        purchase_merchant_contribute: payAmountTextSchema.optional(),
+        purchase_ant_contribute: payAmountTextSchema.optional(),
+    })
+    .meta({
+        title: "退款券明细",
+        description: "本交易支付时使用的所有优惠券信息，需在query_options中指定",
+        examples: [
+            {
+                id: "2015102600073002039000002D5O",
+                name: "XX超市5折优惠",
+                type: "ALIPAY_FIX_VOUCHER",
+                amount: "10.00",
+                merchant_contribute: "9.00",
+                other_contribute: "1.00",
+                memo: "学生专用优惠",
+                template_id: "20171030000730015359000EMZP0",
+                purchase_buyer_contribute: "2.01",
+                purchase_merchant_contribute: "1.03",
+                purchase_ant_contribute: "0.82",
+            },
+        ],
+    });
+export type RefundVoucherDetail = z.infer<typeof refundVoucherDetailSchema>;
+
+/**
+ * 支付宝退款响应
+ */
+export const alipayRefundResponseSchema = z
+    .object({
+        trade_no: createBoundedString(64, "trade_no"),
+        out_trade_no: createBoundedString(64, "out_trade_no"),
+        buyer_logon_id: createBoundedString(100, "buyer_logon_id"),
+        refund_fee: payAmountTextSchema,
+        refund_detail_item_list: z.array(refundDetailItemSchema).optional(),
+        store_name: createOptionalBoundedString(512, "store_name"),
+        buyer_user_id: createOptionalBoundedString(28, "buyer_user_id"),
+        buyer_open_id: createOptionalBoundedString(128, "buyer_open_id"),
+        send_back_fee: createOptionalBoundedString(11, "send_back_fee"),
+        pre_auth_cancel_fee: createOptionalBoundedString(12, "pre_auth_cancel_fee"),
+        fund_change: z.enum(["Y", "N"]).optional(),
+        refund_hyb_amount: createOptionalBoundedString(11, "refund_hyb_amount"),
+        refund_charge_info_list: z.array(refundChargeInfoSchema).optional(),
+        refund_voucher_detail_list: z.array(refundVoucherDetailSchema).optional(),
+    })
+    .meta({
+        title: "支付宝退款响应",
+        description: "支付宝退款接口的业务响应参数",
+        examples: [
+            {
+                trade_no: "2013112011001004330000121536",
+                out_trade_no: "6823789339978248",
+                buyer_logon_id: "159****5620",
+                refund_fee: "88.88",
+                fund_change: "Y",
+                buyer_user_id: "2088101117955611",
+                buyer_open_id: "074a1CcTG1LelxKe4xQC0zgNdId0nxi95b5lsNpazWYoCo5",
+                send_back_fee: "1.8",
+            },
+        ],
+    });
+export type AlipayRefundResponse = z.infer<typeof alipayRefundResponseSchema>;

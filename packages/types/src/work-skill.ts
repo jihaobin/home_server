@@ -114,6 +114,10 @@ export const UpsertPersonnelPricingRequestSchema = z
 				description: "个人定价（字符串格式）",
 				title: "个人定价",
 			}),
+        estimatedDurationMinutes: z.number().int().positive().meta({
+            description: "预计服务时长（分钟）",
+            title: "预计服务时长",
+        }),
 		currency: z.string().max(3).default("CNY").meta({
 			description: "币种代码",
 			title: "币种代码",
@@ -268,6 +272,27 @@ export const ServicePersonnelFilterResponseSchema = MatchedPersonnelSchema.omit(
 	title: "服务人员列表",
 });
 
+export const ServicePersonnelDetailsQuerySchema = z.object({
+    serviceId: z.string(),
+    personnelId: z.string(),
+})
+
+const specificationSchema = z.object({
+    id: z.string().min(1, "id不能为空"),
+    userId: z.string().min(1, "userId不能为空"),
+    name: z.string().optional(), // 空字符串允许
+    serviceId: z.string().min(1, "serviceId不能为空"),
+    price: z.string().regex(/^\d+(\.\d+)?$/, "price必须为数字字符串"),
+    currency: z.string().min(1, "currency不能为空"),
+});
+
+export const ServiceDetailsSchema = z.object({
+    ...ServicePersonnelSchema.omit({ geom: true }).shape,
+    specifications: z.array(specificationSchema),
+    description: z.string().nullable(),
+    servicedCount: z.number().int().nonnegative(),
+});
+
 // ==================== TypeScript 类型定义 ====================
 
 export type UpsertWorkInfoRequest = z.infer<typeof UpsertWorkInfoRequestSchema>;
@@ -298,3 +323,5 @@ export type MatchedPersonnel = z.infer<typeof MatchedPersonnelSchema>;
 export type ServicePersonnelFilterResponse = z.infer<
 	typeof ServicePersonnelFilterResponseSchema
 >;
+export type ServiceDetails = z.infer<typeof ServiceDetailsSchema>;
+export type ServicePersonnelDetailsQuery = z.infer<typeof ServicePersonnelDetailsQuerySchema>

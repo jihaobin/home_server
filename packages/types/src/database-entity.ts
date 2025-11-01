@@ -733,6 +733,10 @@ export const ServicePersonnelSchema = z
             description: "区/县",
             title: "区/县",
         }),
+        detailedAddress: z.string().max(255).meta({
+            description: "详细地址",
+            title: "详细地址",
+        }),
         geom: z.array(z.number()).length(2).meta({
             description: "地理位置（PostGIS Point），格式为 [经度, 纬度]",
             title: "地理位置",

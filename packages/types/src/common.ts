@@ -359,16 +359,12 @@ export const PaginatedResponseSchema = <T extends z.ZodTypeAny>(itemSchema: T) =
  * 分页查询参数 Schema
  */
 export const PaginationQuerySchema = z.object({
-  page: z.string().optional().transform((val) => val ? parseInt(val, 10) : 1).pipe(
-    z.number().min(1).max(1000)
-    ).meta({
+    page: z.number().min(1).meta({
         description: '页码',
         title: '页码',
         examples: [1, 2, 3]
     }),
-  limit: z.string().optional().transform((val) => val ? parseInt(val, 10) : 10).pipe(
-    z.number().min(1).max(100)
-    ).meta({
+    limit: z.number().min(1).meta({
         description: '每页条数',
         title: '每页条数',
         examples: [10, 20, 50]

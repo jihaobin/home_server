@@ -166,12 +166,26 @@ export const ServiceDetailSchema = z.object({
 
 export type ServiceDetail = z.infer<typeof ServiceDetailSchema>;
 
+// 分类带服务项目Schema（每个分类下包含其服务列表）
+export const CategoryWithServicesSchema = z.object({
+    ...ServiceCategoriesSchema.shape,
+    children: z.array(ServicesSchema).meta({
+        description: '该分类下的服务项目列表',
+        title: '服务项目列表'
+    })
+}).meta({
+    title: '分类及其服务项目',
+    description: '包含服务项目列表的分类信息'
+});
+
+export type CategoryWithServices = z.infer<typeof CategoryWithServicesSchema>;
+
 // 服务项目列表响应Schema（使用通用分页数据结构）
 export const ServiceListResponseSchema = z.object({
-    items: z.array(ServiceDetailSchema)
+    items: z.array(CategoryWithServicesSchema)
         .meta({
-            description: '数据列表',
-            title: '数据列表'
+            description: '分类数据列表',
+            title: '分类数据列表'
         }),
     meta: PaginationMetaSchema.meta({
         description: '分页元数据',
@@ -179,7 +193,7 @@ export const ServiceListResponseSchema = z.object({
     })
 }).meta({
     title: '服务项目列表响应',
-    description: '分页服务项目列表响应数据'
+    description: '以分类为单位的服务项目列表响应数据'
 });
 
 export type ServiceListResponse = z.infer<typeof ServiceListResponseSchema>;
@@ -198,10 +212,10 @@ export const ServiceStatsSchema = z.object({
         description: '分类数量',
         title: '分类数量'
     }),
-    averagePrice: z.number().min(0).meta({
-        description: '平均价格',
-        title: '平均价格'
-    })
+    // averagePrice: z.number().min(0).meta({
+    //     description: '平均价格',
+    //     title: '平均价格'
+    // })
 }).meta({
     title: '服务项目统计',
     description: '服务项目相关统计数据'
