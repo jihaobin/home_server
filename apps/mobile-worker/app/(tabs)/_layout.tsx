@@ -1,0 +1,29 @@
+import { Ionicons } from "@expo/vector-icons";
+import { House } from "@repo/mobile-ui/lib/icons/house";
+import { Tabs } from "expo-router";
+import { Platform } from "react-native";
+
+export default function TabLayout() {
+	return (
+		<Tabs
+			screenOptions={{
+				headerShown: false,
+				tabBarStyle: Platform.select({
+					ios: {
+						// 在 iOS 上使用透明背景以配合底部毛玻璃效果
+						position: "absolute",
+					},
+					default: {},
+				}),
+			}}
+		>
+			<Tabs.Screen
+				name="index"
+				options={{
+					title: "首页",
+					tabBarIcon: ({ color, size }) => <House size={size} color={color} />,
+				}}
+			/>
+		</Tabs>
+	);
+}

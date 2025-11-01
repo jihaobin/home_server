@@ -4,8 +4,6 @@
 
 Chinese
 
-## Always using UTF-8 encoding for output
-
 ## Project Structure & Module Organization
 
 Turborepo with pnpm workspaces under `apps/` (backend NestJS in `apps/backend`, admin console in `apps/admin-web`, Expo clients in `apps/mobile-user` and `apps/mobile-worker`). Shared utilities live in `packages/` (`web-ui`, `mobile-ui`, `utils`, `types`, and lint/tsconfig presets). Drizzle migrations reside in `apps/backend/drizzle/`, docs in `docs/`, and environment fragments in `env/` merged via `pnpm env:setup`.

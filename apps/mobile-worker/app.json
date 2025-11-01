@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+    "supportsTablet": true,
+    "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "允许 $(PRODUCT_NAME) 在核验服务时使用您的位置信息"
+    }
     },
     "android": {
       "adaptiveIcon": {
@@ -21,7 +24,9 @@
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ],
       "package": "com.zhang3.mobileworker"
     },
@@ -48,13 +53,22 @@
           "microphonePermission": "允许 $(PRODUCT_NAME) 访问您的麦克风",
           "recordAudioAndroid": true
         }
-      ]
+    ],
+    [
+        "expo-location",
+        {
+            "locationAlwaysAndWhenInUsePermission": "当前应用需要访问您的位置，已获取你的服务地址"
+        }
+    ],
+    [
+        "expo-qq-location",
+        {
+            "apiKey": "WLEBZ-HCTC3-JMN3L-OLTJV-R2AJE-WCB7J"
+        }
+    ]
     ],
     "experiments": {
-      "typedRoutes": true
-    },
-    "expo-router": {
-      "staticRoutes": false
+    "typedRoutes": true
     }
   }
 }

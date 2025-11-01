@@ -23,9 +23,10 @@ services:
     volumes:
       - E:\home_server_data\redis_data:/data
   home_server_rustfs_container:
-    image: rustfs/rustfs:1.0.0-alpha.28
+    image: rustfs/rustfs:latest
     ports:
       - "9000:9000"
+      - "9001:9001"
     volumes:
       - E:\home_server_data\oss_data:/data
     environment:

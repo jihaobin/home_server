@@ -49,3 +49,12 @@ yarn-error.log*
 
 env/development/**
 **/env.development
+todos.md
+
+*crt
+
+env/production/**
+env/production/.env.api
+env/production/.env.common
+env/production/.env.mobile
+apps/backend/.env.production

@@ -32,7 +32,7 @@ export default function ScanQRScreen() {
 
 		// 跳转到地图页面并传递二维码信息
 		router.push({
-			pathname: "/(tabs)/explore",
+            pathname: "/scan/explore",
 			params: { qrData: data },
 		});
 	};
