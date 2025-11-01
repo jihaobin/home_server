@@ -13,7 +13,8 @@ import {
 	useSuspenseInfiniteQuery,
 	useSuspenseQuery,
 } from "@tanstack/react-query";
-import { apiClient } from "@/lib/http-client";
+import { apiClient } from "@repo/lib/http-client";
+
 
 /**
  * 获取订单列表 - Suspense版本
@@ -80,10 +81,9 @@ export const useCreateDesignatedOrder = () => {
 
 	return useMutation({
 		mutationFn: (orderData: CreateDesignatedOrder) => {
-			return apiClient.post<OrderDetail>(
-				"/order/createWithDesignatedPersonnel",
-				orderData,
-			);
+			return apiClient.post<{
+				orderId: string;
+			}>("/order/createWithDesignatedPersonnel", orderData);
 		},
 		onSuccess: () => {
 			// 创建订单后，可能需要更新相关列表缓存
@@ -122,13 +122,29 @@ export const useCancelOrder = () => {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: ({ orderId, reason }: { orderId: string; reason?: string }) => {
-			return apiClient.post(`/order/${orderId}/cancel`, { reason });
+		mutationFn: ({
+			orderId,
+			reason,
+			cancelledBy,
+		}: {
+			orderId: string;
+			reason?: string;
+			cancelledBy: string;
+		}) => {
+			return apiClient.post(`/order/${orderId}/cancel`, {
+				reason,
+				cancelledBy,
+			});
 		},
-		onSuccess: () => {
+		onSuccess: (_data, variables) => {
 			// 取消订单后更新订单列表和详情
 			queryClient.invalidateQueries({ queryKey: ["orders-list"] });
-			queryClient.invalidateQueries({ queryKey: ["order-detail"] });
+			queryClient.invalidateQueries({ queryKey: ["orders-list-infinite"] });
+			if (variables?.orderId) {
+				queryClient.invalidateQueries({
+					queryKey: ["order-detail", variables.orderId],
+				});
+			}
 		},
 		scope: {
 			id: "cancelOrder",
@@ -146,10 +162,13 @@ export const useCompleteOrder = () => {
 		mutationFn: (orderId: string) => {
 			return apiClient.post(`/order/${orderId}/complete`);
 		},
-		onSuccess: () => {
+		onSuccess: (_data, orderId) => {
 			// 完成订单后更新订单列表和详情
 			queryClient.invalidateQueries({ queryKey: ["orders-list"] });
-			queryClient.invalidateQueries({ queryKey: ["order-detail"] });
+			queryClient.invalidateQueries({ queryKey: ["orders-list-infinite"] });
+			if (orderId) {
+				queryClient.invalidateQueries({ queryKey: ["order-detail", orderId] });
+			}
 		},
 		scope: {
 			id: "completeOrder",

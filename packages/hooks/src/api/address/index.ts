@@ -18,14 +18,9 @@ import {
 	useSuspenseInfiniteQuery,
 	useSuspenseQuery,
 } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
 import { MMKV } from "react-native-mmkv";
-import { apiClient } from "@/lib/http-client";
-import {
-	type EnhancedLocationData,
-	useHighAccuracyLocation,
-} from "@/lib/location-utils";
-import { queryClient } from "@/lib/query-client";
+import { apiClient } from "@repo/lib/http-client";
+import { queryClient } from "@repo/lib/query-client";
 
 export const storage = new MMKV();
 
@@ -212,29 +207,11 @@ const useReverseGeocode = ({ lat, lng }: { lat?: number; lng?: number }) => {
 	});
 };
 
-export function useLocationDetail() {
-	const [Location, setLocation] = useState<EnhancedLocationData>();
-	const { startWatching, stopWatching } = useHighAccuracyLocation();
-
-	// 获取完整精度的坐标用于API请求
-	const fullPrecisionLat = Location?.gcj02?.latitude;
-	const fullPrecisionLng = Location?.gcj02?.longitude;
-
+export function useLocationDetail({ lat, lng }: { lat?: number; lng?: number }) {
 	const reverseGeocodeData = useReverseGeocode({
-		lat: fullPrecisionLat,
-		lng: fullPrecisionLng,
-	});
-
-	// biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
-	useEffect(() => {
-		startWatching((location) => {
-			setLocation(location);
-		});
-		return () => {
-			stopWatching();
-		};
-	}, []);
-
+        lat: lat,
+        lng: lng,
+    });
 	return reverseGeocodeData;
 }
 
@@ -279,14 +256,14 @@ export const useAddressSuggestionInfiniteSuspense = ({
 		],
 		queryFn: async ({ pageParam = 1 }): Promise<AddressSuggestionPageData> => {
 			// 如果没有关键词，返回空结果
-			if (!keyword || keyword.trim() === "") {
-				return {
-					data: [],
-					count: 0,
-					pageParam,
-					hasMore: false,
-				};
-			}
+            if (!keyword || keyword.trim() === "") {
+                return {
+                    data: [],
+                    count: 0,
+                    pageParam,
+                    hasMore: false,
+                };
+            }
 
 			// 使用完整精度坐标进行API请求，获得更精确的搜索结果
 			const query: SuggestionRequest = {
