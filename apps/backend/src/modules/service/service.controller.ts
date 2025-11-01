@@ -27,6 +27,7 @@ import {
     UpdateServiceSchema,
     ServiceDetailSchema,
     ServiceStatsSchema,
+    serviceCategoriesSchema,
 } from '@repo/types';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import {
@@ -50,7 +51,7 @@ export class ServiceController {
         description: '获取服务分类',
     })
     @ApiQueries(ServiceCategoryRequestSchema)
-    @ApiSuccessResponse(ServiceCategoriesSchema, {
+    @ApiSuccessResponse(z.array(serviceCategoriesSchema), {
         description: '服务分类列表',
     })
     @ApiErrorResponses()

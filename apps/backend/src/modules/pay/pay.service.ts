@@ -1,24 +1,31 @@
 import { createSign } from "node:crypto";
-import { BadRequestException, Inject, Injectable, forwardRef } from "@nestjs/common";
+import {
+    BadRequestException,
+    forwardRef,
+    Inject,
+    Injectable,
+    Logger,
+} from "@nestjs/common";
 import { createId } from "@paralleldrive/cuid2";
 import {
 	alipayWithdrawResponseSchema,
 	alipayWithdrawSuccessResponseSchema,
 	type PayNotification,
+    type QueryPaymentStatusResponse,
 	type UserWithdrawBody,
 	type UserWithdrawResponse,
 } from "@repo/types";
 import Decimal from "decimal.js";
-import { eq, sql } from "drizzle-orm";
-import { CACHE_SERVICE, IAdvancedCacheService } from "src/common/cache";
+import { and, eq, sql } from "drizzle-orm";
+import { CACHE_SERVICE, type IAdvancedCacheService } from "src/common/cache";
 import { DB } from "src/common/database/database.provider";
-import { DbType } from "src/common/database/db";
+import type { DbType } from "src/common/database/db";
 import {
 	earnings,
 	financialTransactions,
 	orderAssignments,
 	orders,
-	type payments,
+    payments,
 	userBalances,
 	users,
 } from "src/common/database/schema";
@@ -53,7 +60,7 @@ function parseAlipayTime(value?: string) {
 @Injectable()
 export class PayService {
 	// 实例化客户端
-	private alipaySdk = createAliPaySdk(true);
+    private alipaySdk = createAliPaySdk();
 
 	@Inject(DB)
 	private db: DbType;
@@ -67,11 +74,188 @@ export class PayService {
 	@Inject(CACHE_SERVICE)
 	private cacheService: IAdvancedCacheService;
 
+    private logger = new Logger(PayService.name);
+
 	private readonly paymentLockTtl = 30; // 秒
 
 	private getPaymentLockKey(orderId: string) {
 		return `lock:payment:order:${orderId}`;
 	}
+
+    constructor() {
+        this.logger
+    }
+
+    /**
+     * 统一的支付状态更新逻辑(幂等性保证)
+     * 被异步通知、主动查询、定时任务共同调用
+     * @param orderId 订单ID
+     * @param tradeStatus 支付宝交易状态
+     * @param alipayTradeNo 支付宝交易号
+     * @param notifyTime 通知时间
+     * @returns 更新是否成功
+     */
+    private async updatePaymentStatusIdempotent({
+        orderId,
+        tradeStatus,
+        alipayTradeNo,
+        notifyTime,
+    }: {
+        orderId: string;
+        tradeStatus: TradeStatus;
+        alipayTradeNo?: string;
+        notifyTime?: string;
+    }): Promise<{ success: boolean; alreadyProcessed: boolean }> {
+        const mappedStatus = TRADE_STATUS_TO_PAYMENT_STATUS[tradeStatus];
+        if (!mappedStatus) {
+            return { success: false, alreadyProcessed: false };
+        }
+
+        const lockKey = this.getPaymentLockKey(orderId);
+        let lockId: string | null = null;
+
+        try {
+            // 获取分布式锁,避免并发冲突
+            lockId = await this.cacheService.acquireLock(
+                lockKey,
+                this.paymentLockTtl,
+                15,
+                200,
+            );
+            if (!lockId) {
+                return { success: false, alreadyProcessed: false };
+            }
+
+            const paidAt =
+                mappedStatus === "succeeded" ? parseAlipayTime(notifyTime) : undefined;
+
+            let alreadyProcessed = false;
+
+            await this.db.transaction(async (tx) => {
+                const latestOrder = await tx.query.orders.findFirst({
+                    where: eq(orders.id, orderId),
+                });
+
+                if (!latestOrder) {
+                    throw new BadRequestException("订单不存在");
+                }
+
+                let paymentRecord = await this.payRepository.findLatestByOrderAndMethod(
+                    orderId,
+                    "alipay",
+                    tx,
+                );
+
+                // 幂等性检查:如果已经是成功状态,则跳过处理
+                if (paymentRecord?.status === "succeeded") {
+                    alreadyProcessed = true;
+                    return;
+                }
+
+                if (!paymentRecord) {
+                    const newPayment: PaymentInsert = {
+                        orderId: orderId,
+                        amount: latestOrder.totalAmount,
+                        currency: latestOrder.currency ?? "CNY",
+                        paymentMethod: "alipay",
+                        status: mappedStatus,
+                        paidAt,
+                    };
+
+                    if (alipayTradeNo) {
+                        newPayment.transactionId = alipayTradeNo;
+                    }
+
+                    paymentRecord = await this.payRepository.createPayment(
+                        newPayment,
+                        tx,
+                    );
+                } else {
+                    // 更新现有支付记录
+                    const updateData: Partial<Omit<PaymentInsert, "id" | "orderId">> = {
+                        status: mappedStatus,
+                        paidAt,
+                    };
+
+                    if (alipayTradeNo) {
+                        updateData.transactionId = alipayTradeNo;
+                    }
+
+                    paymentRecord = await this.payRepository.updatePaymentById(
+                        paymentRecord.id,
+                        updateData,
+                        tx,
+                    );
+                }
+
+                if (mappedStatus === "succeeded") {
+                    // 支付成功后更新订单状态为 'paid'
+                    let orderForPayment: OrderRecord = latestOrder;
+                    try {
+                        const updatedOrder = await this.order.updateOrderStatus(
+                            latestOrder.id,
+                            "paid",
+                            { tx: tx },
+                        );
+                        if (updatedOrder) {
+                            orderForPayment = updatedOrder;
+                        }
+                    } catch (error) {
+                        this.logger.warn(
+                            `[PayService] 更新订单状态失败: ${latestOrder.id}`,
+                            error instanceof Error ? error.message : error,
+                        );
+                    }
+
+                    // 创建支付流水记录
+                    const finalPaymentRecord =
+                        paymentRecord ??
+                        (await this.payRepository.findLatestByOrderAndMethod(
+                            orderId,
+                            "alipay",
+                            tx,
+                        ));
+
+                    const transactionValues: typeof financialTransactions.$inferInsert = {
+                        orderId: orderId,
+                        paymentId: finalPaymentRecord?.id ?? null,
+                        userId: orderForPayment.customerId,
+                        transactionType: "payment_received",
+                        amount: `+${orderForPayment.totalAmount}`,
+                        currency: orderForPayment.currency ?? "CNY",
+                        description: `客户支付订单${orderForPayment.orderSerial ?? orderForPayment.id}`,
+                        referenceId: alipayTradeNo ?? null,
+                    };
+
+                    await this.payRepository.createFinancialTransaction(
+                        transactionValues,
+                        tx,
+                    );
+                }
+            });
+
+            return { success: true, alreadyProcessed };
+        } catch (error) {
+            this.logger.error(
+                "[PayService] 更新支付状态失败",
+                error instanceof Error ? error.message : error,
+            );
+            return { success: false, alreadyProcessed: false };
+        } finally {
+            if (lockId) {
+                await this.cacheService
+                    .releaseLock(lockKey, lockId)
+                    .catch((releaseError) => {
+                        this.logger.warn(
+                            `[PayService] 释放支付锁失败: ${lockKey}`,
+                            releaseError instanceof Error
+                                ? releaseError.message
+                                : releaseError,
+                        );
+                    });
+            }
+        }
+    }
 
 	private async isUserExist(id: string) {
 		const statement = sql`SELECT EXISTS (SELECT 1 FROM ${users} WHERE ${users.id} = ${id} AND ${users.role} = 'customer') AS has_user`;
@@ -247,7 +431,7 @@ export class PayService {
 		const lockKey = this.getPaymentLockKey(orderInfo.id);
 		let lockId: string | null = null;
 		const lockInfo = await this.cacheService.getLockInfo(lockKey);
-		console.log("Current lock info:", lockInfo);
+        this.logger.log("Current lock info:", lockInfo);
 
 		try {
 			lockId = await this.cacheService.acquireLock(
@@ -343,13 +527,12 @@ export class PayService {
 				orderString,
 				payType,
 				outTradeNo,
-				amount: payableAmount,
-				currency: orderInfo.currency ?? "CNY",
+                amount: payableAmount,
 			};
 		} finally {
 			if (lockId) {
 				await this.cacheService.releaseLock(lockKey, lockId).catch((error) => {
-					console.warn(
+                    this.logger.warn(
 						`[PayService] release payment lock failed: ${lockKey}`,
 						error instanceof Error ? error.message : error,
 					);
@@ -360,6 +543,7 @@ export class PayService {
 
 	async payNotify(payInfo: PayNotification) {
 		const signatureValid = this.alipaySdk.checkNotifySignV2(payInfo);
+        // 生产环境必须校验签名
 		// if (!signatureValid) {
 		// 	return "fail";
 		// }
@@ -372,152 +556,243 @@ export class PayService {
 			return "fail";
 		}
 
-		const mappedStatus = TRADE_STATUS_TO_PAYMENT_STATUS[payInfo.trade_status];
-		if (!mappedStatus) {
-			return "success";
-		}
+        const result = await this.updatePaymentStatusIdempotent({
+            orderId: order.id,
+            tradeStatus: payInfo.trade_status,
+            alipayTradeNo: payInfo.trade_no,
+            notifyTime: payInfo.gmt_payment || payInfo.notify_time,
+        });
 
-		const lockKey = this.getPaymentLockKey(order.id);
-		let lockId: string | null = null;
+        return result.success || result.alreadyProcessed ? "success" : "fail";
+    }
 
-		try {
-			lockId = await this.cacheService.acquireLock(
-				lockKey,
-				this.paymentLockTtl,
-				15,
-				200,
-			);
-			if (!lockId) {
-				return "fail";
-			}
+    /**
+     * 客户端报告支付结果并触发查询
+     * 当客户端完成支付流程(无论成功/失败/取消)后调用此接口
+     * 后端会立即向支付宝查询真实状态,确保数据一致性
+     * @param orderId 订单ID
+     * @param userId 用户ID
+     * @param clientResultCode 客户端收到的支付宝返回码(9000成功/8000处理中/6001取消等)
+     * @returns 从支付宝查询到的真实支付状态
+     */
+    async reportAndQueryPaymentStatus(
+        orderId: string,
+        userId: string,
+        clientResultCode?: string,
+    ): Promise<QueryPaymentStatusResponse> {
+        // 记录客户端报告的结果码用于监控和分析
+        if (clientResultCode) {
+            this.logger.log(
+                `[PayService] 客户端报告支付结果 - 订单:${orderId}, 结果码:${clientResultCode}`,
+            );
+        }
 
-			const paidAt =
-				mappedStatus === "succeeded"
-					? parseAlipayTime(payInfo.gmt_payment || payInfo.notify_time)
-					: undefined;
+        // 实际仍然调用查询接口获取真实状态
+        return this.queryPaymentStatus(orderId, userId);
+    }
 
-			await this.db.transaction(async (tx) => {
-				const latestOrder = await tx.query.orders.findFirst({
-					where: eq(orders.id, order.id),
-				});
+    /**
+     * 主动查询支付宝订单状态
+     * 客户端在收到不确定状态(8000/6004)时调用
+     * @param orderId 订单ID
+     * @param userId 用户ID(权限校验)
+     * @returns 订单支付状态
+     */
+    async queryPaymentStatus(
+        orderId: string,
+        userId: string,
+    ): Promise<QueryPaymentStatusResponse> {
+        if (!userId) {
+            throw new BadRequestException("用户未登录");
+        }
 
-				if (!latestOrder) {
-					return;
+        // 防刷保护:限制查询频率(每个订单每分钟最多查询10次)
+        const rateLimitKey = `rate:query_payment:${orderId}`;
+        const queryCount = await this.cacheService.get<number>(rateLimitKey);
+        if (queryCount && Number(queryCount) >= 10) {
+            throw new BadRequestException("查询过于频繁，请稍后再试");
+        }
+        await this.cacheService.set(rateLimitKey, (Number(queryCount) || 0) + 1, 60);
+
+        // 权限校验:确保用户只能查询自己的订单
+        const orderInfo = await this.order.getOrderById(orderId, userId);
+        if (!orderInfo) {
+            throw new BadRequestException("订单不存在");
+        }
+
+        const outTradeNo = orderInfo.orderSerial ?? orderInfo.id;
+
+        try {
+            // 调用支付宝查询接口
+            const queryResult = await this.alipaySdk.exec("alipay.trade.query", {
+                bizContent: {
+                    out_trade_no: outTradeNo,
+                },
+            });
+
+            // 解析查询结果
+            const response = queryResult as {
+                code: string;
+                msg: string;
+                tradeStatus?: TradeStatus;
+                tradeNo?: string;
+                totalAmount?: string;
+                sendPayDate?: string;
+            };
+
+            // code=10000 表示接口调用成功
+            if (response.code === "10000" && response.tradeStatus) {
+                // 使用统一的更新逻辑
+                await this.updatePaymentStatusIdempotent({
+                    orderId: orderInfo.id,
+                    tradeStatus: response.tradeStatus,
+                    alipayTradeNo: response.tradeNo,
+                    notifyTime: response.sendPayDate,
+                });
+
+                // 重新查询数据库中的最新状态
+                const latestPayment =
+                    await this.payRepository.findLatestByOrderAndMethod(
+                        orderInfo.id,
+                        "alipay",
+                    );
+
+                return {
+                    orderId: orderInfo.id,
+                    orderSerial: outTradeNo,
+                    paymentStatus: latestPayment?.status ?? "pending",
+                    tradeStatus: response.tradeStatus,
+                    amount: response.totalAmount,
+                    transactionId: response.tradeNo,
+                    message: "订单已支付完成",
+                };
+            }
+
+            // code=40004 表示订单不存在(用户可能还未完成支付)
+            if (response.code === "40004") {
+                return {
+                    orderId: orderInfo.id,
+                    orderSerial: outTradeNo,
+                    paymentStatus: "pending",
+                    tradeStatus: "WAIT_BUYER_PAY" as TradeStatus,
+                    amount: response.totalAmount,
+                    transactionId: response.tradeNo,
+                    message: "订单尚未支付",
+                };
+            }
+
+            throw new BadRequestException(`查询支付状态失败: ${response.msg}`);
+        } catch (error) {
+            this.logger.error(
+                "[PayService] 查询支付宝订单状态失败",
+                error instanceof Error ? error.message : error,
+            );
+            throw new BadRequestException("查询支付状态失败,请稍后重试");
+        }
+    }
+
+    /**
+     * 定时任务:扫描超时的pending支付记录并主动查询
+     * 建议每5分钟执行一次
+     * 查询条件:支付状态为pending且创建时间超过10分钟的记录
+     */
+    async scanAndQueryPendingPayments() {
+        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+
+        try {
+            // 查询所有超时的pending支付记录
+            const pendingPayments = await this.db.query.payments.findMany({
+                where: and(
+                    eq(payments.status, "pending"),
+                    eq(payments.paymentMethod, "alipay"),
+                    sql`${payments.createdAt} < ${tenMinutesAgo}`,
+                ),
+                with: {
+                    order: true,
+                },
+                limit: 100, // 限制每次处理数量,避免一次处理过多
+            });
+
+            this.logger.log(
+                `[PayService] 定时任务扫描到 ${pendingPayments.length} 条待查询的支付记录`,
+            );
+
+            let successCount = 0;
+            let failCount = 0;
+
+            // 逐个查询(避免并发过高)
+            for (const payment of pendingPayments) {
+                if (!payment.order) {
+                    continue;
 				}
 
-				let paymentRecord = await this.payRepository.findLatestByOrderAndMethod(
-					order.id,
-					"alipay",
-					tx,
-				);
+                const outTradeNo = payment.order.orderSerial ?? payment.order.id;
 
-				if (!paymentRecord) {
-					const newPayment: PaymentInsert = {
-						orderId: order.id,
-						amount: latestOrder.totalAmount,
-						currency: latestOrder.currency ?? "CNY",
-						paymentMethod: "alipay",
-						status: mappedStatus,
-						paidAt,
-					};
+                try {
+                    const queryResult = await this.alipaySdk.exec("alipay.trade.query", {
+                        bizContent: {
+                            out_trade_no: outTradeNo,
+                        },
+                    });
 
-					if (payInfo.trade_no) {
-						newPayment.transactionId = payInfo.trade_no;
-					}
+                    const response = queryResult as {
+                        code: string;
+                        msg: string;
+                        tradeStatus?: TradeStatus;
+                        tradeNo?: string;
+                        totalAmount?: string;
+                        sendPayDate?: string;
+                    };
 
-					paymentRecord = await this.payRepository.createPayment(
-						newPayment,
-						tx,
-					);
-				} else if (paymentRecord.status !== "succeeded") {
-					const updateData: Partial<Omit<PaymentInsert, "id" | "orderId">> = {
-						status: mappedStatus,
-						paidAt,
-					};
+                    if (response.code === "10000" && response.tradeStatus) {
+                        const result = await this.updatePaymentStatusIdempotent({
+                            orderId: payment.order.id,
+                            tradeStatus: response.tradeStatus,
+                            alipayTradeNo: response.tradeNo,
+                            notifyTime: response.sendPayDate,
+                        });
 
-					if (payInfo.trade_no) {
-						updateData.transactionId = payInfo.trade_no;
-					}
+                        if (result.success || result.alreadyProcessed) {
+                            successCount++;
+                            this.logger.log(
+                                `[PayService] 定时查询成功更新订单 ${outTradeNo} 状态: ${response.tradeStatus}`,
+                            );
+                        } else {
+                            failCount++;
+                        }
+                    } else if (response.code === "40004") {
+                        // 订单不存在,可能用户还未支付,保持pending状态
+                        this.logger.log(
+                            `[PayService] 订单 ${outTradeNo} 尚未在支付宝产生交易记录`,
+                        );
+                    }
+                } catch (error) {
+                    failCount++;
+                    this.logger.error(
+                        `[PayService] 定时查询订单 ${outTradeNo} 失败:`,
+                        error instanceof Error ? error.message : error,
+                    );
+                }
 
-					paymentRecord = await this.payRepository.updatePaymentById(
-						paymentRecord.id,
-						updateData,
-						tx,
-					);
-				}
+                // 添加延迟避免请求过快
+                await new Promise((resolve) => setTimeout(resolve, 200));
+            }
 
-				if (mappedStatus === "succeeded") {
-					// 支付成功后更新订单状态为 'paid'
-					let orderForPayment: OrderRecord = latestOrder;
-					try {
-						const updatedOrder = await this.order.updateOrderStatus(
-							latestOrder.id,
-							"paid",
-							{
-								tx: tx,
-							},
-						);
-						if (updatedOrder) {
-							orderForPayment = updatedOrder;
-						}
-					} catch (error) {
-						console.warn(
-							`[PayService] 支付回调更新订单状态失败: ${latestOrder.id}`,
-							error instanceof Error ? error.message : error,
-						);
-					}
+            this.logger.log(
+                `[PayService] 定时任务完成: 成功 ${successCount} 条, 失败 ${failCount} 条`,
+            );
 
-					// 创建支付流水记录
-					const balanceBefore = new Decimal(orderForPayment.totalAmount);
-					const balanceAfter = new Decimal(0); // Customer balance doesn't change here, but we track the payment
-
-					// 再次查询以防并发导致支付记录落后
-					const finalPaymentRecord =
-						paymentRecord ??
-						(await this.payRepository.findLatestByOrderAndMethod(
-							order.id,
-							"alipay",
-							tx,
-						));
-
-					const transactionValues: typeof financialTransactions.$inferInsert = {
-						orderId: order.id,
-						paymentId: finalPaymentRecord?.id ?? null,
-						userId: order.customerId, // Payment from customer
-						transactionType: "payment_received", // New transaction type for payment received
-						amount: `+${orderForPayment.totalAmount}`,
-						currency: orderForPayment.currency ?? "CNY",
-						description: `客户支付订单${orderForPayment.orderSerial ?? orderForPayment.id}`,
-						referenceId: payInfo.trade_no ?? null,
-					};
-
-					await this.payRepository.createFinancialTransaction(
-						transactionValues,
-						tx,
-					);
-				}
-			});
-
-			return "success";
+            return {
+                total: pendingPayments.length,
+                success: successCount,
+                failed: failCount,
+            };
 		} catch (error) {
-			console.warn(
-				"[PayService] 支付回调处理失败",
+            this.logger.error(
+                "[PayService] 定时任务执行失败:",
 				error instanceof Error ? error.message : error,
 			);
-			return "fail";
-		} finally {
-			if (lockId) {
-				await this.cacheService
-					.releaseLock(lockKey, lockId)
-					.catch((releaseError) => {
-						console.warn(
-							`[PayService] release payment lock failed: ${lockKey}`,
-							releaseError instanceof Error
-								? releaseError.message
-								: releaseError,
-						);
-					});
-			}
+            throw error;
 		}
 	}
 
@@ -563,7 +838,7 @@ export class PayService {
 		try {
 			totalAmountDecimal = new Decimal(order.totalAmount);
 		} catch (error) {
-			console.warn(
+            this.logger.warn(
 				`[PayService] 订单${order.id}金额解析失败`,
 				error instanceof Error ? error.message : error,
 			);
@@ -644,7 +919,7 @@ export class PayService {
 
 		// 获取订单的支付记录
 		const payments = await this.payRepository.findByOrderId(orderId);
-		const payment = payments.find(p => p.status === "succeeded");
+        const payment = payments.find((p) => p.status === "succeeded");
 
 		if (!payment) {
 			throw new BadRequestException("订单未完成有效支付，无法处理收益");
@@ -654,7 +929,7 @@ export class PayService {
 		await this.db.transaction(async (tx) => {
 			await this.processServiceRevenueAndPlatformFee({
 				tx,
-				order: order as OrderRecord,
+                order: order,
 				payment,
 				tradeNo: payment.transactionId || undefined,
 			});
@@ -662,17 +937,360 @@ export class PayService {
 	}
 
 	/**
-	 * 请求退款占位函数（待实现）
+	 * 请求退款
 	 * @param orderId 订单ID
+	 * @param refundAmount 退款金额(可选,不传则全额退款)
 	 * @param reason 退款原因
 	 * @param refundedById 退款操作人ID
+	 * @returns 退款结果
 	 */
-	async requestRefund(orderId: string, reason: string, refundedById: string) {
-		// TODO: 实现退款逻辑，集成支付宝/微信退款API
-		console.log(`[TODO] 退款占位函数被调用 - 订单ID: ${orderId}, 原因: ${reason}, 操作人: ${refundedById}`);
+    async requestRefund(
+        orderId: string,
+        reason: string,
+        refundedById: string,
+        refundAmount?: number,
+    ) {
+        if (!orderId) {
+            throw new BadRequestException("订单ID不能为空");
+        }
 
-		// 占位实现，返回成功
-		return { success: true, message: "退款请求已提交" };
+        if (!refundedById) {
+            throw new BadRequestException("退款操作人ID不能为空");
+        }
+
+        // 1. 获取订单信息和支付记录
+        const order = await this.order.getOrderById(orderId);
+        if (!order) {
+            throw new BadRequestException("订单不存在");
+        }
+
+        // 2. 校验订单状态(只有已支付、已完成的订单才能退款)
+        if (!["paid", "completed"].includes(order.status)) {
+            throw new BadRequestException(
+                `订单状态为 ${order.status}，不允许退款`,
+            );
+        }
+
+        // 3. 查找成功的支付记录
+        const payments = await this.payRepository.findByOrderId(orderId);
+        const successPayment = payments.find((p) => p.status === "succeeded");
+
+        if (!successPayment) {
+            throw new BadRequestException("订单未找到成功的支付记录");
+        }
+
+        // 3.1 幂等性检查:如果支付记录已经是退款状态,则直接返回
+        if (successPayment.status === "refunded") {
+            this.logger.log(
+                `[PayService] 订单 ${orderId} 已经退款,无需重复处理`,
+            );
+            return {
+                success: true,
+                message: "该订单已退款",
+                refundAmount: Number(successPayment.amount),
+                alreadyRefunded: true,
+            };
+        }
+
+        // 4. 计算退款金额并检查累计退款限制
+        const orderAmount = Number(order.totalAmount);
+        const requestRefundAmount = refundAmount ?? orderAmount;
+
+        if (requestRefundAmount <= 0) {
+            throw new BadRequestException("退款金额必须大于0");
+        }
+
+        if (requestRefundAmount > orderAmount) {
+            throw new BadRequestException("退款金额不能大于订单金额");
+        }
+
+        // 4.1 查询累计已退款金额(通过financial_transactions表)
+        const refundTransactions = await this.db
+            .select()
+            .from(financialTransactions)
+            .where(
+                and(
+                    eq(financialTransactions.orderId, orderId),
+                    eq(financialTransactions.transactionType, "refund_paid"),
+                ),
+            );
+
+        const totalRefunded = refundTransactions.reduce((sum, tx) => {
+            return sum + Math.abs(Number(tx.amount));
+        }, 0);
+
+        this.logger.log(
+            `[PayService] 订单 ${orderId} 累计已退款: ${totalRefunded}, 本次退款: ${requestRefundAmount}, 订单总额: ${orderAmount}`,
+        );
+
+        // 4.2 检查累计退款金额是否超过订单总额
+        if (totalRefunded + requestRefundAmount > orderAmount) {
+            throw new BadRequestException(
+                `累计退款金额不能超过订单总额。已退款: ${totalRefunded}, 本次退款: ${requestRefundAmount}, 订单总额: ${orderAmount}`,
+            );
+        }
+
+        // 5. 获取分布式锁,避免并发退款
+        const lockKey = `lock:refund:order:${orderId}`;
+        let lockId: string | null = null;
+
+        try {
+            lockId = await this.cacheService.acquireLock(lockKey, 30000, 10, 200);
+            if (!lockId) {
+                throw new BadRequestException("退款处理中,请稍后重试");
+            }
+
+            // 5.1 再次检查支付状态(双重检查,防止并发问题)
+            const latestPayments = await this.payRepository.findByOrderId(orderId);
+            const latestSuccessPayment = latestPayments.find(
+                (p) => p.status === "succeeded",
+            );
+
+            if (!latestSuccessPayment) {
+                throw new BadRequestException("订单支付状态已变更,无法退款");
+            }
+
+            if (latestSuccessPayment.status === "refunded") {
+                return {
+                    success: true,
+                    message: "该订单已退款",
+                    refundAmount: Number(latestSuccessPayment.amount),
+                    alreadyRefunded: true,
+                };
+            }
+
+            // 5.2 生成退款请求号(使用订单ID+时间戳确保唯一性)
+            const outRequestNo = `REFUND_${orderId}_${Date.now()}`;
+            const outTradeNo = order.orderSerial;
+
+            this.logger.log(
+                `[PayService] 发起退款 - 订单:${outTradeNo}, 金额:${requestRefundAmount}, 原因:${reason}, 操作人:${refundedById}`,
+            );
+
+            // 6. 调用支付宝退款接口
+            let alipayResponseRaw: unknown;
+            try {
+                alipayResponseRaw = await this.alipaySdk.exec("alipay.trade.refund", {
+                    bizContent: {
+                        out_trade_no: outTradeNo,
+                        refund_amount: requestRefundAmount.toFixed(2),
+                        refund_reason: reason || "用户申请退款",
+                        out_request_no: outRequestNo,
+                    },
+                });
+            } catch (error) {
+                this.logger.error(
+                    `[PayService] 调用支付宝退款接口失败:`,
+                    error instanceof Error ? error.message : error,
+                );
+                throw new BadRequestException("退款请求失败，请稍后重试");
+            }
+
+            // 7. 解析退款响应
+            const response = alipayResponseRaw as {
+                code: string;
+                msg: string;
+                sub_code?: string;
+                sub_msg?: string;
+                trade_no?: string;
+                out_trade_no?: string;
+                buyer_logon_id?: string;
+                refund_fee?: string;
+                fund_change?: "Y" | "N";
+            };
+
+            this.logger.log("支付宝退款请求参数:", alipayResponseRaw);
+
+            this.logger.log(
+                `[PayService] 支付宝退款响应 - code:${response.code}, msg:${response.msg}`,
+            );
+
+            // 8. 处理退款结果
+            if (response.code !== "10000") {
+                const errorMessage = response.sub_msg || response.msg || "退款失败";
+                this.logger.error(
+                    `[PayService] 支付宝退款失败 - sub_code:${response.sub_code}, sub_msg:${response.sub_msg}`,
+                );
+                throw new BadRequestException(`支付宝退款失败: ${errorMessage}`);
+            }
+
+            // 9. 更新数据库(事务处理)
+            await this.db.transaction(async (tx) => {
+                // 9.1 检查是否为全额退款
+                const isFullRefund = totalRefunded + requestRefundAmount >= orderAmount;
+
+                // 9.2 更新支付记录状态(只有全额退款才标记为已退款)
+                if (isFullRefund) {
+                    await this.payRepository.updatePaymentById(
+                        successPayment.id,
+                        {
+                            status: "refunded",
+                        },
+                        tx,
+                    );
+                }
+
+                // 9.3 更新订单状态(只有全额退款才改为已退款)
+                if (isFullRefund) {
+                    await tx
+                        .update(orders)
+                        .set({
+                            status: "refunded",
+                            updatedAt: new Date(),
+                        })
+                        .where(eq(orders.id, orderId));
+                }
+
+                // 9.4 记录退款流水
+                const refundType = isFullRefund ? "全额退款" : "部分退款";
+                await this.payRepository.createFinancialTransaction(
+                    {
+                        orderId,
+                        paymentId: successPayment.id,
+                        userId: order.customerId,
+                        transactionType: "refund_paid",
+                        amount: `-${requestRefundAmount.toFixed(2)}`,
+                        currency: order.currency ?? "CNY",
+                        description: `订单${refundType} - ${reason}`.slice(0, 500),
+                        referenceId: response.trade_no,
+                        metadata: JSON.stringify({
+                            outRequestNo,
+                            outTradeNo,
+                            buyerLogonId: response.buyer_logon_id,
+                            fundChange: response.fund_change,
+                            refundFee: response.refund_fee,
+                            refundedById,
+                            isFullRefund,
+                            totalRefundedBefore: totalRefunded,
+                            totalRefundedAfter: totalRefunded + requestRefundAmount,
+                        }),
+                    },
+                    tx,
+                );
+
+                // 9.5 如果服务已完成且已产生收益,需要回退服务人员收益
+                if (order.status === "completed") {
+                    await this.rollbackServicePersonnelEarnings(
+                        orderId,
+                        requestRefundAmount,
+                        order.currency ?? "CNY",
+                        tx,
+                    );
+                }
+            });
+
+            this.logger.log(
+                `[PayService] 退款成功 - 订单:${outTradeNo}, 退款金额:${response.refund_fee}`,
+            );
+
+            return {
+                success: true,
+                message: "退款成功",
+                refundAmount: Number(response.refund_fee),
+                tradeNo: response.trade_no,
+                outRequestNo,
+            };
+        } finally {
+            // 释放分布式锁
+            if (lockId) {
+                await this.cacheService.releaseLock(lockKey, lockId).catch((error) => {
+                    this.logger.warn(
+                        `[PayService] 释放退款锁失败: ${lockKey}`,
+                        error instanceof Error ? error.message : error,
+                    );
+                });
+            }
+        }
+    }
+
+	/**
+	 * 回退服务人员收益
+	 * @param orderId 订单ID
+	 * @param refundAmount 退款金额
+	 * @param currency 币种
+	 * @param tx 数据库事务
+	 */
+    private async rollbackServicePersonnelEarnings(
+        orderId: string,
+        refundAmount: number,
+        currency: string,
+        tx: DbType,
+    ) {
+        // 查询该订单的收益记录
+        const earningRecord = await tx.query.earnings.findFirst({
+            where: eq(earnings.orderId, orderId),
+        });
+
+        if (!earningRecord) {
+            // 没有收益记录,无需回退
+            this.logger.log(`[PayService] 订单 ${orderId} 没有收益记录,无需回退`);
+            return;
+        }
+
+        // 获取订单信息来计算回退比例
+        const orderRecord = await tx.query.orders.findFirst({
+            where: eq(orders.id, orderId),
+        });
+
+        if (!orderRecord) {
+            this.logger.log(`[PayService] 订单 ${orderId} 不存在,无法回退收益`);
+            return;
+        }
+
+        const earningAmount = Number(earningRecord.amount);
+        const servicePersonnelId = earningRecord.userId;
+        const orderTotalAmount = Number(orderRecord.totalAmount);
+
+        // 计算需要回退的金额(按比例)
+        // 回退金额 = 收益金额 * (退款金额 / 订单总金额)
+        const rollbackAmount = new Decimal(earningAmount)
+            .mul(refundAmount)
+            .div(orderTotalAmount)
+            .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+            .toNumber();
+
+        this.logger.log(
+            `[PayService] 回退服务人员收益 - 服务人员:${servicePersonnelId}, 金额:${rollbackAmount}`,
+        );
+
+        // 扣除服务人员余额
+        const balanceRecord = await this.payRepository.findUserBalanceByUserId(
+            servicePersonnelId,
+            tx,
+        );
+
+        if (balanceRecord) {
+            const currentAvailable = new Decimal(
+                balanceRecord.availableBalance ?? "0",
+            );
+            const currentTotal = new Decimal(balanceRecord.totalBalance ?? "0");
+
+            const newAvailable = currentAvailable.minus(rollbackAmount);
+            const newTotal = currentTotal.minus(rollbackAmount);
+
+            // 如果余额不足,需要记录负余额(后续可以通过其他方式补齐)
+            await this.payRepository.updateUserBalanceById(
+                balanceRecord.id,
+                {
+                    availableBalance: newAvailable.toFixed(2),
+                    totalBalance: newTotal.toFixed(2),
+                },
+                tx,
+            );
+
+            // 记录回退流水
+            await this.payRepository.createFinancialTransaction(
+                {
+                    orderId,
+                    userId: servicePersonnelId,
+                    transactionType: "adjustment",
+                    amount: `-${rollbackAmount.toFixed(2)}`,
+                    currency,
+                    description: `订单退款导致收益回退`,
+                },
+                tx,
+            );
+        }
 	}
 
 	// 用户提现（当前仅支持支付宝）

@@ -19,27 +19,33 @@ import {
 	InitiatePaymentResponseSchema,
 	type PayNotification,
 	payNotificationSchema,
+    QueryPaymentStatusResponseSchema,
 	type UserWithdrawBody,
 	UserWithdrawBodySchema,
 	UserWithdrawResponseSchema,
 } from "@repo/types";
 import type { Request } from "express";
-import { ApiSuccessResponse } from "src/common/decorator";
+import { ApiErrorResponses, ApiSuccessResponse } from "src/common/decorator";
 import { ApiBodies } from "src/common/decorator/swagger-api-bodies";
 import { SkipTransform } from "src/common/interceptors";
 import { createMultiZodPipe, createZodPipe } from "src/common/pipes";
 import { Public } from "../auth/decorators";
 import { PayService } from "./pay.service";
 import { AuthGuard } from "../auth/auth.guard";
+import { Cron } from "@nestjs/schedule";
+import z from "zod/v4";
+import { createAliPaySdk } from "src/lib/alipaySdk";
 
 @ApiTags("支付")
 @Controller("pay")
 export class PayController {
 	constructor(private readonly payService: PayService) {}
 
+    private alipaySdk = createAliPaySdk();
+
     @UseGuards(AuthGuard)
 	@Post("orders/:orderId")
-	@HttpCode(HttpStatus.OK)
+    @ApiErrorResponses()
 	@UsePipes(
 		createMultiZodPipe({
 			params: InitiatePaymentParamsSchema,
@@ -100,6 +106,37 @@ export class PayController {
 		return this.payService.withdraw(req.user.id, body);
 	}
 
+    @UseGuards(AuthGuard)
+    @Get("orders/:orderId/payment-status")
+    @UsePipes(
+        createMultiZodPipe({
+            params: z.string(),
+            errorMessage: "支付状态查询参数校验失败",
+        }),
+    )
+    @ApiSuccessResponse(QueryPaymentStatusResponseSchema, {
+        description: "返回订单支付状态",
+    })
+
+    @ApiOperation({
+        summary: "查询订单支付状态",
+        description: "主动查询支付宝订单的支付状态,用于客户端收到不确定状态码时确认支付结果",
+    })
+    async queryPaymentStatus(
+        @Param('orderId') orderId: string,
+        @Req() req: Request,
+    ) {
+        return this.payService.queryPaymentStatus(orderId, req.user.id);
+    }
+
+    // 每5分钟执行一次
+    // 扫描并查询所有支付状态为 pending 的订单支付状态
+    @Cron('0 */5 * * * *')
+    handleInterval() {
+        this.payService.scanAndQueryPendingPayments();
+    }
+
+
 	@Get("getAuthSign")
 	@ApiOperation({
 		summary: "获取第三方授权登录时所需要的签名字符串",
@@ -107,4 +144,20 @@ export class PayController {
 	getAuthSign() {
 		return this.payService.generateAuthString();
 	}
+
+    @Get("test-pay-config")
+    async testPayConfig() {
+        const result = await this.alipaySdk.curl('POST', '/v3/alipay/user/deloauth/detail/query', {
+            body: {
+                date: '20230102',
+                offset: 20,
+                limit: 1,
+            },
+        });
+
+        console.log(result);
+        return result
+    }
+
+
 }

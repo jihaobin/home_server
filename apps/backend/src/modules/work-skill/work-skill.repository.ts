@@ -28,30 +28,51 @@ export class WorkSkillRepository {
 	 * @throws 参数无效时抛出异常
 	 */
 	async upsertWorkInfo(
-		info: Omit<ServicePersonnel, "geom"> & {
+        info: (Omit<typeof servicePersonnel.$inferInsert, "geom"> & {
 			location: { lng: number; lat: number };
-		},
+        })
 	) {
 		// 检查用户是否存在于users表中
 		if (!(await this.isUserExists(info.userId))) {
 			throw new BadRequestException("用户不存在，无法创建服务人员信息");
 		}
 
-		// 使用 onConflictDoUpdate 实现 upsert 操作
+        // 拆解 location，避免插入额外未知字段
+        const { location, ...rest } = info;
+
+        // 必填字段简单校验（Drizzle 在编译期已提示，但这里运行时加强提示）
+        const required: Array<keyof typeof rest> = [
+            "userId",
+            "province",
+            "workStartTime",
+            "workEndTime",
+        ];
+        for (const key of required) {
+            if (!(rest as any)[key]) {
+                throw new BadRequestException(`缺少必要字段: ${key}`);
+            }
+        }
+
+        // 构造插入数据，使用 Drizzle 推导的插入类型（具有默认值的字段可省略）
+        const insertData: typeof servicePersonnel.$inferInsert = {
+            ...rest,
+            geom: [location.lng, location.lat], // geometry(point) tuple
+        };
+
 		const result = await this.db
 			.insert(servicePersonnel)
-			.values({ ...info, geom: [info.location.lng, info.location.lat] })
+            .values(insertData)
 			.onConflictDoUpdate({
 				target: servicePersonnel.userId,
 				set: {
-					bio: info.bio,
-					province: info.province,
-					district: info.district,
-					county: info.county,
-					yearsOfExperience: info.yearsOfExperience,
-					workStartTime: info.workStartTime,
-					workEndTime: info.workEndTime,
-					isAvailable: info.isAvailable,
+                    bio: rest.bio,
+                    province: rest.province,
+                    district: rest.district,
+                    county: rest.county,
+                    yearsOfExperience: rest.yearsOfExperience,
+                    workStartTime: rest.workStartTime!,
+                    workEndTime: rest.workEndTime!,
+                    isAvailable: rest.isAvailable,
 				},
 			})
 			.returning();
@@ -215,6 +236,7 @@ export class WorkSkillRepository {
 	 * @param personnelId 服务人员用户ID
 	 * @param serviceId 服务ID
 	 * @param price 个人定价
+	 * @param estimatedDurationMinutes 预计服务时长（分钟）
 	 * @param currency 币种代码
 	 * @returns 返回定价记录
 	 */
@@ -222,6 +244,7 @@ export class WorkSkillRepository {
 		personnelId: string,
 		serviceId: string,
 		price: string,
+        estimatedDurationMinutes: number,
 		currency: string = "CNY",
 	) {
 		// 检查服务人员是否存在
@@ -238,6 +261,7 @@ export class WorkSkillRepository {
 				userId: personnelId,
 				serviceId,
 				price,
+                estimatedDurationMinutes,
 				currency,
 				isActive: true,
 				effectiveFrom: now,
@@ -249,6 +273,7 @@ export class WorkSkillRepository {
 				],
 				set: {
 					price,
+                    estimatedDurationMinutes,
 					currency,
 					isActive: true,
 					effectiveFrom: now,

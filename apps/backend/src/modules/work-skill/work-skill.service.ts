@@ -79,6 +79,7 @@ export class WorkSkillService {
 	 * @param personnelId 服务人员用户ID
 	 * @param serviceId 服务ID
 	 * @param price 个人定价
+	 * @param estimatedDurationMinutes 预计服务时长（分钟）
 	 * @param currency 币种代码
 	 * @returns 返回定价记录
 	 */
@@ -86,12 +87,14 @@ export class WorkSkillService {
 		personnelId: string,
 		serviceId: string,
 		price: string,
+        estimatedDurationMinutes: number,
 		currency: string = "CNY",
 	) {
 		return await this.workSkillRepository.upsertPersonnelPricing(
 			personnelId,
 			serviceId,
 			price,
+            estimatedDurationMinutes,
 			currency,
 		);
 	}

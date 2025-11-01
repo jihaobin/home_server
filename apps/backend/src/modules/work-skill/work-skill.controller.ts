@@ -126,6 +126,7 @@ export class WorkSkillController {
             req.user.id,
             pricingData.serviceId,
             pricingData.price,
+            pricingData.estimatedDurationMinutes,
             pricingData.currency,
         );
     }

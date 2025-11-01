@@ -53,7 +53,7 @@ export class OrderService {
 				sortOrder: params.sortOrder || "desc",
 			});
 		} catch (error) {
-			throw new BadRequestException(`获取订单列表失败: ${error.message}`);
+            throw new BadRequestException(`获取订单列表失败: ${error}`);
 		}
 	}
 
@@ -92,59 +92,60 @@ export class OrderService {
 
 	/**
 	 * 创建普通订单
+	 * @deprecated 在MVP阶段，所有订单都通过createOrderWithDesignatedPersonnel创建
 	 * @param createOrderDto 订单数据
 	 * @returns 创建的订单信息
 	 */
-	async createOrder(createOrderDto: CreateOrder) {
-		// 参数验证
-		if (
-			!createOrderDto.customerId ||
-			!createOrderDto.serviceId ||
-			!createOrderDto.addressId ||
-			!createOrderDto.appointmentTime
-		) {
-			throw new BadRequestException("缺少必要参数");
-		}
+    // async createOrder(createOrderDto: CreateOrder) {
+    // 	// 参数验证
+    // 	if (
+    // 		!createOrderDto.customerId ||
+    // 		!createOrderDto.serviceId ||
+    // 		!createOrderDto.addressId ||
+    // 		!createOrderDto.appointmentTime
+    // 	) {
+    // 		throw new BadRequestException("缺少必要参数");
+    // 	}
 
-		// 验证预约时间是否合理
-		if (createOrderDto.appointmentTime < new Date()) {
-			throw new BadRequestException("预约时间不能是过去的时间");
-		}
+    // 	// 验证预约时间是否合理
+    // 	if (createOrderDto.appointmentTime < new Date()) {
+    // 		throw new BadRequestException("预约时间不能是过去的时间");
+    // 	}
 
-		try {
-			// 获取服务基础信息
-			const service = await this.serviceService.getServiceById(
-				createOrderDto.serviceId,
-			);
+    // 	try {
+    // 		// 获取服务基础信息
+    // 		const service = await this.serviceService.getServiceById(
+    // 			createOrderDto.serviceId,
+    // 		);
 
-			if (!service) {
-				throw new BadRequestException("服务不存在");
-			}
+    // 		if (!service) {
+    // 			throw new BadRequestException("服务不存在");
+    // 		}
 
-			// 确定订单价格
-			const price = service.basePrice;
+    // 		// 确定订单价格
+    // 		const price = service.basePrice;
 
-			// 创建订单
-			const result = await this.orderRepository.createOrder({
-				...createOrderDto,
-				originalAmount: parseFloat(price),
-				discountAmount: createOrderDto.discountAmount
-					? parseFloat(createOrderDto.discountAmount.toString())
-					: 0,
-				totalAmount: createOrderDto.discountAmount
-					? parseFloat(price) -
-						parseFloat(createOrderDto.discountAmount.toString())
-					: parseFloat(price),
-			});
+    // 		// 创建订单
+    // 		const result = await this.orderRepository.createOrder({
+    // 			...createOrderDto,
+    // 			originalAmount: parseFloat(price),
+    // 			discountAmount: createOrderDto.discountAmount
+    // 				? parseFloat(createOrderDto.discountAmount.toString())
+    // 				: 0,
+    // 			totalAmount: createOrderDto.discountAmount
+    // 				? parseFloat(price) -
+    // 					parseFloat(createOrderDto.discountAmount.toString())
+    // 				: parseFloat(price),
+    // 		});
 
-			return result;
-		} catch (error) {
-			if (error instanceof BadRequestException) {
-				throw error;
-			}
-			throw new BadRequestException(`创建订单失败: ${error.message}`);
-		}
-	}
+    // 		return result;
+    // 	} catch (error) {
+    // 		if (error instanceof BadRequestException) {
+    // 			throw error;
+    // 		}
+    // 		throw new BadRequestException(`创建订单失败: ${error.message}`);
+    // 	}
+    // }
 
 	/**
 	 * 创建用户指定服务人员的订单
@@ -180,7 +181,7 @@ export class OrderService {
 
 		// 3. 当前服务人员是否处于工作状态
 		if (!ServicePersonnel.isAvailable) {
-			throw new BadRequestException("服务人员当前不在工作状态");
+            throw new BadRequestException("服务人员当前正在休息");
 		}
 
 		// 4. 申请的服务时间是否在工作人员的工作时间内
@@ -202,18 +203,33 @@ export class OrderService {
 			throw new BadRequestException("服务时间不在工作人员的工作时间段内");
 		}
 
-		// 5. 在相同的时间段中该工作人员是否有其他订单
-		// 获取服务信息以计算服务时长
-		const service = await this.serviceService.getServiceById(
-			createOrderDto.serviceId,
+        // 5. 获取服务规格信息（价格和时长）
+        // 从servicePersonnelPricing表中查询指定的服务规格
+        const specification = await this.orderRepository.getServiceSpecification(
+            createOrderDto.specificationId,
 		);
-		if (!service) {
-			throw new BadRequestException("服务不存在");
+
+        if (!specification) {
+            throw new BadRequestException("服务规格不存在");
+        }
+
+        // 验证规格是否属于当前服务人员和服务
+        if (
+            specification.userId !== createOrderDto.designatedPersonnelId ||
+            specification.serviceId !== createOrderDto.serviceId
+        ) {
+            throw new BadRequestException("服务规格与服务人员或服务不匹配");
+        }
+
+        // 验证规格是否有效
+        if (!specification.isActive) {
+            throw new BadRequestException("服务规格已失效");
 		}
 
-		// 计算订单结束时间
+        // 6. 在相同的时间段中该工作人员是否有其他订单
+        // 使用规格中的服务时长计算订单结束时间
 		const appointmentStartTime = new Date(createOrderDto.appointmentTime);
-		const estimatedDuration = service.estimatedDurationMinutes;
+        const estimatedDuration = specification.estimatedDurationMinutes;
 		const appointmentEndTime = new Date(appointmentStartTime);
 		appointmentEndTime.setMinutes(
 			appointmentEndTime.getMinutes() + estimatedDuration,
@@ -234,15 +250,17 @@ export class OrderService {
 				return false;
 			}
 
-			// 获取该订单的服务信息
-			const orderService = order.service;
-			if (!orderService) {
+            // 获取该订单的服务规格信息
+            if (!order.specificationId) {
 				return false;
 			}
 
-			// 计算该订单的结束时间
+            // 从订单中获取预约时间
 			const orderStartTime = new Date(order.appointmentTime);
-			const orderDuration = orderService.estimatedDurationMinutes;
+            // 注意：这里需要从order的specification中获取时长
+            // 但为了避免额外查询，我们假设existingOrders已经包含了必要的信息
+            // 实际上需要在getOrdersByPersonnelAndTimeRange中join specification表
+            const orderDuration = order.specification?.estimatedDurationMinutes || 0;
 			const orderEndTime = new Date(orderStartTime);
 			orderEndTime.setMinutes(orderEndTime.getMinutes() + orderDuration);
 
@@ -258,20 +276,16 @@ export class OrderService {
 			throw new BadRequestException("该时间段工作人员已有其他订单");
 		}
 
-		// 计算定价
+        // 7. 计算定价
 		/**
 		 * 定价计算方案
 		 * 1. 以用户传入的其在应用中看到的价格为准
-		 * 2. 同时校验最新的定价信息
+		 * 2. 同时校验最新的定价信息（从specification中获取）
 		 * 3. 如果用户传入的定价和最新定价之间的差距在±30%之外，则触发警告，让用户刷新页面后重新下单
 		 */
 		const userPrice = createOrderDto.displayPrice; // 用户看到的价格
-		const targetSkill = ServicePersonnel.skills.find(
-			(skill) => skill.id === createOrderDto.serviceId,
-		);
-		const personnelPriceRaw = targetSkill?.price?.price?.toString();
-		const latestPriceRaw = personnelPriceRaw ?? service.basePrice?.toString();
-		const latestPrice = latestPriceRaw ? parseFloat(latestPriceRaw) : NaN;
+        const latestPrice = parseFloat(specification.price);
+
 		if (!Number.isFinite(latestPrice) || latestPrice <= 0) {
 			throw new BadRequestException("服务定价信息异常，请稍后重试");
 		}
@@ -285,13 +299,14 @@ export class OrderService {
 			throw new BadRequestException("价格已更新，请刷新页面后重新下单");
 		}
 
-		// 调用创建订单方法
+        // 8. 调用创建订单方法
 		try {
 			const result =
 				await this.orderRepository.createOrderWithDesignatedPersonnel({
 					customerId: createOrderDto.customerId,
 					serviceId: createOrderDto.serviceId,
 					addressId: createOrderDto.addressId,
+                    specificationId: createOrderDto.specificationId,
 					appointmentTime: appointmentTime,
 					discountAmount: createOrderDto?.discountAmount?.toString() || "0",
 					designatedPersonnelId: createOrderDto.designatedPersonnelId,

@@ -41,8 +41,7 @@ export class ServicePersonnelRepository {
 	 * 🚀 智能匹配服务人员 - 优化版本
 	 * 使用 CTE 和窗口函数优化查询性能，单次查询获取所有数据
 	 */
-	async findMatchedPersonnel({
-		userId,
+    async findMatchedPersonnel({
 		serviceId,
 		userLat,
 		userLng,
@@ -55,7 +54,7 @@ export class ServicePersonnelRepository {
 		sortOrder = "asc",
 		page = 1,
 		pageSize = 20,
-	}: ServicePersonnelFilterRequest & { userId: string }) {
+    }: ServicePersonnelFilterRequest) {
 		const userPoint = this.geoService.createUserPoint(userLng, userLat);
 		const {
 			fastFilter: distancePreFilter,
@@ -73,7 +72,7 @@ export class ServicePersonnelRepository {
 			eq(servicePersonnelPricing.isActive, true),
 			eq(servicePersonnel.isAvailable, true), // 恢复可用性检查
 			sql`${servicePersonnel.geom} IS NOT NULL`, // 恢复地理位置检查
-			ne(servicePersonnel.userId, userId), // 排除自己
+            // ne(servicePersonnel.userId, userId), // 排除自己
 		];
 
 		// 工作时间筛选
@@ -138,6 +137,7 @@ export class ServicePersonnelRepository {
 					bio: servicePersonnel.bio,
 					price: servicePersonnelPricing.price,
 					currency: servicePersonnelPricing.currency,
+                    detailedAddress: servicePersonnel.detailedAddress,
 					name: users.name,
 					avatarUrl: users.image,
 					distance: exactDistance.as("distance"),
@@ -162,11 +162,7 @@ export class ServicePersonnelRepository {
 			.limit(pageSize)
 			.offset((page - 1) * pageSize);
 
-		const total = paginatedResults[0]?.totalCount || 0;
-		const userIds = paginatedResults.map((r) => r.userId);
-
-		// 批量获取技能信息
-		const allSkillsMap = await this.getBatchPersonnelSkills(userIds);
+        const total = paginatedResults[0]?.totalCount || 0;
 
 		// 组装最终结果
 		const personnel = paginatedResults.map((result) => ({
@@ -175,6 +171,7 @@ export class ServicePersonnelRepository {
 			province: result.province,
 			district: result.district,
 			county: result.county,
+            detailedAddress: result.detailedAddress,
 			yearsOfExperience: result.yearsOfExperience,
 			workStartTime: result.workStartTime,
 			workEndTime: result.workEndTime,
@@ -186,8 +183,7 @@ export class ServicePersonnelRepository {
 			lastActiveAt: result.lastActiveAt,
 			bio: result.bio || "",
 			distance: result.distance,
-			price: result.price,
-			skills: allSkillsMap.get(result.userId) ?? [],
+            price: result.price,
 			avatarUrl: result.avatarUrl || undefined,
 		}));
 
@@ -229,18 +225,20 @@ export class ServicePersonnelRepository {
 			return new Map<string, PersonnelSkill[]>();
 		}
 
-		// 一次查询获取所有技能信息
+        // 一次查询获取所有技能信息，包含定价信息
 		const allSkills = await this.db
 			.select({
 				userId: servicePersonnelSkills.userId,
 				serviceId: servicePersonnelSkills.serviceId,
 				category: serviceCategories.name,
 				serviceName: services.name,
-				serviceDescription: services.description,
-				serviceBasePrice: services.basePrice,
-				serviceCurrency: services.currency,
-				serviceDuration: services.estimatedDurationMinutes,
+                serviceDescription: services.description,
+                serviceCurrency: services.currency,
 				serviceActive: services.isActive,
+                // 从servicePersonnelPricing表获取价格和时长
+                pricingId: servicePersonnelPricing.id,
+                price: servicePersonnelPricing.price,
+                estimatedDurationMinutes: servicePersonnelPricing.estimatedDurationMinutes,
 			})
 			.from(servicePersonnelSkills)
 			.innerJoin(services, eq(services.id, servicePersonnelSkills.serviceId))
@@ -248,6 +246,14 @@ export class ServicePersonnelRepository {
 				serviceCategories,
 				eq(services.categoryId, serviceCategories.id),
 			)
+            .leftJoin(
+                servicePersonnelPricing,
+                and(
+                    eq(servicePersonnelPricing.userId, servicePersonnelSkills.userId),
+                    eq(servicePersonnelPricing.serviceId, servicePersonnelSkills.serviceId),
+                    eq(servicePersonnelPricing.isActive, true)
+                )
+            )
 			.where(inArray(servicePersonnelSkills.userId, userIds));
 
 		// 在内存中按用户ID分组
@@ -264,13 +270,64 @@ export class ServicePersonnelRepository {
 				category: skill.category,
 				name: skill.serviceName,
 				description: skill.serviceDescription,
-				basePrice: skill.serviceBasePrice,
+                basePrice: skill.price || "0", // 使用pricing表中的价格
 				currency: skill.serviceCurrency,
-				estimatedDurationMinutes: skill.serviceDuration || 0,
+                estimatedDurationMinutes: skill.estimatedDurationMinutes || 0,
 				isActive: skill.serviceActive,
 			});
 		}
 
 		return skillsMap;
 	}
+
+    async getPersonnelServiceDetails(personnelId: string, serviceId: string) {
+        const query = await this.db.query.servicePersonnel.findFirst({
+            where: and(
+                eq(servicePersonnel.userId, personnelId),
+            ),
+            columns: {
+                geom: false,
+            },
+            with: {
+                skills: {
+                    where: eq(servicePersonnelSkills.serviceId, serviceId),
+                },
+                pricing: {
+                    columns: {
+                        createdAt: false,
+                        updatedAt: false,
+                        effectiveFrom: false,
+                        effectiveTo: false,
+                        isActive: false,
+                    },
+                    where: and(eq(servicePersonnelPricing.serviceId, serviceId), eq(servicePersonnelPricing.isActive, true))
+                },
+
+                // TODO: 当评论模块完成后，这里需要关联查询评论
+            }
+        });
+        // TODO: 添加该用户已经被占用的时间段
+
+        // 安全地访问skills数组
+        const firstSkill = query?.skills?.[0];
+
+        return {
+            userId: query?.userId,
+            bio: query?.bio,
+            province: query?.province,
+            district: query?.district,
+            county: query?.county,
+            detailedAddress: query?.detailedAddress,
+            yearsOfExperience: query?.yearsOfExperience,
+            workStartTime: query?.workStartTime,
+            workEndTime: query?.workEndTime,
+            isAvailable: query?.isAvailable,
+            workDays: query?.workDays,
+            currentStatus: query?.currentStatus,
+            lastActiveAt: query?.lastActiveAt,
+            specifications: query?.pricing || [],
+            description: firstSkill?.description || null,
+            servicedCount: firstSkill?.servicedCount || 0
+        }
+    }
 }

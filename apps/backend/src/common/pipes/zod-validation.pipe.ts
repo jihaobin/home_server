@@ -16,6 +16,7 @@ export class ZodValidationPipe implements PipeTransform {
 	constructor(
 		private readonly schema: z.ZodType,
 		private readonly errorMessage: string = "请求参数验证失败",
+        private readonly isAutoTransform: boolean = true
 	) {}
 
 	/**
@@ -25,7 +26,7 @@ export class ZodValidationPipe implements PipeTransform {
 	 * @param metadata - 元数据
 	 * @returns 验证并可能转换后的值
 	 */
-	transform(value: unknown, metadata: ArgumentMetadata): unknown {
+    transform(value: unknown, metadata: ArgumentMetadata,): unknown {
 		try {
 			// 对空对象的特殊处理
 			if (
@@ -38,7 +39,7 @@ export class ZodValidationPipe implements PipeTransform {
 			}
 
 			// 对查询参数进行预处理
-			if (metadata.type === "query") {
+            if (metadata.type === "query" && this.isAutoTransform) {
 				value = this.preprocessQueryParams(value);
 			}
 

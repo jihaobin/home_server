@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 import * as winston from "winston";
-import DailyRotateFile from "winston-daily-rotate-file";
+import "winston-daily-rotate-file";
 
 import { LogLevel } from "../logger.constants";
 import { RotateFileTransportOptions } from "../logger.interface";
@@ -30,7 +30,7 @@ export const createRotateFileTransport = (
 		fs.mkdirSync(dirname, { recursive: true });
 	}
 
-	return new DailyRotateFile({
+    return new winston.transports.DailyRotateFile({
 		filename,
 		datePattern,
 		level,

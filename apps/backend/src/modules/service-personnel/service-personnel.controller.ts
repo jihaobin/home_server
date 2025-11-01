@@ -1,34 +1,34 @@
 import { Controller, Get, Query, Req, UseGuards, UsePipes } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
-	type ServicePersonnelFilterRequest,
-	ServicePersonnelFilterRequestSchema,
-	ServicePersonnelFilterResponse,
-	ServicePersonnelFilterResponseSchema,
+    ServiceDetailsSchema,
+    ServicePersonnelDetailsQuerySchema,
+    type ServicePersonnelFilterRequest,
+    ServicePersonnelFilterRequestSchema,
+    ServicePersonnelFilterResponseSchema,
 } from "@repo/types";
 import { Request } from "express";
 import {
-	ApiErrorResponses,
-	ApiQueries,
-	ApiSuccessResponse,
+    ApiErrorResponses,
+    ApiQueries,
+    ApiSuccessResponse,
 } from "src/common/decorator";
 import { ZodValidationPipe } from "src/common/pipes";
 import { ServicePersonnelService } from "./service-personnel.service";
-import { AuthGuard } from "../auth/auth.guard";
+import z from "zod/v4";
 
 @ApiTags("服务人员管理")
 @Controller("service-personnel")
 export class ServicePersonnelController {
-	constructor(
-		private readonly servicePersonnelService: ServicePersonnelService,
-	) {}
+    constructor(
+        private readonly servicePersonnelService: ServicePersonnelService,
+    ) { }
 
-    @UseGuards(AuthGuard)
-	@Get("search")
-	@UsePipes(new ZodValidationPipe(ServicePersonnelFilterRequestSchema))
-	@ApiOperation({
-		summary: "智能筛选服务人员",
-		description: `
+    @Get("search")
+    @UsePipes(new ZodValidationPipe(ServicePersonnelFilterRequestSchema))
+    @ApiOperation({
+        summary: "智能筛选服务人员",
+        description: `
 根据地理位置、价格区间、服务类型等条件智能匹配服务人员。
 
 **核心功能：**
@@ -53,20 +53,44 @@ export class ServicePersonnelController {
 - 实时工作时间匹配
 - 综合评分排序（未来支持）
         `,
-	})
-	@ApiQueries(ServicePersonnelFilterRequestSchema)
-	@ApiSuccessResponse(ServicePersonnelFilterResponseSchema, {
-		description: "成功获取匹配的服务人员列表",
-		isPaginated: true,
-	})
-	@ApiErrorResponses()
-	async searchPersonnel(
-		@Query() query: ServicePersonnelFilterRequest,
-		@Req() req: Request,
-	) {
-		return await this.servicePersonnelService.findMatchedPersonnel({
-			...query,
-			userId: req.user.id,
-		});
-	}
+    })
+    @ApiQueries(ServicePersonnelFilterRequestSchema)
+    @ApiSuccessResponse(ServicePersonnelFilterResponseSchema, {
+        description: "成功获取匹配的服务人员列表",
+        isPaginated: true,
+    })
+    @ApiErrorResponses()
+    async searchPersonnel(
+        @Query() query: ServicePersonnelFilterRequest,
+        @Req() req: Request,
+    ) {
+        return await this.servicePersonnelService.findMatchedPersonnel({
+            ...query,
+        });
+    }
+
+    @Get("getServiceDetails")
+    @ApiErrorResponses()
+    @ApiOperation({
+        summary: "获取服务人员的具体服务详情",
+        description: `
+根据服务人员ID和服务ID，获取该服务人员提供的具体服务详情，包括服务描述、价格、可用时间等信息。
+        `,
+    })
+    @UsePipes(new ZodValidationPipe(ServicePersonnelDetailsQuerySchema))
+    @ApiQueries(ServicePersonnelDetailsQuerySchema)
+    @ApiSuccessResponse(ServiceDetailsSchema, {
+        description: "服务详情",
+    })
+    async getServiceDetails(
+        @Query() query: {
+            serviceId: string;
+            personnelId: string;
+        },
+    ) {
+        return await this.servicePersonnelService.getPersonnelServiceDetails({
+            personnelId: query.personnelId,
+            serviceId: query.serviceId,
+        });
+    }
 }

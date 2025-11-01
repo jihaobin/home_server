@@ -81,7 +81,7 @@ export class AddressController {
         return this.addressService.findAll(query);
     }
 
-	@UsePipes(new ZodValidationPipe(ReverseGeocodeRequestSchema))
+    @UsePipes(new ZodValidationPipe(ReverseGeocodeRequestSchema, "请求参数验证失败", false))
     @ApiOperation({
         summary: '地址逆解析服务',
         description: '根据经纬度获取详细地址信息',
@@ -97,7 +97,7 @@ export class AddressController {
         );
     }
 
-	@UsePipes(new ZodValidationPipe(SuggestionRequestSchema))
+    @UsePipes(new ZodValidationPipe(SuggestionRequestSchema, "请求参数验证失败", false))
     @Get('suggestion')
     @ApiOperation({
         summary: '地址建议服务',

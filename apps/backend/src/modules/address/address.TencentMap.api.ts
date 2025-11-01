@@ -1,27 +1,27 @@
-import { fetch } from "../../lib/tencent-map-api-client";
-import { z } from "zod/v4";
 import {
 	BadRequestException,
 	InternalServerErrorException,
 } from "@nestjs/common";
 import {
-	ReverseGeocodeRequest,
-	ReverseGeocodeResponse,
+    type DistrictSearchRequest,
+    type DistrictSearchResponse,
+    DistrictSearchResponseSchema,
+    type ExploreRequest,
+    type ExploreResponse,
+    ExploreResponseSchema,
+    type GeocodeRequest,
+    type GeocodeResponse,
+    GeocodeResponseSchema,
+    type PoiOptionsSchema,
+    type ReverseGeocodeRequest,
+    type ReverseGeocodeResponse,
 	ReverseGeocodeResponseSchema,
-	PoiOptionsSchema,
-	SuggestionRequest,
-	SuggestionResponse,
-	SuggestionResponseSchema,
-	GeocodeResponseSchema,
-	DistrictSearchRequest,
-	DistrictSearchResponse,
-	DistrictSearchResponseSchema,
-	GeocodeRequest,
-	GeocodeResponse,
-	ExploreRequest,
-	ExploreResponse,
-	ExploreResponseSchema,
+    type SuggestionRequest,
+    type SuggestionResponse,
+    SuggestionResponseSchema,
 } from "@repo/types";
+import { z } from "zod/v4";
+import { fetch } from "../../lib/tencent-map-api-client";
 
 // 腾讯地图API错误类型
 interface TencentMapError {
@@ -88,7 +88,7 @@ export class TencentReverseGeocodeService {
 							region: params.region,
 						}),
 						...(params.region_fix && {
-							region_fix: params.region_fix,
+                            region_fix: params.region_fix.toString(),
 						}),
 						...(params.location && {
 							location: params.location,
@@ -402,7 +402,7 @@ export class TencentReverseGeocodeService {
 				result: response.result.flat(),
 			};
 			if (response.status !== 0) {
-				const error = response as TencentMapError;
+                const error = response as unknown as TencentMapError;
 				throw new BadRequestException(
 					`腾讯地图API错误: ${error.message} (状态码: ${error.status})`,
 					{

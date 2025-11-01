@@ -12,6 +12,7 @@ import { CacheModule, CacheType } from "./common/cache";
 import { ExceptionsModule } from "./common/exceptions";
 import { InterceptorsModule } from "./common/interceptors";
 import { ModulesModule } from "./modules/modules.module";
+import { ScheduleModule } from "@nestjs/schedule";
 
 @Module({
 	imports: [
@@ -23,7 +24,7 @@ import { ModulesModule } from "./modules/modules.module";
 		}),
 		// 日志模块
 		LoggerModule.forRoot({
-			appName: "cow-course-api",
+            appName: "dingdong-service-backend",
 			isDevelopment: process.env.NODE_ENV !== "production",
 			defaultLevel:
 				process.env.NODE_ENV !== "production" ? LogLevel.DEBUG : LogLevel.INFO,
@@ -71,6 +72,8 @@ import { ModulesModule } from "./modules/modules.module";
 		AuthModule.forRoot({
 			disableExceptionFilter: true,
 		}),
+        // 定时器模块
+        ScheduleModule.forRoot(),
 
 		// 业务模块
 		ModulesModule,

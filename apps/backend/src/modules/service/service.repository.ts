@@ -195,7 +195,7 @@ export class ServiceRepository {
 	}
 
 	/**
-	 * 获取服务项目列表（支持分页和筛选）
+	 * 获取服务项目列表（以分类为单位，支持分页和筛选）
 	 */
 	async getServices({
 		categoryId,
@@ -208,95 +208,99 @@ export class ServiceRepository {
 		sortBy = "createdAt",
 		sortOrder = "desc",
 	}: ServiceListRequest) {
-		// 构建查询条件
-		const conditions: SQL[] = [];
+        // 构建分类查询条件
+        const categoryConditions: SQL[] = [eq(serviceCategories.isActive, true)];
 
 		if (categoryId) {
-			conditions.push(eq(services.categoryId, categoryId));
+            categoryConditions.push(eq(serviceCategories.id, categoryId));
 		}
+
+        const categoryWhereCondition =
+            categoryConditions.length > 0 ? and(...categoryConditions) : undefined;
+
+        // 先查询所有符合条件的分类
+        const allCategories = await this.db
+            .select()
+            .from(serviceCategories)
+            .where(categoryWhereCondition);
+
+        // 构建服务查询条件
+        const serviceConditions: SQL[] = [];
 
 		if (keyword) {
 			// 使用PGroonga全文搜索
 			const searchCondition = sql`${services.name} &@~ ${keyword} OR ${services.description} &@~ ${keyword}`;
-			conditions.push(searchCondition);
+            serviceConditions.push(searchCondition);
 		}
 
-		if (minPrice !== undefined) {
-			conditions.push(gte(services.basePrice, minPrice.toString()));
-		}
-
-		if (maxPrice !== undefined) {
-			conditions.push(lte(services.basePrice, maxPrice.toString()));
-		}
+        // 注意：minPrice和maxPrice筛选已移除，因为价格现在存储在servicePersonnelPricing表中
+        // 如果需要按价格筛选，需要join servicePersonnelPricing表
 
 		if (isActive !== undefined) {
-			conditions.push(eq(services.isActive, isActive));
+            serviceConditions.push(eq(services.isActive, isActive));
 		}
 
-		const whereCondition =
-			conditions.length > 0 ? and(...conditions) : undefined;
+        const serviceWhereCondition =
+            serviceConditions.length > 0 ? and(...serviceConditions) : undefined;
 
-		// 计算总数
-		const totalResult = await this.db
-			.select({ count: count() })
+        // 查询所有符合条件的服务
+        const allServices = await this.db
+            .select()
 			.from(services)
-			.leftJoin(
-				serviceCategories,
-				eq(services.categoryId, serviceCategories.id),
-			)
-			.where(whereCondition);
+            .where(serviceWhereCondition);
 
-		const total = totalResult[0].count;
-		const offset = (page - 1) * limit;
+        // 将服务按分类ID分组
+        const servicesByCategory = new Map<string, typeof allServices>();
+        for (const service of allServices) {
+            const categoryId = service.categoryId;
+            if (!servicesByCategory.has(categoryId)) {
+                servicesByCategory.set(categoryId, []);
+            }
+            servicesByCategory.get(categoryId)!.push(service);
+        }
 
-		// 构建排序
-		const orderBy = sortOrder === "asc" ? asc : desc;
-		let sortColumn: PgColumn;
-		switch (sortBy) {
-			case "name":
-				sortColumn = services.name;
-				break;
-			case "basePrice":
-				sortColumn = services.basePrice;
-				break;
-			case "createdAt":
-			default:
-				sortColumn = services.name;
-				break;
-		}
+        // 构建分类带服务的结果，只保留有服务的分类
+        const categoriesWithServices = allCategories
+            .filter((category) => servicesByCategory.has(category.id))
+            .map((category) => {
+                const categoryServices = servicesByCategory.get(category.id) || [];
 
-		// 查询数据
-		const items = await this.db
-			.select({
-				id: services.id,
-				categoryId: services.categoryId,
-				name: services.name,
-				description: services.description,
-				basePrice: services.basePrice,
-				currency: services.currency,
-				estimatedDurationMinutes: services.estimatedDurationMinutes,
-				isActive: services.isActive,
-				category: {
-					id: serviceCategories.id,
-					parentId: serviceCategories.parentId,
-					name: serviceCategories.name,
-					description: serviceCategories.description,
-					dep: serviceCategories.dep,
-					isActive: serviceCategories.isActive,
-				},
-			})
-			.from(services)
-			.leftJoin(
-				serviceCategories,
-				eq(services.categoryId, serviceCategories.id),
-			)
-			.where(whereCondition)
-			.orderBy(orderBy(sortColumn))
-			.limit(limit)
-			.offset(offset);
+                // 根据sortBy和sortOrder对服务进行排序
+                const sortedServices = [...categoryServices].sort((a, b) => {
+                    let comparison = 0;
+                    switch (sortBy) {
+                        case "name":
+                            comparison = a.name.localeCompare(b.name);
+                            break;
+                        case "basePrice":
+                            // 注意：basePrice排序已移除，因为价格现在在servicePersonnelPricing表中
+                            // 如果需要按价格排序，需要join并获取价格数据
+                            comparison = a.name.localeCompare(b.name);
+                            break;
+                        case "createdAt":
+                        default:
+                            comparison = a.name.localeCompare(b.name);
+                            break;
+                    }
+                    return sortOrder === "asc" ? comparison : -comparison;
+                });
+
+                return {
+                    ...category,
+                    children: sortedServices,
+                };
+            });
+
+        // 应用分页
+        const total = categoriesWithServices.length;
+        const offset = (page - 1) * limit;
+        const paginatedItems = categoriesWithServices.slice(
+            offset,
+            offset + limit,
+        );
 
 		return {
-			items: items as ServiceDetail[],
+            items: paginatedItems,
 			total,
 			page,
 			limit,
@@ -305,6 +309,8 @@ export class ServiceRepository {
 
 	/**
 	 * 根据ID获取服务项目详情
+	 * 注意：basePrice和estimatedDurationMinutes已从service表移除
+	 * 这些信息现在存储在servicePersonnelPricing表中
 	 */
 	async getServiceById(id: string): Promise<ServiceDetail | null> {
 		const [service] = await this.db
@@ -313,9 +319,8 @@ export class ServiceRepository {
 				categoryId: services.categoryId,
 				name: services.name,
 				description: services.description,
-				basePrice: services.basePrice,
-				currency: services.currency,
-				estimatedDurationMinutes: services.estimatedDurationMinutes,
+                // basePrice和estimatedDurationMinutes已从service表移除
+                currency: services.currency,
 				isActive: services.isActive,
 				category: {
 					id: serviceCategories.id,
@@ -333,7 +338,7 @@ export class ServiceRepository {
 			)
 			.where(eq(services.id, id));
 
-		return service || null;
+        return service as ServiceDetail | null || null;
 	}
 
 	/**
@@ -401,6 +406,7 @@ export class ServiceRepository {
 
 	/**
 	 * 获取服务统计信息
+	 * 注意：平均价格计算已移除，因为价格现在存储在servicePersonnelPricing表中
 	 */
 	async getServiceStats(): Promise<ServiceStats> {
 		// 总服务数量
@@ -420,16 +426,14 @@ export class ServiceRepository {
 			.from(serviceCategories)
 			.where(eq(serviceCategories.isActive, true));
 
-		// 平均价格
-		const avgPriceResult = await this.db.execute(
-			sql`SELECT AVG(CAST(${services.basePrice} AS DECIMAL)) as avg_price FROM ${services} WHERE ${services.isActive} = true`,
-		);
+        // 平均价格计算已移除，因为价格现在在servicePersonnelPricing表中
+        // 如果需要平均价格，应该从servicePersonnelPricing表计算
 
 		return {
 			totalServices: totalServicesResult[0].count,
 			activeServices: activeServicesResult[0].count,
 			categoriesCount: categoriesCountResult[0].count,
-			averagePrice: Number(avgPriceResult.rows[0]?.avg_price || 0),
+            // averagePrice: 0, // 暂时返回0，需要从servicePersonnelPricing表计算
 		};
 	}
 }
