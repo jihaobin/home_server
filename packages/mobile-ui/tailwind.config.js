@@ -1,4 +1,4 @@
-const { hairlineWidth } = require("nativewind/theme");
+const { hairlineWidth, platformSelect } = require("nativewind/theme");
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -64,14 +64,18 @@ module.exports = {
                 },
             },
             borderRadius: {
+                xl: "calc(var(--radius) + 4px)",
                 lg: "var(--radius)",
                 md: "calc(var(--radius) - 2px)",
                 sm: "calc(var(--radius) - 4px)",
             },
             fontFamily: {
-                sans: ["var(--font-sans)"],
-                serif: ["var(--font-serif)"],
-                mono: ["var(--font-mono)"],
+                example: ["ExampleFontFamily"],
+                system: platformSelect({
+                    ios: "AR One Sans",
+                    android: "AR One Sans",
+                    default: "AR One Sans",
+                }),
             },
             borderWidth: {
                 hairline: hairlineWidth(),
