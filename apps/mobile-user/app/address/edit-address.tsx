@@ -1,30 +1,32 @@
-import React, { useEffect, useRef } from "react";
-import { View, ScrollView, Pressable } from "react-native";
-import { router } from "expo-router";
-import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Text } from "@repo/mobile-ui/components/ui/text";
 import { Button } from "@repo/mobile-ui/components/ui/button";
 import { Input } from "@repo/mobile-ui/components/ui/input";
 import { RadioGroup } from "@repo/mobile-ui/components/ui/radio-group";
-import { ArrowLeft } from "@repo/mobile-ui/lib/icons/ArrowLeft";
+import { Text } from "@repo/mobile-ui/components/ui/text";
 import { ChevronRight } from "@repo/mobile-ui/lib/icons/ChevronRight";
+import { MapPin } from "@repo/mobile-ui/lib/icons/MapPin";
 import { CreateUserAddressSchema, UpdateUserAddressSchema } from "@repo/types";
-import { SafeAreaView } from "react-native-safe-area-context";
-import useLocation from "@/hooks/useLocation";
-import { SelectAddress, useAddressEditStore } from "@/stores/address-store";
-import { useShallow } from "zustand/react/shallow";
-import { useSession } from "@/hooks/useAuth";
-import { UseCreateAddress } from "@/hooks/api/address";
+import { router, useFocusEffect, useNavigation } from "expo-router";
+import { useEffect, useRef } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { Pressable, ScrollView, View } from "react-native";
 import { toast } from "sonner-native";
+import { useShallow } from "zustand/react/shallow";
+import { UseCreateAddress } from "@repo/hooks/api/address";
+import useLocation from "@repo/hooks/useLocation";
+import {
+    type SelectAddress,
+    useAddressEditStore,
+} from "@/stores/address-store";
+import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 
 // 性别选择组件 - 使用RadioGroup但保持原有按钮样式
 function GenderSelection({
     value,
     onValueChange,
 }: {
-    value: boolean;
-    onValueChange: (value: boolean) => void;
+        value: boolean;
+        onValueChange: (value: boolean) => void;
 }) {
     return (
         <RadioGroup
@@ -62,11 +64,11 @@ function GenderButton({
     return (
         <Pressable
             onPress={onPress}
-            className={`px-4 py-2 rounded-full ${isSelected ? "bg-primary" : "border border-border bg-background"
+            className={`px-5 py-2 rounded-full ${isSelected ? "bg-primary shadow-sm" : "border-2 border-border bg-background"
                 }`}
         >
             <Text
-                className={`text-sm ${isSelected ? "text-white" : "text-muted-foreground"}`}
+                className={`text-sm font-medium ${isSelected ? "text-primary-foreground" : "text-muted-foreground"}`}
             >
                 {label}
             </Text>
@@ -82,12 +84,14 @@ export default function EditAddressScreen() {
         useShallow((state) => state.isManualSelect),
     );
     const { setSelectedAddress, reset } = useAddressEditStore();
-    const { data: session } = useSession();
+    const { session } = useSession();
 
     const { mutate: createAddress, isPending: createAddressLoading } =
         UseCreateAddress();
 
     const isEditMode = useRef<boolean>(!!selectedAddress);
+
+    const navigation = useNavigation();
 
     // 获取用户当前定位
     const { location, handleStopLocation } = useLocation({
@@ -171,10 +175,6 @@ export default function EditAddressScreen() {
         };
     }, []);
 
-    const handleGoBack = () => {
-        router.back();
-    };
-
     const handleSelectServiceAddress = () => {
         // 导航到地址选择页面
         router.push("./select-address");
@@ -182,7 +182,7 @@ export default function EditAddressScreen() {
 
     const onSubmit = async (data: any) => {
         console.log("创建地址:", data);
-        console.log(isEditMode)
+        console.log(isEditMode);
         try {
             if (isEditMode.current) {
             } else {
@@ -205,105 +205,100 @@ export default function EditAddressScreen() {
         }
     };
 
+    useFocusEffect(() => {
+        navigation.setOptions({
+            title: isEditMode.current ? "编辑地址" : "添加地址",
+            headerShown: true,
+        });
+    });
+
     return (
-        <SafeAreaView className="flex-1 bg-background">
-            {/* 头部导航 */}
-            <View className="flex-row items-center px-4 py-3 border-b border-border">
-                <Pressable onPress={handleGoBack} className="mr-4">
-                    <ArrowLeft size={24} className="text-foreground" />
-                </Pressable>
-                <Text className="text-lg font-medium text-foreground">
-                    {isEditMode ? "编辑地址" : "添加地址"}
-                </Text>
-            </View>
-
-            <ScrollView className="flex-1 px-4">
-                <View className="py-6 space-y-6">
-                    {/* 服务地址 */}
-                    <Pressable onPress={handleSelectServiceAddress}>
-                        <View className="flex-row items-center justify-between py-4 border-b border-border">
-                            <View className="flex-row items-center flex-1">
-                                <Text className="text-base text-foreground mr-4">
-                                    服务地址
-                                </Text>
-                                <Text
-                                    className={`text-base flex-1 ${currentAddressText === "请选择服务地址"
-                                        ? "text-muted-foreground"
-                                        : "text-foreground"
-                                        }`}
-                                >
-                                    {currentAddressText}
-                                </Text>
+        <View className="flex-1 bg-background">
+            <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+                <View className="py-6 space-y-1 px-4">
+                    {/* 地址信息卡片 */}
+                    <View className="bg-card rounded-2xl shadow-sm border border-border/50 overflow-hidden mb-4">
+                        {/* 服务地址 */}
+                        <Pressable onPress={handleSelectServiceAddress}>
+                            <View className="flex-row items-center justify-between p-4 border-b border-border/50 bg-background/50">
+                                <View className="flex-row items-center flex-1">
+                                    <View className="bg-primary/10 rounded-full p-2 mr-3">
+                                        <MapPin size={18} className="text-primary" />
+                                    </View>
+                                    <View className="flex-1">
+                                        <Text className="text-xs text-muted-foreground mb-1 font-medium">
+                                            服务地址
+                                        </Text>
+                                        <Text
+                                            className={`text-sm ${currentAddressText === "请选择服务地址"
+                                                ? "text-muted-foreground"
+                                                : "text-foreground font-medium"
+                                                }`}
+                                            numberOfLines={1}
+                                        >
+                                            {currentAddressText}
+                                        </Text>
+                                    </View>
+                                </View>
+                                <ChevronRight size={20} className="text-muted-foreground ml-2" />
                             </View>
-                            <ChevronRight
-                                size={20}
-                                className="text-muted-foreground"
-                            />
-                        </View>
-                    </Pressable>
+                        </Pressable>
 
-                    {/* 门牌号 */}
-                    <View>
-                        <View className="flex-row items-center py-4 border-b border-border">
-                            <Text className="text-base text-foreground mr-4 w-16">
+                        {/* 门牌号 */}
+                        <View className="p-4 border-b border-border/50">
+                            <Text className="text-xs text-muted-foreground mb-2 font-medium">
                                 门牌号
                             </Text>
-                            <View className="flex-1">
-                                <Controller
-                                    control={control}
-                                    name="homeNumber"
-                                    render={({
-                                        field: { onChange, onBlur, value },
-                                    }) => (
-                                        <Input
-                                            placeholder="详细地址，例如：A座102室"
-                                            value={value || ""}
-                                            onChangeText={onChange}
-                                            onBlur={onBlur}
-                                            className="border-0 bg-transparent px-0 text-muted-foreground"
-                                        />
-                                    )}
-                                />
-                            </View>
+                            <Controller
+                                control={control}
+                                name="homeNumber"
+                                render={({ field: { onChange, onBlur, value } }) => (
+                                    <Input
+                                        placeholder="详细地址，例如：A座102室"
+                                        value={value || ""}
+                                        onChangeText={onChange}
+                                        onBlur={onBlur}
+                                        className="border-0 bg-background/50 px-3 rounded-xl text-foreground"
+                                    />
+                                )}
+                            />
+                            {errors.homeNumber && (
+                                <Text className="text-destructive text-xs mt-1 ml-1">
+                                    {typeof errors.homeNumber === "string"
+                                        ? errors.homeNumber
+                                        : (errors.homeNumber as any)?.message || "输入有误"}
+                                </Text>
+                            )}
                         </View>
-                        {errors.homeNumber && (
-                            <Text className="text-red-500 text-sm mt-1">
-                                {typeof errors.homeNumber === "string"
-                                    ? errors.homeNumber
-                                    : (errors.homeNumber as any)?.message ||
-                                    "输入有误"}
-                            </Text>
-                        )}
                     </View>
 
-                    {/* 联系人 */}
-                    <View>
-                        <View className="flex-row items-center py-4 border-b border-border">
-                            <Text className="text-base text-foreground mr-4 w-16">
+                    {/* 联系人信息卡片 */}
+                    <View className="bg-card rounded-2xl shadow-sm border border-border/50 overflow-hidden mb-4">
+                        {/* 联系人 */}
+                        <View className="p-4 border-b border-border/50">
+                            <Text className="text-xs text-muted-foreground mb-2 font-medium">
                                 联系人
                             </Text>
-                            <View className="flex-1 flex-row items-center">
-                                <Controller
-                                    control={control}
-                                    name="recipientName"
-                                    render={({
-                                        field: { onChange, onBlur, value },
-                                    }) => (
-                                        <Input
-                                            placeholder="收件人姓名"
-                                            value={value || ""}
-                                            onChangeText={onChange}
-                                            onBlur={onBlur}
-                                            className="border-0 bg-transparent px-0 flex-1 mr-4"
-                                        />
-                                    )}
-                                />
+                            <View className="flex-row items-center justify-between">
+                                <View className="flex-1 mr-3">
+                                    <Controller
+                                        control={control}
+                                        name="recipientName"
+                                        render={({ field: { onChange, onBlur, value } }) => (
+                                            <Input
+                                                placeholder="收件人姓名"
+                                                value={value || ""}
+                                                onChangeText={onChange}
+                                                onBlur={onBlur}
+                                                className="border-0 bg-background/50 px-3 rounded-xl"
+                                            />
+                                        )}
+                                    />
+                                </View>
                                 <Controller
                                     control={control}
                                     name="sex"
-                                    render={({
-                                        field: { onChange, value },
-                                    }) => (
+                                    render={({ field: { onChange, value } }) => (
                                         <GenderSelection
                                             value={value ?? true}
                                             onValueChange={onChange}
@@ -311,97 +306,98 @@ export default function EditAddressScreen() {
                                     )}
                                 />
                             </View>
+                            {errors.recipientName && (
+                                <Text className="text-destructive text-xs mt-1 ml-1">
+                                    {typeof errors.recipientName === "string"
+                                        ? errors.recipientName
+                                        : (errors.recipientName as any)?.message || "输入有误"}
+                                </Text>
+                            )}
                         </View>
-                        {errors.recipientName && (
-                            <Text className="text-red-500 text-sm mt-1">
-                                {typeof errors.recipientName === "string"
-                                    ? errors.recipientName
-                                    : (errors.recipientName as any)?.message ||
-                                    "输入有误"}
-                            </Text>
-                        )}
-                    </View>
 
-                    {/* 联系电话 */}
-                    <View>
-                        <View className="flex-row items-center py-4 border-b border-border">
-                            <Text className="text-base text-foreground mr-4">
+                        {/* 联系电话 */}
+                        <View className="p-4">
+                            <Text className="text-xs text-muted-foreground mb-2 font-medium">
                                 联系电话
                             </Text>
-                            <View className="flex-1 flex-row items-center">
-                                <Controller
-                                    control={control}
-                                    name="recipientPhone"
-                                    render={({
-                                        field: { onChange, onBlur, value },
-                                    }) => (
-                                        <Input
-                                            placeholder="手机号码"
-                                            value={value || ""}
-                                            onChangeText={onChange}
-                                            onBlur={onBlur}
-                                            keyboardType="phone-pad"
-                                            className="border-0 bg-transparent px-0 flex-1 mr-4"
-                                        />
-                                    )}
-                                />
-                                <Pressable className="px-3 py-1 border border-border rounded">
-                                    <Text className="text-sm text-foreground">
-                                        通讯录
-                                    </Text>
+                            <View className="flex-row items-center">
+                                <View className="flex-1 mr-3">
+                                    <Controller
+                                        control={control}
+                                        name="recipientPhone"
+                                        render={({ field: { onChange, onBlur, value } }) => (
+                                            <Input
+                                                placeholder="手机号码"
+                                                value={value || ""}
+                                                onChangeText={onChange}
+                                                onBlur={onBlur}
+                                                keyboardType="phone-pad"
+                                                className="border-0 bg-background/50 px-3 rounded-xl"
+                                            />
+                                        )}
+                                    />
+                                </View>
+                                <Pressable className="px-4 py-2.5 border-2 border-border rounded-xl bg-background active:bg-muted">
+                                    <Text className="text-sm font-medium text-foreground">通讯录</Text>
                                 </Pressable>
                             </View>
+                            {errors.recipientPhone && (
+                                <Text className="text-destructive text-xs mt-1 ml-1">
+                                    {typeof errors.recipientPhone === "string"
+                                        ? errors.recipientPhone
+                                        : (errors.recipientPhone as any)?.message || "输入有误"}
+                                </Text>
+                            )}
                         </View>
-                        {errors.recipientPhone && (
-                            <Text className="text-red-500 text-sm mt-1">
-                                {typeof errors.recipientPhone === "string"
-                                    ? errors.recipientPhone
-                                    : (errors.recipientPhone as any)?.message ||
-                                    "输入有误"}
-                            </Text>
-                        )}
                     </View>
 
-                    {/* 设为默认地址 */}
-                    <View className="flex-row items-center justify-between py-4">
-                        <Text className="text-base text-foreground">
-                            设为默认地址
-                        </Text>
-                        <Controller
-                            control={control}
-                            name="isDefault"
-                            render={({ field: { onChange, value } }) => (
-                                <Pressable
-                                    onPress={() => onChange(!value)}
-                                    className={`w-12 h-6 rounded-full ${value ? "bg-primary" : "bg-muted"
-                                        } flex-row items-center`}
-                                >
-                                    <View
-                                        className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${value
-                                            ? "translate-x-6"
-                                            : "translate-x-0.5"
-                                            }`}
-                                    />
-                                </Pressable>
-                            )}
-                        />
+                    {/* 设为默认地址卡片 */}
+                    <View className="bg-card rounded-2xl shadow-sm border border-border/50 overflow-hidden p-4">
+                        <View className="flex-row items-center justify-between">
+                            <View>
+                                <Text className="text-base font-semibold text-foreground mb-1">
+                                    设为默认地址
+                                </Text>
+                                <Text className="text-xs text-muted-foreground">
+                                    下次下单时自动使用此地址
+                                </Text>
+                            </View>
+                            <Controller
+                                control={control}
+                                name="isDefault"
+                                render={({ field: { onChange, value } }) => (
+                                    <Pressable
+                                        onPress={() => onChange(!value)}
+                                        className={`w-14 h-8 rounded-full ${value ? "bg-primary" : "bg-muted"
+                                            } flex-row items-center px-1 shadow-sm`}
+                                    >
+                                        <View
+                                            className={`w-6 h-6 rounded-full bg-card shadow-md transition-transform ${value ? "translate-x-6" : "translate-x-0"
+                                                }`}
+                                        />
+                                    </Pressable>
+                                )}
+                            />
+                        </View>
                     </View>
                 </View>
+
+                {/* 底部安全区域 */}
+                <View className="h-24" />
             </ScrollView>
 
-            {/* 底部保存按钮 */}
-            <View className="p-4 bg-background">
+            {/* 底部保存按钮 - 固定在底部 */}
+            <View className="p-4 bg-background/95 backdrop-blur-sm border-t border-border/50">
                 <Button
                     onPress={handleSubmit(onSubmit)}
                     disabled={createAddressLoading}
-                    className="h-12 rounded-lg"
+                    className="h-12 rounded-xl shadow-sm"
                 >
-                    <Text className="text-white text-base font-medium">
+                    <Text className="text-primary-foreground text-base font-semibold">
                         {createAddressLoading ? "保存中..." : "保存"}
                     </Text>
                 </Button>
             </View>
-            <Text>{JSON.stringify(errors)}</Text>
-        </SafeAreaView>
+        </View>
     );
 }

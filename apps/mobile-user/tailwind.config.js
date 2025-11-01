@@ -1,3 +1,12 @@
-import config from "@repo/mobile-ui/tailwind"
+import baseConfig from "@repo/mobile-ui/tailwind";
 
-export default config
+/** @type {import('tailwindcss').Config} */
+export default {
+    ...baseConfig,
+    content: [
+        "./app/**/*.{ts,tsx}",
+        "./components/**/*.{ts,tsx}",
+        "./src/**/*.{ts,tsx}",
+        "../../packages/mobile-ui/src/components/**/*.{ts,tsx}",
+    ],
+};
