@@ -1,33 +1,40 @@
-import { Controller, Get, Query, Req, UseGuards, UsePipes } from "@nestjs/common";
-import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+    Controller,
+    Get,
+    Query,
+    Req,
+    UseGuards,
+    UsePipes,
+} from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
     ServiceDetailsSchema,
     ServicePersonnelDetailsQuerySchema,
     type ServicePersonnelFilterRequest,
     ServicePersonnelFilterRequestSchema,
     ServicePersonnelFilterResponseSchema,
-} from "@repo/types";
-import { Request } from "express";
+} from '@repo/types';
+import { Request } from 'express';
 import {
     ApiErrorResponses,
     ApiQueries,
     ApiSuccessResponse,
-} from "src/common/decorator";
-import { ZodValidationPipe } from "src/common/pipes";
-import { ServicePersonnelService } from "./service-personnel.service";
-import z from "zod/v4";
+} from 'src/common/decorator';
+import { ZodValidationPipe } from 'src/common/pipes';
+import { ServicePersonnelService } from './service-personnel.service';
+import z from 'zod/v4';
 
-@ApiTags("服务人员管理")
-@Controller("service-personnel")
+@ApiTags('服务人员管理')
+@Controller('service-personnel')
 export class ServicePersonnelController {
     constructor(
         private readonly servicePersonnelService: ServicePersonnelService,
-    ) { }
+    ) {}
 
-    @Get("search")
+    @Get('search')
     @UsePipes(new ZodValidationPipe(ServicePersonnelFilterRequestSchema))
     @ApiOperation({
-        summary: "智能筛选服务人员",
+        summary: '智能筛选服务人员',
         description: `
 根据地理位置、价格区间、服务类型等条件智能匹配服务人员。
 
@@ -56,7 +63,7 @@ export class ServicePersonnelController {
     })
     @ApiQueries(ServicePersonnelFilterRequestSchema)
     @ApiSuccessResponse(ServicePersonnelFilterResponseSchema, {
-        description: "成功获取匹配的服务人员列表",
+        description: '成功获取匹配的服务人员列表',
         isPaginated: true,
     })
     @ApiErrorResponses()
@@ -69,10 +76,10 @@ export class ServicePersonnelController {
         });
     }
 
-    @Get("getServiceDetails")
+    @Get('getServiceDetails')
     @ApiErrorResponses()
     @ApiOperation({
-        summary: "获取服务人员的具体服务详情",
+        summary: '获取服务人员的具体服务详情',
         description: `
 根据服务人员ID和服务ID，获取该服务人员提供的具体服务详情，包括服务描述、价格、可用时间等信息。
         `,
@@ -80,13 +87,10 @@ export class ServicePersonnelController {
     @UsePipes(new ZodValidationPipe(ServicePersonnelDetailsQuerySchema))
     @ApiQueries(ServicePersonnelDetailsQuerySchema)
     @ApiSuccessResponse(ServiceDetailsSchema, {
-        description: "服务详情",
+        description: '服务详情',
     })
     async getServiceDetails(
-        @Query() query: {
-            serviceId: string;
-            personnelId: string;
-        },
+        @Query() query: { serviceId: string; personnelId: string },
     ) {
         return await this.servicePersonnelService.getPersonnelServiceDetails({
             personnelId: query.personnelId,

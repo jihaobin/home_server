@@ -1,3 +1,3 @@
-export * from "./json.formatter";
-export * from "./simple.formatter";
-export * from "./detailed.formatter";
+export * from './json.formatter';
+export * from './simple.formatter';
+export * from './detailed.formatter';

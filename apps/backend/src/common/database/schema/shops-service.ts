@@ -1,20 +1,20 @@
-import { relations, sql } from "drizzle-orm";
+import { relations, sql } from 'drizzle-orm';
 import {
-	boolean,
-	decimal,
-	geometry,
-	index,
-	integer,
-	pgTable,
-	text,
-	time,
-	timestamp,
-	uniqueIndex,
-	varchar,
-} from "drizzle-orm/pg-core";
+    boolean,
+    decimal,
+    geometry,
+    index,
+    integer,
+    pgTable,
+    text,
+    time,
+    timestamp,
+    uniqueIndex,
+    varchar,
+} from 'drizzle-orm/pg-core';
 
-import { createId, users } from ".";
-import { servicePersonnelSkills, services } from "./server";
+import { createId, users } from '.';
+import { servicePersonnelSkills, services } from './server';
 
 // =================================================================
 // 店铺与服务人员模块
@@ -88,119 +88,130 @@ import { servicePersonnelSkills, services } from "./server";
 
 // 服务人员表 (service_personnel)
 export const servicePersonnel = pgTable(
-	"service_personnel",
-	{
-		userId: varchar("user_id", { length: 255 })
-			.primaryKey()
-			.unique()
-			.references(() => users.id, { onDelete: "cascade" }), // 关联到 users 表的主键
-		// MVP阶段注释店铺关联字段
-		// shopId: varchar('shop_id', { length: 255 }).references(() => shops.id, {
-		//     onDelete: 'set null',
-		// }), // 所属店铺 ID，可以为空（表示独立服务人员）
-		bio: text("bio"), // 个人简介
-		province: varchar("province", { length: 100 }).notNull(), // 省份
-		district: varchar("district", { length: 100 }), // 市区
-		county: varchar("county", { length: 100 }), // 区县
-        detailedAddress: varchar("detailed_address", { length: 255 }), // 详细地址
-		geom: geometry("geom", {
-			type: "point",
-			mode: "tuple",
-			srid: 4326,
-		}).notNull(), // 地理位置（PostGIS Point 类型）
-		yearsOfExperience: integer("years_of_experience").default(0).notNull(), // 从业年限
-		workStartTime: time("work_start_time").notNull(), // 可工作开始时间
-		workEndTime: time("work_end_time").notNull(), // 可工作结束时间
-		isAvailable: boolean("is_available").default(true).notNull(), // 是否当前可接受派单
-		workDays: varchar("work_days", { length: 7 }).default("1234567").notNull(), // 工作日，1-7代表周一到周日
-		currentStatus: varchar("current_status", { length: 20 })
-			.default("available")
-			.notNull(), // 当前状态：available, busy, offline
-		lastActiveAt: timestamp("last_active_at", {
-			withTimezone: true,
-		})
-			.defaultNow()
-			.notNull(), // 最后活跃时间
-	},
-	(table) => [
-		// 可用服务人员索引 - 用于快速查找可接单的服务人员
-		index("idx_service_personnel_available")
-			.on(table.isAvailable, table.currentStatus, table.userId)
-			.where(sql`is_available = true AND current_status = 'available'`),
-		// 服务人员简介PGroonga全文搜索索引 - 仅为可用且有简介的服务人员建立索引
-		index("idx_service_personnel_bio_available")
-			.using("pgroonga", table.bio)
-			.where(sql`is_available = true AND bio IS NOT NULL`),
-		// 工作时间和状态索引 - 用于根据时间段和状态查找可用服务人员
-		index("idx_service_personnel_work_schedule")
-			.on(
-				table.workStartTime,
-				table.workEndTime,
-				table.workDays,
-				table.currentStatus,
-				table.isAvailable,
-			)
-			.where(sql`is_available = true AND current_status = 'available'`),
-		// 地理位置和服务半径索引 - 用于地域筛选和半径匹配
-		index("idx_service_personnel_location_radius")
-			.on(table.province, table.district, table.county, table.isAvailable)
-			.where(sql`is_available = true`),
-		// PostGIS地理位置空间索引 - 用于精确的地理位置查询
-		index("idx_service_personnel_geom")
-			.using("gist", table.geom)
-			.where(sql`geom IS NOT NULL AND is_available = true`),
-		// 最后活跃时间索引 - 用于查找活跃的服务人员
-		index("idx_service_personnel_active")
-			.on(table.lastActiveAt.desc(), table.currentStatus)
-			.where(sql`current_status != 'offline'`),
-	],
+    'service_personnel',
+    {
+        userId: varchar('user_id', { length: 255 })
+            .primaryKey()
+            .unique()
+            .references(() => users.id, { onDelete: 'cascade' }), // 关联到 users 表的主键
+        // MVP阶段注释店铺关联字段
+        // shopId: varchar('shop_id', { length: 255 }).references(() => shops.id, {
+        //     onDelete: 'set null',
+        // }), // 所属店铺 ID，可以为空（表示独立服务人员）
+        bio: text('bio'), // 个人简介
+        province: varchar('province', { length: 100 }).notNull(), // 省份
+        district: varchar('district', { length: 100 }), // 市区
+        county: varchar('county', { length: 100 }), // 区县
+        detailedAddress: varchar('detailed_address', { length: 255 }), // 详细地址
+        geom: geometry('geom', {
+            type: 'point',
+            mode: 'tuple',
+            srid: 4326,
+        }).notNull(), // 地理位置（PostGIS Point 类型）
+        yearsOfExperience: integer('years_of_experience').default(0).notNull(), // 从业年限
+        workStartTime: time('work_start_time').notNull(), // 可工作开始时间
+        workEndTime: time('work_end_time').notNull(), // 可工作结束时间
+        isAvailable: boolean('is_available').default(true).notNull(), // 是否当前可接受派单
+        workDays: varchar('work_days', { length: 7 })
+            .default('1234567')
+            .notNull(), // 工作日，1-7代表周一到周日
+        currentStatus: varchar('current_status', { length: 20 })
+            .default('available')
+            .notNull(), // 当前状态：available, busy, offline
+        lastActiveAt: timestamp('last_active_at', {
+            withTimezone: true,
+        })
+            .defaultNow()
+            .notNull(), // 最后活跃时间
+    },
+    (table) => [
+    // 可用服务人员索引 - 用于快速查找可接单的服务人员
+        index('idx_service_personnel_available')
+            .on(table.isAvailable, table.currentStatus, table.userId)
+            .where(sql`is_available = true AND current_status = 'available'`),
+        // 服务人员简介PGroonga全文搜索索引 - 仅为可用且有简介的服务人员建立索引
+        index('idx_service_personnel_bio_available')
+            .using('pgroonga', table.bio)
+            .where(sql`is_available = true AND bio IS NOT NULL`),
+        // 工作时间和状态索引 - 用于根据时间段和状态查找可用服务人员
+        index('idx_service_personnel_work_schedule')
+            .on(
+                table.workStartTime,
+                table.workEndTime,
+                table.workDays,
+                table.currentStatus,
+                table.isAvailable,
+            )
+            .where(sql`is_available = true AND current_status = 'available'`),
+        // 地理位置和服务半径索引 - 用于地域筛选和半径匹配
+        index('idx_service_personnel_location_radius')
+            .on(table.province, table.district, table.county, table.isAvailable)
+            .where(sql`is_available = true`),
+        // PostGIS地理位置空间索引 - 用于精确的地理位置查询
+        index('idx_service_personnel_geom')
+            .using('gist', table.geom)
+            .where(sql`geom IS NOT NULL AND is_available = true`),
+        // 最后活跃时间索引 - 用于查找活跃的服务人员
+        index('idx_service_personnel_active')
+            .on(table.lastActiveAt.desc(), table.currentStatus)
+            .where(sql`current_status != 'offline'`),
+    ],
 );
 
 // 服务人员定价表 (service_personnel_pricing) - MVP纯个人模式
 export const servicePersonnelPricing = pgTable(
-	"service_personnel_pricing",
-	{
-		id: varchar("id", { length: 255 })
-			.primaryKey()
-			.$default(() => createId())
-			.unique(),
-		userId: varchar("user_id", { length: 255 })
-			.notNull()
-			.references(() => servicePersonnel.userId, { onDelete: "cascade" }), // 服务人员ID
-        name: varchar("name", { length: 100 }).default(""), // 定价的的简单描述
-		serviceId: varchar("service_id", { length: 255 })
-			.notNull()
-			.references(() => services.id, { onDelete: "cascade" }), // 服务项目ID
-		price: decimal("price", { precision: 18, scale: 2 }).notNull(), // 个人定价
-		currency: varchar("currency", { length: 3 }).default("CNY").notNull(), // 币种代码
-		isActive: boolean("is_active").default(true).notNull(), // 定价是否有效
-		effectiveFrom: timestamp("effective_from", {
-			withTimezone: true,
-		}).defaultNow(), // 定价生效时间
-        estimatedDurationMinutes: integer("estimated_duration_minutes").notNull(), // 预计服务时长（分钟）
-		effectiveTo: timestamp("effective_to", { withTimezone: true }), // 定价失效时间
-		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
-		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().$onUpdateFn(() => new Date()),
-	},
-	(table) => [
-        uniqueIndex("uq_personnel_pricing_user_service").on(table.userId, table.serviceId),
-		// 服务人员服务定价查询索引
-		index("idx_personnel_pricing_user_service")
-			.on(table.userId, table.serviceId, table.isActive)
-			.where(sql`is_active = true`),
-		// 服务项目定价查询索引 - 用于查找某个服务的所有定价
-		index("idx_personnel_pricing_service_price")
-			.on(table.serviceId, table.price, table.isActive)
-			.where(sql`is_active = true`),
-		// 定价生效时间索引
-		index("idx_personnel_pricing_effective")
-			.on(table.effectiveFrom, table.effectiveTo, table.isActive)
-			.where(sql`is_active = true`),
+    'service_personnel_pricing',
+    {
+        id: varchar('id', { length: 255 })
+            .primaryKey()
+            .$default(() => createId())
+            .unique(),
+        userId: varchar('user_id', { length: 255 })
+            .notNull()
+            .references(() => servicePersonnel.userId, { onDelete: 'cascade' }), // 服务人员ID
+        name: varchar('name', { length: 100 }).default(''), // 定价的的简单描述
+        serviceId: varchar('service_id', { length: 255 })
+            .notNull()
+            .references(() => services.id, { onDelete: 'cascade' }), // 服务项目ID
+        price: decimal('price', { precision: 18, scale: 2 }).notNull(), // 个人定价
+        currency: varchar('currency', { length: 3 }).default('CNY').notNull(), // 币种代码
+        isActive: boolean('is_active').default(true).notNull(), // 定价是否有效
+        effectiveFrom: timestamp('effective_from', {
+            withTimezone: true,
+        }).defaultNow(), // 定价生效时间
+        estimatedDurationMinutes: integer(
+            'estimated_duration_minutes',
+        ).notNull().default(30), // 预计服务时长（分钟）
+        effectiveTo: timestamp('effective_to', { withTimezone: true }), // 定价失效时间
+        createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+        updatedAt: timestamp('updated_at', { withTimezone: true })
+            .defaultNow()
+            .$onUpdateFn(() => new Date()),
+    },
+    (table) => [
+        uniqueIndex('uq_personnel_pricing_user_service').on(
+            table.userId,
+            table.serviceId,
+        ),
+        // 服务人员服务定价查询索引
+        index('idx_personnel_pricing_user_service')
+            .on(table.userId, table.serviceId, table.isActive)
+            .where(sql`is_active = true`),
+        // 服务项目定价查询索引 - 用于查找某个服务的所有定价
+        index('idx_personnel_pricing_service_price')
+            .on(table.serviceId, table.price, table.isActive)
+            .where(sql`is_active = true`),
+        // 定价生效时间索引
+        index('idx_personnel_pricing_effective')
+            .on(table.effectiveFrom, table.effectiveTo, table.isActive)
+            .where(sql`is_active = true`),
         // 服务时长索引 - 用于按时长筛选服务
-        index("idx_services_duration")
+        index('idx_services_duration')
             .on(table.estimatedDurationMinutes, table.isActive)
-            .where(sql`is_active = true AND estimated_duration_minutes IS NOT NULL`),
-	],
+            .where(
+                sql`is_active = true AND estimated_duration_minutes IS NOT NULL`,
+            ),
+    ],
 );
 
 // export const shopRelations = relations(shops, ({ many, one }) => ({
@@ -212,33 +223,33 @@ export const servicePersonnelPricing = pgTable(
 // }));
 
 export const servicePersonnelRelations = relations(
-	servicePersonnel,
-	({ one, many }) => ({
-		user: one(users, {
-			fields: [servicePersonnel.userId],
-			references: [users.id],
-		}),
-		// MVP阶段注释店铺关系
-		// shop: one(shops, {
-		//     fields: [servicePersonnel.shopId],
-		//     references: [shops.id],
-		// }),
-		skills: many(servicePersonnelSkills),
-		pricing: many(servicePersonnelPricing),
-	}),
+    servicePersonnel,
+    ({ one, many }) => ({
+        user: one(users, {
+            fields: [servicePersonnel.userId],
+            references: [users.id],
+        }),
+        // MVP阶段注释店铺关系
+        // shop: one(shops, {
+        //     fields: [servicePersonnel.shopId],
+        //     references: [shops.id],
+        // }),
+        skills: many(servicePersonnelSkills),
+        pricing: many(servicePersonnelPricing),
+    }),
 );
 
 // 服务人员定价关系定义
 export const servicePersonnelPricingRelations = relations(
-	servicePersonnelPricing,
-	({ one }) => ({
-		personnel: one(servicePersonnel, {
-			fields: [servicePersonnelPricing.userId],
-			references: [servicePersonnel.userId],
-		}),
-		service: one(services, {
-			fields: [servicePersonnelPricing.serviceId],
-			references: [services.id],
-		}),
-	}),
+    servicePersonnelPricing,
+    ({ one }) => ({
+        personnel: one(servicePersonnel, {
+            fields: [servicePersonnelPricing.userId],
+            references: [servicePersonnel.userId],
+        }),
+        service: one(services, {
+            fields: [servicePersonnelPricing.serviceId],
+            references: [services.id],
+        }),
+    }),
 );

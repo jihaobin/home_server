@@ -25,8 +25,11 @@ import {
     type VerifyOrderCheckinDto,
 } from '@repo/types';
 import { AuthGuard } from '../auth/auth.guard';
-import { ApiErrorResponses, ApiQueries, ApiSuccessResponse } from 'src/common/decorator';
-
+import {
+    ApiErrorResponses,
+    ApiQueries,
+    ApiSuccessResponse,
+} from 'src/common/decorator';
 
 @ApiTags('订单模块')
 @Controller('order')
@@ -38,8 +41,12 @@ export class OrderController {
 
     @UseGuards(AuthGuard)
     @Get()
-    @UsePipes(new ZodValidationPipe(OrderListRequestSchema.omit({customerId: true})))
-    @ApiQueries(OrderListRequestSchema.omit({customerId: true}))
+    @UsePipes(
+        new ZodValidationPipe(
+            OrderListRequestSchema.omit({ customerId: true }),
+        ),
+    )
+    @ApiQueries(OrderListRequestSchema.omit({ customerId: true }))
     @ApiSuccessResponse(OrderListResponseSchema, {
         description: '成功返回结果',
     })
@@ -54,8 +61,12 @@ export class OrderController {
             customerId: req.user.id,
             page: query.page ? parseInt(query.page as string) : undefined,
             limit: query.limit ? parseInt(query.limit as string) : undefined,
-            startTime: query.startTime ? new Date(query.startTime as string) : undefined,
-            endTime: query.endTime ? new Date(query.endTime as string) : undefined,
+            startTime: query.startTime
+                ? new Date(query.startTime as string)
+                : undefined,
+            endTime: query.endTime
+                ? new Date(query.endTime as string)
+                : undefined,
         };
 
         return await this.orderService.getOrdersByCustomerId(params);
@@ -78,7 +89,6 @@ export class OrderController {
         description: '当前用户拉取订单详情时生成新的核验二维码',
     })
     async getOrderCheckin(@Param('id') id: string, @Req() req: Request) {
-
         return await this.orderCheckinService.generateQrCode({
             orderId: id,
             requesterId: req.user.id,
@@ -138,7 +148,7 @@ export class OrderController {
         @Param('id') id: string,
         @Body('reason') reason: string,
         @Body('cancelledBy') cancelledBy: string,
-        @Req() req: Request
+        @Req() req: Request,
     ) {
         const userId = req.user.id;
         // 验证是否有权限取消订单
@@ -153,11 +163,7 @@ export class OrderController {
             }
         }
 
-        return await this.orderService.cancelOrder(
-            id,
-            reason,
-            cancelledBy
-        );
+        return await this.orderService.cancelOrder(id, reason, cancelledBy);
     }
 
     @UseGuards(AuthGuard)
@@ -167,10 +173,7 @@ export class OrderController {
         summary: '完成订单',
         description: '服务人员将订单状态更新为已完成',
     })
-    async completeOrder(
-        @Param('id') id: string,
-        @Req() req: Request
-    ) {
+    async completeOrder(@Param('id') id: string, @Req() req: Request) {
         const userId = req.user.id;
         // 验证是否有权限完成订单（必须是订单发起者）
         const order = await this.orderService.getOrderById(id, userId);

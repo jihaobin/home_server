@@ -1,7 +1,7 @@
-import { Module } from "@nestjs/common";
-import { WeChatController } from "./wechat.controller";
+import { Module } from '@nestjs/common';
+import { WeChatController } from './wechat.controller';
 
 @Module({
-	controllers: [WeChatController],
+    controllers: [WeChatController],
 })
 export class WeChatModule {}

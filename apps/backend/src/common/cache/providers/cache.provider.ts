@@ -1,51 +1,51 @@
-import { Provider } from "@nestjs/common";
-import { RedisOptions } from "ioredis";
-import { AppLoggerService } from "src/common/logger";
+import { Provider } from '@nestjs/common';
+import { RedisOptions } from 'ioredis';
+import { AppLoggerService } from 'src/common/logger';
 
 import {
-	IAdvancedCacheService,
-	ICacheService,
-} from "../interfaces/cache-service.interface";
-import { IoRedisCacheService } from "../services/ioredis-cache.service";
-import { MemoryCacheService } from "../services/memory-cache.service";
+    IAdvancedCacheService,
+    ICacheService,
+} from '../interfaces/cache-service.interface';
+import { IoRedisCacheService } from '../services/ioredis-cache.service';
+import { MemoryCacheService } from '../services/memory-cache.service';
 
 /**
  * 缓存服务类型
  */
 export enum CacheType {
-	MEMORY = "memory", // 内存缓存（基于cache-manager）
-	IOREDIS = "ioredis", // IoRedis缓存（直接使用ioredis）
+    MEMORY = 'memory', // 内存缓存（基于cache-manager）
+    IOREDIS = 'ioredis', // IoRedis缓存（直接使用ioredis）
 }
 
 /**
  * 缓存服务提供者令牌
  */
-export const CACHE_SERVICE = Symbol("CACHE_SERVICE");
+export const CACHE_SERVICE = Symbol('CACHE_SERVICE');
 
 /**
  * 缓存服务配置基础接口
  */
 export interface CacheServiceOptionsBase {
-	type: CacheType;
-	ttl?: number;
-	max?: number;
-	isGlobal?: boolean;
+    type: CacheType;
+    ttl?: number;
+    max?: number;
+    isGlobal?: boolean;
 }
 
 /**
  * IoRedis缓存服务配置接口
  */
 export interface IoRedisCacheOptions extends CacheServiceOptionsBase {
-	type: CacheType.IOREDIS;
-	redisOptions: RedisOptions;
-	enablePubSub?: boolean;
+    type: CacheType.IOREDIS;
+    redisOptions: RedisOptions;
+    enablePubSub?: boolean;
 }
 
 /**
  * 内存缓存服务配置接口
  */
 export interface MemoryCacheOptions extends CacheServiceOptionsBase {
-	type: CacheType.MEMORY;
+    type: CacheType.MEMORY;
 }
 
 /**
@@ -57,22 +57,22 @@ export type CacheServiceOptions = MemoryCacheOptions | IoRedisCacheOptions;
  * 创建IoRedis缓存服务的工厂函数
  */
 export const createIoRedisCacheService = (
-	options: IoRedisCacheOptions,
+    options: IoRedisCacheOptions,
 ): Provider => ({
-	provide: "IOREDIS_CACHE_SERVICE",
-	useFactory: (logger: AppLoggerService) => {
-		const redisOptions: RedisOptions = {
-			...options.redisOptions,
-		};
-		return new IoRedisCacheService(
-			{
-				redisOptions,
-				enablePubSub: options.enablePubSub ?? false,
-			},
-			logger,
-		);
-	},
-	inject: [AppLoggerService],
+    provide: 'IOREDIS_CACHE_SERVICE',
+    useFactory: (logger: AppLoggerService) => {
+        const redisOptions: RedisOptions = {
+            ...options.redisOptions,
+        };
+        return new IoRedisCacheService(
+            {
+                redisOptions,
+                enablePubSub: options.enablePubSub ?? false,
+            },
+            logger,
+        );
+    },
+    inject: [AppLoggerService],
 });
 
 /**
@@ -80,28 +80,28 @@ export const createIoRedisCacheService = (
  * 根据配置类型选择不同的缓存实现
  */
 export const cacheServiceFactory = {
-	provide: CACHE_SERVICE,
-	useFactory: (
-		options: CacheServiceOptions,
-		memoryCacheService: MemoryCacheService,
-		ioRedisCacheService?: IoRedisCacheService,
-	): ICacheService | IAdvancedCacheService => {
-		switch (options.type) {
-			case CacheType.IOREDIS:
-				if (!ioRedisCacheService) {
-					throw new Error("IoRedis缓存服务未配置，请检查模块配置");
-				}
-				return ioRedisCacheService;
-			case CacheType.MEMORY:
-			default:
-				return memoryCacheService;
-		}
-	},
-	inject: [
-		"CACHE_OPTIONS",
-		MemoryCacheService,
-		{ token: "IOREDIS_CACHE_SERVICE", optional: true },
-	],
+    provide: CACHE_SERVICE,
+    useFactory: (
+        options: CacheServiceOptions,
+        memoryCacheService: MemoryCacheService,
+        ioRedisCacheService?: IoRedisCacheService,
+    ): ICacheService | IAdvancedCacheService => {
+        switch (options.type) {
+            case CacheType.IOREDIS:
+                if (!ioRedisCacheService) {
+                    throw new Error('IoRedis缓存服务未配置，请检查模块配置');
+                }
+                return ioRedisCacheService;
+            case CacheType.MEMORY:
+            default:
+                return memoryCacheService;
+        }
+    },
+    inject: [
+        'CACHE_OPTIONS',
+        MemoryCacheService,
+        { token: 'IOREDIS_CACHE_SERVICE', optional: true },
+    ],
 };
 
 /**
@@ -109,8 +109,8 @@ export const cacheServiceFactory = {
  * 用于配置缓存类型
  */
 export const cacheOptionsProvider: Provider = {
-	provide: "CACHE_OPTIONS",
-	useValue: {
-		type: CacheType.MEMORY, // 默认使用内存缓存
-	} as CacheServiceOptions,
+    provide: 'CACHE_OPTIONS',
+    useValue: {
+        type: CacheType.MEMORY, // 默认使用内存缓存
+    } as CacheServiceOptions,
 };

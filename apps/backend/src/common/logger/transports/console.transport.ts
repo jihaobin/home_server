@@ -1,7 +1,7 @@
-import * as winston from "winston";
+import * as winston from 'winston';
 
-import { LogLevel } from "../logger.constants";
-import { ConsoleTransportOptions } from "../logger.interface";
+import { LogLevel } from '../logger.constants';
+import { ConsoleTransportOptions } from '../logger.interface';
 
 /**
  * 创建控制台日志传输器
@@ -9,11 +9,11 @@ import { ConsoleTransportOptions } from "../logger.interface";
  * @returns Winston控制台传输器
  */
 export const createConsoleTransport = (
-	options: ConsoleTransportOptions = {},
+    options: ConsoleTransportOptions = {},
 ): winston.transport => {
-	const { level = LogLevel.INFO } = options;
+    const { level = LogLevel.INFO } = options;
 
-	return new winston.transports.Console({
-		level,
-	});
+    return new winston.transports.Console({
+        level,
+    });
 };

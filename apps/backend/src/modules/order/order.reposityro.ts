@@ -1,5 +1,5 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import type { CreateOrder } from "@repo/types";
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import type { CreateOrder } from '@repo/types';
 import {
     and,
     asc,
@@ -11,19 +11,22 @@ import {
     lte,
     type SQL,
     sql,
-} from "drizzle-orm";
-import { DB } from "src/common/database/database.provider";
-import type { DbType } from "src/common/database/db";
-import { userAddresses } from "src/common/database/schema/addresses";
-import { users } from "src/common/database/schema/auth-user";
-import { couponUsageRecords } from "src/common/database/schema/coupons";
+} from 'drizzle-orm';
+import { DB } from 'src/common/database/database.provider';
+import type { DbType } from 'src/common/database/db';
+import { userAddresses } from 'src/common/database/schema/addresses';
+import { users } from 'src/common/database/schema/auth-user';
+import { couponUsageRecords } from 'src/common/database/schema/coupons';
 import {
     orderAssignments,
     orders,
     payments,
-} from "src/common/database/schema/orders";
-import { services } from "src/common/database/schema/server";
-import { servicePersonnel, servicePersonnelPricing } from "src/common/database/schema/shops-service";
+} from 'src/common/database/schema/orders';
+import { services } from 'src/common/database/schema/server';
+import {
+    servicePersonnel,
+    servicePersonnelPricing,
+} from 'src/common/database/schema/shops-service';
 
 export type OrderStatus = (typeof orders.status.enumValues)[number];
 
@@ -34,15 +37,17 @@ export class OrderRepository {
 
     // 定义合法的状态转换
     // key: 当前状态, value: 可转换到的下一个状态数组
-    private readonly validStatusTransitions: Record<OrderStatus, OrderStatus[]> =
-        {
-            pending_payment: ["paid", "cancelled"],
-            paid: ["in_progress", "cancelled"],
-            in_progress: ["completed"], // 服务中状态不能再取消，只能完成
-            completed: ["refunded"], // 假设完成的订单可以退款
-            cancelled: [], // 取消的订单不能再改变状态
-            refunded: [], // 退款的订单不能再改变状态
-        };
+    private readonly validStatusTransitions: Record<
+        OrderStatus,
+        OrderStatus[]
+    > = {
+        pending_payment: ['paid', 'cancelled'],
+        paid: ['in_progress', 'cancelled'],
+        in_progress: ['completed'], // 服务中状态不能再取消，只能完成
+        completed: ['refunded'], // 假设完成的订单可以退款
+        cancelled: [], // 取消的订单不能再改变状态
+        refunded: [], // 退款的订单不能再改变状态
+    };
 
     /**
      * 获取客户的订单列表（简化格式）
@@ -54,8 +59,8 @@ export class OrderRepository {
         customerId,
         startTime,
         endTime,
-        sortBy = "createdAt",
-        sortOrder = "desc",
+        sortBy = 'createdAt',
+        sortOrder = 'desc',
     }: {
         page?: number;
         limit?: number;
@@ -64,7 +69,7 @@ export class OrderRepository {
         startTime?: Date;
         endTime?: Date;
         sortBy?: string;
-        sortOrder?: "asc" | "desc";
+        sortOrder?: 'asc' | 'desc';
     }) {
         const {
             customerId: orderColumnCustomerId,
@@ -78,7 +83,7 @@ export class OrderRepository {
         } = getTableColumns(orders);
 
         if (!(sortBy in orderColumns)) {
-            throw new BadRequestException("请输入有效的排序字段");
+            throw new BadRequestException('请输入有效的排序字段');
         }
 
         // 构建查询条件
@@ -93,12 +98,14 @@ export class OrderRepository {
         } else if (endTime && !startTime) {
             conditions.push(lte(orders.appointmentTime, endTime));
         } else if (startTime && endTime) {
-            conditions.push(between(orders.appointmentTime, startTime, endTime));
+            conditions.push(
+                between(orders.appointmentTime, startTime, endTime),
+            );
         }
 
         const sortColumn = orderColumns[sortBy as keyof typeof orderColumns];
         const orderByClause =
-            sortOrder === "desc" ? desc(sortColumn) : asc(sortColumn);
+            sortOrder === 'desc' ? desc(sortColumn) : asc(sortColumn);
 
         // 查询简化的订单列表数据
         const [rows, totalCount] = await Promise.all([
@@ -125,7 +132,10 @@ export class OrderRepository {
                 })
                 .from(orders)
                 .leftJoin(services, eq(orders.serviceId, services.id))
-                .leftJoin(orderAssignments, eq(orders.id, orderAssignments.orderId))
+                .leftJoin(
+                    orderAssignments,
+                    eq(orders.id, orderAssignments.orderId),
+                )
                 .leftJoin(
                     users,
                     eq(orderAssignments.servicePersonnelId, users.id),
@@ -143,10 +153,11 @@ export class OrderRepository {
             status: row.status,
             totalAmount: row.totalAmount,
             appointmentTime: row.appointmentTime,
-            serviceName: row.serviceName || "",
-            servicePersonnelName: row.userName || "服务人员",
-            serviceSpecifications: row.serviceSpecifications || row.serviceDescription || "",
-            servicePersonnelImage: row.userImage || "",
+            serviceName: row.serviceName || '',
+            servicePersonnelName: row.userName || '服务人员',
+            serviceSpecifications:
+                row.serviceSpecifications || row.serviceDescription || '',
+            servicePersonnelImage: row.userImage || '',
         }));
 
         return {
@@ -165,11 +176,11 @@ export class OrderRepository {
     async getOrderById(id: string) {
         const orderColumns = getTableColumns(orders);
         const { ...serviceColumns } = getTableColumns(services);
-        const { geom: addressGeom, ...addressColumns } = getTableColumns(userAddresses);
+        const { geom: addressGeom, ...addressColumns } =
+            getTableColumns(userAddresses);
         const assignmentColumns = getTableColumns(orderAssignments);
-        const { geom: servicePersonnelGeom, ...servicePersonnelColumns } = getTableColumns(
-            servicePersonnel,
-        );
+        const { geom: servicePersonnelGeom, ...servicePersonnelColumns } =
+            getTableColumns(servicePersonnel);
 
         const [orderRow] = await this.db
             .select({
@@ -185,7 +196,7 @@ export class OrderRepository {
                         FROM ${payments} p
                         WHERE p.order_id = ${orders.id}
                     )`.mapWith((val) => {
-                    if (!val || val === "[]") return [];
+                    if (!val || val === '[]') return [];
                     if (Array.isArray(val)) return val;
                     try {
                         return JSON.parse(String(val));
@@ -199,7 +210,7 @@ export class OrderRepository {
                         FROM ${couponUsageRecords} c
                         WHERE c.order_id = ${orders.id}
                     )`.mapWith((val) => {
-                    if (!val || val === "[]") return [];
+                    if (!val || val === '[]') return [];
                     if (Array.isArray(val)) return val;
                     try {
                         return JSON.parse(String(val));
@@ -222,12 +233,12 @@ export class OrderRepository {
             .leftJoin(orderAssignments, eq(orders.id, orderAssignments.orderId))
             .leftJoin(
                 servicePersonnel,
-                eq(orderAssignments.servicePersonnelId, servicePersonnel.userId),
+                eq(
+                    orderAssignments.servicePersonnelId,
+                    servicePersonnel.userId,
+                ),
             )
-            .leftJoin(
-                users,
-                eq(orderAssignments.servicePersonnelId, users.id),
-            )
+            .leftJoin(users, eq(orderAssignments.servicePersonnelId, users.id))
             .where(eq(orders.id, id))
             .limit(1);
 
@@ -247,9 +258,9 @@ export class OrderRepository {
 
         const assignmentWithPersonnel = orderRow.assignment
             ? {
-                ...orderRow.assignment,
-                servicePersonnel: orderRow.servicePersonnel || null,
-            }
+                  ...orderRow.assignment,
+                  servicePersonnel: orderRow.servicePersonnel || null,
+              }
             : null;
 
         return {
@@ -262,51 +273,57 @@ export class OrderRepository {
         };
     }
 
-	/**
-	 * 获取指定服务人员在特定时间范围内的订单
-	 * @param personnelId 服务人员ID
-	 * @param startTime 时间范围开始时间
-	 * @param endTime 时间范围结束时间
-	 * @returns 订单列表
-	 */
-	async getOrdersByPersonnelAndTimeRange(
-		personnelId: string,
-		startTime: Date,
-		endTime: Date,
-	) {
+    /**
+     * 获取指定服务人员在特定时间范围内的订单
+     * @param personnelId 服务人员ID
+     * @param startTime 时间范围开始时间
+     * @param endTime 时间范围结束时间
+     * @returns 订单列表
+     */
+    async getOrdersByPersonnelAndTimeRange(
+        personnelId: string,
+        startTime: Date,
+        endTime: Date,
+    ) {
         // 使用原始查询来连接订单和分配表，并包含服务规格信息
-		const results = await this.db
-			.select({
-				order: orders,
-				service: services,
-				assignment: orderAssignments,
+        const results = await this.db
+            .select({
+                order: orders,
+                service: services,
+                assignment: orderAssignments,
                 specification: servicePersonnelPricing,
-			})
-			.from(orders)
-			.leftJoin(services, eq(orders.serviceId, services.id))
-			.innerJoin(orderAssignments, eq(orders.id, orderAssignments.orderId))
-            .leftJoin(servicePersonnelPricing, eq(orders.specificationId, servicePersonnelPricing.id))
-			.where(
-				and(
-					eq(orderAssignments.servicePersonnelId, personnelId),
-					lte(orders.appointmentTime, endTime),
+            })
+            .from(orders)
+            .leftJoin(services, eq(orders.serviceId, services.id))
+            .innerJoin(
+                orderAssignments,
+                eq(orders.id, orderAssignments.orderId),
+            )
+            .leftJoin(
+                servicePersonnelPricing,
+                eq(orders.specificationId, servicePersonnelPricing.id),
+            )
+            .where(
+                and(
+                    eq(orderAssignments.servicePersonnelId, personnelId),
+                    lte(orders.appointmentTime, endTime),
                 ),
-			);
+            );
 
-		// 转换结果格式以匹配期望的类型
+        // 转换结果格式以匹配期望的类型
         return results.map((result) => ({
-			...result.order,
-			service: result.service,
-			assignment: result.assignment,
+            ...result.order,
+            service: result.service,
+            assignment: result.assignment,
             specification: result.specification,
-		}));
-	}
+        }));
+    }
 
-	/**
-	 * 获取服务规格信息
-	 * @param specificationId 服务规格ID
-	 * @returns 服务规格信息
-	 */
+    /**
+     * 获取服务规格信息
+     * @param specificationId 服务规格ID
+     * @returns 服务规格信息
+     */
     async getServiceSpecification(specificationId: string) {
         const [specification] = await this.db
             .select()
@@ -315,7 +332,7 @@ export class OrderRepository {
             .limit(1);
 
         return specification || null;
-    }    /**
+    } /**
      * 更新订单状态
      * @param id 订单ID
      * @param newStatus 新的订单状态
@@ -335,7 +352,7 @@ export class OrderRepository {
         });
 
         if (!order) {
-            throw new BadRequestException("订单不存在");
+            throw new BadRequestException('订单不存在');
         }
 
         const currentStatus = order.status;
@@ -359,7 +376,7 @@ export class OrderRepository {
 
         // 4. 验证更新结果
         if (updatedOrders.length === 0) {
-            throw new BadRequestException("订单状态更新失败");
+            throw new BadRequestException('订单状态更新失败');
         }
 
         return updatedOrders[0];
@@ -388,21 +405,23 @@ export class OrderRepository {
         });
 
         if (!order) {
-            throw new BadRequestException("订单不存在");
+            throw new BadRequestException('订单不存在');
         }
 
         const currentStatus = order.status;
 
         // 2. 验证状态转换是否合法 (只能从 pending_payment 或 paid 状态转换到 cancelled)
-        if (!this.isValidStatusTransition(currentStatus, "cancelled")) {
-            throw new BadRequestException(`当前状态 ${currentStatus} 无法取消订单`);
+        if (!this.isValidStatusTransition(currentStatus, 'cancelled')) {
+            throw new BadRequestException(
+                `当前状态 ${currentStatus} 无法取消订单`,
+            );
         }
 
         // 3. 更新订单状态并设置取消信息
         const updatedOrders = await db
             .update(orders)
             .set({
-                status: "cancelled",
+                status: 'cancelled',
                 cancelReason: reason,
                 cancelledBy: cancelledById,
                 cancelledAt: new Date(),
@@ -413,7 +432,7 @@ export class OrderRepository {
 
         // 4. 验证更新结果
         if (updatedOrders.length === 0) {
-            throw new BadRequestException("订单取消失败");
+            throw new BadRequestException('订单取消失败');
         }
 
         return updatedOrders[0];
@@ -495,8 +514,11 @@ export class OrderRepository {
     }) {
         // 生成订单流水号 (格式: ORD + YYYYMMDD + 8位随机字符)
         const now = new Date();
-        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
-        const randomStr = Math.random().toString(36).substring(2, 10).toUpperCase();
+        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const randomStr = Math.random()
+            .toString(36)
+            .substring(2, 10)
+            .toUpperCase();
         const orderSerial = `ORD${dateStr}${randomStr}`;
 
         try {
@@ -515,31 +537,33 @@ export class OrderRepository {
                         serviceId: data.serviceId,
                         addressId: data.addressId,
                         specificationId: data.specificationId,
-                        status: "pending_payment", // 初始状态为待支付
+                        status: 'pending_payment', // 初始状态为待支付
                         originalAmount: originalAmount.toString(),
                         discountAmount: discountAmount.toString(),
                         totalAmount: totalAmount.toString(),
-                        currency: "CNY",
+                        currency: 'CNY',
                         appointmentTime: data.appointmentTime,
                     })
                     .returning({ id: orders.id });
 
                 // 验证订单是否创建成功
                 if (!order || !order.id) {
-                    throw new Error("订单创建失败");
+                    throw new Error('订单创建失败');
                 }
 
                 // 创建订单分配记录
-                const assignmentResult = await tx.insert(orderAssignments).values({
-                    orderId: order.id,
-                    servicePersonnelId: data.designatedPersonnelId,
-                    assignmentType: "customer_designated", // 用户指定
-                    assignedAt: now,
-                });
+                const assignmentResult = await tx
+                    .insert(orderAssignments)
+                    .values({
+                        orderId: order.id,
+                        servicePersonnelId: data.designatedPersonnelId,
+                        assignmentType: 'customer_designated', // 用户指定
+                        assignedAt: now,
+                    });
 
                 // 验证分配记录是否创建成功
                 if (assignmentResult.rowCount === 0) {
-                    throw new Error("订单分配记录创建失败");
+                    throw new Error('订单分配记录创建失败');
                 }
 
                 // 返回订单ID
