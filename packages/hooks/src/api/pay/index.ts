@@ -2,15 +2,58 @@ import type {
 	InitiatePaymentBody,
 	InitiatePaymentResponse,
 	QueryPaymentStatusResponse,
+	TransactionType,
 	UserWithdrawBody,
 	UserWithdrawResponse,
+	ZodPaginationMeta,
 } from "@repo/types";
 import {
 	useMutation,
+	useQuery,
 	useQueryClient,
 	useSuspenseQuery,
 } from "@tanstack/react-query";
 import { apiClient } from "@repo/lib/http-client";
+
+export type EarningsTransactionFilter = "all" | "income" | "withdrawal";
+
+export interface EarningsOverview {
+	balance: {
+		available: number;
+		frozen: number;
+		total: number;
+		currency: string;
+	};
+	monthlyEarnings: number;
+	totalEarnings: number;
+	updatedAt: string;
+}
+
+export interface EarningsTransactionItem {
+	id: string;
+	transactionType: TransactionType;
+	type: Exclude<EarningsTransactionFilter, "all">;
+	amount: number;
+	currency: string;
+	description: string | null;
+	referenceId: string | null;
+	createdAt: string;
+	withdrawal?: {
+		id: string;
+		status: string;
+	};
+}
+
+export interface EarningsTransactionListResponse {
+	items: EarningsTransactionItem[];
+	meta: ZodPaginationMeta;
+}
+
+export interface EarningsTransactionQuery {
+	page?: number;
+	limit?: number;
+	type?: EarningsTransactionFilter;
+}
 
 /**
  * 获取支付宝授权登录所需的签名字符串
@@ -24,6 +67,52 @@ export const useGetAuthSign = () =>
 		},
 		meta: {
 			errorMessage: "获取授权签名失败",
+		},
+	});
+
+/**
+ * 获取收益概览数据
+ */
+export const useEarningsOverview = () =>
+	useQuery({
+		queryKey: ["earnings-overview"],
+		queryFn: async () => {
+			const response =
+				await apiClient.get<EarningsOverview>("/pay/earnings/overview");
+			return response.data;
+		},
+		meta: {
+			errorMessage: "收益概览获取失败",
+		},
+	});
+
+/**
+ * 获取收益流水列表
+ */
+export const useEarningsTransactions = (
+	params: EarningsTransactionQuery = {},
+) =>
+	useQuery({
+		queryKey: ["earnings-transactions", params],
+		queryFn: async () => {
+			const response =
+				await apiClient.get<EarningsTransactionListResponse>(
+					"/pay/earnings/transactions",
+					{
+						query: {
+							page: String(params.page ?? 1),
+							limit: String(params.limit ?? 20),
+							type:
+								params.type && params.type !== "all"
+									? params.type
+									: undefined,
+						},
+					},
+				);
+			return response.data;
+		},
+		meta: {
+			errorMessage: "收益流水获取失败",
 		},
 	});
 

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useInitiatePayment } from "@repo/hooks/api/pay";
 import { useQueryClient } from "@tanstack/react-query";
 import { aliPay } from "@repo/lib/pay";
@@ -259,6 +259,12 @@ export function useOrderPayment() {
 		},
 		[initiatePayment, invalidateOrderCaches, isPaying, mergeConfig, pollPaymentStatus],
 	);
+
+    useEffect(() => {
+        return () => {
+            toast.dismiss();
+        }
+    })
 
 	return {
 		payOrder,

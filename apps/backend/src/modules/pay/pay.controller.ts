@@ -6,6 +6,7 @@ import {
     HttpStatus,
     Param,
     Post,
+    Query,
     Req,
     UseGuards,
     UsePipes,
@@ -18,23 +19,68 @@ import {
     InitiatePaymentParamsSchema,
     InitiatePaymentResponseSchema,
     type PayNotification,
+    PaginationMetaSchema,
+    TransactionTypeEnum,
     payNotificationSchema,
     QueryPaymentStatusResponseSchema,
     type UserWithdrawBody,
     UserWithdrawBodySchema,
     UserWithdrawResponseSchema,
+    WithdrawalStatusEnum,
 } from '@repo/types';
 import type { Request } from 'express';
 import { ApiErrorResponses, ApiSuccessResponse } from 'src/common/decorator';
 import { ApiBodies } from 'src/common/decorator/swagger-api-bodies';
 import { SkipTransform } from 'src/common/interceptors';
 import { createMultiZodPipe, createZodPipe } from 'src/common/pipes';
-import { Public } from '../auth/decorators';
+import { Public, Roles } from '../auth/decorators';
 import { PayService } from './pay.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { Cron } from '@nestjs/schedule';
 import z from 'zod/v4';
 import { createAliPaySdk } from 'src/lib/alipaySdk';
+
+const EarningsOverviewResponseSchema = z.object({
+    balance: z.object({
+        available: z.number().nonnegative(),
+        frozen: z.number().nonnegative(),
+        total: z.number().nonnegative(),
+        currency: z.string().min(1),
+    }),
+    monthlyEarnings: z.number().nonnegative(),
+    totalEarnings: z.number().nonnegative(),
+    updatedAt: z.date(),
+});
+
+const EarningsTransactionQuerySchema = z.object({
+    page: z.coerce.number().min(1).optional(),
+    limit: z.coerce.number().min(1).max(100).optional(),
+    type: z.enum(['all', 'income', 'withdrawal']).optional(),
+});
+
+type EarningsTransactionQuery = z.infer<typeof EarningsTransactionQuerySchema>;
+
+const EarningsTransactionItemSchema = z.object({
+    id: z.string(),
+    transactionType: TransactionTypeEnum,
+    type: z.enum(['income', 'withdrawal']),
+    amount: z.number(),
+    currency: z.string().min(1),
+    description: z.string().nullable(),
+    referenceId: z.string().nullable(),
+    createdAt: z.date(),
+    withdrawal: z
+        .object({
+            id: z.string(),
+            status: WithdrawalStatusEnum,
+        })
+        .optional(),
+});
+
+const EarningsTransactionListResponseSchema = z.object({
+    items: z.array(EarningsTransactionItemSchema),
+    meta: PaginationMetaSchema,
+});
 
 @ApiTags('支付')
 @Controller('pay')
@@ -107,6 +153,43 @@ export class PayController {
     }
 
     @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Get('earnings/overview')
+    @ApiOperation({
+        summary: '获取收益概览',
+        description: '返回余额、本月收益与累计收益，用于收益页面展示',
+    })
+    @ApiSuccessResponse(EarningsOverviewResponseSchema, {
+        description: '收益概览数据',
+    })
+    async getEarningsOverview(@Req() req: Request) {
+        return this.payService.getEarningsOverview(req.user.id);
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Get('earnings/transactions')
+    @UsePipes(
+        createZodPipe(
+            EarningsTransactionQuerySchema,
+            '收益流水查询参数校验失败',
+        ),
+    )
+    @ApiOperation({
+        summary: '查询收益流水',
+        description: '分页查询服务人员的收入/提现/调整记录',
+    })
+    @ApiSuccessResponse(EarningsTransactionListResponseSchema, {
+        description: '收益流水分页数据',
+    })
+    async getEarningsTransactions(
+        @Req() req: Request,
+        @Query() query: EarningsTransactionQuery,
+    ) {
+        return this.payService.getEarningsTransactions(req.user.id, query);
+    }
+
+    @UseGuards(AuthGuard)
     @Get('orders/:orderId/payment-status')
     @UsePipes(
         createMultiZodPipe({
@@ -132,8 +215,8 @@ export class PayController {
     // 每5分钟执行一次
     // 扫描并查询所有支付状态为 pending 的订单支付状态
     @Cron('0 */5 * * * *')
-    handleInterval() {
-        this.payService.scanAndQueryPendingPayments();
+    async handleInterval() {
+        await this.payService.scanAndQueryPendingPayments();
     }
 
     @Get('getAuthSign')

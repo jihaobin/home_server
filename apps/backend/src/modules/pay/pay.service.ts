@@ -12,11 +12,13 @@ import {
     alipayWithdrawSuccessResponseSchema,
     type PayNotification,
     type QueryPaymentStatusResponse,
+    type TransactionType,
     type UserWithdrawBody,
     type UserWithdrawResponse,
+    type WithdrawalStatus,
 } from '@repo/types';
 import Decimal from 'decimal.js';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { CACHE_SERVICE, type IAdvancedCacheService } from 'src/common/cache';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
@@ -28,6 +30,7 @@ import {
     payments,
     userBalances,
     users,
+    withdrawals,
 } from 'src/common/database/schema';
 import { createAliPaySdk } from 'src/lib/alipaySdk';
 import { OrderService } from '../order/order.service';
@@ -57,6 +60,55 @@ function parseAlipayTime(value?: string) {
     return new Date(`${value.replace(' ', 'T')}+08:00`);
 }
 
+export type EarningsTransactionFilter = 'all' | 'income' | 'withdrawal';
+
+export interface EarningsOverview {
+    balance: {
+        available: number;
+        frozen: number;
+        total: number;
+        currency: string;
+    };
+    monthlyEarnings: number;
+    totalEarnings: number;
+    updatedAt: Date;
+}
+
+interface PaginationMeta {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasNext: boolean;
+    hasPrev: boolean;
+}
+
+export interface EarningsTransactionQuery {
+    page?: number;
+    limit?: number;
+    type?: EarningsTransactionFilter;
+}
+
+interface EarningsTransactionItem {
+    id: string;
+    transactionType: TransactionType;
+    type: Exclude<EarningsTransactionFilter, 'all'>;
+    amount: number;
+    currency: string;
+    description: string | null;
+    referenceId: string | null;
+    createdAt: Date;
+    withdrawal?: {
+        id: string;
+        status: WithdrawalStatus;
+    };
+}
+
+export interface EarningsTransactionListResponse {
+    items: EarningsTransactionItem[];
+    meta: PaginationMeta;
+}
+
 @Injectable()
 export class PayService {
     // 实例化客户端
@@ -80,10 +132,6 @@ export class PayService {
 
     private getPaymentLockKey(orderId: string) {
         return `lock:payment:order:${orderId}`;
-    }
-
-    constructor() {
-        this.logger;
     }
 
     /**
@@ -564,9 +612,9 @@ export class PayService {
     async payNotify(payInfo: PayNotification) {
         const signatureValid = this.alipaySdk.checkNotifySignV2(payInfo);
         // 生产环境必须校验签名
-        // if (!signatureValid) {
-        // 	return "fail";
-        // }
+        if (!signatureValid) {
+            return 'fail';
+        }
 
         const order = await this.db.query.orders.findFirst({
             where: eq(orders.orderSerial, payInfo.out_trade_no),
@@ -933,6 +981,19 @@ export class PayService {
         if (!earningRecord) {
             return;
         }
+
+        await this.payRepository.createFinancialTransaction(
+            {
+                orderId: order.id,
+                userId: servicePersonnelId,
+                transactionType: 'service_earning',
+                amount: serviceShare,
+                currency,
+                description: `订单${order.orderSerial ?? order.id}收益入账`,
+                referenceId: order.id,
+            },
+            tx,
+        );
     }
 
     /**
@@ -1347,6 +1408,173 @@ export class PayService {
         }
     }
 
+    async getUserBalanceSnapshot(userId: string) {
+        const record = await this.payRepository.findUserBalanceByUserId(
+            userId,
+        );
+
+        if (!record) {
+            return {
+                available: 0,
+                frozen: 0,
+                total: 0,
+                currency: 'CNY',
+            };
+        }
+
+        const toNumber = (value?: string | null) =>
+            Number(value ?? 0) || 0;
+
+        return {
+            available: toNumber(record.availableBalance),
+            frozen: toNumber(record.frozenBalance),
+            total: toNumber(record.totalBalance),
+            currency: record.currency ?? 'CNY',
+        };
+    }
+
+    async getEarningsOverview(userId: string): Promise<EarningsOverview> {
+        if (!userId) {
+            throw new BadRequestException('用户信息缺失');
+        }
+
+        const now = new Date();
+        const startOfMonth = new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            1,
+            0,
+            0,
+            0,
+            0,
+        );
+
+        const [balance, totalResult, monthlyResult] = await Promise.all([
+            this.getUserBalanceSnapshot(userId),
+            this.db
+                .select({
+                    total: sql<string>`COALESCE(SUM(${earnings.amount}), 0)`,
+                })
+                .from(earnings)
+                .where(eq(earnings.userId, userId)),
+            this.db
+                .select({
+                    total: sql<string>`COALESCE(SUM(${earnings.amount}), 0)`,
+                })
+                .from(earnings)
+                .where(
+                    and(
+                        eq(earnings.userId, userId),
+                        gte(earnings.createdAt, startOfMonth),
+                    ),
+                ),
+        ]);
+
+        const toNumber = (value?: string | null) => Number(value ?? 0) || 0;
+
+        return {
+            balance,
+            totalEarnings: toNumber(totalResult[0]?.total),
+            monthlyEarnings: toNumber(monthlyResult[0]?.total),
+            updatedAt: new Date(),
+        };
+    }
+
+    async getEarningsTransactions(
+        userId: string,
+        params: EarningsTransactionQuery,
+    ): Promise<EarningsTransactionListResponse> {
+        if (!userId) {
+            throw new BadRequestException('用户信息缺失');
+        }
+
+        const page = Math.max(1, Number(params?.page ?? 1));
+        const limit = Math.min(100, Math.max(1, Number(params?.limit ?? 20)));
+        const offset = (page - 1) * limit;
+        const type = params?.type ?? 'all';
+
+        const conditions = [eq(financialTransactions.userId, userId)];
+
+        if (type === 'income') {
+            conditions.push(sql`${financialTransactions.amount} >= 0`);
+        } else if (type === 'withdrawal') {
+            conditions.push(sql`${financialTransactions.amount} < 0`);
+        }
+
+        const whereClause =
+            conditions.length > 1 ? and(...conditions) : conditions[0];
+
+        const [records, totalResult] = await Promise.all([
+            this.db
+                .select({
+                    id: financialTransactions.id,
+                    amount: financialTransactions.amount,
+                    currency: financialTransactions.currency,
+                    description: financialTransactions.description,
+                    referenceId: financialTransactions.referenceId,
+                    transactionType: financialTransactions.transactionType,
+                    createdAt: financialTransactions.createdAt,
+                    withdrawalId: financialTransactions.withdrawalId,
+                    withdrawalStatus: withdrawals.status,
+                })
+                .from(financialTransactions)
+                .leftJoin(
+                    withdrawals,
+                    eq(financialTransactions.withdrawalId, withdrawals.id),
+                )
+                .where(whereClause)
+                .orderBy(desc(financialTransactions.createdAt))
+                .limit(limit)
+                .offset(offset),
+            this.db
+                .select({
+                    count: sql<string>`COUNT(*)`,
+                })
+                .from(financialTransactions)
+                .where(whereClause),
+        ]);
+
+        const total = Number(totalResult[0]?.count ?? 0);
+        const totalPages = Math.ceil(total / limit) || 0;
+
+        const items = records.map((record) => {
+            const amountNumber = Number(record.amount ?? 0) || 0;
+            const flowType: Exclude<EarningsTransactionFilter, 'all'> =
+                amountNumber >= 0 ? 'income' : 'withdrawal';
+
+            return {
+                id: record.id,
+                transactionType: record.transactionType,
+                type: flowType,
+                amount: amountNumber,
+                currency: record.currency ?? 'CNY',
+                description: record.description ?? null,
+                referenceId: record.referenceId ?? null,
+                createdAt: record.createdAt ?? new Date(),
+                withdrawal: record.withdrawalId
+                    ? {
+                          id: record.withdrawalId,
+                          status:
+                              (record.withdrawalStatus as WithdrawalStatus) ??
+                              'pending',
+                      }
+                    : undefined,
+            };
+        });
+
+        return {
+            items,
+            meta: {
+                page,
+                limit,
+                total,
+                totalPages,
+                hasNext: page < totalPages,
+                hasPrev: page > 1,
+            },
+        };
+    }
+
     // 用户提现（当前仅支持支付宝）
     async withdraw(
         userId: string,
@@ -1471,7 +1699,7 @@ export class PayService {
                     bizContent,
                 },
             );
-        } catch (error) {
+        } catch {
             await this.rollbackWithdrawalOnFailure({
                 balanceId: freezeContext.balanceId,
                 withdrawalId: freezeContext.withdrawal.id,
@@ -1629,7 +1857,7 @@ export class PayService {
         });
     }
 
-    async generateAuthString() {
+    generateAuthString() {
         const targetId = createId();
         return this.alipaySdk.sdkExecute('alipay.open.auth.sdk.code.get', {
             apiname: 'com.alipay.account.auth',
