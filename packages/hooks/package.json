@@ -1,29 +1,33 @@
 {
-  "name": "@repo/hooks",
-  "version": "0.0.0",
-  "private": true,
-  "scripts": {
-    "dev": "echo 'Add dev script here'",
-    "build": "echo 'Add build script here'",
-    "test": "echo 'Add test script here'",
-    "lint": "echo 'Add lint script here'"
-  },
-  "exports": {
-    "./*": "./src/*.ts",
-    "./api/address": "./src/api/address/index.ts",
-    "./api/order": "./src/api/order/index.ts",
-    "./api/pay": "./src/api/pay/index.ts",
-    "./api/service": "./src/api/service/index.ts",
-    "./api/service-personnel": "./src/api/service-personnel/index.ts",
-    "./api/user": "./src/api/user/index.ts"
-  },
-  "dependencies": {
-    "@repo/utils": "workspace:*",
-    "@repo/lib": "workspace:*"
-  },
-  "devDependencies": {
-    "@repo/eslint-config": "workspace:*",
-    "@repo/types": "workspace:*",
-    "@repo/typescript-config": "workspace:*"
-  }
+    "name": "@repo/hooks",
+    "version": "0.0.0",
+    "private": true,
+    "scripts": {
+        "dev": "echo 'Add dev script here'",
+        "build": "echo 'Add build script here'",
+        "test": "echo 'Add test script here'",
+        "lint": "echo 'Add lint script here'"
+    },
+    "exports": {
+        "./*": "./src/*.ts",
+        "./api/address": "./src/api/address/index.ts",
+        "./api/order": "./src/api/order/index.ts",
+        "./api/pay": "./src/api/pay/index.ts",
+        "./api/review": "./src/api/review/index.ts",
+        "./api/service": "./src/api/service/index.ts",
+        "./api/service-personnel": "./src/api/service-personnel/index.ts",
+        "./api/work-skill": "./src/api/work-skill/index.ts",
+        "./api/user": "./src/api/user/index.ts",
+        "./api/files": "./src/api/files/index.ts",
+        "./api/notification": "./src/api/notification/index.ts"
+    },
+    "dependencies": {
+        "@repo/utils": "workspace:*",
+        "@repo/lib": "workspace:*"
+    },
+    "devDependencies": {
+        "@repo/eslint-config": "workspace:*",
+        "@repo/types": "workspace:*",
+        "@repo/typescript-config": "workspace:*"
+    }
 }
