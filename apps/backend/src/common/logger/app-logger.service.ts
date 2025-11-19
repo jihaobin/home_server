@@ -202,11 +202,11 @@ export class AppLoggerService extends ConsoleLogger implements IAppLogger {
         // 对于对象和数组，尝试JSON序列化
         try {
             return JSON.stringify(value);
-        } catch (error) {
+        } catch {
             // 如果JSON序列化失败，使用toString()
             try {
                 return value.toString();
-            } catch (toStringError) {
+            } catch {
                 return '[Object]';
             }
         }

@@ -6,7 +6,7 @@ import type { SchemaObject } from '@nestjs/swagger/dist/interfaces/open-api-spec
 
 // 将 JSONSchema 转换为 OpenAPI SchemaObject
 const convertToSchemaObject = (jsonSchema: any): SchemaObject => {
-    const { $schema, ...schemaObject } = jsonSchema;
+    const { $schema: _$schema, ...schemaObject } = jsonSchema;
     return schemaObject as SchemaObject;
 };
 

@@ -21,16 +21,22 @@ export const createDetailedFormatter = (
         format.printf((info) => {
             const { timestamp, level, message, context, stack, ...meta } = info;
             const pid = process.pid;
-            const contextStr = context ? `[${context}] ` : '';
-            const timestampStr = timestamp ? `${timestamp} ` : '';
-            const stackStr = stack ? `\n${stack}` : '';
+            const contextStr = context
+                ? `[${typeof context === 'string' ? context : JSON.stringify(context)}] `
+                : '';
+            const timestampStr = timestamp
+                ? `[${typeof timestamp === 'string' ? timestamp : JSON.stringify(timestamp)}] `
+                : '';
+            const stackStr = stack
+                ? `[${typeof stack === 'string' ? stack : JSON.stringify(stack)}] `
+                : '';
 
             let metaStr = '';
             if (Object.keys(meta).length) {
                 metaStr = `\n${JSON.stringify(meta, null, 2)}`;
             }
 
-            return `${timestampStr}[${pid}] ${level.toUpperCase()} ${contextStr}${message}${stackStr}${metaStr}`;
+            return `${timestampStr}[${pid}] ${level.toUpperCase()} ${contextStr}${message as string}${stackStr}${metaStr}`;
         }),
         colors ? format.colorize({ all: true }) : format.simple(),
     );

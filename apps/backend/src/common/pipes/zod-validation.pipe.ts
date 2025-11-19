@@ -46,7 +46,7 @@ export class ZodValidationPipe implements PipeTransform {
             // 使用schema验证并转换值
             return this.schema.parse(value);
         } catch (error) {
-            console.log('校验之前的值', value);
+            console.log('校验之前的值', JSON.stringify(value));
             if (error instanceof ZodError) {
                 // 抛出ValidationException，与系统的错误处理集成
                 throw createValidationException(error, this.errorMessage);

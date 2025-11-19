@@ -20,12 +20,14 @@ export const createSimpleFormatter = (
             : format.simple(),
         format.printf((info) => {
             const { timestamp, level, message, context, ...meta } = info;
-            const contextStr = context ? `[${context}] ` : '';
+            const contextStr = context
+                ? `[${typeof context === 'string' ? context : JSON.stringify(context)}] `
+                : '';
             const metaStr = Object.keys(meta).length
                 ? `\n${JSON.stringify(meta, null, 2)}`
                 : '';
 
-            return `${timestamp ? `${timestamp} ` : ''}${level.toUpperCase()} ${contextStr}${message}${metaStr}`;
+            return `${timestamp ? `${timestamp as string} ` : ''}${level.toUpperCase()} ${contextStr}${message as string}${metaStr}`;
         }),
         colors ? format.colorize({ all: true }) : format.simple(),
     );
