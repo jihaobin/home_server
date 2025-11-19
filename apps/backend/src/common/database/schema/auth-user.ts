@@ -7,9 +7,10 @@ import {
     text,
     uniqueIndex,
     index,
+    uuid,
 } from 'drizzle-orm/pg-core';
 
-import { createId } from '.';
+import { createId, files } from '.';
 import { roleEnum } from './enums';
 import { servicePersonnel } from './shops-service';
 import { userProfiles } from './user-profiles';
@@ -133,6 +134,10 @@ export const userRelations = relations(users, ({ many, one }) => ({
     orders: many(orders),
     notifications: many(notifications),
     userCoupons: many(userCoupons),
+    image: one(files, {
+        fields: [users.id],
+        references: [files.id],
+    }),
 }));
 
 export const accountsRelations = relations(accounts, ({ one }) => ({

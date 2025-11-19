@@ -9,7 +9,6 @@ import {
     cacheServiceFactory,
     createIoRedisCacheService,
 } from './providers/cache.provider';
-import { MemoryCacheService } from './services/memory-cache.service';
 
 // 重新导出CacheType以便外部使用
 export { CacheType };
@@ -23,11 +22,7 @@ export class CacheModule {
         return {
             module: CacheModule,
             global: true,
-            providers: [
-                MemoryCacheService,
-                cacheOptionsProvider,
-                cacheServiceFactory,
-            ],
+            providers: [cacheOptionsProvider, cacheServiceFactory],
             exports: [CACHE_SERVICE],
         };
     }
@@ -62,7 +57,7 @@ export class CacheModule {
         return {
             module: CacheModule,
             global: true,
-            providers: [MemoryCacheService, cacheOptions, cacheServiceFactory],
+            providers: [cacheOptions, cacheServiceFactory],
             exports: [CACHE_SERVICE],
         };
     }
@@ -81,7 +76,6 @@ export class CacheModule {
             module: CacheModule,
             global: true,
             providers: [
-                MemoryCacheService,
                 ioRedisCacheServiceProvider,
                 cacheOptions,
                 cacheServiceFactory,

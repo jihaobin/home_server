@@ -7,7 +7,6 @@ import {
     ICacheService,
 } from '../interfaces/cache-service.interface';
 import { IoRedisCacheService } from '../services/ioredis-cache.service';
-import { MemoryCacheService } from '../services/memory-cache.service';
 
 /**
  * 缓存服务类型
@@ -83,8 +82,7 @@ export const cacheServiceFactory = {
     provide: CACHE_SERVICE,
     useFactory: (
         options: CacheServiceOptions,
-        memoryCacheService: MemoryCacheService,
-        ioRedisCacheService?: IoRedisCacheService,
+        ioRedisCacheService: IoRedisCacheService,
     ): ICacheService | IAdvancedCacheService => {
         switch (options.type) {
             case CacheType.IOREDIS:
@@ -92,14 +90,12 @@ export const cacheServiceFactory = {
                     throw new Error('IoRedis缓存服务未配置，请检查模块配置');
                 }
                 return ioRedisCacheService;
-            case CacheType.MEMORY:
             default:
-                return memoryCacheService;
+                return ioRedisCacheService;
         }
     },
     inject: [
         'CACHE_OPTIONS',
-        MemoryCacheService,
         { token: 'IOREDIS_CACHE_SERVICE', optional: true },
     ],
 };

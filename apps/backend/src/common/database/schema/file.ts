@@ -32,7 +32,7 @@ export const files = pgTable(
 
         // 文件分类和处理
         fileType: varchar('file_type', { length: 20 }).notNull(), // image, video, document
-        thumbnailPath: varchar('thumbnail_path', { length: 500 }), // 缩略图路径（图片类型）
+        blurhash: varchar('blurhash', { length: 255 }), // BlurHash 占位符（图片类型）
 
         // 上传信息
         uploadedBy: varchar('uploaded_by').notNull(), // 上传用户ID
@@ -50,11 +50,11 @@ export const files = pgTable(
         updatedAt: timestamp('updated_at').defaultNow().notNull(),
         deletedAt: timestamp('deleted_at'), // 软删除标记
     },
-    (table) => ([
+    (table) => [
         index('file_hash_idx').on(table.fileHash),
         index('uploader_idx').on(table.uploadedBy),
         index('file_type_idx').on(table.fileType),
-    ]),
+    ],
 );
 
 export const filesRelations = relations(files, ({ one }) => ({
