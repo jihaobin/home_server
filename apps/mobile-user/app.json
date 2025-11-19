@@ -1,90 +1,93 @@
 {
-	"expo": {
-		"name": "mobile-user",
-		"slug": "mobile-user",
-		"version": "1.0.0",
-		"orientation": "portrait",
-		"icon": "./assets/images/icon.png",
-		"scheme": "home-server-user",
-		"userInterfaceStyle": "automatic",
-		"newArchEnabled": true,
-		"ios": {
-			"supportsTablet": true,
+    "expo": {
+        "name": "mobile-user",
+        "slug": "mobile-user",
+        "version": "1.0.0",
+        "orientation": "portrait",
+        "icon": "./assets/images/icon.png",
+        "scheme": "home-server-user",
+        "userInterfaceStyle": "automatic",
+        "newArchEnabled": true,
+        "ios": {
+            "supportsTablet": true,
             "bundleIdentifier": "com.yixin.dingdong"
-		},
-		"android": {
-			"adaptiveIcon": {
-				"foregroundImage": "./assets/images/adaptive-icon.png",
-				"backgroundColor": "#ffffff"
-			},
-			"edgeToEdgeEnabled": true,
-			"permissions": [
-				"android.permission.ACCESS_COARSE_LOCATION",
-				"android.permission.ACCESS_FINE_LOCATION"
-			],
+        },
+        "android": {
+            "adaptiveIcon": {
+                "foregroundImage": "./assets/images/adaptive-icon.png",
+                "backgroundColor": "#ffffff"
+            },
+            "edgeToEdgeEnabled": true,
+            "permissions": [
+                "android.permission.ACCESS_COARSE_LOCATION",
+                "android.permission.ACCESS_FINE_LOCATION"
+            ],
             "package": "com.yixin.dingdong",
-			"intentFilters": [
-				{
-					"action": "VIEW",
-					"data": [
-						{
-							"scheme": "home-server-user",
-							"host": "check-in"
-						},
-						{
-							"scheme": "https",
-							"host": "worker.example.com",
-							"pathPrefix": "/check-in"
-						}
-					],
-					"category": ["BROWSABLE", "DEFAULT"]
-				}
+            "intentFilters": [
+                {
+                    "action": "VIEW",
+                    "data": [
+                        {
+                            "scheme": "home-server-user",
+                            "host": "check-in"
+                        },
+                        {
+                            "scheme": "https",
+                            "host": "worker.example.com",
+                            "pathPrefix": "/check-in"
+                        }
+                    ],
+                    "category": [
+                        "BROWSABLE",
+                        "DEFAULT"
+                    ]
+                }
             ],
             "jsEngine": "hermes"
-		},
-		"web": {
-			"bundler": "metro",
-			"output": "static",
-			"favicon": "./assets/images/favicon.png"
-		},
-		"plugins": [
-			"./plugins/withAndroidSignature",
-			"expo-router",
-			[
-				"expo-splash-screen",
-				{
-					"image": "./assets/images/splash-icon.png",
-					"imageWidth": 200,
-					"resizeMode": "contain",
-					"backgroundColor": "#ffffff"
-				}
-			],
-			[
-				"expo-secure-store",
-				{
-					"configureAndroidBackup": true,
-					"faceIDPermission": "Allow $(PRODUCT_NAME) to access your Face ID biometric data."
-				}
-			],
-			[
-				"expo-location",
-				{
-					"locationAlwaysAndWhenInUsePermission": "当前应用需要访问您的位置，已获取你的服务地址"
-				}
-			],
-			[
-				"expo-qq-location",
-				{
-					"apiKey": "WLEBZ-HCTC3-JMN3L-OLTJV-R2AJE-WCB7J"
-				}
-			],
-			"expo-font",
-			"expo-web-browser",
-			[
-				"native-expo-alipay",
-				{
-					"appId": "9021000153675106"
-				}
+        },
+        "web": {
+            "bundler": "metro",
+            "output": "static",
+            "favicon": "./assets/images/favicon.png"
+        },
+        "plugins": [
+            "./plugins/withAndroidSignature",
+            "expo-router",
+            [
+                "expo-splash-screen",
+                {
+                    "image": "./assets/images/splash-icon.png",
+                    "imageWidth": 200,
+                    "resizeMode": "contain",
+                    "backgroundColor": "#ffffff"
+                }
+            ],
+            [
+                "expo-secure-store",
+                {
+                    "configureAndroidBackup": true,
+                    "faceIDPermission": "Allow $(PRODUCT_NAME) to access your Face ID biometric data."
+                }
+            ],
+            [
+                "expo-location",
+                {
+                    "locationAlwaysAndWhenInUsePermission": "当前应用需要访问您的位置，已获取你的服务地址"
+                }
+            ],
+            [
+                "expo-qq-location",
+                {
+                    "apiKey": "WLEBZ-HCTC3-JMN3L-OLTJV-R2AJE-WCB7J"
+                }
+            ],
+            "expo-font",
+            "expo-web-browser",
+            [
+                "native-expo-alipay",
+                {
+                    "appId": "9021000153675106"
+                }
             ],
             [
                 "expo-build-properties",
@@ -95,16 +98,16 @@
                         ]
                     }
                 }
-    ]
-		],
-		"experiments": {
-			"typedRoutes": true
-		},
-		"extra": {
-			"router": {},
-			"eas": {
-				"projectId": "56004597-0fe8-4294-9aad-4566216d42bf"
-			}
-		}
-	}
+            ]
+        ],
+        "experiments": {
+            "typedRoutes": true
+        },
+        "extra": {
+            "router": {},
+            "eas": {
+                "projectId": "56004597-0fe8-4294-9aad-4566216d42bf"
+            }
+        }
+    }
 }

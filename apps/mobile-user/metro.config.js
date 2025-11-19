@@ -23,7 +23,7 @@ config.resolver.nodeModulesPaths = [
 ];
 
 // 配置 disableHierarchicalLookup
-config.resolver.disableHierarchicalLookup = false;
+config.resolver.disableHierarchicalLookup = true;
 
 module.exports = withNativeWind(config, {
     input: "../../packages/mobile-ui/src/styles/global.css",

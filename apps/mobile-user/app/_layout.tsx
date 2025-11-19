@@ -10,6 +10,8 @@ import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Provider } from "@repo/mobile-ui/components/provider";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
+import { Toaster } from "sonner-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function RootLayout() {
     const hasMounted = React.useRef(false);
@@ -43,6 +45,7 @@ export default function RootLayout() {
                     <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
                     <RootNavigation />
                     <PortalHost />
+                    <Toaster />
                 </ThemeProvider>
             </Provider>
         </GestureHandlerRootView>
