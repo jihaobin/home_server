@@ -253,6 +253,62 @@
       "when": 1761960600269,
       "tag": "0035_fix_order_status_transition",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1761990049154,
+      "tag": "0036_outgoing_union_jack",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1762154237555,
+      "tag": "0037_wide_rictor",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1762311798001,
+      "tag": "0038_melted_warstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1762322058257,
+      "tag": "0039_material_mandarin",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1762480601467,
+      "tag": "0040_clever_morlun",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1762501481527,
+      "tag": "0041_first_shockwave",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1762746990061,
+      "tag": "0042_windy_namor",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1762999982652,
+      "tag": "0043_fast_zaran",
+      "breakpoints": true
     }
   ]
 }

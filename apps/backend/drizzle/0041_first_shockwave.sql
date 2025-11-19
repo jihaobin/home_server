@@ -1,0 +1,1 @@
+DROP INDEX "uq_personnel_pricing_user_service";
