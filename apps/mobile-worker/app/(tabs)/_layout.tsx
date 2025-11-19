@@ -4,26 +4,53 @@ import { Tabs } from "expo-router";
 import { Platform } from "react-native";
 
 export default function TabLayout() {
-	return (
-		<Tabs
-			screenOptions={{
-				headerShown: false,
-				tabBarStyle: Platform.select({
-					ios: {
-						// 在 iOS 上使用透明背景以配合底部毛玻璃效果
-						position: "absolute",
-					},
-					default: {},
-				}),
-			}}
-		>
-			<Tabs.Screen
-				name="index"
-				options={{
-					title: "首页",
-					tabBarIcon: ({ color, size }) => <House size={size} color={color} />,
-				}}
-			/>
-		</Tabs>
-	);
+    return (
+        <Tabs
+            screenOptions={{
+                headerShown: false,
+                tabBarStyle: Platform.select({
+                    ios: {
+                        // 在 iOS 上使用透明背景以配合底部毛玻璃效果
+                        position: "absolute",
+                    },
+                    default: {},
+                }),
+            }}
+        >
+            <Tabs.Screen
+                name="index"
+                options={{
+                    title: "首页",
+                    tabBarIcon: ({ color, size }) => <House size={size} color={color} />,
+                }}
+            />
+            <Tabs.Screen
+                name="orders"
+                options={{
+                    title: "订单",
+                    tabBarIcon: ({ color, size }) => (
+                        <Ionicons name="list" size={size} color={color} />
+                    ),
+                }}
+            />
+            <Tabs.Screen
+                name="earnings"
+                options={{
+                    title: "收益",
+                    tabBarIcon: ({ color, size }) => (
+                        <Ionicons name="wallet" size={size} color={color} />
+                    ),
+                }}
+            />
+            <Tabs.Screen
+                name="profile"
+                options={{
+                    title: "我的",
+                    tabBarIcon: ({ color, size }) => (
+                        <Ionicons name="person" size={size} color={color} />
+                    ),
+                }}
+            />
+        </Tabs>
+    );
 }
