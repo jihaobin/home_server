@@ -41,11 +41,13 @@ export default function OrdersScreen() {
 		hasNextPage,
 		isFetchingNextPage,
 		isLoading,
+		refetch,
 	} = useOrdersListInfinite({
 		customerId: session?.user?.id || "",
 		status: statusFilter,
 		sortOrder: "desc",
 	});
+	const [isRefreshing, setIsRefreshing] = useState(false);
 
 	// 将所有页的数据合并，并根据tab筛选
 	const allOrders = useMemo(() => {
@@ -127,9 +129,20 @@ export default function OrdersScreen() {
 		}
 	}, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-	return (
-		<RequireAuth>
-			<View className="flex-1 bg-bakcground">
+	const handleRefresh = useCallback(async () => {
+		setIsRefreshing(true);
+		try {
+			await refetch({
+				throwOnError: false,
+			});
+		} finally {
+			setIsRefreshing(false);
+		}
+	}, [refetch]);
+
+	const listHeaderComponent = useCallback(() => {
+		return (
+			<View>
 				<View className="px-4 pb-4 pt-10">
 					<Text
 						className="text-2xl font-semibold text-foreground"
@@ -155,7 +168,13 @@ export default function OrdersScreen() {
 						contentContainerStyle={{ paddingRight: 16 }}
 					/>
 				</View>
+			</View>
+		);
+	}, [renderTab, tabKeyExtractor]);
 
+	return (
+		<RequireAuth>
+			<View className="flex-1 bg-bakcground">
 				<FlashList
 					data={listRows}
 					renderItem={renderRow}
@@ -165,6 +184,9 @@ export default function OrdersScreen() {
 					showsVerticalScrollIndicator={false}
 					onEndReached={handleLoadMore}
 					onEndReachedThreshold={0.5}
+					ListHeaderComponent={listHeaderComponent}
+					refreshing={isRefreshing}
+					onRefresh={handleRefresh}
 					contentContainerStyle={{
 						paddingHorizontal: 16,
 						paddingBottom: 24,

@@ -1,4 +1,5 @@
 import { Suspense, useCallback, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
 import { Switch } from "@repo/mobile-ui/components/ui/switch";
 import { Text } from "@repo/mobile-ui/components/ui/text";
@@ -456,6 +457,7 @@ export default function Profile() {
     const userId = user?.id;
     const router = useRouter();
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const queryClient = useQueryClient();
 
     const {
         data: userProfile,
@@ -515,11 +517,15 @@ export default function Profile() {
     const handleRefresh = useCallback(async () => {
         setIsRefreshing(true);
         try {
-            await refetchUserProfile({ throwOnError: false });
+            await Promise.all([
+                refetchUserProfile({ throwOnError: false }),
+                queryClient.invalidateQueries({ queryKey: ["orders-list"] }),
+                queryClient.invalidateQueries({ queryKey: ["orders-list-infinite"] }),
+            ]);
         } finally {
             setIsRefreshing(false);
         }
-    }, [refetchUserProfile]);
+    }, [queryClient, refetchUserProfile]);
 
     const isRefreshingState = isRefreshing || isProfileFetching;
 

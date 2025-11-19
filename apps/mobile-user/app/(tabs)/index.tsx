@@ -17,10 +17,10 @@ import { Suspense, useCallback, useMemo, useState } from "react";
 import {
     ActivityIndicator,
     FlatList,
-	Image,
+    Image,
     type ListRenderItemInfo,
     Pressable,
-	View,
+    View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ServiceProviderSheet } from "@/components/index_screen/ServiceProviderSheet";
@@ -153,15 +153,11 @@ function ServiceProviderSheetWithData({
     const { setService: setServiceId, setServicePersonnelInfo } =
         useServiceStore();
 
-	return (
+    return (
         <ServiceProviderSheet
             service={service}
             providers={providers}
             onClose={onClose}
-            onProviderSelect={(provider) => {
-                console.log("选择服务人员:", provider);
-                // TODO: 跳转到预约页面
-            }}
             onProviderDetail={(provider) => {
                 router.push({
                     pathname: "/servicePersonnel",
@@ -198,7 +194,7 @@ function CategoryTab({
                     : "border-border bg-muted/60 dark:bg-muted/40",
             )}
             onPress={() => onPress(category.id)}
-		>
+        >
             <View className="flex-row items-center">
                 {isRemoteIcon ? (
                     <Image
@@ -225,7 +221,7 @@ function CategoryTab({
                     >
                         <Text className="text-[10px] font-semibold text-primary">
                             {category.label.slice(0, 1)}
-						</Text>
+                        </Text>
                     </View>
                 )}
                 <Text
@@ -351,6 +347,7 @@ export default function HomeScreen() {
         null,
     );
     const [isModalVisible, setIsModalVisible] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     // 使用封装的防抖 hook - 用户停止输入500ms后才更新
     const debouncedSearchValue = useDebounce(searchValue, 500);
@@ -361,6 +358,7 @@ export default function HomeScreen() {
         fetchNextPage,
         hasNextPage,
         isFetchingNextPage,
+        refetch: refetchServices,
     } = useServiceList({
         limit: 10,
         sortOrder: "asc",
@@ -485,75 +483,100 @@ export default function HomeScreen() {
         );
     }, [isFetchingNextPage]);
 
-    return (
-        <SafeAreaView className="flex-1">
-            <View className="px-4 pb-3">
-                <View className="flex-row items-center justify-between">
-                    <View>
-                        <Text className="mt-4 text-3xl font-semibold text-foreground">
-                            叮咚上门
-                        </Text>
-                        <Text className="mt-1 text-sm text-muted-foreground">
-                            专业团队到家，30 分钟极速响应
-                        </Text>
-                    </View>
-                    <View className="flex-row items-center rounded-full bg-primary/10 dark:bg-primary/20 px-3 py-1.5">
-                        <Icon as={ICON_MAP.MapPin} size={16} className="text-primary" />
-                        <Text className="ml-1 text-xs font-medium text-primary">
-                            {location?.district ?? location?.city ?? location?.province}
-                        </Text>
-                    </View>
-				</View>
+    const handleRefresh = useCallback(async () => {
+        setIsRefreshing(true);
+        try {
+            await refetchServices({
+                throwOnError: false,
+            });
+        } finally {
+            setIsRefreshing(false);
+        }
+    }, [refetchServices]);
 
-                <View className="mt-4 flex-row items-center rounded-full border border-border px-4">
-                    <Icon
-                        as={ICON_MAP.Search}
-                        size={18}
-                        className="text-muted-foreground"
-                    />
-                    <Input
-                        value={searchValue}
-                        onChangeText={(value) => {
-                            setSearchValue(value);
+    const renderListHeader = useCallback(() => {
+        return (
+            <View>
+                <View className="px-4 pb-3">
+                    <View className="flex-row items-center justify-between">
+                        <View>
+                            <Text className="mt-4 text-3xl font-semibold text-foreground">
+                                叮咚上门
+                            </Text>
+                            <Text className="mt-1 text-sm text-muted-foreground">
+                                专业团队到家，30 分钟极速响应
+                            </Text>
+                        </View>
+                        <View className="flex-row items-center rounded-full bg-primary/10 dark:bg-primary/20 px-3 py-1.5">
+                            <Icon as={ICON_MAP.MapPin} size={16} className="text-primary" />
+                            <Text className="ml-1 text-xs font-medium text-primary">
+                                {location?.district ?? location?.city ?? location?.province}
+                            </Text>
+                        </View>
+                    </View>
+
+                    <View className="mt-4 flex-row items-center rounded-full border border-border px-4">
+                        <Icon
+                            as={ICON_MAP.Search}
+                            size={18}
+                            className="text-muted-foreground"
+                        />
+                        <Input
+                            value={searchValue}
+                            onChangeText={(value) => {
+                                setSearchValue(value);
+                            }}
+                            placeholder="搜索你想要的服务"
+                            placeholderTextColor="rgba(148, 163, 184, 0.9)"
+                            className="ml-2 flex-1 text-sm text-foreground border-transparent outline-none"
+                            returnKeyType="search"
+                        />
+                        {searchValue ? (
+                            <Pressable onPress={() => setSearchValue("")} hitSlop={8}>
+                                <Icon
+                                    as={ICON_MAP.X}
+                                    size={16}
+                                    className="text-muted-foreground"
+                                />
+                            </Pressable>
+                        ) : null}
+                    </View>
+                </View>
+
+                <View className="border-b border-border px-4 pb-3 pt-2">
+                    <Text
+                        className="text-base font-semibold text-foreground"
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                    >
+                        选择需要的服务
+                    </Text>
+                    <FlatList
+                        className="mt-3"
+                        data={serviceCategories}
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        renderItem={renderCategoryTab}
+                        keyExtractor={categoryKeyExtractor}
+                        contentContainerStyle={{
+                            paddingRight: 16,
                         }}
-                        placeholder="搜索你想要的服务"
-                        placeholderTextColor="rgba(148, 163, 184, 0.9)"
-                        className="ml-2 flex-1 text-sm text-foreground border-transparent outline-none"
-                        returnKeyType="search"
                     />
-                    {searchValue ? (
-                        <Pressable onPress={() => setSearchValue("")} hitSlop={8}>
-                            <Icon
-                                as={ICON_MAP.X}
-                                size={16}
-                                className="text-muted-foreground"
-                            />
-						</Pressable>
-                    ) : null}
                 </View>
             </View>
+        );
+    }, [
+        categoryKeyExtractor,
+        location?.city,
+        location?.district,
+        location?.province,
+        renderCategoryTab,
+        searchValue,
+        serviceCategories,
+    ]);
 
-            <View className="border-b border-border px-4 pb-3 pt-2">
-                <Text
-                    className="text-base font-semibold text-foreground"
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                >
-                    选择需要的服务
-                </Text>
-                <FlatList
-                    className="mt-3"
-                    data={serviceCategories}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    renderItem={renderCategoryTab}
-                    keyExtractor={categoryKeyExtractor}
-                    contentContainerStyle={{
-                        paddingRight: 16,
-                    }}
-                />
-            </View>
-
+    return (
+        <SafeAreaView className="flex-1">
             <FlatList
                 data={displayedItems}
                 keyExtractor={serviceKeyExtractor}
@@ -562,11 +585,14 @@ export default function HomeScreen() {
                 onEndReached={handleLoadMore}
                 onEndReachedThreshold={0.5}
                 ListFooterComponent={renderListFooter}
+                ListHeaderComponent={renderListHeader}
                 contentContainerStyle={{
                     paddingHorizontal: 16,
                     paddingTop: 16,
                     paddingBottom: 32,
                 }}
+                refreshing={isRefreshing}
+                onRefresh={handleRefresh}
                 ListEmptyComponent={
                     <View className="flex-1 items-center justify-center px-6 py-24">
                         {emptyStateIcon ? (
@@ -583,7 +609,7 @@ export default function HomeScreen() {
                             请尝试调整关键词或切换其他服务分类
                         </Text>
                     </View>
-				}
+                }
                 showsVerticalScrollIndicator={false}
                 removeClippedSubviews
             />
@@ -610,5 +636,5 @@ export default function HomeScreen() {
                 </BottomSheetModal>
             )}
         </SafeAreaView>
-	);
+    );
 }
