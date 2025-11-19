@@ -7,20 +7,16 @@ import { Input } from "@repo/mobile-ui/components/ui/input";
 import { Label } from "@repo/mobile-ui/components/ui/label";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { toast } from "sonner-native";
-import { authClient, signOutWithCleanup } from "../../lib/auth";
-import * as SecureStore from "expo-secure-store";
+import { authClient } from "../../lib/auth";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const phoneRegex = /^1[3-9]\d{9}$/;
 
-export default function WorkerRegisterScreen() {
+export default function WorkerForgotPasswordScreen() {
     const [formData, setFormData] = useState({
-        name: "",
         email: "",
-        phone: "",
-        password: "",
-        confirmPassword: "",
         otp: "",
+        newPassword: "",
+        confirmPassword: "",
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSendingOtp, setIsSendingOtp] = useState(false);
@@ -39,7 +35,7 @@ export default function WorkerRegisterScreen() {
 
     const handleSendOtp = async () => {
         if (!formData.email.trim() || !emailRegex.test(formData.email)) {
-            toast.error("请先输入有效的邮箱地址");
+            toast.error("请输入有效的邮箱地址");
             return;
         }
 
@@ -47,16 +43,15 @@ export default function WorkerRegisterScreen() {
         try {
             const { error } = await authClient.emailOtp.sendVerificationOtp({
                 email: formData.email.trim(),
-                type: "email-verification",
+                type: "forget-password",
             });
 
             if (error) {
-                console.log(error)
                 toast.error(error.message || "验证码发送失败");
                 return;
             }
 
-            toast.success("验证码已发送，请注意查收");
+            toast.success("验证码已发送至邮箱，请查收");
             setCountdown(60);
         } catch (err) {
             toast.error("网络连接失败，请稍后再试");
@@ -66,77 +61,44 @@ export default function WorkerRegisterScreen() {
     };
 
     const validateForm = () => {
-        if (!formData.name.trim()) {
-            toast.error("请输入姓名");
-            return false;
-        }
         if (!formData.email.trim() || !emailRegex.test(formData.email)) {
             toast.error("请输入正确的邮箱");
-            return false;
-        }
-        if (!formData.phone.trim() || !phoneRegex.test(formData.phone)) {
-            toast.error("请输入 11 位大陆手机号");
             return false;
         }
         if (!formData.otp.trim() || formData.otp.length !== 6) {
             toast.error("请输入 6 位验证码");
             return false;
         }
-        if (formData.password.length < 6) {
-            toast.error("密码至少 6 位");
+        if (formData.newPassword.length < 6) {
+            toast.error("新密码至少 6 位");
             return false;
         }
-        if (formData.password !== formData.confirmPassword) {
+        if (formData.newPassword !== formData.confirmPassword) {
             toast.error("两次密码输入不一致");
             return false;
         }
         return true;
     };
 
-    const handleRegister = async () => {
+    const handleResetPassword = async () => {
         if (!validateForm()) {
             return;
         }
 
         setIsSubmitting(true);
         try {
-            // 确保彻底登出，避免遗留会话干扰注册
-            try {
-                await signOutWithCleanup();
-            } catch {
-                // ignore
-            }
-            await Promise.allSettled([
-                SecureStore.deleteItemAsync("mobile-worker_cookie"),
-                SecureStore.deleteItemAsync("mobile-worker_session_data"),
-                SecureStore.deleteItemAsync("mobile-worker:session"),
-                SecureStore.deleteItemAsync("mobile-worker:refresh_token"),
-                SecureStore.deleteItemAsync("mobile-worker:access_token"),
-            ]);
-
-            const signUpResult = await authClient.signUp.email({
+            const result = await authClient.emailOtp.resetPassword({
                 email: formData.email.trim(),
-                password: formData.password,
-                name: formData.name.trim(),
-                role: "service_personnel",
+                otp: formData.otp.trim(),
+                password: formData.newPassword,
             });
 
-            if (signUpResult.error) {
-                toast.error(signUpResult.error.message || "注册失败，请稍后重试");
+            if (result.error) {
+                toast.error(result.error.message || "验证码错误或已过期");
                 return;
             }
 
-            const verifyResult = await authClient.emailOtp.verifyEmail({
-                email: formData.email.trim(),
-                otp: formData.otp.trim(),
-            });
-
-            if (verifyResult.error) {
-                toast.warning("账号创建成功，但邮箱验证失败，请稍后登录继续验证");
-            } else {
-                toast.success("注册成功，邮箱已完成验证");
-            }
-
+            toast.success("密码已更新，请使用新密码登录");
             router.replace("/auth/login" as never);
         } catch (err) {
             toast.error("网络连接失败，请稍后再试");
@@ -155,25 +117,20 @@ export default function WorkerRegisterScreen() {
                 >
                     <View className="flex-1 px-6 pb-12">
                         <View className="pt-10 gap-2">
-                            <Text className="text-sm uppercase tracking-[4px] text-primary">Join Team</Text>
-                            <Text className="text-3xl font-semibold text-foreground">申请成为服务人员</Text>
+                            <Text className="text-sm uppercase tracking-[4px] text-primary">Account</Text>
+                            <Text className="text-3xl font-semibold text-foreground">重置服务人员密码</Text>
                             <Text className="text-base text-muted-foreground">
-                                填写基础信息并完成邮箱验证，即可登录工作台接收指派。
+                                输入绑定邮箱并完成验证码验证，即可重新设置密码。
                             </Text>
                         </View>
 
                         <View className="mt-8 gap-5">
                             <View className="gap-2">
-                                <Label className="text-xs text-muted-foreground">姓名</Label>
-                                <Input placeholder="请填写真实姓名" value={formData.name} onChangeText={setField("name")} />
-                            </View>
-
-                            <View className="gap-2">
-                                <Label className="text-xs text-muted-foreground">邮箱</Label>
+                                <Label className="text-xs text-muted-foreground">绑定邮箱</Label>
                                 <Input
                                     autoCapitalize="none"
-                                    keyboardType="email-address"
                                     autoComplete="email"
+                                    keyboardType="email-address"
                                     placeholder="name@company.com"
                                     value={formData.email}
                                     onChangeText={setField("email")}
@@ -181,7 +138,7 @@ export default function WorkerRegisterScreen() {
                             </View>
 
                             <View className="gap-2">
-                                <Label className="text-xs text-muted-foreground">邮箱验证码</Label>
+                                <Label className="text-xs text-muted-foreground">验证码</Label>
                                 <View className="flex-row gap-3">
                                     <Input
                                         className="flex-1"
@@ -205,29 +162,18 @@ export default function WorkerRegisterScreen() {
                             </View>
 
                             <View className="gap-2">
-                                <Label className="text-xs text-muted-foreground">手机号</Label>
-                                <Input
-                                    keyboardType="phone-pad"
-                                    placeholder="11 位手机号码"
-                                    maxLength={11}
-                                    value={formData.phone}
-                                    onChangeText={setField("phone")}
-                                />
-                            </View>
-
-                            <View className="gap-2">
-                                <Label className="text-xs text-muted-foreground">设置密码</Label>
+                                <Label className="text-xs text-muted-foreground">新密码</Label>
                                 <Input
                                     secureTextEntry
                                     autoComplete="new-password"
-                                    placeholder="至少 6 位，区分大小写"
-                                    value={formData.password}
-                                    onChangeText={setField("password")}
+                                    placeholder="至少 6 位"
+                                    value={formData.newPassword}
+                                    onChangeText={setField("newPassword")}
                                 />
                             </View>
 
                             <View className="gap-2">
-                                <Label className="text-xs text-muted-foreground">确认密码</Label>
+                                <Label className="text-xs text-muted-foreground">确认新密码</Label>
                                 <Input
                                     secureTextEntry
                                     autoComplete="new-password"
@@ -236,16 +182,23 @@ export default function WorkerRegisterScreen() {
                                     onChangeText={setField("confirmPassword")}
                                 />
                             </View>
+
+                            <View className="rounded-2xl border border-border/60 bg-muted/30 p-4">
+                                <Text className="text-sm font-medium text-foreground">温馨提示</Text>
+                                <Text className="text-xs text-muted-foreground mt-2">
+                                    验证码仅对当前设备有效，为保障账户安全，重置完成后请妥善保管新密码。
+                                </Text>
+                            </View>
                         </View>
 
                         <View className="mt-8 gap-4">
-                            <Button disabled={isSubmitting} onPress={handleRegister}>
+                            <Button disabled={isSubmitting} onPress={handleResetPassword}>
                                 <Text className={isSubmitting ? "opacity-60" : ""}>
-                                    {isSubmitting ? "提交中..." : "提交申请"}
+                                    {isSubmitting ? "提交中..." : "更新密码"}
                                 </Text>
                             </Button>
                             <Button variant="ghost" onPress={() => router.replace("/auth/login" as never)}>
-                                <Text className="text-sm">已有账号？返回登录</Text>
+                                <Text className="text-sm">返回登录</Text>
                             </Button>
                         </View>
                     </View>

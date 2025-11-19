@@ -10,6 +10,7 @@ import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Provider } from "@repo/mobile-ui/components/provider";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
+import { authClient } from "../lib/auth";
 
 export default function RootLayout() {
     const hasMounted = React.useRef(false);
@@ -23,7 +24,10 @@ export default function RootLayout() {
 
         if (Platform.OS === "web") {
             // Adds the background color to the html element to prevent white background on overscroll.
-            document.documentElement.classList.add("bg-background");
+            const doc = (globalThis as Record<string, unknown>).document as
+                | { documentElement?: { classList?: { add: (value: string) => void } } }
+                | undefined;
+            doc?.documentElement?.classList?.add("bg-background");
         }
         setIsColorSchemeLoaded(true);
         hasMounted.current = true;
@@ -35,7 +39,7 @@ export default function RootLayout() {
 
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
-            <Provider>
+            <Provider authClient={authClient}>
                 <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
                     <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
                     <RootNavigation />
@@ -54,22 +58,117 @@ function RootNavigation() {
         <Stack
             screenOptions={{
                 headerShown: false,
-                headerBackTitle: "返回", // 为返回按钮添加文字
+                headerBackTitle: "返回",
                 headerStyle: {
-                    backgroundColor: NAV_THEME[colorScheme ?? "light"].colors.card, // 动态设置导航栏背景颜色
+                    backgroundColor: NAV_THEME[colorScheme ?? "light"].colors.card,
                 },
-                headerTintColor: NAV_THEME[colorScheme ?? "light"].colors.primary, // 动态设置返回按钮和标题颜色
+                headerTintColor: NAV_THEME[colorScheme ?? "light"].colors.primary,
                 headerTitleStyle: {
-                    color: NAV_THEME[colorScheme ?? "light"].colors.text, // 动态设置标题文字颜色
+                    color: NAV_THEME[colorScheme ?? "light"].colors.text,
                 },
             }}
         >
-            <Stack.Screen
-                name="(tabs)"
-                options={{
-                    headerShown: false,
-                }}
-            />
+            <Stack.Protected guard={!!session?.user?.id}>
+                <Stack.Screen
+                    name="(tabs)"
+                    options={{
+                        headerShown: false,
+                    }}
+                />
+                <Stack.Screen
+                    name="orders/[id]"
+                    options={{
+                        title: "订单详情",
+                        headerShown: false,
+                    }}
+                />
+                <Stack.Screen
+                    name="earnings/withdraw"
+                    options={{
+                        title: "提现申请",
+                        headerShown: false,
+                    }}
+                />
+                <Stack.Screen
+                    name="profile/edit"
+                    options={{
+                        title: "个人信息",
+                        headerShown: false,
+                    }}
+                />
+                <Stack.Screen
+                    name="profile/service-settings"
+                    options={{
+                        title: "服务设置",
+                        headerShown: false,
+                    }}
+                />
+                <Stack.Screen
+                    name="profile/service-area"
+                    options={{
+                        title: "服务区域",
+                        headerShown: false,
+                    }}
+                />
+                <Stack.Screen
+                    name="profile/account-binding"
+                    options={{
+                        title: "账号绑定",
+                        headerShown: false,
+                    }}
+                />
+                <Stack.Screen
+                    name="profile/settings"
+                    options={{
+                        title: "系统设置",
+                        headerShown: false,
+                    }}
+                />
+                <Stack.Screen
+                    name="scan/index"
+                    options={{
+                        title: "扫码核验",
+                        headerShown: false,
+                    }}
+                />
+                <Stack.Screen
+                    name="scan/explore"
+                    options={{
+                        title: "扫码记录",
+                        headerShown: false,
+                    }}
+                />
+                <Stack.Screen
+                    name="verification/id-card"
+                    options={{
+                        title: "实名认证",
+                        headerShown: false,
+                    }}
+                />
+            </Stack.Protected>
+
+            <Stack.Protected guard={!session?.user?.id}>
+                <Stack.Screen
+                    name="auth/login"
+                    options={{
+                        headerShown: false,
+                    }}
+                />
+                <Stack.Screen
+                    name="auth/register"
+                    options={{
+                        title: "注册服务账号",
+                        presentation: "modal",
+                    }}
+                />
+                <Stack.Screen
+                    name="auth/forgot-password"
+                    options={{
+                        title: "重置密码",
+                        presentation: "modal",
+                    }}
+                />
+            </Stack.Protected>
         </Stack>
     );
 }

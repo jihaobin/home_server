@@ -384,4 +384,111 @@ ${resetUrl}
             throw new BadRequestException('密码重置邮件发送失败，请稍后重试');
         }
     }
+
+    /**
+     * 发送OTP验证码邮件
+     * @param email 用户邮箱
+     * @param otp OTP验证码
+     * @param type OTP类型 (sign-in, email-verification, forget-password)
+     * @param userName 用户名（可选）
+     */
+    async sendOTPEmail(
+        email: string,
+        otp: string,
+        type: 'sign-in' | 'email-verification' | 'forget-password',
+        userName: string = '用户',
+    ): Promise<void> {
+        try {
+            let subject = '';
+            let purpose = '';
+
+            switch (type) {
+                case 'sign-in':
+                    subject = '登录验证码';
+                    purpose = '登录';
+                    break;
+                case 'email-verification':
+                    subject = '邮箱验证码';
+                    purpose = '验证邮箱';
+                    break;
+                case 'forget-password':
+                    subject = '密码重置验证码';
+                    purpose = '重置密码';
+                    break;
+            }
+
+            // 生成HTML内容
+            const html = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #4F46E5; color: white; padding: 20px; text-align: center; }
+        .content { background-color: #f9f9f9; padding: 30px; }
+        .otp-box { background-color: #fff; border: 2px solid #4F46E5; border-radius: 8px;
+                   padding: 20px; text-align: center; margin: 20px 0; }
+        .otp-code { font-size: 32px; font-weight: bold; color: #4F46E5; letter-spacing: 8px; }
+        .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+        .warning { color: #dc2626; font-size: 14px; margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>叮咚上门</h1>
+        </div>
+        <div class="content">
+            <h2>尊敬的${userName}，您好！</h2>
+            <p>您正在进行<strong>${purpose}</strong>操作，请使用以下验证码完成验证：</p>
+
+            <div class="otp-box">
+                <p style="margin: 0; color: #666;">您的验证码是：</p>
+                <div class="otp-code">${otp}</div>
+            </div>
+
+            <p>验证码有效期为 <strong>5分钟</strong>，请尽快完成验证。</p>
+            <p class="warning">⚠️ 如果这不是您本人的操作，请忽略此邮件，您的账户仍然是安全的。</p>
+        </div>
+        <div class="footer">
+            <p>此邮件为系统自动发送，请勿直接回复。</p>
+            <p>&copy; 2024 叮咚上门. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+            `.trim();
+
+            // 生成纯文本版本作为备用
+            const text = `
+${purpose}验证码
+
+尊敬的${userName}，您好！
+
+您正在进行${purpose}操作，您的验证码是：
+
+${otp}
+
+验证码有效期为5分钟，请尽快完成验证。
+
+如果这不是您本人的操作，请忽略此邮件，您的账户仍然是安全的。
+
+此邮件为系统自动发送，请勿直接回复。
+            `.trim();
+
+            await this.sendEmail({
+                to: email,
+                subject,
+                html,
+                text,
+            });
+
+            this.logger.log(`OTP验证码邮件已发送到: ${email}, 类型: ${type}`);
+        } catch (error) {
+            this.logger.error(`发送OTP验证码邮件失败 (${email}):`, error);
+            throw new BadRequestException('验证码邮件发送失败，请稍后重试');
+        }
+    }
 }

@@ -21,6 +21,8 @@ import {
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Toaster } from "sonner-native";
 import { queryClient } from "@repo/lib/query-client";
+import { authClient as defaultAuthClient } from "@repo/lib/auth-client";
+import { setApiClientAuthClient } from "@repo/lib/http-client";
 import { SessionProvider } from "./SessionProvider";
 import { SplashScreenController } from "./splash";
 import { DevToolsBubble } from "react-native-react-query-devtools";
@@ -48,7 +50,9 @@ function onAppStateChange(status: AppStateStatus) {
     }
 }
 
-export function Provider({ children }: { children: React.ReactNode }) {
+export function Provider({ children, authClient }: { children: React.ReactNode; authClient?: typeof defaultAuthClient }) {
+    const resolvedAuthClient = authClient ?? defaultAuthClient;
+    setApiClientAuthClient(resolvedAuthClient);
     // react native 应用获取焦点时重新获取数据配置
     useEffect(() => {
         const subscription = AppState.addEventListener("change", onAppStateChange);
@@ -80,7 +84,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
                         onReset={reset}
                     >
                         <QueryClientProvider client={queryClient}>
-                            <SessionProvider>
+                            <SessionProvider authClient={resolvedAuthClient}>
                                 <Suspense
                                     fallback={
                                         <View className="flex-1 items-center justify-center bg-white">
