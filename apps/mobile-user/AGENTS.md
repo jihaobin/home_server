@@ -7,6 +7,65 @@
 - 关键业务聚焦登录注册、订单管理、服务地址维护和地图定位，与 `apps/mobile-worker` 在授权 Cookie、地址结构上保持一致。
 - 顶层 `Provider` 在 `app/_layout.tsx` 中装配主题、会话、缓存和错误组件，保证各屏共享统一体验。
 
+## ⚠️ NativeWind CSS Interop 已知问题
+
+**问题描述：**
+
+- NativeWind v4 的 `react-native-css-interop` 存在竞态条件，当动态切换某些 className 时会触发导航上下文错误
+- 错误信息：`Couldn't find a navigation context. Have you wrapped your app with 'NavigationContainer'?`
+- 这个错误是误导性的 - 实际问题不在于 NavigationContainer，而在于 CSS Interop 的内部机制
+
+**触发问题的 className：**
+
+- `shadow-*`（如 `shadow-sm`、`shadow-md`）
+- `bg-color/opacity` 快捷语法（如 `bg-white/15`、`bg-primary/10`）
+- `text-color/opacity` 快捷语法（如 `text-white/80`）
+- `opacity-*`（如 `opacity-50`）
+- `text-pretty` 等实验性类
+
+**解决方案：**
+
+1. **对于动态切换的组件**（如按钮激活状态、开关切换）：
+   - 使用内联 `style` 替代动态 `className`
+   - 保留静态的 `className`（如布局、间距）
+
+   ```tsx
+   // ❌ 错误 - 动态切换 shadow 和 bg 会触发错误
+   <Pressable className={isSelected ? "bg-primary shadow-sm" : "bg-muted"}>
+
+   // ✅ 正确 - 使用内联样式
+   <Pressable
+     className="px-4 py-2 rounded-full"
+     style={isSelected ? {
+       backgroundColor: "hsl(var(--primary))",
+       shadowColor: "#000",
+       shadowOffset: { width: 0, height: 1 },
+       shadowOpacity: 0.05,
+       shadowRadius: 2,
+       elevation: 1,
+     } : {
+       backgroundColor: "hsl(var(--muted))"
+     }}
+   >
+   ```
+
+2. **对于静态组件**（不动态切换的）：
+   - 可以安全使用这些 className
+   - 问题主要出现在状态变化导致 className 重新计算时
+
+3. **CSS 变量使用：**
+   - 使用 `hsl(var(--primary))` 等 CSS 变量保持主题一致性
+   - 主题颜色定义在 `packages/mobile-ui/src/theme.ts` 中
+
+**相关 Issues：**
+
+- <https://github.com/nativewind/nativewind/issues/1557>
+- <https://github.com/nativewind/nativewind/issues/1536>
+
+**示例修复：**
+
+参考 `app/address/edit-address.tsx` 中的 `GenderButton` 组件和默认地址切换开关的实现。
+
 ## 主要依赖栈
 
 - Expo 54 + expo-router 6 构建导航，结合 React Navigation `ThemeProvider` 与 `@repo/mobile-ui` 样式体系。
