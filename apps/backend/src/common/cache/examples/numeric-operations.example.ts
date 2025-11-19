@@ -88,7 +88,7 @@ export class NumericOperationsExample {
             );
 
             return currentCount <= maxRequests;
-        } catch (error) {
+        } catch {
             // 如果出错，允许请求通过（fail-open策略）
             return true;
         }

@@ -103,7 +103,7 @@ export function Cacheable(options: CacheableOptions = {}): MethodDecorator {
             }
 
             // 执行原方法并缓存结果
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
             const result = await originalMethod.apply(this, args);
 
             // 只缓存非undefined的结果
