@@ -5,7 +5,7 @@ import { cn } from "@repo/mobile-ui/lib/utils";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { icons as lucideIconRegistry } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import useServiceStore from "@/stores/service";
 
 const ICON_MAP = lucideIconRegistry;
@@ -47,6 +47,8 @@ export default function ServiceTimePickerScreen() {
 
 	const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 	const [selectedTime, setSelectedTime] = useState<TimeSlot | null>(null);
+	const [refreshCounter, setRefreshCounter] = useState(0);
+	const [isRefreshing, setIsRefreshing] = useState(false);
 
 	// 从参数中获取工作配置，如果没有则使用默认值
 	const workDays = params.workDays || DEFAULT_WORK_DAYS;
@@ -113,7 +115,7 @@ export default function ServiceTimePickerScreen() {
 		}
 
 		return options;
-	}, [workDays]);
+	}, [workDays, refreshCounter]);
 
 	// 生成时间段选项（根据工作时间）
 	const timeSlots = useMemo<TimeSlot[]>(() => {
@@ -159,7 +161,7 @@ export default function ServiceTimePickerScreen() {
 		}
 
 		return slots;
-	}, [selectedDay, workStartTime, workEndTime]);
+	}, [selectedDay, workStartTime, workEndTime, refreshCounter]);
 
 	// 初始化选中今天
 	useMemo(() => {
@@ -176,6 +178,16 @@ export default function ServiceTimePickerScreen() {
 			router.back();
 		}
 	}, [selectedDay, selectedTime, setServiceTime, router]);
+
+	const handleRefresh = useCallback(() => {
+		setIsRefreshing(true);
+		setSelectedDay(null);
+		setSelectedTime(null);
+		setRefreshCounter((prev) => prev + 1);
+		setTimeout(() => {
+			setIsRefreshing(false);
+		}, 300);
+	}, []);
 
 	return (
 		<View className="flex-1 bg-background">
@@ -200,7 +212,13 @@ export default function ServiceTimePickerScreen() {
 				</View>
 			</View>
 
-			<ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+			<ScrollView
+				className="flex-1"
+				showsVerticalScrollIndicator={false}
+				refreshControl={
+					<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
+				}
+			>
 				{/* 日期选择 */}
 				<View className="border-b border-border bg-background">
 					<ScrollView

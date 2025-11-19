@@ -1269,6 +1269,14 @@ export const OrdersSchema = z
             description: "服务预约时间",
             title: "服务预约时间",
         }),
+        serviceStartedAt: z.date().nullable().optional().meta({
+            description: "服务开始时间",
+            title: "服务开始时间",
+        }),
+        serviceCompletedAt: z.date().nullable().optional().meta({
+            description: "服务完成时间",
+            title: "服务完成时间",
+        }),
         cancelReason: z.string().max(500).nullable().optional().meta({
             description: "取消原因",
             title: "取消原因",
@@ -1345,6 +1353,10 @@ export const OrderAssignmentsSchema = z
                 description: "订单分配时间",
                 title: "分配时间",
             }),
+        acceptedAt: z.date().nullable().optional().meta({
+            description: "服务人员接单时间",
+            title: "接单时间",
+        }),
     })
     .meta({
         title: "订单分配表",
@@ -1552,6 +1564,67 @@ export const ReviewsSchema = z
         description: "存储用户对订单的评价信息",
     });
 
+// 评价统计表
+export const ReviewStatsDataBaseSchema = z
+    .object({
+        targetId: z.string().max(255).meta({
+            description: "被评价对象ID",
+            title: "被评价对象ID",
+        }),
+        targetType: ReviewTargetTypeEnum.meta({
+            description: "被评价对象类型",
+            title: "被评价对象类型",
+        }),
+        serviceId: z.string().max(255).nullable().meta({
+            description: "服务ID，NULL表示全部服务的统计",
+            title: "服务ID",
+        }),
+        totalCount: z.number().int().min(0).default(0).meta({
+            description: "总评价数",
+            title: "总评价数",
+        }),
+        goodCount: z.number().int().min(0).default(0).meta({
+            description: "好评数（4-5星）",
+            title: "好评数",
+        }),
+        neutralCount: z.number().int().min(0).default(0).meta({
+            description: "中评数（3星）",
+            title: "中评数",
+        }),
+        badCount: z.number().int().min(0).default(0).meta({
+            description: "差评数（1-2星）",
+            title: "差评数",
+        }),
+        averageRating: z.number().int().min(0).default(0).meta({
+            description: "平均评分*100（如450表示4.50星）",
+            title: "平均评分",
+        }),
+        averageServiceQuality: z.number().int().min(0).nullable().default(0).meta({
+            description: "平均服务质量评分*100",
+            title: "平均服务质量评分",
+        }),
+        averageAttitude: z.number().int().min(0).nullable().default(0).meta({
+            description: "平均态度评分*100",
+            title: "平均态度评分",
+        }),
+        averagePunctuality: z.number().int().min(0).nullable().default(0).meta({
+            description: "平均准时性评分*100",
+            title: "平均准时性评分",
+        }),
+        lastReviewAt: z.date().nullable().optional().meta({
+            description: "最后评价时间",
+            title: "最后评价时间",
+        }),
+        updatedAt: z.date().optional().meta({
+            description: "更新时间",
+            title: "更新时间",
+        }),
+    })
+    .meta({
+        title: "评价统计表",
+        description: "存储被评价对象的评分统计信息",
+    });
+
 // 收入表（关联订单和用户）
 export const EarningsSchema = z
     .object({
@@ -1753,6 +1826,7 @@ export type Payments = z.infer<typeof PaymentsSchema>;
 export type Blocks = z.infer<typeof BlocksSchema>;
 export type Follows = z.infer<typeof FollowsSchema>;
 export type Reviews = z.infer<typeof ReviewsSchema>;
+export type ReviewDataBaseStats = z.infer<typeof ReviewStatsDataBaseSchema>;
 export type Earnings = z.infer<typeof EarningsSchema>;
 export type Withdrawals = z.infer<typeof WithdrawalsSchema>;
 export type Notifications = z.infer<typeof NotificationsSchema>;

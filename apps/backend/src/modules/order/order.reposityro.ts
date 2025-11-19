@@ -1,5 +1,4 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import type { CreateOrder } from '@repo/types';
 import {
     and,
     asc,
@@ -8,6 +7,7 @@ import {
     eq,
     getTableColumns,
     gte,
+    isNotNull,
     lte,
     type SQL,
     sql,
@@ -49,6 +49,21 @@ export class OrderRepository {
         refunded: [], // 退款的订单不能再改变状态
     };
 
+    private buildPaginationMeta(total: number, page: number, limit: number) {
+        const safePage = page > 0 ? page : 1;
+        const safeLimit = limit > 0 ? limit : 10;
+        const totalPages = safeLimit === 0 ? 0 : Math.ceil(total / safeLimit);
+
+        return {
+            page: safePage,
+            limit: safeLimit,
+            total,
+            totalPages,
+            hasNext: safePage < totalPages,
+            hasPrev: safePage > 1 && totalPages > 0,
+        };
+    }
+
     /**
      * 获取客户的订单列表（简化格式）
      */
@@ -72,13 +87,13 @@ export class OrderRepository {
         sortOrder?: 'asc' | 'desc';
     }) {
         const {
-            customerId: orderColumnCustomerId,
-            serviceId: orderColumnServiceId,
-            addressId: orderColumnAddressId,
-            originalAmount: orderColumnOriginalAmount,
-            discountAmount: orderColumnDiscountAmount,
-            currency: orderColumnCurrency,
-            couponCode: orderColumnCouponCode,
+            customerId: _orderColumnCustomerId,
+            serviceId: _orderColumnServiceId,
+            addressId: _orderColumnAddressId,
+            originalAmount: _orderColumnOriginalAmount,
+            discountAmount: _orderColumnDiscountAmount,
+            currency: _orderColumnCurrency,
+            couponCode: _orderColumnCouponCode,
             ...orderColumns
         } = getTableColumns(orders);
 
@@ -160,12 +175,152 @@ export class OrderRepository {
             servicePersonnelImage: row.userImage || '',
         }));
 
+        const meta = this.buildPaginationMeta(totalCount, page, limit);
+
         return {
             items: data,
-            total: totalCount,
-            page,
-            limit,
+            meta,
         };
+    }
+
+    async getOrdersByStaffId({
+        page = 1,
+        limit = 10,
+        status,
+        servicePersonnelId,
+        startTime,
+        endTime,
+        onlyAccepted,
+    }: {
+        page?: number;
+        limit?: number;
+        status?: OrderStatus;
+        servicePersonnelId: string;
+        startTime?: Date;
+        endTime?: Date;
+        onlyAccepted?: boolean;
+    }) {
+        const conditions: SQL[] = [
+            eq(orderAssignments.servicePersonnelId, servicePersonnelId),
+        ];
+
+        if (status) {
+            conditions.push(eq(orders.status, status));
+        }
+
+        if (onlyAccepted) {
+            conditions.push(isNotNull(orderAssignments.acceptedAt));
+        }
+
+        if (startTime && !endTime) {
+            conditions.push(gte(orders.appointmentTime, startTime));
+        } else if (endTime && !startTime) {
+            conditions.push(lte(orders.appointmentTime, endTime));
+        } else if (startTime && endTime) {
+            conditions.push(
+                between(orders.appointmentTime, startTime, endTime),
+            );
+        }
+
+        const whereClause = and(...conditions);
+
+        const [rows, totalResult] = await Promise.all([
+            this.db
+                .select({
+                    orderId: orders.id,
+                    status: orders.status,
+                    appointmentTime: orders.appointmentTime,
+                    totalAmount: orders.totalAmount,
+                    serviceName: services.name,
+                    serviceSpecification: servicePersonnelPricing.name,
+                    customerName: users.name,
+                    customerPhone: users.phoneNumber,
+                    customerAvatar: users.image,
+                    address: userAddresses.detailedAddress,
+                    acceptedAt: orderAssignments.acceptedAt,
+                    serviceStartedAt: orders.serviceStartedAt,
+                    serviceCompletedAt: orders.serviceCompletedAt,
+                })
+                .from(orders)
+                .innerJoin(
+                    orderAssignments,
+                    eq(orderAssignments.orderId, orders.id),
+                )
+                .leftJoin(services, eq(orders.serviceId, services.id))
+                .leftJoin(
+                    servicePersonnelPricing,
+                    eq(orders.specificationId, servicePersonnelPricing.id),
+                )
+                .leftJoin(users, eq(orders.customerId, users.id))
+                .leftJoin(userAddresses, eq(orders.addressId, userAddresses.id))
+                .where(whereClause)
+                .orderBy(desc(orders.appointmentTime))
+                .limit(limit)
+                .offset((page - 1) * limit),
+            this.db
+                .select({ count: sql<number>`count(*)` })
+                .from(orders)
+                .innerJoin(
+                    orderAssignments,
+                    eq(orderAssignments.orderId, orders.id),
+                )
+                .where(whereClause),
+        ]);
+
+        const totalCount = totalResult[0]?.count ?? 0;
+        const meta = this.buildPaginationMeta(totalCount, page, limit);
+
+        const items = rows.map((row) => ({
+            id: row.orderId,
+            status: row.status,
+            appointmentTime: row.appointmentTime,
+            totalAmount: Number(row.totalAmount ?? 0),
+            serviceName: row.serviceName ?? '',
+            serviceSpecification: row.serviceSpecification ?? null,
+            customerName: row.customerName ?? null,
+            customerPhone: row.customerPhone ?? null,
+            customerAvatar: row.customerAvatar ?? null,
+            address: row.address ?? null,
+            acceptedAt: row.acceptedAt ?? null,
+            serviceStartedAt: row.serviceStartedAt ?? null,
+            serviceCompletedAt: row.serviceCompletedAt ?? null,
+        }));
+
+        return {
+            items,
+            meta,
+        };
+    }
+
+    async countOrdersByStaff({
+        servicePersonnelId,
+        status,
+    }: {
+        servicePersonnelId: string;
+        status?: OrderStatus;
+    }) {
+        const conditions: SQL[] = [
+            eq(orderAssignments.servicePersonnelId, servicePersonnelId),
+        ];
+
+        if (status) {
+            conditions.push(eq(orders.status, status));
+        }
+
+        const whereClause = and(...conditions);
+
+        const [row] = await this.db
+            .select({
+                count: sql<number>`count(*)`,
+            })
+            .from(orders)
+            .innerJoin(
+                orderAssignments,
+                eq(orderAssignments.orderId, orders.id),
+            )
+            .where(whereClause);
+
+        return row?.count ?? 0;
     }
 
     /**
@@ -176,10 +331,10 @@ export class OrderRepository {
     async getOrderById(id: string) {
         const orderColumns = getTableColumns(orders);
         const { ...serviceColumns } = getTableColumns(services);
-        const { geom: addressGeom, ...addressColumns } =
+        const { geom: _addressGeom, ...addressColumns } =
             getTableColumns(userAddresses);
         const assignmentColumns = getTableColumns(orderAssignments);
-        const { geom: servicePersonnelGeom, ...servicePersonnelColumns } =
+        const { geom: _servicePersonnelGeom, ...servicePersonnelColumns } =
             getTableColumns(servicePersonnel);
 
         const [orderRow] = await this.db
@@ -332,7 +487,72 @@ export class OrderRepository {
             .limit(1);
 
         return specification || null;
-    } /**
+    }
+
+    /**
+     * 获取服务人员的已占用时间段
+     * @param personnelId 服务人员ID
+     * @param startDate 查询开始日期（可选，默认为当前时间）
+     * @param endDate 查询结束日期（可选，默认为30天后）
+     * @returns 已占用的时间段列表
+     */
+    async getPersonnelOccupiedTimeSlots(
+        personnelId: string,
+        startDate?: Date,
+        endDate?: Date,
+    ) {
+        const start = startDate || new Date();
+        // 默认查询15天内
+        const fifteenDaysMs = 15 * 24 * 60 * 60 * 1000;
+        const end = endDate || new Date(start.getTime() + fifteenDaysMs);
+
+        // 查询该服务人员在指定时间范围内的所有有效订单
+        const occupiedOrders = await this.db
+            .select({
+                orderId: orders.id,
+                appointmentTime: orders.appointmentTime,
+                status: orders.status,
+                estimatedDurationMinutes:
+                    servicePersonnelPricing.estimatedDurationMinutes,
+            })
+            .from(orders)
+            .innerJoin(
+                orderAssignments,
+                eq(orders.id, orderAssignments.orderId),
+            )
+            .leftJoin(
+                servicePersonnelPricing,
+                eq(orders.specificationId, servicePersonnelPricing.id),
+            )
+            .where(
+                and(
+                    eq(orderAssignments.servicePersonnelId, personnelId),
+                    gte(orders.appointmentTime, start),
+                    lte(orders.appointmentTime, end),
+                    // 只查询未取消和未退款的订单
+                    sql`${orders.status} NOT IN ('cancelled', 'refunded')`,
+                ),
+            )
+            .orderBy(asc(orders.appointmentTime));
+
+        // 转换为时间段格式
+        return occupiedOrders.map((order) => {
+            const startTime = new Date(order.appointmentTime);
+            const endTime = new Date(startTime);
+            endTime.setMinutes(
+                endTime.getMinutes() + (order.estimatedDurationMinutes || 60), // 默认60分钟
+            );
+
+            return {
+                orderId: order.orderId,
+                startTime,
+                endTime,
+                status: order.status,
+            };
+        });
+    }
+
+    /**
      * 更新订单状态
      * @param id 订单ID
      * @param newStatus 新的订单状态
@@ -559,6 +779,7 @@ export class OrderRepository {
                         servicePersonnelId: data.designatedPersonnelId,
                         assignmentType: 'customer_designated', // 用户指定
                         assignedAt: now,
+                        acceptedAt: now,
                     });
 
                 // 验证分配记录是否创建成功
@@ -573,7 +794,6 @@ export class OrderRepository {
             return result;
         } catch (error) {
             throw new BadRequestException(
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
                 `创建指定服务人员订单时发生错误: ${error.message}`,
             );
         }

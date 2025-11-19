@@ -39,6 +39,39 @@ export const OrderListRequestSchema = z
 
 export type OrderListRequest = z.infer<typeof OrderListRequestSchema>;
 
+export const StaffOrderListRequestSchema = z
+	.object({
+		...PaginationQuerySchema.shape,
+		status: OrderStatusEnum.optional().meta({
+			description: "订单状态",
+			title: "订单状态",
+		}),
+		servicePersonnelId: z.string().min(1, "服务人员ID不能为空").meta({
+			description: "服务人员ID",
+			title: "服务人员ID",
+		}),
+		startTime: z.date().optional().meta({
+			description: "开始时间",
+			title: "开始时间",
+		}),
+		endTime: z.date().optional().meta({
+			description: "结束时间",
+			title: "结束时间",
+		}),
+		onlyAccepted: z.boolean().optional().meta({
+			description: "仅显示已接单订单",
+			title: "仅显示已接单订单",
+		}),
+	})
+	.meta({
+		title: "服务人员订单列表查询请求",
+		description: "服务人员获取自己的订单列表时的查询参数",
+	});
+
+export type StaffOrderListRequest = z.infer<
+	typeof StaffOrderListRequestSchema
+>;
+
 // 创建订单 Schema
 export const CreateOrderSchema = OrdersSchema.omit({
 	id: true,
@@ -166,10 +199,10 @@ export type OrderListSimplifiedItem = z.infer<typeof OrderListSimplifiedItemSche
 
 // 简化订单列表响应 Schema
 export const OrderListSimplifiedResponseSchema = z
-    .object({
-        items: z.array(OrderListSimplifiedItemSchema).meta({
-            description: "数据列表",
-            title: "数据列表",
+	.object({
+		items: z.array(OrderListSimplifiedItemSchema).meta({
+			description: "数据列表",
+			title: "数据列表",
         }),
         meta: PaginationMetaSchema.meta({
             description: "分页元数据",
@@ -182,6 +215,65 @@ export const OrderListSimplifiedResponseSchema = z
     });
 
 export type OrderListSimplifiedResponse = z.infer<typeof OrderListSimplifiedResponseSchema>;
+
+export const StaffOrderListItemSchema = z.object({
+	id: z.string(),
+	status: OrderStatusEnum,
+	appointmentTime: z.date(),
+	totalAmount: z.number(),
+	serviceName: z.string(),
+	serviceSpecification: z.string().nullable(),
+	customerName: z.string().nullable(),
+	customerPhone: z.string().nullable(),
+	customerAvatar: z.string().nullable(),
+	address: z.string().nullable(),
+	acceptedAt: z.date().nullable(),
+	serviceStartedAt: z.date().nullable(),
+	serviceCompletedAt: z.date().nullable(),
+});
+
+export const StaffOrderListResponseSchema = z
+	.object({
+		items: z.array(StaffOrderListItemSchema).meta({
+			description: "订单列表",
+			title: "订单列表",
+		}),
+		meta: PaginationMetaSchema.meta({
+			description: "分页信息",
+			title: "分页信息",
+		}),
+	})
+	.meta({
+		title: "服务人员订单列表响应",
+		description: "服务人员端分页订单列表数据",
+	});
+
+export type StaffOrderListItem = z.infer<typeof StaffOrderListItemSchema>;
+export type StaffOrderListResponse = z.infer<
+	typeof StaffOrderListResponseSchema
+>;
+
+export const StaffOrderStatsSchema = z
+	.object({
+		total: z.number().int().nonnegative().meta({
+			description: "订单总数",
+			title: "订单总数",
+		}),
+		completed: z.number().int().nonnegative().meta({
+			description: "已完成订单数",
+			title: "已完成订单数",
+		}),
+		inProgress: z.number().int().nonnegative().meta({
+			description: "进行中订单数",
+			title: "进行中订单数",
+		}),
+	})
+	.meta({
+		title: "服务人员订单统计",
+		description: "用于个人中心展示的订单统计数据",
+	});
+
+export type StaffOrderStats = z.infer<typeof StaffOrderStatsSchema>;
 
 // 原始完整的订单列表项 Schema（保留用于需要详细信息的场景）
 export const OrderListResponseItemSchema = z.object({

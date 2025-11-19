@@ -148,9 +148,9 @@ export class OrderCheckinService {
             distanceDegrees,
         );
 
-        // if (!withinRange) {
-        // 	throw new BadRequestException("尚未到达服务地点附近");
-        // }
+        if (!withinRange) {
+            throw new BadRequestException('尚未到达服务地点附近');
+        }
 
         const verifiedAt = new Date();
         await this.orderCheckinRepository.updateStatus(record.id, 'verified', {

@@ -8,11 +8,27 @@ import {
 // ==================== Work Skill 相关 Zod Schema ====================
 
 // 更新工作人员信息请求 Schema（不包含 userId，由认证中间件提供）
+const WorkInfoBaseShape = ServicePersonnelSchema.omit({
+	userId: true,
+	geom: true,
+}).shape;
+
+const { lastActiveAt, ...workInfoWithoutLastActive } = WorkInfoBaseShape;
+
 export const UpsertWorkInfoRequestSchema = z.object({
-	...ServicePersonnelSchema.omit({
-		userId: true,
-        geom: true,
-	}).shape,
+	...workInfoWithoutLastActive,
+	lastActiveAt: z
+		.preprocess((value) => {
+			if (value === undefined || value === null) {
+				return undefined;
+			}
+			if (value instanceof Date) {
+				return value;
+			}
+			const parsed = new Date(value as any);
+			return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+		}, z.date())
+		.optional(),
 	location: z.object({
 		lng: z
 			.number()
@@ -215,6 +231,12 @@ export const ServicePersonnelFilterRequestSchema = z
 			description: "排序顺序：asc(升序), desc(降序)",
 			title: "排序顺序",
 		}),
+
+		// 当前登录用户ID（可选，用于排除自己）
+		currentUserId: z.string().optional().meta({
+			description: "当前登录用户ID，用于在搜索结果中排除自己",
+			title: "当前用户ID",
+		}),
 	})
 	.meta({
 		title: "服务人员筛选请求",
@@ -258,6 +280,18 @@ export const MatchedPersonnelSchema = z
             description: "服务人员详细地址",
             title: "详细地址",
         }),
+		reviewCount: z.number().default(0).meta({
+			description: "评价总数",
+			title: "评价数量",
+		}),
+		goodReviewCount: z.number().default(0).meta({
+			description: "好评数量（4-5星）",
+			title: "好评数量",
+		}),
+		goodReviewRate: z.number().default(0).meta({
+			description: "好评率（百分比，如 95.50 表示 95.50%）",
+			title: "好评率",
+		}),
 	})
 	.meta({
 		title: "匹配的服务人员信息",
@@ -284,6 +318,27 @@ const specificationSchema = z.object({
     serviceId: z.string().min(1, "serviceId不能为空"),
     price: z.string().regex(/^\d+(\.\d+)?$/, "price必须为数字字符串"),
     currency: z.string().min(1, "currency不能为空"),
+    estimatedDurationMinutes: z.number().int().positive().optional(),
+});
+
+// 已占用时间段 Schema
+export const OccupiedTimeSlotSchema = z.object({
+    orderId: z.string().min(1, "订单ID不能为空").meta({
+        description: "订单ID",
+        title: "订单ID",
+    }),
+    startTime: z.date().meta({
+        description: "开始时间",
+        title: "开始时间",
+    }),
+    endTime: z.date().meta({
+        description: "结束时间",
+        title: "结束时间",
+    }),
+    status: z.string().meta({
+        description: "订单状态",
+        title: "订单状态",
+    }),
 });
 
 export const ServiceDetailsSchema = z.object({
@@ -291,7 +346,201 @@ export const ServiceDetailsSchema = z.object({
     specifications: z.array(specificationSchema),
     description: z.string().nullable(),
     servicedCount: z.number().int().nonnegative(),
+    occupiedTimeSlots: z.array(OccupiedTimeSlotSchema).meta({
+        description: "服务人员已占用的时间段列表",
+        title: "已占用时间段",
+    }),
 });
+
+export const FileAccessInfoSchema = z
+    .object({
+        fileId: z.string().min(1, "文件ID不能为空"),
+        url: z.string().url(),
+        fileName: z.string().min(1, "文件名不能为空"),
+        mimeType: z.string().min(1, "MIME类型不能为空"),
+        fileSize: z.number().int().nonnegative(),
+        expiresIn: z.number().int().positive(),
+        blurhash: z.string().optional(),
+    })
+    .meta({
+        title: "文件访问信息",
+        description: "通过 files 模块生成的预签名 URL 及其元数据",
+    });
+
+export const ServiceOfferingSpecificationInputSchema = z
+	.object({
+		id: z.string().optional().describe("规格ID，更新已有规格时必填"),
+		name: z
+			.string()
+			.min(1, "规格名称不能为空")
+			.max(100, "规格名称过长"),
+		price: z.preprocess(
+			(value) => {
+				if (value === undefined || value === null) {
+					return value;
+				}
+				if (typeof value === "number") {
+					return value.toString();
+				}
+				if (typeof value === "string") {
+					return value.trim();
+				}
+				return String(value);
+			},
+			z.string().min(1, "价格不能为空"),
+		),
+		currency: z.string().max(3).default("CNY"),
+		estimatedDurationMinutes: z.preprocess((value) => {
+			if (typeof value === "string") {
+				return Number.parseInt(value.trim(), 10);
+			}
+			return value;
+		}, z.number().int().positive("预计耗时必须为正数")),
+	})
+    .meta({
+        title: "服务规格输入",
+        description: "服务人员为某个分类配置的单条规格信息",
+    });
+
+export const UpdateServiceOfferingsRequestSchema = z
+    .object({
+        services: z
+            .array(
+                z.object({
+                    serviceId: z.string().min(1, "服务ID不能为空"),
+                    description: z
+                        .string()
+                        .max(2000, "描述过长")
+                        .optional()
+                        .nullable(),
+                    specifications: z
+                        .array(ServiceOfferingSpecificationInputSchema)
+                        .min(1, "至少需要保留一条服务规格"),
+                }),
+            )
+            .min(1, "请至少选择一个服务分类"),
+    })
+    .meta({
+        title: "更新服务人员提供的服务",
+        description: "批量配置服务分类、描述以及规格信息",
+    });
+
+export const ServicePersonnelOfferingSchema = z
+	.object({
+        serviceId: z.string().min(1, "服务ID不能为空"),
+        serviceName: z.string().min(1, "服务名称不能为空"),
+        serviceDescription: z.string().nullable(),
+        personnelDescription: z.string().nullable(),
+        currency: z.string().min(1, "币种不能为空"),
+        isActive: z.boolean(),
+        specifications: z.array(specificationSchema).default([]),
+        pricing: PersonnelPricingInfoSchema.nullable().optional(),
+	})
+	.meta({
+		title: "服务人员可提供的服务及定价",
+		description: "聚合后的服务与个人定价信息",
+	});
+
+export const ServicePersonnelProfileSchema = z
+	.object({
+        userId: z.string().min(1, "服务人员ID不能为空"),
+        name: z.string().nullable().describe("昵称或实名"),
+        bio: z.string().nullable(),
+        province: z.string().min(1, "省份不能为空"),
+        district: z.string().nullable(),
+        county: z.string().nullable(),
+        detailedAddress: z.string().nullable(),
+        yearsOfExperience: z.number().int().nonnegative(),
+        workStartTime: z.string().min(1, "工作开始时间不能为空"),
+        workEndTime: z.string().min(1, "工作结束时间不能为空"),
+        workDays: z.string().min(1, "工作日不能为空"),
+        isAvailable: z.boolean(),
+        currentStatus: z.string().min(1, "当前状态不能为空"),
+        lastActiveAt: z.date(),
+        maskedPhoneNumber: z.string().nullable(),
+        avatar: FileAccessInfoSchema.nullable(),
+        services: z.array(ServicePersonnelOfferingSchema),
+        qualificationImages: z.array(FileAccessInfoSchema).default([]),
+        location: z
+            .object({
+                lng: z.number(),
+                lat: z.number(),
+            })
+            .nullable()
+            .meta({
+                title: "定位坐标",
+                description: "服务人员的经纬度坐标（源自 service_personnel.geom）",
+            }),
+	})
+	.meta({
+		title: "服务人员聚合资料",
+		description:
+		    "聚合 work-skill、service-personnel、files 数据后的服务人员完整资料",
+    });
+
+export const ServicePersonnelDashboardStatsSchema = z
+	.object({
+		userId: z.string().min(1, "服务人员ID不能为空"),
+		serviceCount: z.number().int().nonnegative().meta({
+			title: "累计服务次数",
+			description: "服务人员已完成的订单数量",
+		}),
+		rating: z
+			.object({
+				value: z.number().nonnegative().meta({
+					title: "评分数值",
+					description: "平均评分（0-5）",
+				}),
+				display: z.string().meta({
+					title: "评分展示",
+					description: "格式化后的评分字符串",
+				}),
+				totalReviews: z.number().int().nonnegative().meta({
+					title: "评价总数",
+					description: "累计评价次数",
+				}),
+				goodRatePercentage: z
+					.number()
+					.int()
+					.min(0)
+					.max(100)
+					.meta({
+						title: "好评率",
+						description: "好评占比（百分数）",
+					}),
+			})
+			.meta({
+				title: "评分信息",
+				description: "服务人员评价相关统计",
+			}),
+		balance: z
+			.object({
+				available: z.number().nonnegative().meta({
+					title: "可提现余额",
+					description: "当前可提现金额",
+				}),
+				frozen: z.number().nonnegative().meta({
+					title: "冻结金额",
+					description: "提现或风控中的冻结金额",
+				}),
+				currency: z.string().min(1).max(3).default("CNY").meta({
+					title: "币种",
+					description: "余额币种",
+				}),
+			})
+			.meta({
+				title: "余额信息",
+				description: "账户余额及冻结金额",
+			}),
+		generatedAt: z.date().meta({
+			title: "统计生成时间",
+			description: "本次统计生成的时间",
+		}),
+	})
+	.meta({
+		title: "服务人员仪表盘统计",
+		description: "个人中心展示的服务次数、评分、账户余额统计",
+	});
 
 // ==================== TypeScript 类型定义 ====================
 
@@ -314,6 +563,12 @@ export type RemovePersonnelPricingRequest = z.infer<
 	typeof RemovePersonnelPricingRequestSchema
 >;
 export type PersonnelPricingInfo = z.infer<typeof PersonnelPricingInfoSchema>;
+export type UpdateServiceOfferingsRequest = z.infer<
+    typeof UpdateServiceOfferingsRequestSchema
+>;
+export type ServiceOfferingSpecificationInput = z.infer<
+    typeof ServiceOfferingSpecificationInputSchema
+>;
 
 // 服务人员筛选相关类型
 export type ServicePersonnelFilterRequest = z.infer<
@@ -325,3 +580,14 @@ export type ServicePersonnelFilterResponse = z.infer<
 >;
 export type ServiceDetails = z.infer<typeof ServiceDetailsSchema>;
 export type ServicePersonnelDetailsQuery = z.infer<typeof ServicePersonnelDetailsQuerySchema>
+export type OccupiedTimeSlot = z.infer<typeof OccupiedTimeSlotSchema>;
+export type FileAccessInfo = z.infer<typeof FileAccessInfoSchema>;
+export type ServicePersonnelOffering = z.infer<
+    typeof ServicePersonnelOfferingSchema
+>;
+export type ServicePersonnelProfile = z.infer<
+    typeof ServicePersonnelProfileSchema
+>;
+export type ServicePersonnelDashboardStats = z.infer<
+	typeof ServicePersonnelDashboardStatsSchema
+>;

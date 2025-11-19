@@ -23,6 +23,7 @@ import {
     EcplortPoiSchema,
     type GeocodeRequest,
     GeocodeRequestSchema,
+    GeocodeResponseSchema,
     LocationSchema,
     ParentInfoSchema,
     type ReverseGeocodeRequest,
@@ -79,6 +80,22 @@ export class AddressController {
     @Get('all')
     findAll(@Query() query: AddressQuery) {
         return this.addressService.findAll(query);
+    }
+
+    @UsePipes(
+        new ZodValidationPipe(GeocodeRequestSchema, '请求参数验证失败', false),
+    )
+    @ApiOperation({
+        summary: '地址正向解析服务',
+        description: '根据完整地址解析经纬度和行政区划信息',
+    })
+    @Get('geocode')
+    @ApiQueries(GeocodeRequestSchema)
+    @ApiSuccessResponse(GeocodeResponseSchema, {
+        description: '成功解析地址信息',
+    })
+    async geocode(@Query() query: GeocodeRequest) {
+        return await tencentReverseGeocodeService.geocode(query);
     }
 
     @UsePipes(

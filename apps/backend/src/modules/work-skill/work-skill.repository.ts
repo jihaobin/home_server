@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { ServicePersonnel } from '@repo/types';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import type { UpdateServiceOfferingsRequest } from '@repo/types';
 import { DB } from 'src/common/database/database.provider';
 import { DbType } from 'src/common/database/db';
 import {
@@ -69,10 +69,14 @@ export class WorkSkillRepository {
                     province: rest.province,
                     district: rest.district,
                     county: rest.county,
+                    detailedAddress: rest.detailedAddress,
                     yearsOfExperience: rest.yearsOfExperience,
                     workStartTime: rest.workStartTime,
                     workEndTime: rest.workEndTime,
                     isAvailable: rest.isAvailable,
+                    currentStatus: rest.currentStatus,
+                    workDays: rest.workDays,
+                    geom: [location.lng, location.lat],
                 },
             })
             .returning();
@@ -186,14 +190,25 @@ export class WorkSkillRepository {
         const { pricing, skills, ...personnelInfo } = result;
 
         // 创建定价映射，便于快速查找
-        const pricingMap = new Map(pricing.map((p) => [p.serviceId, p]));
+        const pricingMap = new Map<
+            string,
+            (typeof servicePersonnelPricing.$inferSelect)[]
+        >();
 
-        // 合并技能和定价信息
+        for (const item of pricing) {
+            if (!pricingMap.has(item.serviceId)) {
+                pricingMap.set(item.serviceId, []);
+            }
+            pricingMap.get(item.serviceId)?.push(item);
+        }
+
+        // 合并技能和定价信息，并附带人员自定义描述
         const skillsWithPrice = skills.map((skill) => {
-            const priceInfo = pricingMap.get(skill.serviceId);
+            const specifications = pricingMap.get(skill.serviceId) ?? [];
             return {
                 ...skill.service,
-                price: priceInfo,
+                specifications,
+                personnelDescription: skill.description ?? null,
             };
         });
 
@@ -337,5 +352,160 @@ export class WorkSkillRepository {
             .returning();
 
         return result.length > 0;
+    }
+
+    async updateServiceOfferings(
+        personnelId: string,
+        services: UpdateServiceOfferingsRequest['services'],
+    ) {
+        if (services.length === 0) {
+            throw new BadRequestException('请至少配置一个服务分类');
+        }
+
+        if (!(await this.isServicePersonnelExists(personnelId))) {
+            throw new BadRequestException('该服务人员不存在');
+        }
+
+        await this.db.transaction(async (tx) => {
+            const targetServiceIds = Array.from(
+                new Set(services.map((service) => service.serviceId)),
+            );
+
+            const existingSkills = await tx
+                .select({ serviceId: servicePersonnelSkills.serviceId })
+                .from(servicePersonnelSkills)
+                .where(eq(servicePersonnelSkills.userId, personnelId));
+
+            const existingIds = existingSkills.map((item) => item.serviceId);
+            const toInsert = targetServiceIds.filter(
+                (id) => !existingIds.includes(id),
+            );
+            const toRemove = existingIds.filter(
+                (id) => !targetServiceIds.includes(id),
+            );
+
+            if (toRemove.length > 0) {
+                await tx
+                    .delete(servicePersonnelSkills)
+                    .where(
+                        and(
+                            eq(servicePersonnelSkills.userId, personnelId),
+                            inArray(servicePersonnelSkills.serviceId, toRemove),
+                        ),
+                    );
+
+                await tx
+                    .update(servicePersonnelPricing)
+                    .set({ isActive: false })
+                    .where(
+                        and(
+                            eq(servicePersonnelPricing.userId, personnelId),
+                            inArray(
+                                servicePersonnelPricing.serviceId,
+                                toRemove,
+                            ),
+                        ),
+                    );
+            }
+
+            if (toInsert.length > 0) {
+                await tx.insert(servicePersonnelSkills).values(
+                    toInsert.map((serviceId) => ({
+                        serviceId,
+                        userId: personnelId,
+                    })),
+                );
+            }
+
+            for (const service of services) {
+                await tx
+                    .update(servicePersonnelSkills)
+                    .set({ description: service.description ?? null })
+                    .where(
+                        and(
+                            eq(servicePersonnelSkills.userId, personnelId),
+                            eq(
+                                servicePersonnelSkills.serviceId,
+                                service.serviceId,
+                            ),
+                        ),
+                    );
+            }
+
+            const existingSpecs = await tx
+                .select({
+                    id: servicePersonnelPricing.id,
+                    serviceId: servicePersonnelPricing.serviceId,
+                    isActive: servicePersonnelPricing.isActive,
+                })
+                .from(servicePersonnelPricing)
+                .where(
+                    and(
+                        eq(servicePersonnelPricing.userId, personnelId),
+                        inArray(
+                            servicePersonnelPricing.serviceId,
+                            targetServiceIds,
+                        ),
+                    ),
+                );
+
+            const specById = new Map(
+                existingSpecs.map((spec) => [spec.id, spec]),
+            );
+            const retainedSpecIds = new Set<string>();
+            const now = new Date();
+
+            for (const service of services) {
+                for (const spec of service.specifications) {
+                    if (spec.id && specById.has(spec.id)) {
+                        await tx
+                            .update(servicePersonnelPricing)
+                            .set({
+                                name: spec.name,
+                                price: spec.price,
+                                currency: spec.currency ?? 'CNY',
+                                estimatedDurationMinutes:
+                                    spec.estimatedDurationMinutes,
+                                isActive: true,
+                                effectiveFrom: now,
+                            })
+                            .where(eq(servicePersonnelPricing.id, spec.id));
+                        retainedSpecIds.add(spec.id);
+                        continue;
+                    }
+
+                    const inserted = await tx
+                        .insert(servicePersonnelPricing)
+                        .values({
+                            userId: personnelId,
+                            serviceId: service.serviceId,
+                            name: spec.name,
+                            price: spec.price,
+                            currency: spec.currency ?? 'CNY',
+                            estimatedDurationMinutes:
+                                spec.estimatedDurationMinutes,
+                            isActive: true,
+                            effectiveFrom: now,
+                        })
+                        .returning({ id: servicePersonnelPricing.id });
+
+                    retainedSpecIds.add(inserted[0].id);
+                }
+            }
+
+            const toDeactivate = existingSpecs
+                .filter(
+                    (spec) =>
+                        spec.isActive && !retainedSpecIds.has(spec.id ?? ''),
+                )
+                .map((spec) => spec.id);
+
+            if (toDeactivate.length > 0) {
+                await tx
+                    .update(servicePersonnelPricing)
+                    .set({ isActive: false })
+                    .where(inArray(servicePersonnelPricing.id, toDeactivate));
+            }
+        });
     }
 }

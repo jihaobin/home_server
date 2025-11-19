@@ -10,18 +10,7 @@ import type {
     UpdateService,
     UpdateServiceCategory,
 } from '@repo/types';
-import {
-    and,
-    asc,
-    count,
-    desc,
-    eq,
-    gte,
-    lte,
-    type SQL,
-    sql,
-} from 'drizzle-orm';
-import type { PgColumn } from 'drizzle-orm/pg-core';
+import { and, count, eq, type SQL, sql } from 'drizzle-orm';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
 import { serviceCategories, services } from 'src/common/database/schema';
@@ -200,8 +189,6 @@ export class ServiceRepository {
     async getServices({
         categoryId,
         keyword,
-        minPrice,
-        maxPrice,
         isActive,
         page = 1,
         limit = 10,

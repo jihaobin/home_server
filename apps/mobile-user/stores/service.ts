@@ -7,6 +7,7 @@ interface SelectedSpecification {
     name?: string;
     price: string;
     unit: string;
+    estimatedDurationMinutes?: number;
 }
 
 export type ServiceItem = {

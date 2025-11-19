@@ -8,6 +8,7 @@ import {
     memo,
     Suspense,
     startTransition,
+    useCallback,
     useEffect,
     useMemo,
     useRef,
@@ -93,7 +94,19 @@ const SearchSuggestionsContent = memo(
         searchQuery: string;
         onSelectDistrict: (district: DistrictData) => void;
     }) => {
-        const { data: searchResults } = useCitySearchSuspense(searchQuery);
+        const { data: searchResults, refetch: refetchSearch } = useCitySearchSuspense(searchQuery);
+        const [isRefreshing, setIsRefreshing] = useState(false);
+
+        const handleRefresh = useCallback(async () => {
+            setIsRefreshing(true);
+            try {
+                await refetchSearch({
+                    throwOnError: false,
+                });
+            } finally {
+                setIsRefreshing(false);
+            }
+        }, [refetchSearch]);
 
         // 渲染搜索建议项
         const renderSuggestionItem = ({ item }: { item: DistrictData }) => (
@@ -115,6 +128,8 @@ const SearchSuggestionsContent = memo(
                         keyExtractor={(item) => `search-${item.id}`}
                         style={{ flex: 1 }}
                         showsVerticalScrollIndicator={true}
+                        refreshing={isRefreshing}
+                        onRefresh={handleRefresh}
                     />
                 </View>
             </View>
@@ -171,7 +186,11 @@ const CitySelectionContent = memo(() => {
     );
 
     // 使用 TanStack Query 获取城市数据
-    const { data: allCities = [] } = useChinaCity({
+    const {
+        data: allCities = [],
+        refetch: refetchCities,
+        isFetching: isFetchingCities,
+    } = useChinaCity({
         filter: "city",
     });
     const { data: cityParendInfo } = useCityParentInfo(selectCity?.name);
@@ -349,6 +368,19 @@ const CitySelectionContent = memo(() => {
         return item.type;
     };
 
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const handleRefresh = useCallback(async () => {
+        setIsRefreshing(true);
+        try {
+            await refetchCities({
+                throwOnError: false,
+            });
+        } finally {
+            setIsRefreshing(false);
+        }
+    }, [refetchCities]);
+
     return (
         <View className="flex-1 bg-background">
             {/* 搜索框 */}
@@ -432,7 +464,9 @@ const CitySelectionContent = memo(() => {
                                 }
                                 getItemType={getItemType}
                                 showsVerticalScrollIndicator={false}
-                        />
+                                refreshing={isRefreshing || isFetchingCities}
+                                onRefresh={handleRefresh}
+                            />
                     </View>
                 </View>
             )}

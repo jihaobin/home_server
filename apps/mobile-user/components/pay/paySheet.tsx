@@ -45,6 +45,7 @@ export interface PaySheetProps {
 		addressId: string;
 		appointmentTime: string;
 		designatedPersonnelId: string;
+		specificationId: string;
 		displayPrice: number;
 	};
 	totalAmount: number;
@@ -171,11 +172,10 @@ export function PaySheet({
 						<Pressable
 							key={option.id}
 							onPress={() => setSelectedPayment(option.id)}
-							className={`flex-row items-center rounded-xl border-2 p-4 active:bg-muted/50 ${
-								selectedPayment === option.id
-									? "border-primary bg-primary/5"
-									: "border-border bg-card"
-							}`}
+							className={`flex-row items-center rounded-xl border-2 p-4 active:bg-muted/50 ${selectedPayment === option.id
+								? "border-primary bg-primary/5"
+								: "border-border bg-card"
+								}`}
 						>
 							<View className="h-12 w-12 items-center justify-center rounded-full">
 								{option.id === "alipay" ? (

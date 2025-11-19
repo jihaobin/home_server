@@ -6,20 +6,18 @@ import type {
 import {
     and,
     asc,
-    between,
     desc,
     eq,
     gte,
     inArray,
     like,
-    lte,
-    ne,
     type SQL,
     sql,
 } from 'drizzle-orm';
 import { DB } from 'src/common/database/database.provider';
 import { DbType } from 'src/common/database/db';
 import {
+    reviewStats,
     serviceCategories,
     servicePersonnel,
     servicePersonnelPricing,
@@ -29,17 +27,20 @@ import {
 } from 'src/common/database/schema';
 import { GeoLocationService } from 'src/common/services/geo-location.service';
 import { extractParams } from 'src/lib/utlis';
+import { OrderRepository } from '../order/order.reposityro';
 
 @Injectable()
 export class ServicePersonnelRepository {
     constructor(
         @Inject(DB) private readonly db: DbType,
         private readonly geoService: GeoLocationService,
+        private readonly orderRepository: OrderRepository,
     ) {}
 
     /**
      * 🚀 智能匹配服务人员 - 优化版本
      * 使用 CTE 和窗口函数优化查询性能，单次查询获取所有数据
+     * 针对有多个定价的服务人员，选择预计时间最短且价格最低的定价
      */
     async findMatchedPersonnel({
         serviceId,
@@ -54,6 +55,7 @@ export class ServicePersonnelRepository {
         sortOrder = 'asc',
         page = 1,
         pageSize = 20,
+        currentUserId,
     }: ServicePersonnelFilterRequest) {
         const userPoint = this.geoService.createUserPoint(userLng, userLat);
         const {
@@ -66,14 +68,45 @@ export class ServicePersonnelRepository {
             maxDistance,
         );
 
-        // 基础筛选条件
+        // 第一步：使用 CTE 为每个服务人员选择最优定价
+        // 最优定价规则：1) 预计时间最短 2) 价格最低
+        const optimalPricingCTE = this.db.$with('optimal_pricing').as(
+            this.db
+                .select({
+                    userId: servicePersonnelPricing.userId,
+                    pricingId: servicePersonnelPricing.id,
+                    price: servicePersonnelPricing.price,
+                    currency: servicePersonnelPricing.currency,
+                    estimatedDurationMinutes:
+                        servicePersonnelPricing.estimatedDurationMinutes,
+                    // 使用窗口函数按时间和价格排序，为每个用户选择最优定价
+                    rowNum: sql<number>`ROW_NUMBER() OVER (
+                        PARTITION BY ${servicePersonnelPricing.userId}
+                        ORDER BY ${servicePersonnelPricing.estimatedDurationMinutes} ASC,
+                                 CAST(${servicePersonnelPricing.price} AS DECIMAL(18,2)) ASC
+                    )`.as('row_num'),
+                })
+                .from(servicePersonnelPricing)
+                .where(
+                    and(
+                        eq(servicePersonnelPricing.serviceId, serviceId),
+                        eq(servicePersonnelPricing.isActive, true),
+                    ),
+                ),
+        );
+
+        // 基础筛选条件（不再包含 servicePersonnelPricing 的条件）
         const baseConditions = [
-            eq(servicePersonnelPricing.serviceId, serviceId),
-            eq(servicePersonnelPricing.isActive, true),
-            eq(servicePersonnel.isAvailable, true), // 恢复可用性检查
-            sql`${servicePersonnel.geom} IS NOT NULL`, // 恢复地理位置检查
-            // ne(servicePersonnel.userId, userId), // 排除自己
+            eq(servicePersonnel.isAvailable, true),
+            sql`${servicePersonnel.geom} IS NOT NULL`,
         ];
+
+        // 如果提供了当前用户ID，则排除自己
+        if (currentUserId) {
+            baseConditions.push(
+                sql`${servicePersonnel.userId} != ${currentUserId}`,
+            );
+        }
 
         // 工作时间筛选
         if (needServiceTime) {
@@ -91,36 +124,12 @@ export class ServicePersonnelRepository {
             );
         }
 
-        // 价格区间筛选
-        if (minPrice !== undefined && maxPrice !== undefined) {
-            baseConditions.push(
-                between(
-                    servicePersonnelPricing.price,
-                    minPrice.toString(),
-                    maxPrice.toString(),
-                ),
-            );
-        } else if (minPrice !== undefined) {
-            baseConditions.push(
-                gte(servicePersonnelPricing.price, minPrice.toString()),
-            );
-        } else if (maxPrice !== undefined) {
-            baseConditions.push(
-                lte(servicePersonnelPricing.price, maxPrice.toString()),
-            );
-        }
-
         // 地理位置筛选
         if (maxDistance) {
             baseConditions.push(distancePreFilter, exactFilter);
         }
 
-        // 构建排序表达式
-        const orderByColumn = this.getOrderByColumn(sortBy, exactDistance);
-        const orderExpression =
-            sortOrder === 'desc' ? desc(orderByColumn) : asc(orderByColumn);
-
-        // 使用 CTE (Common Table Expression) 优化查询
+        // 第二步：构建主查询 CTE，关联最优定价和评论统计
         const filteredPersonnelCTE = this.db.$with('filtered_personnel').as(
             this.db
                 .select({
@@ -135,30 +144,96 @@ export class ServicePersonnelRepository {
                     district: servicePersonnel.district,
                     county: servicePersonnel.county,
                     bio: servicePersonnel.bio,
-                    price: servicePersonnelPricing.price,
-                    currency: servicePersonnelPricing.currency,
                     detailedAddress: servicePersonnel.detailedAddress,
                     name: users.name,
                     avatarUrl: users.image,
                     distance: exactDistance.as('distance'),
+                    price: sql<string>`${optimalPricingCTE.price}`.as('price'),
+                    currency: sql<string>`${optimalPricingCTE.currency}`.as(
+                        'currency',
+                    ),
+                    estimatedDurationMinutes:
+                        sql<number>`${optimalPricingCTE.estimatedDurationMinutes}`.as(
+                            'estimated_duration_minutes',
+                        ),
+                    // 评论统计数据
+                    reviewCount:
+                        sql<number>`COALESCE(${reviewStats.totalCount}, 0)`.as(
+                            'review_count',
+                        ),
+                    goodReviewCount:
+                        sql<number>`COALESCE(${reviewStats.goodCount}, 0)`.as(
+                            'good_review_count',
+                        ),
+                    // 计算好评率(好评数/总评价数 * 100)，如果没有评价则为0
+                    goodReviewRate: sql<number>`
+                        CASE
+                            WHEN COALESCE(${reviewStats.totalCount}, 0) = 0 THEN 0
+                            ELSE ROUND(COALESCE(${reviewStats.goodCount}, 0)::decimal / ${reviewStats.totalCount} * 100, 2)
+                        END
+                    `.as('good_review_rate'),
                     // 使用窗口函数计算总数
                     totalCount: sql<number>`COUNT(*) OVER()`.as('total_count'),
                 })
                 .from(servicePersonnel)
                 .innerJoin(users, eq(users.id, servicePersonnel.userId))
+                // 关联最优定价 CTE，只选择 row_num = 1 的记录
                 .innerJoin(
-                    servicePersonnelPricing,
-                    eq(servicePersonnelPricing.userId, servicePersonnel.userId),
+                    optimalPricingCTE,
+                    and(
+                        eq(optimalPricingCTE.userId, servicePersonnel.userId),
+                        sql`${optimalPricingCTE.rowNum} = 1`,
+                    ),
                 )
-                .where(and(...baseConditions))
-                .orderBy(orderExpression),
+                // 左连接评论统计表，获取针对该服务的评价统计
+                .leftJoin(
+                    reviewStats,
+                    and(
+                        eq(reviewStats.targetId, servicePersonnel.userId),
+                        sql`${reviewStats.targetType} = 'personnel'`,
+                        eq(reviewStats.serviceId, serviceId),
+                    ),
+                )
+                .where(and(...baseConditions)),
         );
 
-        // 主查询：获取分页数据
-        const paginatedResults = await this.db
-            .with(filteredPersonnelCTE)
+        // 价格区间筛选条件（需要在使用 CTE 时应用）
+        const priceFilterConditions: SQL[] = [];
+        if (minPrice !== undefined && maxPrice !== undefined) {
+            priceFilterConditions.push(
+                sql`CAST(${filteredPersonnelCTE.price} AS DECIMAL(18,2)) >= ${minPrice}`,
+                sql`CAST(${filteredPersonnelCTE.price} AS DECIMAL(18,2)) <= ${maxPrice}`,
+            );
+        } else if (minPrice !== undefined) {
+            priceFilterConditions.push(
+                sql`CAST(${filteredPersonnelCTE.price} AS DECIMAL(18,2)) >= ${minPrice}`,
+            );
+        } else if (maxPrice !== undefined) {
+            priceFilterConditions.push(
+                sql`CAST(${filteredPersonnelCTE.price} AS DECIMAL(18,2)) <= ${maxPrice}`,
+            );
+        }
+
+        // 构建排序表达式 - 默认按距离、评价数量、好评率排序
+        const orderExpressions = this.getOrderExpressions(
+            sortBy,
+            sortOrder,
+            filteredPersonnelCTE,
+        );
+
+        // 第三步：获取分页数据
+        let finalQuery = this.db
+            .with(optimalPricingCTE, filteredPersonnelCTE)
             .select()
-            .from(filteredPersonnelCTE)
+            .from(filteredPersonnelCTE);
+
+        // 应用价格筛选（如果有）
+        if (priceFilterConditions.length > 0) {
+            finalQuery = finalQuery.where(and(...priceFilterConditions)) as any;
+        }
+
+        const paginatedResults = await finalQuery
+            .orderBy(...orderExpressions)
             .limit(pageSize)
             .offset((page - 1) * pageSize);
 
@@ -185,6 +260,10 @@ export class ServicePersonnelRepository {
             distance: result.distance,
             price: result.price,
             avatarUrl: result.avatarUrl || undefined,
+            // 评价相关字段
+            reviewCount: result.reviewCount || 0,
+            goodReviewCount: result.goodReviewCount || 0,
+            goodReviewRate: result.goodReviewRate || 0,
         }));
 
         return {
@@ -196,25 +275,84 @@ export class ServicePersonnelRepository {
     }
 
     /**
-     * 排序逻辑 - 针对 CTE 内部使用优化
+     * 构建排序表达式
+     * 默认排序规则：距离最近 > 评价数量最多 > 好评率最高
      */
-    private getOrderByColumn(sortBy: string, exactDistance: SQL) {
+    private getOrderExpressions(
+        sortBy: string,
+        sortOrder: 'asc' | 'desc',
+        personnelCTE: any,
+    ) {
+        const expressions: SQL[] = [];
+
         switch (sortBy) {
             case 'distance':
-                return exactDistance;
-            case 'price':
-                // 使用 COALESCE 处理空值，DECIMAL 字段转换为数值进行排序
-                return sql`COALESCE(CAST(${servicePersonnelPricing.price} AS DECIMAL(18,2)), 999999)`.as(
-                    'price_sort',
+                // 距离优先，然后按评价数量和好评率
+                expressions.push(
+                    sortOrder === 'asc'
+                        ? asc(sql`${personnelCTE.distance}`)
+                        : desc(sql`${personnelCTE.distance}`),
+                    desc(sql`${personnelCTE.reviewCount}`),
+                    desc(sql`${personnelCTE.goodReviewRate}`),
                 );
+                break;
+            case 'price':
+                // 价格优先，然后按距离、评价数量和好评率
+                expressions.push(
+                    sortOrder === 'asc'
+                        ? asc(sql`CAST(${personnelCTE.price} AS DECIMAL(18,2))`)
+                        : desc(
+                              sql`CAST(${personnelCTE.price} AS DECIMAL(18,2))`,
+                          ),
+                    asc(sql`${personnelCTE.distance}`),
+                    desc(sql`${personnelCTE.reviewCount}`),
+                    desc(sql`${personnelCTE.goodReviewRate}`),
+                );
+                break;
             case 'experience':
-                return servicePersonnel.yearsOfExperience;
+                // 经验优先，然后按距离、评价数量和好评率
+                expressions.push(
+                    sortOrder === 'asc'
+                        ? asc(sql`${personnelCTE.yearsOfExperience}`)
+                        : desc(sql`${personnelCTE.yearsOfExperience}`),
+                    asc(sql`${personnelCTE.distance}`),
+                    desc(sql`${personnelCTE.reviewCount}`),
+                    desc(sql`${personnelCTE.goodReviewRate}`),
+                );
+                break;
             case 'rating':
-                // TODO: 当评分系统实现后，这里应该关联评分表
-                return servicePersonnel.lastActiveAt;
+                // 评价优先：评价数量 > 好评率 > 距离
+                expressions.push(
+                    desc(sql`${personnelCTE.reviewCount}`),
+                    desc(sql`${personnelCTE.goodReviewRate}`),
+                    asc(sql`${personnelCTE.distance}`),
+                );
+                break;
             default:
-                return exactDistance;
+                // 默认排序：距离 > 评价数量 > 好评率
+                expressions.push(
+                    asc(sql`${personnelCTE.distance}`),
+                    desc(sql`${personnelCTE.reviewCount}`),
+                    desc(sql`${personnelCTE.goodReviewRate}`),
+                );
         }
+
+        return expressions;
+    }
+
+    /**
+     * 获取服务人员的用户信息（名称、手机号、头像）
+     */
+    async getPersonnelContactInfo(personnelId: string) {
+        return await this.db.query.users.findFirst({
+            where: eq(users.id, personnelId),
+            columns: {
+                id: true,
+                name: true,
+                phoneNumber: true,
+                image: true,
+            },
+        });
     }
 
     /**
@@ -313,11 +451,14 @@ export class ServicePersonnelRepository {
                         eq(servicePersonnelPricing.isActive, true),
                     ),
                 },
-
-                // TODO: 当评论模块完成后，这里需要关联查询评论
             },
         });
-        // TODO: 添加该用户已经被占用的时间段
+
+        // 获取该用户已经被占用的时间段
+        const occupiedTimeSlots =
+            await this.orderRepository.getPersonnelOccupiedTimeSlots(
+                personnelId,
+            );
 
         // 安全地访问skills数组
         const firstSkill = query?.skills?.[0];
@@ -339,6 +480,7 @@ export class ServicePersonnelRepository {
             specifications: query?.pricing || [],
             description: firstSkill?.description || null,
             servicedCount: firstSkill?.servicedCount || 0,
+            occupiedTimeSlots,
         };
     }
 }

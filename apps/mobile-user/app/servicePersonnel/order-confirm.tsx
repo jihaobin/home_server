@@ -5,7 +5,7 @@ import { Text } from "@repo/mobile-ui/components/ui/text";
 import { Link, useFocusEffect, useRouter } from "expo-router";
 import { icons as lucideIconRegistry } from "lucide-react-native";
 import { useCallback, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { toast } from "sonner-native";
 import { PaySheet } from "@/components/pay/paySheet";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
@@ -26,9 +26,10 @@ export default function OrderConfirmScreen() {
 	} = useServiceStore();
 
 	const { selectedAddress, reset } = useAddressEditStore();
-	const { session } = useSession();
+	const { session, refetch: refetchSession } = useSession();
 
 	const [showPaymentModal, setShowPaymentModal] = useState(false);
+	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [missingFields, setMissingFields] = useState<{
 		address?: boolean;
 		serviceTime?: boolean;
@@ -159,6 +160,17 @@ export default function OrderConfirmScreen() {
 		setShowPaymentModal(true);
 	};
 
+	const handleRefresh = useCallback(async () => {
+		setIsRefreshing(true);
+		try {
+			await refetchSession();
+			setMissingFields({});
+			setShowPaymentModal(false);
+		} finally {
+			setIsRefreshing(false);
+		}
+	}, [refetchSession]);
+
 	return (
 		<View className="flex-1 bg-background">
 			{/* 顶部导航栏 */}
@@ -183,6 +195,9 @@ export default function OrderConfirmScreen() {
 				className="flex-1"
 				showsVerticalScrollIndicator={false}
 				contentContainerStyle={{ paddingBottom: 120 }}
+				refreshControl={
+					<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
+				}
 			>
 				{/* 服务时间卡片 */}
 				<Link
@@ -455,6 +470,7 @@ export default function OrderConfirmScreen() {
 					addressId: selectedAddress?.id || "",
 					appointmentTime: selectedServiceTime?.toISOString() || "",
 					designatedPersonnelId: selectServicePersonnelInfo?.userId || "",
+					specificationId: selectedSpecification?.id || "",
 					displayPrice: servicePrice,
 				}}
 				totalAmount={totalAmount}

@@ -65,6 +65,12 @@ export const orders = pgTable(
         appointmentTime: timestamp('appointment_time', {
             withTimezone: true,
         }).notNull(), // 预约服务时间
+        serviceStartedAt: timestamp('service_started_at', {
+            withTimezone: true,
+        }), // 服务开始时间
+        serviceCompletedAt: timestamp('service_completed_at', {
+            withTimezone: true,
+        }), // 服务完成时间
         // 新增取消相关字段
         cancelReason: varchar('cancel_reason', { length: 500 }), // 取消订单的原因
         cancelledBy: varchar('cancelled_by', { length: 255 }).references(
@@ -121,6 +127,7 @@ export const orderAssignments = pgTable(
         servicePersonnelId: varchar('service_personnel_id', {
             length: 255,
         }).references(() => servicePersonnel.userId, { onDelete: 'cascade' }), // 分配的服务人员 ID
+        acceptedAt: timestamp('accepted_at', { withTimezone: true }), // 服务人员接单时间
         // MVP阶段注释店铺分配字段
         // shopId: varchar('shop_id', { length: 255 }).references(() => shops.id, {
         //     onDelete: 'cascade',

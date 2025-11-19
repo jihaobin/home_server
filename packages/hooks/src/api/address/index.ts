@@ -3,6 +3,8 @@ import type {
 	ChinaCity,
 	CreateUserAddress,
 	DistrictSearchResponse,
+	GeocodeRequest,
+	GeocodeResponse,
 	ParentInfo,
 	ReverseGeocodeRequest,
 	ReverseGeocodeResponse,
@@ -328,6 +330,28 @@ export const useCityParentInfo = (city: string | undefined | null) =>
 		enabled: !!city,
 		meta: {
 			errorMessage: "城市信息获取失败",
+		},
+	});
+
+/**
+ * 地址解析（地址转经纬度）
+ */
+export const useGeocode = () =>
+	useMutation({
+		mutationFn: async (payload: GeocodeRequest) => {
+			const response = await apiClient.get<GeocodeResponse>(
+				"/address/geocode",
+				{
+					params: payload,
+				},
+			);
+			return response.data.result;
+		},
+		scope: {
+			id: "address-geocode",
+		},
+		meta: {
+			errorMessage: "地址解析失败",
 		},
 	});
 

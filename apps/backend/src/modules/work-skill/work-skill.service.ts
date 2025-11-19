@@ -5,6 +5,7 @@ import {
     UpsertWorkInfoRequest,
     UpdatePersonnelSkillsRequest,
     SkillUpdateResult,
+    UpdateServiceOfferingsRequest,
 } from '@repo/types';
 
 @Injectable()
@@ -122,6 +123,16 @@ export class WorkSkillService {
         return await this.workSkillRepository.removePersonnelPricing(
             personnelId,
             serviceId,
+        );
+    }
+
+    async updateServiceOfferings(
+        personnelId: string,
+        services: UpdateServiceOfferingsRequest['services'],
+    ) {
+        await this.workSkillRepository.updateServiceOfferings(
+            personnelId,
+            services,
         );
     }
 }

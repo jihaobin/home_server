@@ -1,18 +1,21 @@
 import {
     Controller,
     Get,
+    Param,
     Query,
     Req,
     UseGuards,
     UsePipes,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import {
     ServiceDetailsSchema,
     ServicePersonnelDetailsQuerySchema,
     type ServicePersonnelFilterRequest,
     ServicePersonnelFilterRequestSchema,
     ServicePersonnelFilterResponseSchema,
+    ServicePersonnelProfileSchema,
+    ServicePersonnelDashboardStatsSchema,
 } from '@repo/types';
 import { Request } from 'express';
 import {
@@ -21,8 +24,9 @@ import {
     ApiSuccessResponse,
 } from 'src/common/decorator';
 import { ZodValidationPipe } from 'src/common/pipes';
+import { AuthGuard } from '../auth/auth.guard';
+import { AuthOptional, Roles } from '../auth/decorators';
 import { ServicePersonnelService } from './service-personnel.service';
-import z from 'zod/v4';
 
 @ApiTags('服务人员管理')
 @Controller('service-personnel')
@@ -32,11 +36,21 @@ export class ServicePersonnelController {
     ) {}
 
     @Get('search')
-    @UsePipes(new ZodValidationPipe(ServicePersonnelFilterRequestSchema))
+    @UseGuards(AuthGuard)
+    @AuthOptional()
+    @UsePipes(
+        new ZodValidationPipe(
+            ServicePersonnelFilterRequestSchema.omit({ currentUserId: true }),
+        ),
+    )
     @ApiOperation({
         summary: '智能筛选服务人员',
         description: `
 根据地理位置、价格区间、服务类型等条件智能匹配服务人员。
+
+**认证模式：**
+- 🔓 可选认证：未登录用户也可以搜索
+- 🔐 已登录用户：自动排除自己在搜索结果中
 
 **核心功能：**
 - ✅ 技能匹配：只返回掌握指定服务的人员
@@ -53,7 +67,8 @@ export class ServicePersonnelController {
 3. 验证价格区间（如果指定）
 4. 检查时间可用性（如果指定服务时间）
 5. 验证服务人员当前状态
-6. 按指定方式排序并分页返回
+6. 如果用户已登录，排除当前登录用户自己
+7. 按指定方式排序并分页返回
 
 **智能特性：**
 - 自动计算距离和服务半径覆盖
@@ -61,7 +76,9 @@ export class ServicePersonnelController {
 - 综合评分排序（未来支持）
         `,
     })
-    @ApiQueries(ServicePersonnelFilterRequestSchema)
+    @ApiQueries(
+        ServicePersonnelFilterRequestSchema.omit({ currentUserId: true }),
+    )
     @ApiSuccessResponse(ServicePersonnelFilterResponseSchema, {
         description: '成功获取匹配的服务人员列表',
         isPaginated: true,
@@ -73,7 +90,28 @@ export class ServicePersonnelController {
     ) {
         return await this.servicePersonnelService.findMatchedPersonnel({
             ...query,
+            currentUserId: req.user?.id, // 传递当前用户ID用于排除自己
         });
+    }
+
+    @Get('profile/:personnelId')
+    @ApiOperation({
+        summary: '聚合获取服务人员资料',
+        description:
+            '整合同一服务人员的基础资料、技能/定价与文件信息，返回一次即可渲染详情页的数据。',
+    })
+    @ApiParam({
+        name: 'personnelId',
+        description: '服务人员用户ID',
+    })
+    @ApiSuccessResponse(ServicePersonnelProfileSchema, {
+        description: '服务人员聚合资料',
+    })
+    @ApiErrorResponses()
+    async getPersonnelProfile(@Param('personnelId') personnelId: string) {
+        return await this.servicePersonnelService.getPersonnelProfile(
+            personnelId,
+        );
     }
 
     @Get('getServiceDetails')
@@ -96,5 +134,22 @@ export class ServicePersonnelController {
             personnelId: query.personnelId,
             serviceId: query.serviceId,
         });
+    }
+
+    @Get('dashboard/me')
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @ApiOperation({
+        summary: '获取我的服务统计',
+        description: '返回服务次数、评分与余额，用于个人中心展示',
+    })
+    @ApiSuccessResponse(ServicePersonnelDashboardStatsSchema, {
+        description: '服务人员个人中心统计',
+    })
+    @ApiErrorResponses()
+    async getDashboardStats(@Req() req: Request) {
+        return await this.servicePersonnelService.getPersonnelDashboardStats(
+            req.user.id,
+        );
     }
 }

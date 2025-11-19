@@ -125,7 +125,7 @@ export const servicePersonnel = pgTable(
             .notNull(), // 最后活跃时间
     },
     (table) => [
-    // 可用服务人员索引 - 用于快速查找可接单的服务人员
+        // 可用服务人员索引 - 用于快速查找可接单的服务人员
         index('idx_service_personnel_available')
             .on(table.isAvailable, table.currentStatus, table.userId)
             .where(sql`is_available = true AND current_status = 'available'`),
@@ -179,9 +179,9 @@ export const servicePersonnelPricing = pgTable(
         effectiveFrom: timestamp('effective_from', {
             withTimezone: true,
         }).defaultNow(), // 定价生效时间
-        estimatedDurationMinutes: integer(
-            'estimated_duration_minutes',
-        ).notNull().default(30), // 预计服务时长（分钟）
+        estimatedDurationMinutes: integer('estimated_duration_minutes')
+            .notNull()
+            .default(30), // 预计服务时长（分钟）
         effectiveTo: timestamp('effective_to', { withTimezone: true }), // 定价失效时间
         createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -189,10 +189,6 @@ export const servicePersonnelPricing = pgTable(
             .$onUpdateFn(() => new Date()),
     },
     (table) => [
-        uniqueIndex('uq_personnel_pricing_user_service').on(
-            table.userId,
-            table.serviceId,
-        ),
         // 服务人员服务定价查询索引
         index('idx_personnel_pricing_user_service')
             .on(table.userId, table.serviceId, table.isActive)

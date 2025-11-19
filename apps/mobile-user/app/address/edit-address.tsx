@@ -7,9 +7,9 @@ import { ChevronRight } from "@repo/mobile-ui/lib/icons/ChevronRight";
 import { MapPin } from "@repo/mobile-ui/lib/icons/MapPin";
 import { CreateUserAddressSchema, UpdateUserAddressSchema } from "@repo/types";
 import { router, useFocusEffect, useNavigation } from "expo-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { toast } from "sonner-native";
 import { useShallow } from "zustand/react/shallow";
 import { UseCreateAddress } from "@repo/hooks/api/address";
@@ -92,6 +92,7 @@ export default function EditAddressScreen() {
     const isEditMode = useRef<boolean>(!!selectedAddress);
 
     const navigation = useNavigation();
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     // 获取用户当前定位
     const { location, handleStopLocation } = useLocation({
@@ -180,6 +181,31 @@ export default function EditAddressScreen() {
         router.push("./select-address");
     };
 
+    const handleRefresh = () => {
+        setIsRefreshing(true);
+        if (!isEditMode.current && location && isManualSelect === false) {
+            setSelectedAddress({
+                lng: location.longitude || 0,
+                lat: location.latitude || 0,
+                detailedAddress: location.name || "",
+                province: location.province || "",
+                city: location.city || "",
+                district: location.district || "",
+                id: "",
+                userId: "",
+                recipientName: "",
+                sex: false,
+                recipientPhone: "",
+                isDefault: false,
+            });
+        }
+        const defaults = getFormDefaults();
+        Object.entries(defaults).forEach(([key, value]) => {
+            setValue(key as keyof SelectAddress, value);
+        });
+        setTimeout(() => setIsRefreshing(false), 300);
+    };
+
     const onSubmit = async (data: any) => {
         console.log("创建地址:", data);
         console.log(isEditMode);
@@ -214,7 +240,13 @@ export default function EditAddressScreen() {
 
     return (
         <View className="flex-1 bg-background">
-            <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+            <ScrollView
+                className="flex-1"
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
+                }
+            >
                 <View className="py-6 space-y-1 px-4">
                     {/* 地址信息卡片 */}
                     <View className="bg-card rounded-2xl shadow-sm border border-border/50 overflow-hidden mb-4">

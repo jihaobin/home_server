@@ -4,7 +4,6 @@ import { cn } from "@repo/mobile-ui/lib/utils";
 import { useRouter } from "expo-router";
 import {
 	ActivityIndicator,
-	Alert,
 	GestureResponderEvent,
 	Image,
 	TouchableOpacity,
@@ -91,28 +90,11 @@ export function OrderCard({ order, section }: OrderCardProps) {
 			order.status === "pending_payment"
 				? "支付前用户取消订单"
 				: "用户取消预约";
-		Alert.alert("确认要取消该订单吗？", "取消后需要重新下单才能继续服务。", [
-			{ text: "再想想", style: "cancel" },
-			{
-				text: "确认取消",
-				style: "destructive",
-				onPress: () => {
-					void cancelOrder({ orderId: order.id, reason: cancelReason });
-				},
-			},
-		]);
+		void cancelOrder({ orderId: order.id, reason: cancelReason });
 	}, [cancelOrder, order.id, order.status]);
 
 	const handleCompleteOrder = useCallback(() => {
-		Alert.alert("确认服务已完成？", "确认后订单将被标记为已完成。", [
-			{ text: "稍后再说", style: "cancel" },
-			{
-				text: "确认完成",
-				onPress: () => {
-					void completeOrder({ orderId: order.id });
-				},
-			},
-		]);
+		void completeOrder({ orderId: order.id });
 	}, [completeOrder, order.id]);
 
 	const handleReorder = useCallback(() => {

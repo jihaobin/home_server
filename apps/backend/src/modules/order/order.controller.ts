@@ -21,10 +21,14 @@ import {
     CreateDesignatedOrderSchema,
     OrderListRequestSchema,
     OrderListResponseSchema,
+    StaffOrderListRequestSchema,
+    StaffOrderListResponseSchema,
     VerifyOrderCheckinSchema,
+    type UserRole,
     type VerifyOrderCheckinDto,
 } from '@repo/types';
 import { AuthGuard } from '../auth/auth.guard';
+import { Roles } from '../auth/decorators';
 import {
     ApiErrorResponses,
     ApiQueries,
@@ -40,6 +44,7 @@ export class OrderController {
     ) {}
 
     @UseGuards(AuthGuard)
+    @Roles(['customer'])
     @Get()
     @UsePipes(
         new ZodValidationPipe(
@@ -73,16 +78,52 @@ export class OrderController {
     }
 
     @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Get('assignments/me')
+    @UsePipes(
+        new ZodValidationPipe(
+            StaffOrderListRequestSchema.omit({ servicePersonnelId: true }),
+        ),
+    )
+    @ApiQueries(StaffOrderListRequestSchema.omit({ servicePersonnelId: true }))
+    @ApiSuccessResponse(StaffOrderListResponseSchema, {
+        description: '返回服务人员自己的订单列表',
+    })
+    @ApiErrorResponses()
+    @ApiOperation({
+        summary: '获取服务人员的订单列表',
+        description: '服务人员查看自己的订单与筛选条件',
+    })
+    async getOrdersByStaff(@Query() query: any, @Req() req: Request) {
+        const params = {
+            ...query,
+            servicePersonnelId: req.user.id,
+            page: query.page ? parseInt(query.page as string) : undefined,
+            limit: query.limit ? parseInt(query.limit as string) : undefined,
+            startTime: query.startTime
+                ? new Date(query.startTime as string)
+                : undefined,
+            endTime: query.endTime
+                ? new Date(query.endTime as string)
+                : undefined,
+        };
+
+        return await this.orderService.getOrdersByStaff(params);
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['customer', 'service_personnel'])
     @Get(':id')
     @ApiOperation({
         summary: '获取订单详情',
-        description: '返回订单基础信息并附带最新核验二维码',
+        description: '获取订单详情信息，用户和服务人员均可访问',
     })
     async getOrderDetail(@Param('id') id: string, @Req() req: Request) {
         return await this.orderService.getOrderById(id, req.user.id);
     }
 
     @UseGuards(AuthGuard)
+    @Roles(['customer'])
     @Get(':id/check-in')
     @ApiOperation({
         summary: '生成订单核验二维码',
@@ -96,6 +137,7 @@ export class OrderController {
     }
 
     @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
     @Post('check-in/verify')
     @UsePipes(new ZodValidationPipe(VerifyOrderCheckinSchema))
     @ApiOperation({
@@ -119,6 +161,7 @@ export class OrderController {
     }
 
     @UseGuards(AuthGuard)
+    @Roles(['customer'])
     @Post('createWithDesignatedPersonnel')
     @UsePipes(new ZodValidationPipe(CreateDesignatedOrderSchema))
     @ApiOperation({
@@ -138,8 +181,8 @@ export class OrderController {
     }
 
     @UseGuards(AuthGuard)
+    @Roles(['customer', 'service_personnel'])
     @Post(':id/cancel')
-    @UseGuards(AuthGuard)
     @ApiOperation({
         summary: '取消订单',
         description: '用户或服务人员取消订单，需要提供取消原因',
@@ -147,10 +190,10 @@ export class OrderController {
     async cancelOrder(
         @Param('id') id: string,
         @Body('reason') reason: string,
-        @Body('cancelledBy') cancelledBy: string,
         @Req() req: Request,
     ) {
         const userId = req.user.id;
+        const actorRole = this.resolveUserRole(req.user.role);
         // 验证是否有权限取消订单
         const order = await this.orderService.getOrderById(id, userId);
 
@@ -163,10 +206,16 @@ export class OrderController {
             }
         }
 
-        return await this.orderService.cancelOrder(id, reason, cancelledBy);
+        return await this.orderService.cancelOrder({
+            id,
+            reason,
+            actorId: userId,
+            actorRole,
+        });
     }
 
     @UseGuards(AuthGuard)
+    @Roles(['customer'])
     @Post(':id/complete')
     @UseGuards(AuthGuard)
     @ApiOperation({
@@ -184,5 +233,25 @@ export class OrderController {
         }
 
         return await this.orderService.completeOrder(id);
+    }
+
+    private resolveUserRole(rawRole: string | string[] | undefined): UserRole {
+        if (Array.isArray(rawRole)) {
+            return rawRole.includes('service_personnel')
+                ? 'service_personnel'
+                : 'customer';
+        }
+
+        if (typeof rawRole === 'string') {
+            const roles = rawRole
+                .split(',')
+                .map((role) => role.trim())
+                .filter(Boolean);
+            return roles.includes('service_personnel')
+                ? 'service_personnel'
+                : 'customer';
+        }
+
+        return 'customer';
     }
 }

@@ -20,6 +20,8 @@ import {
     UpdatePersonnelSkillsRequestSchema,
     type UpsertPersonnelPricingRequest,
     UpsertPersonnelPricingRequestSchema,
+    type UpdateServiceOfferingsRequest,
+    UpdateServiceOfferingsRequestSchema,
     type UpsertWorkInfoRequest,
     UpsertWorkInfoRequestSchema,
 } from '@repo/types';
@@ -57,6 +59,29 @@ export class WorkSkillController {
             req.user.id,
             workInfo,
         );
+    }
+
+    @UseGuards(AuthGuard)
+    @Put('offerings')
+    @UsePipes(new ZodValidationPipe(UpdateServiceOfferingsRequestSchema))
+    @ApiOperation({
+        summary: '更新服务分类与规格',
+        description: '批量配置服务分类、服务描述以及不同规格的价格和耗时',
+    })
+    @ApiBodies(UpdateServiceOfferingsRequestSchema)
+    @ApiSuccessResponse(z.object({ success: z.boolean() }), {
+        description: '成功更新服务设置',
+    })
+    @ApiErrorResponses()
+    async updateServiceOfferings(
+        @Body() payload: UpdateServiceOfferingsRequest,
+        @Req() req: Request,
+    ) {
+        await this.workSkillService.updateServiceOfferings(
+            req.user.id,
+            payload.services,
+        );
+        return { success: true };
     }
 
     @UseGuards(AuthGuard)

@@ -12,6 +12,7 @@ import {
 	ActivityIndicator,
 	Alert,
 	Image,
+	RefreshControl,
 	ScrollView,
 	TouchableOpacity,
 	View,
@@ -118,7 +119,7 @@ export default function OrderDetailScreen() {
 	const [showActions, setShowActions] = useState(false);
 
 	// 获取订单详情
-	const { data: order } = useOrderDetail(id || "");
+	const { data: order, refetch: refetchOrder } = useOrderDetail(id || "");
 	const {
 		payExistingOrder,
 		isPaying,
@@ -130,9 +131,12 @@ export default function OrderDetailScreen() {
 	} = useOrderActions();
 
 	// 当订单状态为待服务时，获取核验二维码
-	const { data: checkinData, isLoading: isLoadingCheckin } = useOrderCheckin(
-		id || "",
-	);
+	const {
+		data: checkinData,
+		isLoading: isLoadingCheckin,
+		refetch: refetchCheckin,
+	} = useOrderCheckin(id || "");
+	const [isRefreshing, setIsRefreshing] = useState(false);
 
 	if (!order) {
 		return null;
@@ -297,6 +301,18 @@ export default function OrderDetailScreen() {
 		order.status,
 	]);
 
+	const handleRefresh = useCallback(async () => {
+		setIsRefreshing(true);
+		try {
+			await Promise.all([
+				refetchOrder({ throwOnError: false }),
+				refetchCheckin({ throwOnError: false }),
+			]);
+		} finally {
+			setIsRefreshing(false);
+		}
+	}, [refetchCheckin, refetchOrder]);
+
 	return (
 		<RequireAuth>
 			<View className="flex-1 bg-background">
@@ -323,6 +339,12 @@ export default function OrderDetailScreen() {
 					className="flex-1"
 					showsVerticalScrollIndicator={false}
 					contentContainerStyle={{ paddingBottom: 100 }}
+					refreshControl={
+						<RefreshControl
+							refreshing={isRefreshing}
+							onRefresh={handleRefresh}
+						/>
+					}
 				>
 					{/* 订单状态卡片 */}
 					<View className="mx-4 mt-4 bg-card rounded-2xl p-4 border border-border">

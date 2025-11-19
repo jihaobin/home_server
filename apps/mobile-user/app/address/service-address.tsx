@@ -16,7 +16,8 @@ import { MapPin } from "@repo/mobile-ui/lib/icons/MapPin";
 import { X } from "@repo/mobile-ui/lib/icons/X";
 import type { UserAddresses } from "@repo/types";
 import { router, useLocalSearchParams } from "expo-router";
-import { Pressable, ScrollView, View } from "react-native";
+import { useCallback, useState } from "react";
+import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { toast } from "sonner-native";
 import { useDeleteAddress, useUserAddresses } from "@repo/hooks/api/address";
 import { useAddressEditStore } from "@/stores/address-store";
@@ -141,7 +142,11 @@ export default function ServiceAddressScreen() {
     const { setSelectedAddress } = useAddressEditStore();
     const params = useLocalSearchParams<{ mode?: string }>();
 
-    const { data } = useUserAddresses();
+    const {
+        data,
+        refetch: refetchAddresses,
+        isFetching: isFetchingAddresses,
+    } = useUserAddresses();
 
     // 判断是否为选择模式（从订单确认页跳转过来）
     const isSelectMode = params.mode === "select";
@@ -184,6 +189,21 @@ export default function ServiceAddressScreen() {
         router.push("./edit-address");
     };
 
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const handleRefresh = useCallback(async () => {
+        setIsRefreshing(true);
+        try {
+            await refetchAddresses({
+                throwOnError: false,
+            });
+        } finally {
+            setIsRefreshing(false);
+        }
+    }, [refetchAddresses]);
+
+    const refreshingState = isRefreshing || isFetchingAddresses;
+
     return (
         <View className="flex-1 bg-background">
             {/* 顶部说明卡片 */}
@@ -196,7 +216,16 @@ export default function ServiceAddressScreen() {
             )}
 
             {/* 地址列表 */}
-            <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+            <ScrollView
+                className="flex-1"
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshingState}
+                        onRefresh={handleRefresh}
+                    />
+                }
+            >
                 <View className="py-4">
                     {data.length > 0 ? (
                         data

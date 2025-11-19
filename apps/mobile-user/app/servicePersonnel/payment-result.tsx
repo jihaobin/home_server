@@ -4,9 +4,10 @@ import { Separator } from "@repo/mobile-ui/components/ui/separator";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { icons as lucideIconRegistry } from "lucide-react-native";
-import { useCallback } from "react";
-import { BackHandler, View } from "react-native";
+import { useCallback, useState } from "react";
+import { BackHandler, RefreshControl, ScrollView, View } from "react-native";
 import Animated, { FadeIn, SlideInDown } from "react-native-reanimated";
+import { apiClient } from "@repo/lib/http-client";
 
 const ICON_MAP = lucideIconRegistry;
 
@@ -14,6 +15,15 @@ const paymentMethodLabels: Record<string, string> = {
 	wechat: "微信支付",
 	alipay: "支付宝支付",
 	balance: "余额支付",
+};
+
+const ORDER_STATUS_LABELS: Record<string, string> = {
+	pending_payment: "待付款",
+	paid: "待服务",
+	in_progress: "服务中",
+	completed: "已完成",
+	cancelled: "已取消",
+	refunded: "已退款",
 };
 
 export default function PaymentResultScreen() {
@@ -25,6 +35,8 @@ export default function PaymentResultScreen() {
 		paymentMethod: string;
 	}>();
     const navigation = useNavigation();
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [orderStatusText, setOrderStatusText] = useState<string | null>(null);
 
     // 拦截返回操作，统一返回首页(防止用户重复下单)
     useFocusEffect(
@@ -58,10 +70,35 @@ export default function PaymentResultScreen() {
 	const isSuccess = params.success === "true";
 	const amount = Number.parseFloat(params.amount || "0");
 
+    const handleRefresh = useCallback(async () => {
+        if (!params.orderId) {
+            return;
+        }
+        setIsRefreshing(true);
+        try {
+            const response = await apiClient.get<{ status: string }>(`/order/${params.orderId}`);
+            if (response?.data?.status) {
+                const statusLabel = ORDER_STATUS_LABELS[response.data.status] ?? response.data.status;
+                setOrderStatusText(statusLabel);
+            }
+        } catch (error) {
+            setOrderStatusText("获取订单状态失败");
+        } finally {
+            setIsRefreshing(false);
+        }
+    }, [params.orderId]);
+
 	return (
 		<View className="flex-1 bg-background">
 			{/* 主内容区域 */}
-			<View className="flex-1 items-center justify-center px-6">
+			<ScrollView
+				className="flex-1"
+				contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}
+				refreshControl={
+					<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
+				}
+			>
+				<View className="flex-1 items-center justify-center px-6">
 				{/* 成功/失败图标 */}
 				<Animated.View
 					entering={FadeIn.duration(500)}
@@ -155,7 +192,15 @@ export default function PaymentResultScreen() {
 						</View>
 					</Animated.View>
 				)}
-			</View>
+				{orderStatusText ? (
+					<View className="mt-4 rounded-lg bg-muted/40 px-3 py-2">
+						<Text className="text-xs text-muted-foreground">
+							最新订单状态：{orderStatusText}
+						</Text>
+					</View>
+				) : null}
+				</View>
+			</ScrollView>
 
 			{/* 底部按钮 */}
 			<Animated.View

@@ -5,7 +5,7 @@ import { MapPin } from "@repo/mobile-ui/lib/icons/MapPin";
 import type { SuggestionData } from "@repo/types";
 import { Link, router } from "expo-router";
 import React, { Suspense, useCallback, useMemo, useState } from "react";
-import { FlatList, Pressable, ScrollView, View } from "react-native";
+import { FlatList, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useShallow } from "zustand/react/shallow";
 import { AddressSuggestionErrorBoundary } from "@repo/mobile-ui/components/error-boundaries";
 import { useAddressSuggestionInfiniteSuspense, useLocationDetail, useUserAddresses } from "@repo/hooks/api/address";
@@ -84,6 +84,7 @@ const AddressSuggestionsContent = React.memo(
             hasNextPage,
             isFetchingNextPage,
             isFetching,
+            refetch,
         } = useAddressSuggestionInfiniteSuspense({
             keyword: searchQuery,
             lat: selectedAddress?.lat,
@@ -93,10 +94,22 @@ const AddressSuggestionsContent = React.memo(
                 selectedAddress?.city ||
                 selectedAddress?.province,
         });
+        const [isRefreshing, setIsRefreshing] = useState(false);
 
         // 将所有页面的数据平铺为一个数组
         const allSuggestions =
             addressSuggestionData?.pages?.flatMap((page) => page.data) || [];
+
+        const handleRefresh = useCallback(async () => {
+            setIsRefreshing(true);
+            try {
+                await refetch({
+                    throwOnError: false,
+                });
+            } finally {
+                setIsRefreshing(false);
+            }
+        }, [refetch]);
 
         // 加载更多数据的回调
         const handleLoadMore = useCallback(() => {
@@ -180,6 +193,8 @@ const AddressSuggestionsContent = React.memo(
                         ListFooterComponent={renderFooter}
                         style={{ flex: 1 }}
                         showsVerticalScrollIndicator={true}
+                        refreshing={isRefreshing || isFetching}
+                        onRefresh={handleRefresh}
                     />
                 </View>
             </View>
@@ -194,13 +209,22 @@ const DefaultAddressContent = React.memo(({ location, onSelectAddress }: {
     location: LocationChangedEvent;
 }) => {
     // 获取用户保存的地址列表
-    const { data: userAddresses } = useUserAddresses();
+    const {
+        data: userAddresses,
+        refetch: refetchUserAddresses,
+        isFetching: isFetchingAddresses,
+    } = useUserAddresses();
 
     // 获取当前位置详情（包含附近POI）
-    const { data: locationDetail } = useLocationDetail({
+    const {
+        data: locationDetail,
+        refetch: refetchLocationDetail,
+        isFetching: isFetchingLocation,
+    } = useLocationDetail({
         lat: location.latitude,
         lng: location.longitude,
     });
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     // 统计地址使用频率并去重，取前3个
     const frequentAddresses = useMemo(() => {
@@ -277,8 +301,32 @@ const DefaultAddressContent = React.memo(({ location, onSelectAddress }: {
         });
     }, [locationDetail, onSelectAddress]);
 
+    const handleRefresh = useCallback(async () => {
+        setIsRefreshing(true);
+        try {
+            await Promise.all([
+                refetchUserAddresses({
+                    throwOnError: false,
+                }),
+                refetchLocationDetail({
+                    throwOnError: false,
+                }),
+            ]);
+        } finally {
+            setIsRefreshing(false);
+        }
+    }, [refetchLocationDetail, refetchUserAddresses]);
+
     return (
-        <ScrollView className="flex-1">
+        <ScrollView
+            className="flex-1"
+            refreshControl={
+                <RefreshControl
+                    refreshing={isRefreshing || isFetchingAddresses || isFetchingLocation}
+                    onRefresh={handleRefresh}
+                />
+            }
+        >
             {/* 常用服务地址 */}
             {frequentAddresses.length > 0 && (
                 <>
