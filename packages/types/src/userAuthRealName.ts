@@ -5,24 +5,26 @@ import { UserProfilesSchema } from "./database-entity";
  * 用户实名认证数据
  */
 export const userAuthRealNameDataSchema = z.object({
+    name: z.string().describe("姓名"),
+    idcard: z.string().describe("身份证号"),
     birthday: z.string().describe("出生日期"),
-    result: z.number().describe("是否一致 1为不一致，0为一致").transform((val) => {
-        return val === 0;
+    res: z.union([z.string(), z.number()]).describe("是否一致 1为一致，2为不一致，3无记录").transform((val) => {
+        return Number(val) === 1
     }),
     address: z.string().describe("地址"),
-    orderNo: z.string().describe("订单号"),
     sex: z.string().describe("性别"),
-    desc: z.string().describe("描述")
+    description: z.string().describe("核验结果状态描述"),
 }).optional()
 
 /**
 * 用户实名认证接口响应
 */
 export const userAuthRealNameApiSchema = z.object({
-    msg: z.string().describe("提示信息"),
-    success: z.boolean().optional().describe("请求是否成功"),
-    code: z.number().describe("状态码,code为200 data才会有值，400参数格式错误"),
-    data: userAuthRealNameDataSchema
+    message: z.string().describe("提示信息"),
+    // 接受字符串或数字形式的返回码（例如 "0" 或 0），统一转换为数字
+    code: z.union([z.string(), z.number()]).describe("当code=0时，再判断下面result中的res；当code!=0时，表示调用已失败，无需再继续").transform((val) => Number(val)),
+    // 新响应字段名为 result（当 code=0 时存在）
+    result: userAuthRealNameDataSchema.optional()
 })
 
 export const userAuthRealNameApiRequestSchema = z.object({
@@ -33,7 +35,7 @@ export const userAuthRealNameApiRequestSchema = z.object({
 
 export type UserAuthRealNameApiRequest = z.infer<typeof userAuthRealNameApiRequestSchema>;
 
-export type userAuthRealNameApiResponse = z.Infer<typeof userAuthRealNameApiSchema>;
+export type userAuthRealNameApiResponse = z.infer<typeof userAuthRealNameApiSchema>;
 
 export type UserAuthRealNameApiResponse = z.infer<typeof userAuthRealNameApiSchema>;
 

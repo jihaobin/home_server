@@ -26,6 +26,8 @@ import { ApiBodies } from 'src/common/decorator/swagger-api-bodies';
 import { ZodValidationPipe } from 'src/common/pipes';
 import { AuthGuard } from '../auth/auth.guard';
 import { Request } from 'express';
+import { Roles } from '../auth/decorators';
+import type { UserProfiles } from '@repo/types';
 
 const createRealNameAuthNoUserIdSchema = createUserAuthRealNameSchema.omit({
     userId: true,
@@ -39,6 +41,51 @@ const UpdateRealNameAuthNoUserIdSchema = updateUserAuthRealNameSchema.omit({
 
 type UpdateRealNameAuthNoUserId = Omit<UpdateUserAuthRealName, 'userId'>;
 
+function maskIdCardNumber(idCard?: string | null) {
+    if (!idCard) {
+        return idCard;
+    }
+    const normalized = idCard.trim();
+    if (normalized.length <= 8) {
+        if (normalized.length <= 2) {
+            return `${normalized[0] ?? ''}${'*'.repeat(
+                Math.max(normalized.length - 1, 0),
+            )}`;
+        }
+        return `${normalized.slice(0, 1)}${'*'.repeat(
+            normalized.length - 2,
+        )}${normalized.slice(-1)}`;
+    }
+    const prefix = normalized.slice(0, 3);
+    const suffix = normalized.slice(-4);
+    return `${prefix}${'*'.repeat(normalized.length - 7)}${suffix}`;
+}
+
+type NullableUserProfile = {
+    [K in keyof UserProfiles]?: UserProfiles[K] | null;
+};
+
+type MaskableUserProfile = NullableUserProfile | null | undefined;
+
+function maskUserProfile<T extends MaskableUserProfile>(profile: T): T {
+    if (!profile) {
+        return profile;
+    }
+    return {
+        ...profile,
+        idCardNumber: maskIdCardNumber(profile.idCardNumber),
+    };
+}
+
+function maskUserProfileResponse<
+    T extends MaskableUserProfile | MaskableUserProfile[],
+>(response: T): T {
+    if (Array.isArray(response)) {
+        return response.map((item) => maskUserProfile(item)) as T;
+    }
+    return maskUserProfile(response) as T;
+}
+
 @ApiTags('用户实名认证')
 @Controller('userAuthRealName')
 export class UserAuthRealNameController {
@@ -46,8 +93,16 @@ export class UserAuthRealNameController {
         private readonly userAuthRealNameService: UserAuthRealNameService,
     ) {}
 
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
     @Get('realNameAuth')
-    @UsePipes(new ZodValidationPipe(userAuthRealNameApiRequestSchema))
+    @UsePipes(
+        new ZodValidationPipe(
+            userAuthRealNameApiRequestSchema,
+            '请求参数验证失败',
+            false,
+        ),
+    )
     @ApiOperation({
         summary: '检查用户信息和身份证是否一致',
         description: '检查用户信息和身份证是否一致',
@@ -58,7 +113,10 @@ export class UserAuthRealNameController {
     })
     async realNameAuth(@Query() query: { name: string; idcard: string }) {
         const response = await this.userAuthRealNameService.authRealName(query);
-        return response;
+        return {
+            ...response,
+            idcard: maskIdCardNumber(response?.idcard),
+        };
     }
 
     @UseGuards(AuthGuard)
@@ -71,10 +129,10 @@ export class UserAuthRealNameController {
     @ApiSuccessResponse(UserProfilesSchema, {
         description: '成功获取实名信息',
     })
-    async getUserRealNameByUserId(@Param('id') id: string) {
+    async getUserRealNameByUserId(@Param('userId') id: string) {
         const response =
             await this.userAuthRealNameService.getUserRealNameByUserId(id);
-        return response;
+        return maskUserProfileResponse(response);
     }
 
     @UseGuards(AuthGuard)
@@ -97,7 +155,7 @@ export class UserAuthRealNameController {
                 ...data,
                 userId: req.user.id,
             });
-        return response;
+        return maskUserProfileResponse(response);
     }
 
     @UseGuards(AuthGuard)
@@ -120,7 +178,7 @@ export class UserAuthRealNameController {
                 ...data,
                 userId: req.user.id,
             });
-        return response;
+        return maskUserProfileResponse(response);
     }
 
     @UseGuards(AuthGuard)
