@@ -9,6 +9,7 @@ import {
     primaryKey,
     check,
     index,
+    jsonb,
 } from 'drizzle-orm/pg-core';
 
 import { createId } from '.';
@@ -36,15 +37,22 @@ export const reviews = pgTable(
             .references(() => users.id, { onDelete: 'cascade' }), // 评价者（客户）的用户 ID
         targetId: varchar('target_id', { length: 255 }).notNull(), // 被评价对象 ID (服务人员或店铺)
         targetType: reviewTargetTypeEnum('target_type').notNull(), // 被评价对象类型
-        rating: integer('rating').notNull(), // 总体评分 (1-5星)
-        serviceQuality: integer('service_quality'), // 服务质量评分 (1-5星)
-        attitude: integer('attitude'), // 服务态度评分 (1-5星)
-        punctuality: integer('punctuality'), // 时间准时性评分 (1-5星)
-        comment: text('comment'), // 评价内容
-        isAnonymous: boolean('is_anonymous').default(false), // 是否匿名评价
-        helpfulCount: integer('helpful_count').default(0), // 有用评价数
-        unhelpfulCount: integer('unhelpful_count').default(0), // 无用评价数
-        createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+        serviceId: varchar('service_id', { length: 255 }).notNull(), // 服务 ID，冗余存储用于高效查询
+        rating: integer('rating').notNull().default(1).notNull(), // 总体评分 (1-5星)
+        serviceQuality: integer('service_quality').default(1).notNull(), // 服务质量评分 (1-5星)
+        attitude: integer('attitude').default(1).notNull(), // 服务态度评分 (1-5星)
+        punctuality: integer('punctuality').default(1).notNull(), // 时间准时性评分 (1-5星)
+        comment: text('comment').notNull(), // 评价内容
+        isAnonymous: boolean('is_anonymous').default(false).notNull(), // 是否匿名评价
+        helpfulCount: integer('helpful_count').default(0).notNull(), // 有用评价数
+        unhelpfulCount: integer('unhelpful_count').default(0).notNull(), // 无用评价数
+        imageIds: jsonb('image_ids')
+            .$type<string[]>()
+            .notNull()
+            .default(sql`'[]'::jsonb`), // 评价图片文件ID列表
+        createdAt: timestamp('created_at', { withTimezone: true })
+            .defaultNow()
+            .notNull(),
     },
     (table) => [
         // 评分范围检查
@@ -71,6 +79,27 @@ export const reviews = pgTable(
             table.rating.desc(),
             table.createdAt.desc(),
         ),
+        // 评分筛选索引 - 用于按好评/中评/差评快速筛选（好评4-5星，中评3星，差评1-2星）
+        index('idx_reviews_rating_filter').on(
+            table.targetId,
+            table.targetType,
+            table.rating,
+        ),
+        // 服务人员+服务索引 - 用于查询服务人员提供某个服务的评价
+        index('idx_reviews_target_service').on(
+            table.targetId,
+            table.targetType,
+            table.serviceId,
+            table.createdAt.desc(),
+        ),
+        // 好评索引 - 用于快速查询好评（4-5星）
+        index('idx_reviews_good_rating')
+            .on(table.targetId, table.targetType, table.createdAt.desc())
+            .where(sql`${table.rating} >= 4`),
+        // 差评索引 - 用于快速查询差评（1-2星）
+        index('idx_reviews_bad_rating')
+            .on(table.targetId, table.targetType, table.createdAt.desc())
+            .where(sql`${table.rating} <= 2`),
         // 评价内容PGroonga全文搜索索引 - 仅为有评价内容的记录建立索引
         index('idx_reviews_comment_search')
             .using('pgroonga', table.comment)
@@ -83,6 +112,61 @@ export const reviews = pgTable(
         index('idx_reviews_reviewer_time').on(
             table.reviewerId,
             table.createdAt.desc(),
+        ),
+    ],
+);
+
+/**
+ * 评分统计表 (review_stats)
+ * 存储被评价对象的评分统计信息，用于快速查询和展示
+ * 通过触发器或应用层逻辑实时更新
+ */
+export const reviewStats = pgTable(
+    'review_stats',
+    {
+        targetId: varchar('target_id', { length: 255 }).notNull(), // 被评价对象 ID
+        targetType: reviewTargetTypeEnum('target_type').notNull(), // 被评价对象类型
+        serviceId: varchar('service_id', { length: 255 }), // 服务 ID，NULL 表示全部服务的统计
+        totalCount: integer('total_count').default(0).notNull(), // 总评价数
+        goodCount: integer('good_count').default(0).notNull(), // 好评数（4-5星）
+        neutralCount: integer('neutral_count').default(0).notNull(), // 中评数（3星）
+        badCount: integer('bad_count').default(0).notNull(), // 差评数（1-2星）
+        averageRating: integer('average_rating').default(0).notNull(), // 平均评分 * 100（存储为整数，如 450 表示 4.50 星）
+        averageServiceQuality: integer('average_service_quality').default(0), // 平均服务质量评分 * 100
+        averageAttitude: integer('average_attitude').default(0), // 平均态度评分 * 100
+        averagePunctuality: integer('average_punctuality').default(0), // 平均准时性评分 * 100
+        lastReviewAt: timestamp('last_review_at', { withTimezone: true }), // 最后评价时间
+        updatedAt: timestamp('updated_at', { withTimezone: true })
+            .defaultNow()
+            .$onUpdateFn(() => new Date()),
+    },
+    (table) => [
+        primaryKey({
+            columns: [table.targetId, table.targetType, table.serviceId],
+            name: 'review_stats_pkey',
+        }),
+        // 评分排序索引 - 用于按平均评分排序展示
+        index('idx_review_stats_rating').on(
+            table.targetType,
+            table.averageRating.desc(),
+            table.totalCount.desc(),
+        ),
+        // 好评率索引 - 用于按好评数排序
+        index('idx_review_stats_good').on(
+            table.targetType,
+            table.goodCount.desc(),
+            table.totalCount.desc(),
+        ),
+        // 最新评价索引 - 用于查找最近被评价的对象
+        index('idx_review_stats_recent').on(
+            table.targetType,
+            table.lastReviewAt.desc(),
+        ),
+        // 服务人员+服务统计索引 - 用于查询服务人员提供某个服务的统计
+        index('idx_review_stats_target_service').on(
+            table.targetId,
+            table.targetType,
+            table.serviceId,
         ),
     ],
 );
@@ -149,6 +233,12 @@ export const reviewsRelations = relations(reviews, ({ one }) => ({
         fields: [reviews.reviewerId],
         references: [users.id],
     }),
+}));
+
+// 评分统计关系定义
+export const reviewStatsRelations = relations(reviewStats, () => ({
+    // 注意：这里不直接关联到具体表，因为 targetId 可能指向不同类型的对象
+    // 在应用层根据 targetType 来确定关联的表
 }));
 
 // 关注关系定义
