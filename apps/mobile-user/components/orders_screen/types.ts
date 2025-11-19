@@ -1,4 +1,4 @@
-import type { OrderListSimplifiedItem } from "@repo/types";
+import type { OrderListSimplifiedItem, ReviewerTargetItem } from "@repo/types";
 
 type IconName = keyof typeof import("lucide-react-native").icons;
 
@@ -10,7 +10,8 @@ type OrderTabId =
 	| "paid"
 	| "finished"
 	| "canceled"
-	| "refunded";
+	| "refunded"
+	| "reviews";
 
 type OrderTab = {
 	id: OrderTabId;
@@ -47,6 +48,11 @@ type OrdersListRow =
 			type: "order";
 			section: OrdersSection;
 			order: OrderListSimplifiedItem;
+	  }
+	| {
+			key: string;
+			type: "review";
+			review: ReviewerTargetItem;
 	  };
 
 type TabItemProps = {
@@ -66,6 +72,10 @@ type OrderCardProps = {
 	section: OrdersSection;
 };
 
+type ReviewCardProps = {
+	review: ReviewerTargetItem;
+};
+
 export type {
 	IconName,
 	OrderStatus,
@@ -77,4 +87,5 @@ export type {
 	TabItemProps,
 	SectionHeaderProps,
 	OrderCardProps,
+	ReviewCardProps,
 };

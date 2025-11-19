@@ -1464,6 +1464,10 @@ export const ReviewsSchema = z
             description: "被评价对象类型",
             title: "被评价对象类型",
         }),
+        serviceId: z.string().max(255).meta({
+            description: "服务ID",
+            title: "服务ID",
+        }),
         rating: z
             .number()
             .int()
@@ -1519,6 +1523,22 @@ export const ReviewsSchema = z
             description: "无用评价数",
             title: "无用评价数",
         }),
+        imageIds: z
+            .array(
+                z
+                    .string()
+                    .max(255, "文件ID长度不能超过255个字符")
+                    .meta({
+                        description: "评价图片文件ID",
+                        title: "评价图片文件ID",
+                    }),
+            )
+            .max(6, "最多支持上传6张评价图片")
+            .default([])
+            .meta({
+                description: "评价图片文件ID列表",
+                title: "评价图片文件ID列表",
+            }),
         createdAt: z
             .date()
             .default(() => new Date())

@@ -7,6 +7,7 @@ const ORDER_TABS: OrderTab[] = [
 	{ id: "finished", label: "已完成订单", subLabel: "记录评价" },
 	{ id: "canceled", label: "已取消订单", subLabel: "取消详情" },
 	{ id: "refunded", label: "已退款订单", subLabel: "资金进度" },
+	{ id: "reviews", label: "我的评价", subLabel: "历史记录" },
 ];
 
 const TAB_STATUS_MAP: Record<OrderTabId, OrderStatus[]> = {
@@ -23,6 +24,7 @@ const TAB_STATUS_MAP: Record<OrderTabId, OrderStatus[]> = {
 	finished: ["completed"],
 	canceled: ["cancelled"],
 	refunded: ["refunded"],
+	reviews: [], // Reviews tab doesn't filter by order status
 };
 
 const SECTION_ORDER = [
