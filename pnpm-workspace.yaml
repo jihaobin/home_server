@@ -1,3 +1,19 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# 定义不同的 React 版本 catalog
+catalogs:
+  # React 19.1 用于 Expo 项目(mobile-user, mobile-worker)
+  react19-1:
+    react: 19.1.0
+    react-dom: 19.1.0
+    '@types/react': ^19.1.0
+    '@types/react-dom': ^19.1.0
+
+  # React 19.2 用于 Next.js v16 项目(admin-web)
+  react19-2:
+    react: 19.2.0
+    react-dom: 19.2.0
+    '@types/react': ^19.2.0
+    '@types/react-dom': ^19.2.0
