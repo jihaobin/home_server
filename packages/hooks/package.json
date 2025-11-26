@@ -19,7 +19,8 @@
         "./api/work-skill": "./src/api/work-skill/index.ts",
         "./api/user": "./src/api/user/index.ts",
         "./api/files": "./src/api/files/index.ts",
-        "./api/notification": "./src/api/notification/index.ts"
+        "./api/notification": "./src/api/notification/index.ts",
+        "./api/ssr": "./src/api/ssr/index.ts"
     },
     "dependencies": {
         "@repo/utils": "workspace:*",

@@ -97,7 +97,14 @@ function validateResponse<T>(response: any, schema?: z.ZodSchema<T>, skipValidat
 
       const validatedData = schema.parse(response.data);
       return { ...baseResponse, data: validatedData } as ApiResponse<T>;
-  } catch {
+  } catch (error) {
+        if (process.env.NODE_ENV !== 'production') {
+            // eslint-disable-next-line no-console
+            console.error(
+                '[@repo/utils/api-client] 响应数据校验失败',
+                { response, schema: schema?.description, error },
+            );
+        }
       return {
         code: ErrorCode.VALIDATION_ERROR,
         message: '响应数据格式错误',
@@ -121,10 +128,6 @@ export class ApiClient {
         baseURL: options.baseURL,
         timeout: options.timeout || 10000,
         credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-          ...options.headers,
-      },
         ...options,
     });
   }

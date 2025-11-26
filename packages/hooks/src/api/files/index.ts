@@ -142,9 +142,6 @@ export const useUploadFile = () => {
 				"/files/upload",
 				formData,
 				{
-					headers: {
-						"Content-Type": "multipart/form-data",
-					},
 					query: undefined,
 				},
 			);

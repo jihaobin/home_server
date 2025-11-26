@@ -651,6 +651,25 @@ export const ServiceCategoriesSchema = z
             description: "服务分类是否启用",
             title: "服务分类是否启用",
         }),
+        sortOrder: z
+            .number()
+            .int()
+            .nonnegative()
+            .default(0)
+            .meta({
+                description: "服务分类排序值，越小越靠前",
+                title: "服务分类排序值",
+            }),
+        iconFileId: z
+            .string()
+            .max(255)
+            .nullable()
+            .optional()
+            .default(null)
+            .meta({
+                description: "分类图标文件ID",
+                title: "分类图标文件ID",
+            }),
     })
     .meta({
         title: "服务分类表",

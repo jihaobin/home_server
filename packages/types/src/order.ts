@@ -95,64 +95,85 @@ export const UpdateOrderSchema = OrdersSchema.partial()
 
 export type UpdateOrder = z.infer<typeof UpdateOrderSchema>;
 
-// 订单详情 Schema
-export const OrderDetailSchema = z.object({
-	...OrdersSchema.shape,
-	service: z
-		.object({
-			id: z.string(),
-			name: z.string(),
-			description: z.string().nullable(),
-		})
-		.nullable()
-		.meta({
-			description: "服务信息",
-			title: "服务信息",
-		}),
-	assignment: z
-		.object({
-			...OrderAssignmentsSchema.shape,
-			servicePersonnel: ServicePersonnelSchema.meta({
-				description: "服务人员信息",
-				title: "服务人员信息",
-			}),
-		})
-		.nullable()
-		.meta({
-			description: "订单分配信息",
-			title: "订单分配信息",
-		}),
-	address: z
-		.object({
-			id: z.string(),
-			detailedAddress: z.string(),
-			recipientName: z.string(),
-			recipientPhone: z.string(),
-		})
-		.nullable()
-		.meta({
-			description: "地址信息",
-			title: "地址信息",
-		}),
-	payments: z
-		.array(
-			z.object({
-				id: z.string(),
-				amount: z.number(),
-				paymentMethod: z.string(),
-				status: z.string(),
-				paidAt: z.date().nullable(),
-			}),
-		)
-		.meta({
-			description: "支付信息",
-			title: "支付信息",
-		})
-		.nullable(),
-}).meta({
-	title: "订单详情",
-	description: "包含详细信息的订单",
+const OrderDetailServicePersonnelSchema = z.object({
+    ...ServicePersonnelSchema.shape,
+	lastActiveAt: z.coerce.date(),
 });
+
+const OrderDetailAssignmentSchema = z
+	.object({
+		...OrderAssignmentsSchema.shape,
+		assignedAt: z.coerce.date(),
+		acceptedAt: z.coerce.date().nullable().optional(),
+		servicePersonnel: OrderDetailServicePersonnelSchema.meta({
+			description: "服务人员信息",
+			title: "服务人员信息",
+		}),
+	})
+	.nullable()
+	.meta({
+		description: "订单分配信息",
+		title: "订单分配信息",
+	});
+
+const OrderDetailPaymentSchema = z.object({
+	id: z.string(),
+	amount: z.number(),
+	paymentMethod: z.string(),
+	status: z.string(),
+	transactionId: z.string().optional().nullable(),
+	paidAt: z.coerce.date().nullable(),
+});
+
+// 订单详情 Schema
+export const OrderDetailSchema = z
+	.object({
+		...OrdersSchema.shape,
+		originalAmount: z.number(),
+		discountAmount: z.number(),
+		totalAmount: z.number(),
+		appointmentTime: z.coerce.date(),
+		serviceStartedAt: z.coerce.date().nullable().optional(),
+		serviceCompletedAt: z.coerce.date().nullable().optional(),
+		cancelledAt: z.coerce.date().nullable().optional(),
+		createdAt: z.coerce.date(),
+		updatedAt: z.coerce.date(),
+		service: z
+			.object({
+				id: z.string(),
+				name: z.string(),
+				description: z.string().nullable(),
+			})
+			.nullable()
+			.meta({
+				description: "服务信息",
+				title: "服务信息",
+			}),
+		assignment: OrderDetailAssignmentSchema,
+		address: z
+			.object({
+				id: z.string(),
+				detailedAddress: z.string(),
+				recipientName: z.string(),
+				recipientPhone: z.string(),
+			})
+			.nullable()
+			.meta({
+				description: "地址信息",
+				title: "地址信息",
+			}),
+		payments: z
+			.array(OrderDetailPaymentSchema)
+			.meta({
+				description: "支付信息",
+				title: "支付信息",
+			})
+			.nullable(),
+	})
+	.meta({
+		title: "订单详情",
+		description: "包含详细信息的订单",
+	});
 
 export type OrderDetail = z.infer<typeof OrderDetailSchema>;
 

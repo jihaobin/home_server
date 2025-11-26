@@ -10,3 +10,4 @@ export * from "./service";
 export * from "./userAuthRealName";
 export * from "./work-skill";
 export * from "./file";
+export * from "./admin";

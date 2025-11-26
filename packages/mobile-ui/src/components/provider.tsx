@@ -19,8 +19,8 @@ import {
     View,
 } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { Toaster } from "sonner-native";
-import { queryClient } from "@repo/lib/query-client";
+import { Toaster, toast } from "sonner-native";
+import { queryClient, setQueryClientErrorNotifier } from "@repo/lib/query-client";
 import { authClient as defaultAuthClient } from "@repo/lib/auth-client";
 import { setApiClientAuthClient } from "@repo/lib/http-client";
 import { SessionProvider } from "./SessionProvider";
@@ -49,6 +49,8 @@ function onAppStateChange(status: AppStateStatus) {
         focusManager.setFocused(status === "active");
     }
 }
+
+setQueryClientErrorNotifier((message) => toast.error(message));
 
 export function Provider({ children, authClient }: { children: React.ReactNode; authClient?: typeof defaultAuthClient }) {
     const resolvedAuthClient = authClient ?? defaultAuthClient;
