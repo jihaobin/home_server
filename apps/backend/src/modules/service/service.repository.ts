@@ -10,7 +10,7 @@ import type {
     UpdateService,
     UpdateServiceCategory,
 } from '@repo/types';
-import { and, count, eq, type SQL, sql } from 'drizzle-orm';
+import { and, asc, count, eq, type SQL, sql } from 'drizzle-orm';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
 import { serviceCategories, services } from 'src/common/database/schema';
@@ -59,7 +59,11 @@ export class ServiceRepository {
             return await this.db
                 .select()
                 .from(serviceCategories)
-                .where(eq(serviceCategories.dep, dep));
+                .where(eq(serviceCategories.dep, dep))
+                .orderBy(
+                    asc(serviceCategories.sortOrder),
+                    asc(serviceCategories.name),
+                );
         }
 
         if (keyword) {
@@ -69,14 +73,27 @@ export class ServiceRepository {
                 s.append(sql`AND ${serviceCategories.dep} = ${dep}`);
             }
             // 模糊匹配
-            return await this.db.select().from(serviceCategories).where(s);
+            return await this.db
+                .select()
+                .from(serviceCategories)
+                .where(s)
+                .orderBy(
+                    asc(serviceCategories.dep),
+                    asc(serviceCategories.sortOrder),
+                    asc(serviceCategories.name),
+                );
         }
 
         // 返回树状结构的全部分类数据
         const categories = await this.db
             .select()
             .from(serviceCategories)
-            .where(eq(serviceCategories.isActive, true));
+            .where(eq(serviceCategories.isActive, true))
+            .orderBy(
+                asc(serviceCategories.dep),
+                asc(serviceCategories.sortOrder),
+                asc(serviceCategories.name),
+            );
 
         // 构建树状结构
         const categoryMap = new Map<string, ServiceCategoryTree>();
@@ -117,6 +134,7 @@ export class ServiceRepository {
         const categoryData = {
             ...data,
             dep: data.dep ?? 1,
+            sortOrder: data.sortOrder ?? 0,
         };
 
         if (await this.createIsExist(categoryData)) {

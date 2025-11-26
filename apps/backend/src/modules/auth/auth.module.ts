@@ -23,6 +23,7 @@ import {
     MetadataScanner,
 } from '@nestjs/core';
 import { SkipBodyParsingMiddleware } from './middlewares';
+import { AdminSessionMiddleware } from './admin-session.middleware';
 import { toNodeHandler } from 'better-auth/node';
 import type { Request, Response } from 'express';
 import { createAuthMiddleware } from 'better-auth/plugins';
@@ -186,6 +187,7 @@ export class AuthModule implements NestModule, OnModuleInit {
                 useValue: options,
             },
             AuthService,
+            AdminSessionMiddleware,
         ];
 
         return {
@@ -205,6 +207,7 @@ export class AuthModule implements NestModule, OnModuleInit {
                     useValue: options,
                 } as Provider,
                 AuthService,
+                AdminSessionMiddleware,
                 WeChatModule,
             ],
         };

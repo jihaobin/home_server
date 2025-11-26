@@ -27,6 +27,12 @@ export function setupScalarSwagger(app: INestApplication) {
 
 **注意**: 本文档中的 API 端点不包含认证相关的端点，这些由 Better-Auth 自动提供。
 
+## 管理员接口访问
+
+- /admin/** 路由将统一挂载 AdminSessionMiddleware，仅允许 admin、super_admin 角色访问
+- 管理端接口同样依赖 Better-Auth session，调试前请先以管理员身份登录（/api/auth/sign-in 等端点）
+- 符合条件的请求会在 req.admin 上注入管理员上下文，可用于审计日志、RBAC 判定
+
 ## 公共数据模型
 
 本 API 使用统一的响应格式和数据模型，所有响应都遵循以下规范：

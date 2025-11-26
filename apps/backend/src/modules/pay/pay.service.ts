@@ -1409,9 +1409,7 @@ export class PayService {
     }
 
     async getUserBalanceSnapshot(userId: string) {
-        const record = await this.payRepository.findUserBalanceByUserId(
-            userId,
-        );
+        const record = await this.payRepository.findUserBalanceByUserId(userId);
 
         if (!record) {
             return {
@@ -1422,8 +1420,7 @@ export class PayService {
             };
         }
 
-        const toNumber = (value?: string | null) =>
-            Number(value ?? 0) || 0;
+        const toNumber = (value?: string | null) => Number(value ?? 0) || 0;
 
         return {
             available: toNumber(record.availableBalance),

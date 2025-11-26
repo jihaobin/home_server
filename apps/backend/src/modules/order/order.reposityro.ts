@@ -334,7 +334,7 @@ export class OrderRepository {
         const { geom: _addressGeom, ...addressColumns } =
             getTableColumns(userAddresses);
         const assignmentColumns = getTableColumns(orderAssignments);
-        const { geom: _servicePersonnelGeom, ...servicePersonnelColumns } =
+        const { geom: servicePersonnelGeom, ...servicePersonnelColumns } =
             getTableColumns(servicePersonnel);
 
         const [orderRow] = await this.db
@@ -343,7 +343,10 @@ export class OrderRepository {
                 service: serviceColumns,
                 address: addressColumns,
                 assignment: assignmentColumns,
-                servicePersonnel: servicePersonnelColumns,
+                servicePersonnel: {
+                    ...servicePersonnelColumns,
+                    geom: servicePersonnelGeom,
+                },
                 userName: users.name,
                 userImage: users.image,
                 paymentsJson: sql<any>`(

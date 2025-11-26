@@ -43,6 +43,15 @@ export function createAuth(
         }),
         advanced: {
             database: {},
+            // crossSubDomainCookies: {
+            //     enabled: true,
+            //     domain: process.env.CROSS_DOMAIN_ORIGIN, // Domain with a leading period
+            // },
+            defaultCookieAttributes: {
+                secure: isProd,
+                sameSite: isProd ? 'none' : 'lax', // Allows CORS-based cookie sharing across subdomains
+                partitioned: isProd, // New browser standards will mandate this for foreign cookies
+            },
         },
         emailAndPassword: {
             enabled: true,
@@ -334,21 +343,21 @@ export function createAuth(
                 },
             },
         },
-        ...(isProd
-            ? {
-                  advanced: {
-                      crossSubDomainCookies: {
-                          enabled: true,
-                          domain: process.env.CROSS_DOMAIN_ORIGIN, // Domain with a leading period
-                      },
-                      defaultCookieAttributes: {
-                          secure: true,
-                          httpOnly: true,
-                          sameSite: 'none', // Allows CORS-based cookie sharing across subdomains
-                          partitioned: true, // New browser standards will mandate this for foreign cookies
-                      },
-                  },
-              }
-            : {}),
+        // ...(isProd
+        //     ? {
+        //           advanced: {
+        //               crossSubDomainCookies: {
+        //                   enabled: true,
+        //                   domain: process.env.CROSS_DOMAIN_ORIGIN, // Domain with a leading period
+        //               },
+        //               defaultCookieAttributes: {
+        //                   secure: true,
+        //                   httpOnly: true,
+        //                   sameSite: 'none', // Allows CORS-based cookie sharing across subdomains
+        //                   partitioned: true, // New browser standards will mandate this for foreign cookies
+        //               },
+        //           },
+        //       }
+        //     : {}),
     });
 }

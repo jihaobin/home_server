@@ -11,6 +11,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { createId } from '.';
 import { servicePersonnel } from './shops-service';
+import { files } from './file';
 
 // =================================================================
 // 服务与分类模块
@@ -31,6 +32,11 @@ export const serviceCategories = pgTable(
         dep: integer('dep').notNull(), // 分类层级深度
         description: text('description'), // 分类描述
         isActive: boolean('is_active').default(true).notNull(),
+        sortOrder: integer('sort_order').default(0).notNull(),
+        iconFileId: varchar('icon_file_id', { length: 255 }).references(
+            () => files.id,
+            { onDelete: 'set null' },
+        ),
     },
     (table) => [
         foreignKey({
@@ -50,6 +56,12 @@ export const serviceCategories = pgTable(
         index('idx_service_categories_desc_active')
             .using('pgroonga', table.description)
             .where(sql`is_active = true AND description IS NOT NULL`),
+        // 分类排序索引
+        index('idx_service_categories_order').on(
+            table.dep,
+            table.sortOrder,
+            table.id,
+        ),
     ],
 );
 
@@ -126,6 +138,10 @@ export const serviceCategoriesRelations = relations(
         }),
         children: many(serviceCategories, {
             relationName: 'parent',
+        }),
+        iconFile: one(files, {
+            fields: [serviceCategories.iconFileId],
+            references: [files.id],
         }),
         services: many(services),
     }),

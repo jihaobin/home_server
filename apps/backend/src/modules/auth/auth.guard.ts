@@ -10,9 +10,8 @@ import type { getSession } from 'better-auth/api';
 import type { Auth } from 'better-auth/auth';
 import { fromNodeHeaders } from 'better-auth/node';
 import { AUTH_INSTANCE_KEY } from './symbols';
-import db from 'src/common/database/db';
-import * as schema from 'src/common/database/schema';
-import { eq } from 'drizzle-orm';
+import type { UserRole } from '@repo/types';
+import { hasRequiredRole } from './rbac.utils';
 
 /**
  * Type representing a valid user session after authentication
@@ -104,23 +103,13 @@ export class AuthGuard implements CanActivate {
         request.session = session;
         request.user = session.user; // useful for observability tools like Sentry
 
-        const requiredRoles = this.reflector.getAllAndOverride<string[]>(
+        const requiredRoles = this.reflector.getAllAndOverride<UserRole[]>(
             'ROLES',
             [context.getHandler(), context.getClass()],
         );
 
         if (requiredRoles && requiredRoles.length > 0) {
-            const userRole = session.user.role;
-            let hasRole = false;
-            if (Array.isArray(userRole)) {
-                hasRole = userRole.some((role) => requiredRoles.includes(role));
-            } else if (typeof userRole === 'string') {
-                hasRole = userRole
-                    .split(',')
-                    .some((role) => requiredRoles.includes(role));
-            }
-
-            if (!hasRole) {
+            if (!hasRequiredRole(session.user.role, requiredRoles)) {
                 throw new UnauthorizedException({
                     code: 'FORBIDDEN',
                     message: '当前用户没有权限访问该资源',
