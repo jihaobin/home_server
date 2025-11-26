@@ -45,8 +45,18 @@ async function getServerHeaders(): Promise<Record<string, string> | undefined> {
 }
 
 
+export const adminApiBaseUrl =
+  process.env.NEXT_PUBLIC_ADMIN_API_BASE_URL ??
+  process.env.NEXT_PUBLIC_API_URL
+
+if (!adminApiBaseUrl && process.env.NODE_ENV === "development") {
+  console.warn(
+    "[admin-web] 缺少 NEXT_PUBLIC_ADMIN_API_BASE_URL/NEXT_PUBLIC_API_URL，apiClient 将 fallback 为空字符串"
+  )
+}
+
 export const apiClient = createApiClient({
-    baseURL: process.env.NEXT_PUBLIC_API_URL,
+    baseURL: adminApiBaseUrl || "",
     async onRequest({ options }) {
               // 根据环境自动配置认证
       if (isServerEnvironment()) {

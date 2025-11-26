@@ -1,81 +1,72 @@
-"use server"
+import {
+    AdminLoginRequestSchema,
+    AdminLogoutResponseSchema,
+    AdminProfileSchema,
+    type AdminLoginRequest,
+    type AdminProfile,
+} from "@repo/types";
+import { apiClient } from "@/lib/api-client";
+import { authClient } from "./auth-cient";
 
-import "server-only"
-import { authClient } from "./auth-cient"
-import { headers } from "next/headers";
-// import { cache } from "react"
-// import { headers } from "next/headers"
+export type AdminLoginInput = AdminLoginRequest;
 
-type ErrorTypes = Partial<
-	Record<
-		keyof typeof authClient.$ERROR_CODES,
-		{
-			en: string;
-			es: string;
-		}
-	>
->;
+export async function adminLogin(values: AdminLoginInput) {
+    const payload = AdminLoginRequestSchema.parse({
+        ...values,
+        rememberMe: values.rememberMe ?? false,
+    });
 
-export const requireUser = async () => {
-  const sessions = await authClient.getSession({
-    fetchOptions: {
-      headers: await headers()
-    }
-  })
+    const response = await apiClient.post<AdminProfile>("/admin/login", payload, {
+        schema: AdminProfileSchema,
+    });
 
-  return {
-    id: sessions.data?.user.id,
-    name: sessions.data?.user.name,
-    email: sessions.data?.user.email,
-    image: sessions.data?.user.image,
-    role: sessions.data?.user.role,
-  }
+    return response.data;
 }
 
-export async function logout() {
-  await authClient.signOut();
+export async function adminLogout() {
+    await apiClient.post("/admin/logout", undefined, {
+        schema: AdminLogoutResponseSchema,
+    });
 }
 
-export async function login({ email, password }: {
-  email: string; password: string
-}) {
+export async function fetchAdminProfile() {
+    const response = await apiClient.get<AdminProfile>("/admin/profile", {
+        schema: AdminProfileSchema,
+    });
 
-  return await authClient.signIn.email({
-    email,
-    password,
-    callbackURL:"http://localhost:3000/"
-  })
+    return response.data;
 }
 
-export async function register({ name, email, password }: {
-  name: string, email: string; password: string
-}) {
-
-  return await authClient.signUp.email({
+// Legacy flows that still rely on Better Auth for non管理员注册/社交登录
+export async function register({
     name,
     email,
     password,
-    callbackURL: "http://localhost:3000/auth/verify-email",
-    surname: name,
-      role: "customer"
-  })
+}: {
+    name: string;
+    email: string;
+    password: string;
+}) {
+    return await authClient.signUp.email({
+        name,
+        email,
+        password,
+        callbackURL: "http://localhost:3000/auth/verify-email",
+        surname: name,
+        role: "customer",
+    });
 }
 
-export async function socialLogin({ provider}: {
-  provider: string;
-}) {
-
-  return await authClient.signIn.social({
-    provider,
-    callbackURL: `http://localhost:3000/`
-  })
+export async function socialLogin({ provider }: { provider: string }) {
+    return await authClient.signIn.social({
+        provider,
+        callbackURL: `http://localhost:3000/`,
+    });
 }
 
 export async function wechatLogin() {
-  return await authClient.signIn.oauth2({
-    providerId: "wechat",
-    callbackURL: `http://localhost:3000/`
-  })
+    return await authClient.signIn.oauth2({
+        providerId: "wechat",
+        callbackURL: `http://localhost:3000/`,
+    });
 }
-
-
