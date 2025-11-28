@@ -19,14 +19,14 @@ import {
     InitiatePaymentParamsSchema,
     InitiatePaymentResponseSchema,
     type PayNotification,
-    PaginationMetaSchema,
-    TransactionTypeEnum,
     payNotificationSchema,
     QueryPaymentStatusResponseSchema,
     type UserWithdrawBody,
     UserWithdrawBodySchema,
     UserWithdrawResponseSchema,
-    WithdrawalStatusEnum,
+    WorkerEarningsRecordListResponseSchema,
+    WorkerEarningsRecordQuerySchema,
+    type WorkerEarningsRecordQuery,
 } from '@repo/types';
 import type { Request } from 'express';
 import { ApiErrorResponses, ApiSuccessResponse } from 'src/common/decorator';
@@ -50,36 +50,6 @@ const EarningsOverviewResponseSchema = z.object({
     monthlyEarnings: z.number().nonnegative(),
     totalEarnings: z.number().nonnegative(),
     updatedAt: z.date(),
-});
-
-const EarningsTransactionQuerySchema = z.object({
-    page: z.coerce.number().min(1).optional(),
-    limit: z.coerce.number().min(1).max(100).optional(),
-    type: z.enum(['all', 'income', 'withdrawal']).optional(),
-});
-
-type EarningsTransactionQuery = z.infer<typeof EarningsTransactionQuerySchema>;
-
-const EarningsTransactionItemSchema = z.object({
-    id: z.string(),
-    transactionType: TransactionTypeEnum,
-    type: z.enum(['income', 'withdrawal']),
-    amount: z.number(),
-    currency: z.string().min(1),
-    description: z.string().nullable(),
-    referenceId: z.string().nullable(),
-    createdAt: z.date(),
-    withdrawal: z
-        .object({
-            id: z.string(),
-            status: WithdrawalStatusEnum,
-        })
-        .optional(),
-});
-
-const EarningsTransactionListResponseSchema = z.object({
-    items: z.array(EarningsTransactionItemSchema),
-    meta: PaginationMetaSchema,
 });
 
 @ApiTags('支付')
@@ -140,13 +110,15 @@ export class PayController {
 
     @ApiOperation({
         summary: '用户提现',
-        description: '校验余额并立即发起支付宝转账，成功后记录提现流水',
+        description: '校验余额并冻结提现金额，等待管理员审核后才会实际打款',
     })
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
     @Post('withdraw')
     @UsePipes(createZodPipe(UserWithdrawBodySchema, '用户提现参数校验失败'))
     @ApiBodies(UserWithdrawBodySchema)
     @ApiSuccessResponse(UserWithdrawResponseSchema, {
-        description: '返回提现记录及余额快照',
+        description: '返回提现记录及冻结后余额快照',
     })
     async withdraw(@Body() body: UserWithdrawBody, @Req() req: Request) {
         return this.payService.withdraw(req.user.id, body);
@@ -168,25 +140,26 @@ export class PayController {
 
     @UseGuards(AuthGuard)
     @Roles(['service_personnel'])
-    @Get('earnings/transactions')
+    @Get('earnings/records')
     @UsePipes(
         createZodPipe(
-            EarningsTransactionQuerySchema,
-            '收益流水查询参数校验失败',
+            WorkerEarningsRecordQuerySchema,
+            '收益记录查询参数校验失败',
         ),
     )
     @ApiOperation({
-        summary: '查询收益流水',
-        description: '分页查询服务人员的收入/提现/调整记录',
+        summary: '查询收益/提现记录',
+        description:
+            '通过 category 参数，查询收入记录、提现记录或混合列表',
     })
-    @ApiSuccessResponse(EarningsTransactionListResponseSchema, {
-        description: '收益流水分页数据',
+    @ApiSuccessResponse(WorkerEarningsRecordListResponseSchema, {
+        description: '收益/提现聚合记录分页数据',
     })
-    async getEarningsTransactions(
+    async getWorkerEarningsRecords(
         @Req() req: Request,
-        @Query() query: EarningsTransactionQuery,
+        @Query() query: WorkerEarningsRecordQuery,
     ) {
-        return this.payService.getEarningsTransactions(req.user.id, query);
+        return this.payService.getWorkerEarningsRecords(req.user.id, query);
     }
 
     @UseGuards(AuthGuard)

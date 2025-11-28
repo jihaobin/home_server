@@ -8,17 +8,17 @@ import {
 } from '@nestjs/common';
 import { createId } from '@paralleldrive/cuid2';
 import {
-    alipayWithdrawResponseSchema,
-    alipayWithdrawSuccessResponseSchema,
     type PayNotification,
     type QueryPaymentStatusResponse,
-    type TransactionType,
+    type UserRole,
     type UserWithdrawBody,
     type UserWithdrawResponse,
-    type WithdrawalStatus,
+    type WorkerEarningsRecordListResponse,
+    type WorkerEarningsRecordQuery,
+    type WorkerEarningsRecordCategory,
 } from '@repo/types';
 import Decimal from 'decimal.js';
-import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { CACHE_SERVICE, type IAdvancedCacheService } from 'src/common/cache';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
@@ -30,7 +30,6 @@ import {
     payments,
     userBalances,
     users,
-    withdrawals,
 } from 'src/common/database/schema';
 import { createAliPaySdk } from 'src/lib/alipaySdk';
 import { OrderService } from '../order/order.service';
@@ -60,8 +59,6 @@ function parseAlipayTime(value?: string) {
     return new Date(`${value.replace(' ', 'T')}+08:00`);
 }
 
-export type EarningsTransactionFilter = 'all' | 'income' | 'withdrawal';
-
 export interface EarningsOverview {
     balance: {
         available: number;
@@ -72,41 +69,6 @@ export interface EarningsOverview {
     monthlyEarnings: number;
     totalEarnings: number;
     updatedAt: Date;
-}
-
-interface PaginationMeta {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-    hasNext: boolean;
-    hasPrev: boolean;
-}
-
-export interface EarningsTransactionQuery {
-    page?: number;
-    limit?: number;
-    type?: EarningsTransactionFilter;
-}
-
-interface EarningsTransactionItem {
-    id: string;
-    transactionType: TransactionType;
-    type: Exclude<EarningsTransactionFilter, 'all'>;
-    amount: number;
-    currency: string;
-    description: string | null;
-    referenceId: string | null;
-    createdAt: Date;
-    withdrawal?: {
-        id: string;
-        status: WithdrawalStatus;
-    };
-}
-
-export interface EarningsTransactionListResponse {
-    items: EarningsTransactionItem[];
-    meta: PaginationMeta;
 }
 
 @Injectable()
@@ -311,11 +273,22 @@ export class PayService {
         }
     }
 
-    private async isUserExist(id: string) {
-        const statement = sql`SELECT EXISTS (SELECT 1 FROM ${users} WHERE ${users.id} = ${id} AND ${users.role} = 'customer') AS has_user`;
-        const result = await this.db.execute<{ has_user: boolean }>(statement);
+    private async isUserExist(id: string, role?: UserRole | UserRole[]) {
+        if (!id) {
+            return false;
+        }
 
-        return result.rows[0]?.has_user === true;
+        const roles = Array.isArray(role) ? role : role ? [role] : [];
+        const where = roles.length
+            ? and(eq(users.id, id), inArray(users.role, roles))
+            : eq(users.id, id);
+
+        const record = await this.db.query.users.findFirst({
+            where,
+            columns: { id: true },
+        });
+
+        return Boolean(record);
     }
 
     // 封装支付宝账号授权请求参数串，便于客户端直接拉起(参数说明请参考这个文档 https://opendocs.alipay.com/open-v3/05w8m8?pathHash=70e53558)
@@ -461,7 +434,7 @@ export class PayService {
             throw new BadRequestException('用户信息缺失');
         }
 
-        const userExists = await this.isUserExist(userId);
+        const userExists = await this.isUserExist(userId, 'customer');
         if (!userExists) {
             throw new BadRequestException('用户不存在');
         }
@@ -1477,99 +1450,59 @@ export class PayService {
         };
     }
 
-    async getEarningsTransactions(
+    async getWorkerEarningsRecords(
         userId: string,
-        params: EarningsTransactionQuery,
-    ): Promise<EarningsTransactionListResponse> {
+        query: WorkerEarningsRecordQuery,
+    ): Promise<WorkerEarningsRecordListResponse> {
         if (!userId) {
             throw new BadRequestException('用户信息缺失');
         }
 
-        const page = Math.max(1, Number(params?.page ?? 1));
-        const limit = Math.min(100, Math.max(1, Number(params?.limit ?? 20)));
+        const page = Math.max(1, Number(query?.page ?? 1));
+        const limit = Math.min(100, Math.max(1, Number(query?.limit ?? 20)));
         const offset = (page - 1) * limit;
-        const type = params?.type ?? 'all';
+        const category: WorkerEarningsRecordCategory =
+            query?.category ?? 'mixed';
 
-        const conditions = [eq(financialTransactions.userId, userId)];
+        if (category === 'withdrawal') {
+            const { items, total } =
+                await this.payRepository.queryWithdrawalRecords(userId, {
+                    limit,
+                    offset,
+                    status: query?.withdrawalStatus ?? undefined,
+                });
 
-        if (type === 'income') {
-            conditions.push(sql`${financialTransactions.amount} >= 0`);
-        } else if (type === 'withdrawal') {
-            conditions.push(sql`${financialTransactions.amount} < 0`);
-        }
-
-        const whereClause =
-            conditions.length > 1 ? and(...conditions) : conditions[0];
-
-        const [records, totalResult] = await Promise.all([
-            this.db
-                .select({
-                    id: financialTransactions.id,
-                    amount: financialTransactions.amount,
-                    currency: financialTransactions.currency,
-                    description: financialTransactions.description,
-                    referenceId: financialTransactions.referenceId,
-                    transactionType: financialTransactions.transactionType,
-                    createdAt: financialTransactions.createdAt,
-                    withdrawalId: financialTransactions.withdrawalId,
-                    withdrawalStatus: withdrawals.status,
-                })
-                .from(financialTransactions)
-                .leftJoin(
-                    withdrawals,
-                    eq(financialTransactions.withdrawalId, withdrawals.id),
-                )
-                .where(whereClause)
-                .orderBy(desc(financialTransactions.createdAt))
-                .limit(limit)
-                .offset(offset),
-            this.db
-                .select({
-                    count: sql<string>`COUNT(*)`,
-                })
-                .from(financialTransactions)
-                .where(whereClause),
-        ]);
-
-        const total = Number(totalResult[0]?.count ?? 0);
-        const totalPages = Math.ceil(total / limit) || 0;
-
-        const items = records.map((record) => {
-            const amountNumber = Number(record.amount ?? 0) || 0;
-            const flowType: Exclude<EarningsTransactionFilter, 'all'> =
-                amountNumber >= 0 ? 'income' : 'withdrawal';
-
-            return {
-                id: record.id,
-                transactionType: record.transactionType,
-                type: flowType,
-                amount: amountNumber,
-                currency: record.currency ?? 'CNY',
-                description: record.description ?? null,
-                referenceId: record.referenceId ?? null,
-                createdAt: record.createdAt ?? new Date(),
-                withdrawal: record.withdrawalId
-                    ? {
-                          id: record.withdrawalId,
-                          status:
-                              (record.withdrawalStatus as WithdrawalStatus) ??
-                              'pending',
-                      }
-                    : undefined,
-            };
-        });
-
-        return {
-            items,
-            meta: {
+            return this.payRepository.buildPaginatedResponse(items, {
                 page,
                 limit,
                 total,
-                totalPages,
-                hasNext: page < totalPages,
-                hasPrev: page > 1,
-            },
-        };
+            });
+        }
+
+        if (category === 'income') {
+            const { items, total } =
+                await this.payRepository.queryFinancialTransactionRecords(
+                    userId,
+                    {
+                        limit,
+                        offset,
+                        flow: 'income',
+                        excludeWithdrawalTransactions: true,
+                    },
+                );
+
+            return this.payRepository.buildPaginatedResponse(items, {
+                page,
+                limit,
+                total,
+            });
+        }
+
+        return this.payRepository.getMixedEarningsRecords(userId, {
+            page,
+            limit,
+            offset,
+        });
     }
 
     // 用户提现（当前仅支持支付宝）
@@ -1581,7 +1514,7 @@ export class PayService {
             throw new BadRequestException('用户信息缺失');
         }
 
-        const userExists = await this.isUserExist(userId);
+        const userExists = await this.isUserExist(userId, 'service_personnel');
         if (!userExists) {
             throw new BadRequestException('用户不存在');
         }
@@ -1595,9 +1528,7 @@ export class PayService {
             2,
             Decimal.ROUND_HALF_UP,
         );
-        const amountText = amountDecimal.toFixed(2);
 
-        // 1. 在数据库中冻结余额并创建提现记录
         const freezeContext = await this.db.transaction(async (tx) => {
             const balanceRecord =
                 await this.payRepository.findUserBalanceByUserId(userId, tx);
@@ -1618,7 +1549,6 @@ export class PayService {
                 throw new BadRequestException('可用余额不足');
             }
 
-            // 使用 Decimal 避免浮点运算误差
             const availableAfterFreeze = availableBefore.minus(amountDecimal);
             const frozenAfterFreeze = frozenBefore.plus(amountDecimal);
             const totalAfterFreeze =
@@ -1642,9 +1572,14 @@ export class PayService {
             const withdrawalRecord = await this.payRepository.createWithdrawal(
                 {
                     userId,
-                    amount: amountText,
+                    amount: amountDecimal.toFixed(2),
                     currency,
                     status: 'pending',
+                    method: payType,
+                    payeeAccount: payee.identity,
+                    payeeAccountType: payee.identity_type,
+                    payeeName: payee.name,
+                    remark: remark ?? null,
                 },
                 tx,
             );
@@ -1655,12 +1590,6 @@ export class PayService {
 
             return {
                 withdrawal: withdrawalRecord,
-                balanceId: balanceRecord.id,
-                balanceBefore: {
-                    available: availableBefore,
-                    frozen: frozenBefore,
-                    total: totalBefore,
-                },
                 balanceAfterFreeze: {
                     available: availableAfterFreeze,
                     frozen: frozenAfterFreeze,
@@ -1669,189 +1598,26 @@ export class PayService {
             };
         });
 
-        const outBizNo = freezeContext.withdrawal.id;
-        const bizContent: Record<string, unknown> = {
-            out_biz_no: outBizNo,
-            trans_amount: amountText,
-            biz_scene: 'DIRECT_TRANSFER',
-            product_code: 'TRANS_ACCOUNT_NO_PWD',
-            order_title: '用户余额提现',
-            payee_info: {
-                identity: payee.identity,
-                identity_type: payee.identity_type,
-                ...(payee.name ? { name: payee.name } : {}),
-            },
-        };
-
-        if (remark) {
-            Object.assign(bizContent, { remark });
-        }
-
-        // 2. 调用支付宝转账接口
-        let alipayResponseRaw: unknown;
-        try {
-            alipayResponseRaw = await this.alipaySdk.exec(
-                'alipay.fund.trans.uni.transfer',
-                {
-                    bizContent,
-                },
-            );
-        } catch {
-            await this.rollbackWithdrawalOnFailure({
-                balanceId: freezeContext.balanceId,
-                withdrawalId: freezeContext.withdrawal.id,
-                balanceBefore: freezeContext.balanceBefore,
-            });
-            throw new BadRequestException('提现请求失败，请稍后重试');
-        }
-
-        const parsedResponse =
-            alipayWithdrawResponseSchema.parse(alipayResponseRaw);
-        const successResult =
-            alipayWithdrawSuccessResponseSchema.safeParse(parsedResponse);
-
-        if (
-            !successResult.success ||
-            (successResult.data.status && successResult.data.status === 'FAIL')
-        ) {
-            const errorMessage =
-                'sub_msg' in parsedResponse && parsedResponse.sub_msg
-                    ? parsedResponse.sub_msg
-                    : parsedResponse.msg;
-
-            await this.rollbackWithdrawalOnFailure({
-                balanceId: freezeContext.balanceId,
-                withdrawalId: freezeContext.withdrawal.id,
-                balanceBefore: freezeContext.balanceBefore,
-            });
-
-            throw new BadRequestException(`支付宝提现失败：${errorMessage}`);
-        }
-
-        const successResponse = successResult.data;
-        const referenceId =
-            successResponse.pay_fund_order_id ?? successResponse.order_id;
-        const processedAt = new Date();
-
-        // 3. 根据返回结果落库并生成流水
-        const finalizeResult = await this.db.transaction(async (tx) => {
-            const frozenAfterSuccess = freezeContext.balanceBefore.frozen;
-            const totalAfterSuccess =
-                freezeContext.balanceAfterFreeze.available.plus(
-                    frozenAfterSuccess,
-                );
-
-            const balanceRecord =
-                await this.payRepository.updateUserBalanceById(
-                    freezeContext.balanceId,
-                    {
-                        availableBalance:
-                            freezeContext.balanceAfterFreeze.available.toFixed(
-                                2,
-                            ),
-                        frozenBalance: frozenAfterSuccess.toFixed(2),
-                        totalBalance: totalAfterSuccess.toFixed(2),
-                        lastTransactionId: successResult.data.order_id,
-                    },
-                    tx,
-                );
-
-            if (!balanceRecord) {
-                throw new BadRequestException('更新余额失败');
-            }
-
-            const withdrawalRecord =
-                await this.payRepository.updateWithdrawalById(
-                    freezeContext.withdrawal.id,
-                    {
-                        status: 'completed',
-                        processedAt,
-                    },
-                    tx,
-                );
-
-            if (!withdrawalRecord) {
-                throw new BadRequestException('更新提现状态失败');
-            }
-
-            await this.payRepository.createFinancialTransaction(
-                {
-                    userId,
-                    withdrawalId: freezeContext.withdrawal.id,
-                    transactionType: 'withdrawal',
-                    amount: `-${amountDecimal.negated().toFixed(2)}`,
-                    currency,
-                    description: `提现至支付宝账号 ${payee.identity}`.slice(
-                        0,
-                        120,
-                    ),
-                    referenceId,
-                    metadata: JSON.stringify({
-                        outBizNo,
-                        orderId: successResponse.order_id,
-                        remark,
-                        payee,
-                    }),
-                },
-                tx,
-            );
-
-            return { balanceRecord, withdrawalRecord };
-        });
-
-        const { balanceRecord, withdrawalRecord } = finalizeResult;
-
         const response: UserWithdrawResponse = {
-            withdrawalId: withdrawalRecord.id,
-            status: withdrawalRecord.status,
+            withdrawalId: freezeContext.withdrawal.id,
+            status: freezeContext.withdrawal.status,
             amount: amountDecimal.toNumber(),
             currency,
             balance: {
-                available: Number(balanceRecord.availableBalance ?? '0'),
-                frozen: Number(balanceRecord.frozenBalance ?? '0'),
-                total: Number(balanceRecord.totalBalance ?? '0'),
+                available: Number(
+                    freezeContext.balanceAfterFreeze.available.toFixed(2),
+                ),
+                frozen: Number(
+                    freezeContext.balanceAfterFreeze.frozen.toFixed(2),
+                ),
+                total: Number(
+                    freezeContext.balanceAfterFreeze.total.toFixed(2),
+                ),
             },
-            outBizNo,
-            alipayOrderId: referenceId,
+            outBizNo: freezeContext.withdrawal.id,
         };
 
         return response;
-    }
-
-    private async rollbackWithdrawalOnFailure({
-        balanceId,
-        withdrawalId,
-        balanceBefore,
-    }: {
-        balanceId: string;
-        withdrawalId: string;
-        balanceBefore: {
-            available: Decimal;
-            frozen: Decimal;
-            total: Decimal;
-        };
-    }) {
-        // 失败时需恢复余额并标记提现状态
-        await this.db.transaction(async (tx) => {
-            await this.payRepository.updateUserBalanceById(
-                balanceId,
-                {
-                    availableBalance: balanceBefore.available.toFixed(2),
-                    frozenBalance: balanceBefore.frozen.toFixed(2),
-                    totalBalance: balanceBefore.total.toFixed(2),
-                },
-                tx,
-            );
-
-            await this.payRepository.updateWithdrawalById(
-                withdrawalId,
-                {
-                    status: 'rejected',
-                    processedAt: new Date(),
-                },
-                tx,
-            );
-        });
     }
 
     generateAuthString() {

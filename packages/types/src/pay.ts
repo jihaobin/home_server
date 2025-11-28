@@ -1,8 +1,10 @@
 import { z } from "zod/v4";
 import {
     PaymentMethodEnum,
+    TransactionTypeEnum,
     WithdrawalStatusEnum,
 } from "./database-entity";
+import { PaginationMetaSchema } from "./common";
 
 const PAY_DATETIME_SECONDS_PATTERN = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
 const PAY_DATETIME_MILLIS_PATTERN =
@@ -1042,9 +1044,154 @@ export const UserWithdrawResponseSchema = z
 			.optional()
 			.meta({ title: "支付宝订单号" }),
 	})
-	.meta({ title: "用户提现响应" });
+	.meta({
+		title: "用户提现响应",
+		description: "提交提现申请后的冻结余额快照，状态默认为 pending，等待管理员审核后才会打款",
+	});
 
 export type UserWithdrawResponse = z.infer<typeof UserWithdrawResponseSchema>;
+
+export const UserWithdrawalItemSchema = z
+    .object({
+        id: z.string().min(1),
+        amount: z.number().nonnegative(),
+        currency: z.string().min(1),
+        status: WithdrawalStatusEnum,
+        method: PaymentMethodEnum,
+        remark: z.string().nullable(),
+        reviewNote: z.string().nullable(),
+        failureReason: z.string().nullable(),
+        requestedAt: z.date(),
+        reviewedAt: z.date().nullable(),
+        processedAt: z.date().nullable(),
+    })
+    .meta({
+        title: "用户提现记录",
+        description: "服务人员发起的提现申请记录",
+    });
+
+export type UserWithdrawalItem = z.infer<typeof UserWithdrawalItemSchema>;
+
+export const UserWithdrawalListResponseSchema = z
+    .object({
+        items: z.array(UserWithdrawalItemSchema),
+        meta: PaginationMetaSchema,
+    })
+    .meta({
+        title: "用户提现记录分页响应",
+        description: "服务人员提现记录的分页响应结构",
+    });
+
+export type UserWithdrawalListResponse = z.infer<
+    typeof UserWithdrawalListResponseSchema
+>;
+
+export const UserWithdrawalQuerySchema = z
+    .object({
+        page: z.coerce.number().min(1).optional(),
+        limit: z.coerce.number().min(1).max(100).optional(),
+        status: WithdrawalStatusEnum.optional(),
+    })
+    .meta({
+        title: "用户提现记录查询参数",
+        description: "服务人员查看提现列表时可用的查询参数",
+    });
+
+export type UserWithdrawalQuery = z.infer<typeof UserWithdrawalQuerySchema>;
+
+export const WorkerEarningsRecordFlowEnum = z
+	.enum(["income", "withdrawal"])
+	.meta({
+		title: "收益流水方向",
+		description: "标记该条记录是收入还是提现/支出",
+	});
+
+export type WorkerEarningsRecordFlow = z.infer<
+	typeof WorkerEarningsRecordFlowEnum
+>;
+
+export const WorkerEarningsRecordCategoryEnum = z
+	.enum(["mixed", "income", "withdrawal"])
+	.meta({
+		title: "收益记录查询分类",
+		description: "mixed 表示收益+提现聚合，income 表示仅收入，withdrawal 表示仅提现记录",
+	});
+
+export type WorkerEarningsRecordCategory = z.infer<
+	typeof WorkerEarningsRecordCategoryEnum
+>;
+
+export const WorkerEarningsWithdrawalDetailSchema = z
+	.object({
+		id: z.string().min(1, "提现记录 ID 不能为空"),
+		status: WithdrawalStatusEnum,
+		method: PaymentMethodEnum,
+		remark: z.string().nullable(),
+		reviewNote: z.string().nullable(),
+		failureReason: z.string().nullable(),
+		requestedAt: z.date(),
+		reviewedAt: z.date().nullable(),
+		processedAt: z.date().nullable(),
+	})
+	.meta({
+		title: "提现附加信息",
+		description: "当记录为提现类型时返回更详细的审核/处理信息",
+	});
+
+export type WorkerEarningsWithdrawalDetail = z.infer<
+	typeof WorkerEarningsWithdrawalDetailSchema
+>;
+
+export const WorkerEarningsRecordItemSchema = z
+	.object({
+		id: z.string().min(1),
+		flowType: WorkerEarningsRecordFlowEnum,
+		transactionType: TransactionTypeEnum,
+		amount: z.number(),
+		currency: z.string().min(1),
+		description: z.string().nullable(),
+		referenceId: z.string().nullable(),
+		occurredAt: z.date(),
+		withdrawal: WorkerEarningsWithdrawalDetailSchema.optional(),
+	})
+	.meta({
+		title: "收益记录项",
+		description: "统一的收益/提现记录响应结构",
+	});
+
+export type WorkerEarningsRecordItem = z.infer<
+	typeof WorkerEarningsRecordItemSchema
+>;
+
+export const WorkerEarningsRecordQuerySchema = z
+	.object({
+		page: z.coerce.number().min(1).optional(),
+		limit: z.coerce.number().min(1).max(100).optional(),
+		category: WorkerEarningsRecordCategoryEnum.optional(),
+		withdrawalStatus: WithdrawalStatusEnum.optional(),
+	})
+	.meta({
+		title: "收益记录查询参数",
+		description: "category 控制查询收入、提现或聚合列表，withdrawalStatus 仅在 category 为 withdrawal 时生效",
+	});
+
+export type WorkerEarningsRecordQuery = z.infer<
+	typeof WorkerEarningsRecordQuerySchema
+>;
+
+export const WorkerEarningsRecordListResponseSchema = z
+	.object({
+		items: z.array(WorkerEarningsRecordItemSchema),
+		meta: PaginationMetaSchema,
+	})
+	.meta({
+		title: "收益记录分页响应",
+		description: "聚合收益与提现记录的分页响应结构",
+	});
+
+export type WorkerEarningsRecordListResponse = z.infer<
+	typeof WorkerEarningsRecordListResponseSchema
+>;
 
 export const QueryPaymentStatusResponseSchema = z.object({
     orderId: z.string(),

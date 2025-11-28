@@ -616,7 +616,7 @@ export class OrderRepository {
     async cancelOrder(
         id: string,
         reason: string,
-        cancelledById: string,
+        cancelledById?: string | null,
         executor?: DbType,
     ) {
         const db = executor ?? this.db;
@@ -646,7 +646,7 @@ export class OrderRepository {
             .set({
                 status: 'cancelled',
                 cancelReason: reason,
-                cancelledBy: cancelledById,
+                cancelledBy: cancelledById ?? null,
                 cancelledAt: new Date(),
                 updatedAt: new Date(),
             })
@@ -731,6 +731,7 @@ export class OrderRepository {
         addressId: string;
         specificationId: string;
         appointmentTime: Date;
+        paymentExpiresAt: Date;
         discountAmount: string;
         designatedPersonnelId: string;
         price: string;

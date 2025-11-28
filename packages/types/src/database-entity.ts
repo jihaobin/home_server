@@ -36,6 +36,15 @@ export const PaymentMethodEnum = z.enum([
 ]);
 export type PaymentMethod = z.infer<typeof PaymentMethodEnum>;
 
+export const WithdrawalPayeeAccountTypeEnum = z.enum([
+    "ALIPAY_USER_ID",
+    "ALIPAY_LOGON_ID",
+    "ALIPAY_OPEN_ID",
+]);
+export type WithdrawalPayeeAccountType = z.infer<
+    typeof WithdrawalPayeeAccountTypeEnum
+>;
+
 // 分配类型枚举 - MVP纯个人模式
 export const AssignmentTypeEnum = z.enum([
     "system_auto", // 系统自动派单
@@ -1687,6 +1696,38 @@ export const WithdrawalsSchema = z
             description: "用户ID",
             title: "用户ID",
         }),
+        currency: z
+            .string()
+            .min(1)
+            .max(3)
+            .default("CNY")
+            .meta({
+                description: "提现币种",
+                title: "提现币种",
+            }),
+        method: PaymentMethodEnum.default("alipay").meta({
+            description: "提现方式（支付宝/微信/银行转账）",
+            title: "提现方式",
+        }),
+        payeeAccount: z.string().max(255).meta({
+            description: "收款账号（如支付宝登录号）",
+            title: "收款账号",
+        }),
+        payeeAccountType: WithdrawalPayeeAccountTypeEnum.default(
+            "ALIPAY_LOGON_ID",
+        ).meta({
+            description: "收款账号类型（如 ALIPAY_LOGON_ID）",
+            title: "收款账号类型",
+        }),
+        payeeName: z
+            .string()
+            .max(255)
+            .nullable()
+            .optional()
+            .meta({
+                description: "收款人姓名",
+                title: "收款人姓名",
+            }),
         amount: z
             .number()
             .multipleOf(0.01)
@@ -1694,6 +1735,15 @@ export const WithdrawalsSchema = z
             .meta({
                 description: "提现金额",
                 title: "提现金额",
+            }),
+        remark: z
+            .string()
+            .max(500)
+            .optional()
+            .nullable()
+            .meta({
+                description: "用户提交提现时的备注",
+                title: "提现备注",
             }),
         status: WithdrawalStatusEnum.default("pending").meta({
             description: "提现状态",
@@ -1705,6 +1755,46 @@ export const WithdrawalsSchema = z
                 "completed (已完成)",
             ],
         }),
+        reviewNote: z
+            .string()
+            .max(1000)
+            .nullable()
+            .optional()
+            .meta({
+                description: "管理员审核备注",
+                title: "审核备注",
+            }),
+        reviewedByAdminId: z
+            .string()
+            .max(255)
+            .nullable()
+            .optional()
+            .meta({
+                description: "审核管理员ID",
+                title: "审核管理员ID",
+            }),
+        reviewedAt: z.date().optional().meta({
+            description: "审核时间",
+            title: "审核时间",
+        }),
+        payoutReferenceId: z
+            .string()
+            .max(255)
+            .nullable()
+            .optional()
+            .meta({
+                description: "第三方打款参考号",
+                title: "打款参考号",
+            }),
+        failureReason: z
+            .string()
+            .max(500)
+            .nullable()
+            .optional()
+            .meta({
+                description: "打款失败原因",
+                title: "打款失败原因",
+            }),
         requestedAt: z
             .date()
             .default(() => new Date())

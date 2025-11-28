@@ -10,7 +10,11 @@ import {
 
 import { createId } from '.';
 import { users } from './auth-user';
-import { withdrawalStatusEnum } from './enums';
+import {
+    payeeAccountTypeEnum,
+    paymentMethodEnum,
+    withdrawalStatusEnum,
+} from './enums';
 import { orders } from './orders';
 
 /**
@@ -185,6 +189,22 @@ export const withdrawals = pgTable(
         amount: decimal('amount', { precision: 18, scale: 2 }).notNull(), // 提现金额
         currency: varchar('currency', { length: 3 }).default('CNY').notNull(), // 币种代码
         status: withdrawalStatusEnum('status').notNull().default('pending'), // 提现状态
+        method: paymentMethodEnum('method').notNull().default('alipay'), // 提现方式
+        payeeAccount: varchar('payee_account', { length: 255 }).notNull(), // 收款账号
+        payeeAccountType: payeeAccountTypeEnum('payee_account_type')
+            .notNull()
+            .default('ALIPAY_LOGON_ID'), // 收款账号类型
+        payeeName: varchar('payee_name', { length: 255 }), // 收款人姓名
+        remark: varchar('remark', { length: 500 }), // 用户备注
+        reviewNote: varchar('review_note', { length: 1000 }), // 审核备注
+        reviewedByAdminId: varchar('reviewed_by_admin_id', {
+            length: 255,
+        }).references(() => users.id, { onDelete: 'set null' }), // 审核管理员
+        reviewedAt: timestamp('reviewed_at', { withTimezone: true }), // 审核时间
+        payoutReferenceId: varchar('payout_reference_id', {
+            length: 255,
+        }), // 打款参考号
+        failureReason: varchar('failure_reason', { length: 500 }), // 打款失败原因
         requestedAt: timestamp('requested_at', {
             withTimezone: true,
         }).defaultNow(), // 请求时间
@@ -248,6 +268,11 @@ export const withdrawalsRelations = relations(withdrawals, ({ one }) => ({
     user: one(users, {
         fields: [withdrawals.userId],
         references: [users.id],
+    }),
+    reviewedBy: one(users, {
+        fields: [withdrawals.reviewedByAdminId],
+        references: [users.id],
+        relationName: 'withdrawalsReviewedBy',
     }),
 }));
 

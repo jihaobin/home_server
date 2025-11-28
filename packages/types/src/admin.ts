@@ -3,10 +3,12 @@ import { PaginatedDataSchema, PaginationQuerySchema } from './common';
 import {
     AssignmentTypeEnum,
     OrderStatusEnum,
+    PaymentMethodEnum,
     PaymentStatusEnum,
     ServiceCategoriesSchema,
     TransactionTypeEnum,
     UserRoleEnum,
+    WithdrawalPayeeAccountTypeEnum,
     WithdrawalStatusEnum,
 } from './database-entity';
 
@@ -16,7 +18,6 @@ import {
 export const AdminLoginRequestSchema = z
     .object({
         email: z
-            .string()
             .email('请输入有效的管理员邮箱')
             .describe('管理员邮箱'),
         password: z
@@ -657,4 +658,149 @@ export const AdminRevenueLogListResponseSchema = PaginatedDataSchema(
 
 export type AdminRevenueLogListResponse = z.infer<
     typeof AdminRevenueLogListResponseSchema
+>;
+
+// =========================
+// 提现审核
+// =========================
+
+export const AdminWithdrawalUserSchema = z
+    .object({
+        id: z.string().describe('用户 ID'),
+        name: z.string().nullable().describe('姓名'),
+        email: z.string().nullable().describe('邮箱'),
+        phoneNumber: z.string().nullable().describe('手机号'),
+    })
+    .describe('提现申请人信息');
+
+export type AdminWithdrawalUser = z.infer<
+    typeof AdminWithdrawalUserSchema
+>;
+
+export const AdminWithdrawalReviewerSchema = z
+    .object({
+        id: z.string().describe('管理员 ID'),
+        name: z.string().nullable().describe('管理员姓名'),
+    })
+    .describe('审核管理员信息');
+
+export type AdminWithdrawalReviewer = z.infer<
+    typeof AdminWithdrawalReviewerSchema
+>;
+
+export const AdminWithdrawalSchema = z
+    .object({
+        id: z.string().describe('提现记录 ID'),
+        status: WithdrawalStatusEnum.describe('提现状态'),
+        method: PaymentMethodEnum.describe('提现方式'),
+        amount: AdminDashboardCurrencySchema.describe('提现金额'),
+        payeeAccount: z.string().describe('收款账号'),
+        payeeAccountType: WithdrawalPayeeAccountTypeEnum.describe(
+            '收款账号类型',
+        ),
+        payeeName: z.string().nullable().describe('收款人姓名'),
+        remark: z.string().nullable().describe('用户备注'),
+        reviewNote: z.string().nullable().describe('审核备注'),
+        requestedAt: IsoDateTimeStringSchema.describe('申请时间'),
+        reviewedAt: IsoDateTimeStringSchema.nullable().describe('审核时间'),
+        processedAt: IsoDateTimeStringSchema.nullable().describe(
+            '打款完成时间',
+        ),
+        payoutReferenceId: z
+            .string()
+            .nullable()
+            .describe('第三方打款流水号'),
+        failureReason: z.string().nullable().describe('失败原因'),
+        user: AdminWithdrawalUserSchema.nullable().describe('申请人'),
+        reviewer: AdminWithdrawalReviewerSchema.nullable().describe(
+            '审核管理员',
+        ),
+    })
+    .describe('提现申请记录');
+
+export type AdminWithdrawal = z.infer<typeof AdminWithdrawalSchema>;
+
+export const AdminWithdrawalListQuerySchema = z
+    .object({
+        page: PaginationQuerySchema.shape.page.default(1),
+        limit: PaginationQuerySchema.shape.limit.default(20),
+        startDate: IsoDateTimeStringSchema.optional().describe('开始时间'),
+        endDate: IsoDateTimeStringSchema.optional().describe('结束时间'),
+        minAmount: z
+            .number()
+            .nonnegative()
+            .optional()
+            .describe('最小提现金额'),
+        maxAmount: z
+            .number()
+            .nonnegative()
+            .optional()
+            .describe('最大提现金额'),
+        status: WithdrawalStatusEnum.optional().describe('提现状态'),
+        method: PaymentMethodEnum.optional().describe('提现方式'),
+        keyword: z
+            .string()
+            .min(1)
+            .max(255)
+            .optional()
+            .describe('姓名/手机号/账号关键词'),
+    })
+    .refine(
+        (value) =>
+            !value.startDate ||
+            !value.endDate ||
+            new Date(value.startDate) <= new Date(value.endDate),
+        {
+            path: ['endDate'],
+            message: '结束时间必须晚于开始时间',
+        },
+    )
+    .refine(
+        (value) =>
+            value.minAmount === undefined ||
+            value.maxAmount === undefined ||
+            value.minAmount <= value.maxAmount,
+        {
+            path: ['maxAmount'],
+            message: '最小金额不能大于最大金额',
+        },
+    )
+    .describe('提现列表查询参数');
+
+export type AdminWithdrawalListQuery = z.infer<
+    typeof AdminWithdrawalListQuerySchema
+>;
+
+export const AdminWithdrawalListResponseSchema = PaginatedDataSchema(
+    AdminWithdrawalSchema,
+).describe('提现列表分页响应');
+
+export type AdminWithdrawalListResponse = z.infer<
+    typeof AdminWithdrawalListResponseSchema
+>;
+
+export const AdminReviewWithdrawalBodySchema = z
+    .object({
+        action: z
+            .enum(['approve', 'reject'])
+            .describe('审核动作：approve=通过并打款，reject=驳回'),
+        note: z
+            .string()
+            .max(1000, '备注不能超过 1000 字')
+            .optional()
+            .describe('审核备注'),
+    })
+    .refine(
+        (value) =>
+            value.action !== 'reject' ||
+            (typeof value.note === 'string' && value.note.trim().length > 0),
+        {
+            path: ['note'],
+            message: '驳回时必须填写备注',
+        },
+    )
+    .describe('提现审核请求体');
+
+export type AdminReviewWithdrawalBody = z.infer<
+    typeof AdminReviewWithdrawalBodySchema
 >;

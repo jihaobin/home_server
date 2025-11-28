@@ -36,6 +36,15 @@ export const paymentMethodEnum = pgEnum('payment_method', [
 ]);
 
 /**
+ * 提现收款账号类型枚举
+ */
+export const payeeAccountTypeEnum = pgEnum('payee_account_type', [
+    'ALIPAY_USER_ID',
+    'ALIPAY_LOGON_ID',
+    'ALIPAY_OPEN_ID',
+]);
+
+/**
  * 提现状态枚举
  */
 export const withdrawalStatusEnum = pgEnum('withdrawal_status', [
