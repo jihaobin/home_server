@@ -2,20 +2,19 @@ import type {
 	InitiatePaymentBody,
 	InitiatePaymentResponse,
 	QueryPaymentStatusResponse,
-	TransactionType,
 	UserWithdrawBody,
 	UserWithdrawResponse,
-	ZodPaginationMeta,
+	WorkerEarningsRecordListResponse,
+	WorkerEarningsRecordQuery,
 } from "@repo/types";
 import {
 	useMutation,
 	useQuery,
 	useQueryClient,
 	useSuspenseQuery,
+	useInfiniteQuery,
 } from "@tanstack/react-query";
 import { apiClient } from "@repo/lib/http-client";
-
-export type EarningsTransactionFilter = "all" | "income" | "withdrawal";
 
 export interface EarningsOverview {
 	balance: {
@@ -27,32 +26,6 @@ export interface EarningsOverview {
 	monthlyEarnings: number;
 	totalEarnings: number;
 	updatedAt: string;
-}
-
-export interface EarningsTransactionItem {
-	id: string;
-	transactionType: TransactionType;
-	type: Exclude<EarningsTransactionFilter, "all">;
-	amount: number;
-	currency: string;
-	description: string | null;
-	referenceId: string | null;
-	createdAt: string;
-	withdrawal?: {
-		id: string;
-		status: string;
-	};
-}
-
-export interface EarningsTransactionListResponse {
-	items: EarningsTransactionItem[];
-	meta: ZodPaginationMeta;
-}
-
-export interface EarningsTransactionQuery {
-	page?: number;
-	limit?: number;
-	type?: EarningsTransactionFilter;
 }
 
 /**
@@ -87,34 +60,83 @@ export const useEarningsOverview = () =>
 	});
 
 /**
- * 获取收益流水列表
+ * 获取收益/提现记录
  */
-export const useEarningsTransactions = (
-	params: EarningsTransactionQuery = {},
+export const useWorkerEarningsRecords = (
+	params: WorkerEarningsRecordQuery = {},
+	options?: { enabled?: boolean },
 ) =>
 	useQuery({
-		queryKey: ["earnings-transactions", params],
+		queryKey: ["worker-earnings-records", params],
 		queryFn: async () => {
+			const query: Record<string, string> = {
+				page: String(params.page ?? 1),
+				limit: String(params.limit ?? 20),
+				category: params.category ?? "mixed",
+			};
+			if (params.withdrawalStatus) {
+				query.withdrawalStatus = params.withdrawalStatus;
+			}
+
 			const response =
-				await apiClient.get<EarningsTransactionListResponse>(
-					"/pay/earnings/transactions",
-					{
-						query: {
-							page: String(params.page ?? 1),
-							limit: String(params.limit ?? 20),
-							type:
-								params.type && params.type !== "all"
-									? params.type
-									: undefined,
-						},
-					},
+				await apiClient.get<WorkerEarningsRecordListResponse>(
+					"/pay/earnings/records",
+					{ query },
 				);
 			return response.data;
 		},
 		meta: {
 			errorMessage: "收益流水获取失败",
 		},
+		enabled: options?.enabled ?? true,
 	});
+
+export const useInfiniteWorkerEarningsRecords = (
+	params: WorkerEarningsRecordQuery = {},
+	options?: { enabled?: boolean },
+) =>
+	useInfiniteQuery({
+		queryKey: ["worker-earnings-records", "infinite", params],
+		initialPageParam: 1,
+		queryFn: async ({ pageParam }) => {
+			const query: Record<string, string> = {
+				page: String(pageParam ?? 1),
+				limit: String(params.limit ?? 20),
+				category: params.category ?? "mixed",
+			};
+			if (params.withdrawalStatus) {
+				query.withdrawalStatus = params.withdrawalStatus;
+			}
+
+			const response =
+				await apiClient.get<WorkerEarningsRecordListResponse>(
+					"/pay/earnings/records",
+					{ query },
+				);
+			return response.data;
+		},
+		getNextPageParam: (lastPage) =>
+			lastPage.meta.hasNext ? lastPage.meta.page + 1 : undefined,
+		meta: {
+			errorMessage: "收益记录获取失败",
+		},
+		enabled: options?.enabled ?? true,
+	});
+
+/**
+ * 提供提现记录的无限列表能力（内部强制 category = withdrawal）
+ */
+export const useWorkerWithdrawalRecords = (
+	params: WorkerEarningsRecordQuery = {},
+	options?: { enabled?: boolean },
+) =>
+	useInfiniteWorkerEarningsRecords(
+		{
+			...params,
+			category: params.category ?? "withdrawal",
+		},
+		options,
+	);
 
 /**
  * 发起订单支付
@@ -192,7 +214,13 @@ export const useWithdraw = () => {
 		onSuccess: () => {
 			// 提现成功后需要更新用户余额相关缓存
 			queryClient.invalidateQueries({ queryKey: ["user-balance"] });
-			queryClient.invalidateQueries({ queryKey: ["withdrawal-history"] });
+			queryClient.invalidateQueries({
+				queryKey: ["worker-earnings-records"],
+			});
+			queryClient.invalidateQueries({
+				queryKey: ["worker-earnings-records", "infinite"],
+			});
+			queryClient.invalidateQueries({ queryKey: ["earnings-overview"] });
 		},
 		scope: {
 			id: "withdraw",

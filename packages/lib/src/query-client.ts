@@ -28,7 +28,7 @@ const defaultQueryOptions: DefaultOptions = {
 
       return failureCount < 2;
     },
-    staleTime: 2 * 1000
+    staleTime: 2 * 60 * 1000
   },
 
 };

@@ -9,6 +9,8 @@ import {
     adminServiceCategoriesQueryOptions,
     adminRevenueLogsQueryOptions,
     type AdminRevenueLogsQueryInput,
+    adminWithdrawalsQueryOptions,
+    type AdminWithdrawalsQueryInput,
 } from "@repo/hooks/api/ssr"
 import { ErrorCode, type AdminDashboardRange } from "@repo/types"
 import { ApiClientError } from "@repo/utils/api-client"
@@ -118,6 +120,27 @@ export async function preloadRevenueLogsPageState(
     try {
         return await prefetchDehydratedState(async (queryClient) => {
             await queryClient.fetchQuery(adminRevenueLogsQueryOptions(query))
+        })
+    } catch (error) {
+        if (
+            error instanceof ApiClientError &&
+            (error.code === ErrorCode.UNAUTHORIZED ||
+                error.code === ErrorCode.FORBIDDEN)
+        ) {
+            redirect("/auth/login")
+        }
+        throw error
+    }
+}
+
+export async function preloadWithdrawalsPageState(
+    query: AdminWithdrawalsQueryInput = {},
+) {
+    ensureSsrApiClient()
+
+    try {
+        return await prefetchDehydratedState(async (queryClient) => {
+            await queryClient.fetchQuery(adminWithdrawalsQueryOptions(query))
         })
     } catch (error) {
         if (
