@@ -2,15 +2,18 @@ import { Ionicons } from "@expo/vector-icons";
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import {
     useEarningsOverview,
-    useEarningsTransactions,
-    type EarningsTransactionListResponse,
+    useWorkerEarningsRecords,
+    useWorkerWithdrawalRecords,
 } from "@repo/hooks/api/pay";
-import { useRouter } from "expo-router";
-import React, { useCallback, useMemo, useState } from "react";
+import type { WorkerEarningsRecordListResponse } from "@repo/types";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
     ActivityIndicator,
-    FlatList,
+    NativeScrollEvent,
+    NativeSyntheticEvent,
     RefreshControl,
+    ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -18,16 +21,17 @@ import {
 } from "react-native";
 
 type TabFilter = "all" | "income" | "withdrawal";
-type TransactionItem = EarningsTransactionListResponse["items"][number];
+type TransactionItem = WorkerEarningsRecordListResponse["items"][number];
+type WithdrawalItem = TransactionItem;
 
 const WITHDRAWAL_STATUS_META: Record<
     string,
     { label: string; color: string }
 > = {
-    pending: { label: "待处理", color: "#FF9800" },
-    approved: { label: "已通过", color: "#2196F3" },
-    completed: { label: "已完成", color: "#4CAF50" },
-    rejected: { label: "已拒绝", color: "#FF5722" },
+    pending: { label: "待审核", color: "#FF9800" },
+    approved: { label: "审核通过，待打款", color: "#2196F3" },
+    completed: { label: "已打款", color: "#4CAF50" },
+    rejected: { label: "已驳回", color: "#FF5722" },
 };
 
 export default function EarningsScreen() {
@@ -40,16 +44,30 @@ export default function EarningsScreen() {
 
 function EarningsContent() {
     const router = useRouter();
-    const [selectedTab, setSelectedTab] = useState<TabFilter>("all");
+    const params = useLocalSearchParams<{ tab?: string }>();
+    const [selectedTab, setSelectedTab] = useState<TabFilter>(() => {
+        const tabParam = Array.isArray(params.tab) ? params.tab[0] : params.tab;
+        return isValidTabFilter(tabParam) ? tabParam : "all";
+    });
+    useEffect(() => {
+        const tabParam = Array.isArray(params.tab) ? params.tab[0] : params.tab;
+        if (isValidTabFilter(tabParam)) {
+            setSelectedTab(tabParam);
+        }
+    }, [params.tab]);
     const [refreshing, setRefreshing] = useState(false);
 
+    const recordCategory = useMemo(
+        () => mapTabToCategory(selectedTab),
+        [selectedTab],
+    );
     const transactionQuery = useMemo(
         () => ({
             page: 1,
             limit: 50,
-            type: selectedTab,
+            category: recordCategory,
         }),
-        [selectedTab],
+        [recordCategory],
     );
 
     const {
@@ -60,64 +78,155 @@ function EarningsContent() {
         refetch: refetchOverview,
     } = useEarningsOverview();
 
+    const isWithdrawalTab = selectedTab === "withdrawal";
+
     const {
         data: transactionsData,
         isLoading: transactionsLoading,
         isFetching: transactionsFetching,
         error: transactionsError,
         refetch: refetchTransactions,
-    } = useEarningsTransactions(transactionQuery);
+    } = useWorkerEarningsRecords(transactionQuery, {
+        enabled: !isWithdrawalTab,
+    });
+
+    const {
+        data: withdrawalRecords,
+        isLoading: withdrawalRecordsLoading,
+        isFetching: withdrawalRecordsFetching,
+        error: withdrawalRecordsError,
+        fetchNextPage: fetchMoreWithdrawals,
+        hasNextPage: hasMoreWithdrawals,
+        isFetchingNextPage: isFetchingNextWithdrawalPage,
+        refetch: refetchWithdrawalRecords,
+    } = useWorkerWithdrawalRecords(
+        { limit: 20 },
+        { enabled: isWithdrawalTab },
+    );
 
     const handleRefresh = useCallback(async () => {
         setRefreshing(true);
         try {
             await Promise.allSettled([
                 refetchOverview(),
-                refetchTransactions(),
+                isWithdrawalTab
+                    ? refetchWithdrawalRecords()
+                    : refetchTransactions(),
             ]);
         } finally {
             setRefreshing(false);
         }
-    }, [refetchOverview, refetchTransactions]);
+    }, [
+        refetchOverview,
+        refetchTransactions,
+        refetchWithdrawalRecords,
+        isWithdrawalTab,
+    ]);
 
-    const accountBalance = overview?.balance?.available ?? 0;
+    const handleLoadMoreWithdrawals = useCallback(() => {
+        if (
+            !isWithdrawalTab ||
+            !hasMoreWithdrawals ||
+            isFetchingNextWithdrawalPage
+        ) {
+            return;
+        }
+        fetchMoreWithdrawals();
+    }, [
+        isWithdrawalTab,
+        hasMoreWithdrawals,
+        isFetchingNextWithdrawalPage,
+        fetchMoreWithdrawals,
+    ]);
+    const handlePageScroll = useCallback(
+        (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+            if (!isWithdrawalTab) {
+                return;
+            }
+            const { layoutMeasurement, contentOffset, contentSize } =
+                event.nativeEvent;
+            const paddingToBottom = 200;
+            if (
+                layoutMeasurement.height + contentOffset.y >=
+                contentSize.height - paddingToBottom
+            ) {
+                handleLoadMoreWithdrawals();
+            }
+        },
+        [isWithdrawalTab, handleLoadMoreWithdrawals],
+    );
+
+    const availableBalance = overview?.balance?.available ?? 0;
+    const frozenBalance = overview?.balance?.frozen ?? 0;
+    const accountBalance = availableBalance + frozenBalance;
     const monthlyEarnings = overview?.monthlyEarnings ?? 0;
     const totalEarnings = overview?.totalEarnings ?? 0;
     const transactions = transactionsData?.items ?? [];
+    const withdrawalItems = useMemo(() => {
+        const pages = withdrawalRecords?.pages ?? [];
+        return pages.flatMap((page) => page.items);
+    }, [withdrawalRecords]);
+    const currentItems = isWithdrawalTab ? withdrawalItems : transactions;
+    const shouldShowEmptyState = currentItems.length === 0;
 
-    const isInitialLoading = overviewLoading || transactionsLoading;
+    const isInitialLoading =
+        overviewLoading ||
+        (isWithdrawalTab ? withdrawalRecordsLoading : transactionsLoading);
     const isRefreshing =
-        refreshing || overviewFetching || transactionsFetching;
-    const hasError = overviewError || transactionsError;
+        refreshing ||
+        overviewFetching ||
+        (isWithdrawalTab
+            ? withdrawalRecordsFetching
+            : transactionsFetching);
+    const activeError =
+        overviewError ||
+        (isWithdrawalTab
+            ? (withdrawalRecordsError as Error | null)
+            : transactionsError);
+    const hasError = Boolean(activeError);
 
     const emptyTitle = useMemo(() => {
+        if (isWithdrawalTab) {
+            if (withdrawalRecordsFetching) {
+                return "提现记录加载中...";
+            }
+            return "暂无提现记录";
+        }
         if (transactionsFetching) {
             return "收益记录加载中...";
         }
-        switch (selectedTab) {
-            case "income":
-                return "暂无收入记录";
-            case "withdrawal":
-                return "暂无支出记录";
-            default:
-                return "暂无收益记录";
-        }
-    }, [selectedTab, transactionsFetching]);
+        return "暂无记录";
+    }, [
+        isWithdrawalTab,
+        withdrawalRecordsFetching,
+        transactionsFetching,
+        selectedTab,
+    ]);
 
     const retryFetch = useCallback(() => {
         refetchOverview();
-        refetchTransactions();
-    }, [refetchOverview, refetchTransactions]);
+        if (isWithdrawalTab) {
+            refetchWithdrawalRecords();
+        } else {
+            refetchTransactions();
+        }
+    }, [
+        refetchOverview,
+        refetchTransactions,
+        refetchWithdrawalRecords,
+        isWithdrawalTab,
+    ]);
 
-    const renderTransaction = ({ item }: { item: TransactionItem }) => {
-        const isIncome = item.type === "income";
+    const renderTransaction = (item: TransactionItem) => {
+        const isIncome = item.flowType === "income";
         const amountColor = isIncome ? "#4CAF50" : "#FF5722";
         const statusMeta = !isIncome
             ? getWithdrawalStatusMeta(item.withdrawal?.status)
             : null;
+        const withdrawNote = !isIncome ? getWithdrawalNote(item) : null;
 
         return (
-            <View style={styles.transactionCard}>
+            <View key={item.id} style={styles.transactionCard}>
                 <View style={styles.transactionIcon}>
                     <Ionicons
                         name={isIncome ? "arrow-down" : "arrow-up"}
@@ -130,7 +239,7 @@ function EarningsContent() {
                         {getTransactionDescription(item)}
                     </Text>
                     <Text style={styles.transactionTime}>
-                        {formatTransactionTime(item.createdAt)}
+                        {formatTransactionTime(item.occurredAt)}
                     </Text>
                     {statusMeta ? (
                         <Text
@@ -142,10 +251,54 @@ function EarningsContent() {
                             {statusMeta.label}
                         </Text>
                     ) : null}
+                    {withdrawNote ? (
+                        <Text style={styles.transactionNote}>
+                            审核备注：{withdrawNote}
+                        </Text>
+                    ) : null}
                 </View>
                 <Text style={[styles.transactionAmount, { color: amountColor }]}>
                     {isIncome ? "+" : "-"}
                     ¥{formatCurrency(Math.abs(item.amount))}
+                </Text>
+            </View>
+        );
+    };
+
+    const renderWithdrawalTransaction = (item: WithdrawalItem) => {
+        const amountColor = "#FF5722";
+        const statusMeta = getWithdrawalStatusMeta(item.withdrawal?.status);
+        const withdrawNote = getWithdrawalNote(item) ?? "";
+        const timestamp = item.withdrawal?.requestedAt ?? item.occurredAt;
+
+        return (
+            <View key={item.id} style={styles.transactionCard}>
+                <View style={styles.transactionIcon}>
+                    <Ionicons name="arrow-up" size={24} color={amountColor} />
+                </View>
+                <View style={styles.transactionInfo}>
+                    <Text style={styles.transactionDesc}>余额提现</Text>
+                    <Text style={styles.transactionTime}>
+                        {formatTransactionTime(timestamp)}
+                    </Text>
+                    {statusMeta ? (
+                        <Text
+                            style={[
+                                styles.transactionStatus,
+                                { color: statusMeta.color },
+                            ]}
+                        >
+                            {statusMeta.label}
+                        </Text>
+                    ) : null}
+                    {withdrawNote ? (
+                        <Text style={styles.transactionNote}>
+                            审核备注：{withdrawNote}
+                        </Text>
+                    ) : null}
+                </View>
+                <Text style={[styles.transactionAmount, { color: amountColor }]}>
+                    -¥{formatCurrency(Math.abs(item.amount))}
                 </Text>
             </View>
         );
@@ -171,7 +324,9 @@ function EarningsContent() {
                 <Text style={styles.errorTitle}>收益数据加载失败</Text>
                 <Text style={styles.errorMessage}>
                     {overviewError?.message ||
-                        transactionsError?.message ||
+                        (isWithdrawalTab
+                            ? (withdrawalRecordsError as Error | null)?.message
+                            : transactionsError?.message) ||
                         "请稍后重试"}
                 </Text>
                 <TouchableOpacity style={styles.retryButton} onPress={retryFetch}>
@@ -183,65 +338,9 @@ function EarningsContent() {
 
     return (
         <View style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>我的收益</Text>
-            </View>
-
-            <View style={styles.accountCard}>
-                <View style={styles.balanceSection}>
-                    <Text style={styles.balanceLabel}>可用余额</Text>
-                    <Text style={styles.balanceAmount}>
-                        ¥{formatCurrency(accountBalance)}
-                    </Text>
-                    <TouchableOpacity
-                        style={styles.withdrawButton}
-                        onPress={() => router.push("/earnings/withdraw" as any)}
-                    >
-                        <Ionicons name="wallet-outline" size={20} color="white" />
-                        <Text style={styles.withdrawText}>立即提现</Text>
-                    </TouchableOpacity>
-                </View>
-
-                <View style={styles.statsSection}>
-                    <View style={styles.statItem}>
-                        <Text style={styles.statValue}>
-                            ¥{formatCurrency(monthlyEarnings)}
-                        </Text>
-                        <Text style={styles.statLabel}>本月收益</Text>
-                    </View>
-                    <View style={styles.statDivider} />
-                    <View style={styles.statItem}>
-                        <Text style={styles.statValue}>
-                            ¥{formatCurrency(totalEarnings)}
-                        </Text>
-                        <Text style={styles.statLabel}>累计收益</Text>
-                    </View>
-                </View>
-            </View>
-
-            <View style={styles.tabs}>
-                <TabButton
-                    label="全部"
-                    active={selectedTab === "all"}
-                    onPress={() => setSelectedTab("all")}
-                />
-                <TabButton
-                    label="收入"
-                    active={selectedTab === "income"}
-                    onPress={() => setSelectedTab("income")}
-                />
-                <TabButton
-                    label="提现"
-                    active={selectedTab === "withdrawal"}
-                    onPress={() => setSelectedTab("withdrawal")}
-                />
-            </View>
-
-            <FlatList
-                data={transactions}
-                renderItem={renderTransaction}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.listContent}
+            <ScrollView
+                style={styles.scrollView}
+                contentContainerStyle={styles.scrollContent}
                 refreshControl={
                     <RefreshControl
                         refreshing={isRefreshing}
@@ -249,21 +348,115 @@ function EarningsContent() {
                         tintColor="#2196F3"
                     />
                 }
-                ListEmptyComponent={
-                    <View style={styles.emptyContainer}>
-                        {transactionsFetching ? (
-                            <ActivityIndicator size="small" color="#2196F3" />
-                        ) : (
-                            <Ionicons
-                                name="receipt-outline"
-                                size={64}
-                                color="#ccc"
-                            />
-                        )}
-                        <Text style={styles.emptyText}>{emptyTitle}</Text>
+                showsVerticalScrollIndicator={false}
+                onScroll={isWithdrawalTab ? handlePageScroll : undefined}
+                scrollEventThrottle={16}
+            >
+                <View style={styles.header}>
+                    <Text style={styles.title}>我的收益</Text>
+                </View>
+
+                <View style={styles.accountCard}>
+                    <View style={styles.balanceSection}>
+                        <Text style={styles.balanceLabel}>账户余额（含审核中）</Text>
+                        <Text style={styles.balanceAmount}>
+                            ¥{formatCurrency(accountBalance)}
+                        </Text>
+                        <View style={styles.balanceSubRow}>
+                            <Text style={styles.balanceSubText}>
+                                可提现 ¥{formatCurrency(availableBalance)}
+                            </Text>
+                            <View style={styles.balanceDivider} />
+                            <Text style={styles.balanceSubText}>
+                                审核中 ¥{formatCurrency(frozenBalance)}
+                            </Text>
+                        </View>
+                        <TouchableOpacity
+                            style={styles.withdrawButton}
+                            onPress={() => router.push("/earnings/withdraw" as any)}
+                        >
+                            <Ionicons name="wallet-outline" size={20} color="white" />
+                            <Text style={styles.withdrawText}>立即提现</Text>
+                        </TouchableOpacity>
                     </View>
-                }
-            />
+
+                    <View style={styles.statsSection}>
+                        <View style={styles.statItem}>
+                            <Text style={styles.statValue}>
+                                ¥{formatCurrency(monthlyEarnings)}
+                            </Text>
+                            <Text style={styles.statLabel}>本月收益</Text>
+                        </View>
+                        <View style={styles.statDivider} />
+                        <View style={styles.statItem}>
+                            <Text style={styles.statValue}>
+                                ¥{formatCurrency(totalEarnings)}
+                            </Text>
+                            <Text style={styles.statLabel}>累计收益</Text>
+                        </View>
+                    </View>
+                </View>
+
+                <View style={styles.tabs}>
+                    <TabButton
+                        label="全部"
+                        active={selectedTab === "all"}
+                        onPress={() => setSelectedTab("all")}
+                    />
+                    <TabButton
+                        label="收入"
+                        active={selectedTab === "income"}
+                        onPress={() => setSelectedTab("income")}
+                    />
+                    <TabButton
+                        label="提现"
+                        active={selectedTab === "withdrawal"}
+                        onPress={() => setSelectedTab("withdrawal")}
+                    />
+                </View>
+
+                <View style={styles.listContent}>
+                    {shouldShowEmptyState ? (
+                        <View style={styles.emptyContainer}>
+                            {isWithdrawalTab ? (
+                                withdrawalRecordsFetching ? (
+                                    <ActivityIndicator
+                                        size="small"
+                                        color="#2196F3"
+                                    />
+                                ) : (
+                                    <Ionicons
+                                        name="receipt-outline"
+                                        size={64}
+                                        color="#ccc"
+                                    />
+                                )
+                            ) : transactionsFetching ? (
+                                <ActivityIndicator size="small" color="#2196F3" />
+                            ) : (
+                                <Ionicons
+                                    name="receipt-outline"
+                                    size={64}
+                                    color="#ccc"
+                                />
+                            )}
+                            <Text style={styles.emptyText}>{emptyTitle}</Text>
+                        </View>
+                    ) : (
+                        currentItems.map((item) =>
+                            isWithdrawalTab
+                                ? renderWithdrawalTransaction(item)
+                                : renderTransaction(item),
+                        )
+                    )}
+
+                    {isWithdrawalTab && isFetchingNextWithdrawalPage ? (
+                        <View style={styles.listFooter}>
+                            <ActivityIndicator size="small" color="#2196F3" />
+                        </View>
+                    ) : null}
+                </View>
+            </ScrollView>
         </View>
     );
 }
@@ -294,6 +487,13 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: "#f5f5f5",
     },
+    scrollView: {
+        flex: 1,
+    },
+    scrollContent: {
+        flexGrow: 1,
+        paddingBottom: 40,
+    },
     header: {
         backgroundColor: "white",
         padding: 20,
@@ -318,10 +518,28 @@ const styles = StyleSheet.create({
         elevation: 3,
     },
     balanceSection: {
+        display: "flex",
+        gap: 5,
         alignItems: "center",
         paddingBottom: 20,
         borderBottomWidth: 1,
         borderBottomColor: "#eee",
+    },
+    balanceSubRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        marginTop: 8,
+    },
+    balanceSubText: {
+        fontSize: 12,
+        color: "#666",
+        marginHorizontal: 8,
+    },
+    balanceDivider: {
+        width: 1,
+        height: 12,
+        backgroundColor: "#ddd",
     },
     balanceLabel: {
         fontSize: 14,
@@ -400,6 +618,10 @@ const styles = StyleSheet.create({
         padding: 16,
         paddingBottom: 40,
     },
+    listFooter: {
+        paddingVertical: 16,
+        alignItems: "center",
+    },
     transactionCard: {
         flexDirection: "row",
         alignItems: "center",
@@ -437,6 +659,11 @@ const styles = StyleSheet.create({
     transactionStatus: {
         fontSize: 12,
         marginTop: 4,
+    },
+    transactionNote: {
+        fontSize: 12,
+        color: "#666",
+        marginTop: 2,
     },
     transactionAmount: {
         fontSize: 18,
@@ -550,6 +777,13 @@ function getTransactionDescription(item: TransactionItem) {
     }
 }
 
+function isValidTabFilter(value?: string | string[] | null): value is TabFilter {
+    if (Array.isArray(value)) {
+        return isValidTabFilter(value[0]);
+    }
+    return value === "all" || value === "income" || value === "withdrawal";
+}
+
 function getWithdrawalStatusMeta(status?: string | null) {
     if (!status) {
         return null;
@@ -560,4 +794,29 @@ function getWithdrawalStatusMeta(status?: string | null) {
             color: "#FF9800",
         }
     );
+}
+
+function getWithdrawalNote(item: TransactionItem) {
+    if (!item.withdrawal) {
+        return null;
+    }
+    const note =
+        item.withdrawal.reviewNote ??
+        item.withdrawal.failureReason ??
+        item.withdrawal.remark;
+    if (!note) {
+        return null;
+    }
+    return note.trim();
+}
+
+function mapTabToCategory(tab: TabFilter): "mixed" | "income" | "withdrawal" {
+    switch (tab) {
+        case "income":
+            return "income";
+        case "withdrawal":
+            return "withdrawal";
+        default:
+            return "mixed";
+    }
 }
