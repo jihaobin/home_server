@@ -16,6 +16,7 @@ type PaymentFlowResult = {
 type PayOrderParams = {
 	orderId: string;
 	displayAmount: number;
+    paymentExpiresAt?: Date | string | null;
 };
 
 type RetryConfig = {
@@ -104,6 +105,18 @@ type PollResult = {
 	message?: string;
 };
 
+const isPaymentExpired = (value?: Date | string | null) => {
+	if (!value) {
+		return false;
+	}
+	const expiresAt = typeof value === "string" ? new Date(value) : value;
+	const timestamp = expiresAt.getTime();
+	if (Number.isNaN(timestamp)) {
+		return false;
+	}
+	return timestamp <= Date.now();
+};
+
 export function useOrderPayment() {
 	const initiatePayment = useInitiatePayment();
 	const queryClient = useQueryClient();
@@ -166,7 +179,7 @@ export function useOrderPayment() {
 	);
 
 	const payOrder = useCallback(
-		async ({ orderId, displayAmount }: PayOrderParams): Promise<PaymentFlowResult> => {
+		async ({ orderId, displayAmount, paymentExpiresAt }: PayOrderParams): Promise<PaymentFlowResult> => {
 			if (!orderId) {
 				toast.error("订单信息缺失，请稍后重试");
 				return {
@@ -183,6 +196,15 @@ export function useOrderPayment() {
 					success: false,
 					paymentStatus: "pending",
 					message: "订单金额异常",
+				};
+			}
+
+			if (isPaymentExpired(paymentExpiresAt)) {
+				toast.error("订单支付已超时，请重新下单");
+				return {
+					success: false,
+					paymentStatus: "pending",
+					message: "支付已超时",
 				};
 			}
 
@@ -260,11 +282,11 @@ export function useOrderPayment() {
 		[initiatePayment, invalidateOrderCaches, isPaying, mergeConfig, pollPaymentStatus],
 	);
 
-    useEffect(() => {
-        return () => {
-            toast.dismiss();
-        }
-    })
+	useEffect(() => {
+		return () => {
+			toast.dismiss();
+		};
+	}, []);
 
 	return {
 		payOrder,

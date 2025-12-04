@@ -4,8 +4,15 @@ import { Separator } from "@repo/mobile-ui/components/ui/separator";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { Link, useFocusEffect, useRouter } from "expo-router";
 import { icons as lucideIconRegistry } from "lucide-react-native";
-import { useCallback, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import {
+	AppState,
+	type AppStateStatus,
+	Pressable,
+	RefreshControl,
+	ScrollView,
+	View,
+} from "react-native";
 import { toast } from "sonner-native";
 import { PaySheet } from "@/components/pay/paySheet";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
@@ -77,9 +84,27 @@ export default function OrderConfirmScreen() {
 		useCallback(() => {
 			return () => {
 				reset();
+				setShowPaymentModal(false);
 			};
 		}, [reset]),
 	);
+
+	useEffect(() => {
+		const handleAppStateChange = (nextState: AppStateStatus) => {
+			if (nextState !== "active") {
+				setShowPaymentModal(false);
+			}
+		};
+
+		const subscription = AppState.addEventListener(
+			"change",
+			handleAppStateChange,
+		);
+
+		return () => {
+			subscription.remove();
+		};
+	}, []);
 
 	// 跳转到地址选择页面
 	const handleSelectAddress = () => {
@@ -461,29 +486,31 @@ export default function OrderConfirmScreen() {
 			</View>
 
 			{/* 支付方式选择模态框 */}
-			<PaySheet
-				visible={showPaymentModal}
-				onClose={() => setShowPaymentModal(false)}
-				orderData={{
-					customerId: session?.user.id || "",
-					serviceId: selectService?.id || "",
-					addressId: selectedAddress?.id || "",
-					appointmentTime: selectedServiceTime?.toISOString() || "",
-					designatedPersonnelId: selectServicePersonnelInfo?.userId || "",
-					specificationId: selectedSpecification?.id || "",
-					displayPrice: servicePrice,
-				}}
-				totalAmount={totalAmount}
-				onPaymentSuccess={(orderId) => {
-					console.log("支付成功，订单ID:", orderId);
-				}}
-				onPaymentFailed={(orderId, message) => {
-					console.log("支付失败，订单ID:", orderId, "原因:", message);
-				}}
-				onPaymentCancelled={() => {
-					console.log("用户取消支付");
-				}}
-			/>
+			{showPaymentModal ? (
+				<PaySheet
+					visible={showPaymentModal}
+					onClose={() => setShowPaymentModal(false)}
+					orderData={{
+						customerId: session?.user.id || "",
+						serviceId: selectService?.id || "",
+						addressId: selectedAddress?.id || "",
+						appointmentTime: selectedServiceTime?.toISOString() || "",
+						designatedPersonnelId: selectServicePersonnelInfo?.userId || "",
+						specificationId: selectedSpecification?.id || "",
+						displayPrice: servicePrice,
+					}}
+					totalAmount={totalAmount}
+					onPaymentSuccess={(orderId) => {
+						console.log("支付成功，订单ID:", orderId);
+					}}
+					onPaymentFailed={(orderId, message) => {
+						console.log("支付失败，订单ID:", orderId, "原因:", message);
+					}}
+					onPaymentCancelled={() => {
+						console.log("用户取消支付");
+					}}
+				/>
+			) : null}
 		</View>
 	);
 }

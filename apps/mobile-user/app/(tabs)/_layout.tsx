@@ -2,8 +2,19 @@ import { Ionicons } from "@expo/vector-icons";
 import { House } from "@repo/mobile-ui/lib/icons/house";
 import { Tabs } from "expo-router";
 import { Platform } from "react-native";
+import { useEffect, useState } from "react";
 
 export default function TabLayout() {
+	const [isMounted, setIsMounted] = useState(false);
+
+	useEffect(() => {
+		setIsMounted(true);
+	}, []);
+
+	if (!isMounted) {
+		return null;
+	}
+
 	return (
 		<Tabs
 			screenOptions={{

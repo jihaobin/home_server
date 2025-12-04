@@ -73,6 +73,9 @@ export function PaySheet({
 
 	const isProcessingPayment = isCreatingOrder || isPaying;
 
+	const waitForModalDismissal = () =>
+		new Promise<void>((resolve) => setTimeout(resolve, 250));
+
 	// 处理支付
 	const handlePayment = async () => {
 		if (!selectedPayment) {
@@ -98,12 +101,13 @@ export function PaySheet({
 			toast.dismiss();
 
 			const createdOrderId = createdOrderResponse.data.orderId;
+			// 关闭模态框并等待卸载，再跳转到外部支付，避免回调时原生视图仍在绘制
+			onClose();
+			await waitForModalDismissal();
 			const paymentResult = await payOrder({
 				orderId: createdOrderId,
 				displayAmount: totalAmount,
 			});
-
-			onClose();
 
 			if (paymentResult.success) {
 				onPaymentSuccess?.(createdOrderId);

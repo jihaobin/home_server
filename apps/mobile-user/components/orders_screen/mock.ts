@@ -3,7 +3,7 @@ import type { OrderStatus, OrderTab, OrderTabId, StatusSectionConfig } from "./t
 const ORDER_TABS: OrderTab[] = [
 	{ id: "all", label: "所有订单", subLabel: "最近更新" },
 	{ id: "pending", label: "待支付订单", subLabel: "支付提醒" },
-	{ id: "paid", label: "已支付订单", subLabel: "等待服务" },
+	{ id: "paid", label: "待确认/待服务", subLabel: "等待上门" },
 	{ id: "finished", label: "已完成订单", subLabel: "记录评价" },
 	{ id: "canceled", label: "已取消订单", subLabel: "取消详情" },
 	{ id: "refunded", label: "已退款订单", subLabel: "资金进度" },
@@ -13,36 +13,45 @@ const ORDER_TABS: OrderTab[] = [
 const TAB_STATUS_MAP: Record<OrderTabId, OrderStatus[]> = {
 	all: [
 		"pending_payment",
+		"payment_timeout",
+        "pending_acceptance",
 		"paid",
 		"in_progress",
 		"completed",
 		"cancelled",
 		"refunded",
+        "staff_rejected",
 	],
 	pending: ["pending_payment"],
-	paid: ["paid", "in_progress"],
+	paid: ["pending_acceptance", "paid", "in_progress"],
 	finished: ["completed"],
-	canceled: ["cancelled"],
+	canceled: ["cancelled", "payment_timeout", "staff_rejected"],
 	refunded: ["refunded"],
 	reviews: [], // Reviews tab doesn't filter by order status
 };
 
 const SECTION_ORDER = [
 	"pending-payment",
+    "pending-acceptance",
 	"paid-ready",
 	"in-progress",
 	"completed",
+    "staff-rejected",
+	"payment-timeout",
 	"cancelled",
 	"refunded",
 ];
 
 const STATUS_LABEL_MAP: Record<OrderStatus, string> = {
 	pending_payment: "待支付",
+	payment_timeout: "支付超时",
+    pending_acceptance: "待接单确认",
 	paid: "已支付",
 	in_progress: "服务中",
 	completed: "已完成",
 	cancelled: "已取消",
 	refunded: "已退款",
+    staff_rejected: "服务人员已拒绝",
 };
 
 const STATUS_SECTION_CONFIG: Record<OrderStatus, StatusSectionConfig> = {
@@ -59,6 +68,22 @@ const STATUS_SECTION_CONFIG: Record<OrderStatus, StatusSectionConfig> = {
 		badgeClassName: "bg-orange-100/80 dark:bg-orange-900/50 text-orange-800 dark:text-orange-200",
 		statusBadgeClassName: "bg-orange-500/90 dark:bg-orange-600/80 text-white dark:text-orange-50",
 	},
+    pending_acceptance: {
+        sectionId: "pending-acceptance",
+        sectionTitle: "服务人员确认中",
+        sectionDescription:
+            "订单已支付，正在与服务人员确认档期，请耐心等待或联系客服调整时间。",
+        accentClassName: "bg-amber-400/90 dark:bg-amber-500/80",
+        cardClassName:
+            "border-amber-200/70 dark:border-amber-800/60 bg-amber-50/60 dark:bg-amber-950/30",
+        infoCardClassName: "bg-amber-100/60 dark:bg-amber-900/20",
+        icon: "BellRing",
+        iconClassName: "text-amber-600 dark:text-amber-400",
+        badgeClassName:
+            "bg-amber-100/80 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200",
+        statusBadgeClassName:
+            "bg-amber-500/90 dark:bg-amber-600/80 text-white dark:text-amber-50",
+    },
 	paid: {
 		sectionId: "paid-ready",
 		sectionTitle: "已支付待服务",
@@ -98,6 +123,19 @@ const STATUS_SECTION_CONFIG: Record<OrderStatus, StatusSectionConfig> = {
 		badgeClassName: "bg-emerald-100/80 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200",
 		statusBadgeClassName: "bg-emerald-500/90 dark:bg-emerald-600/80 text-white dark:text-emerald-50",
 	},
+	payment_timeout: {
+		sectionId: "payment-timeout",
+		sectionTitle: "支付超时提醒",
+		sectionDescription:
+			"支付超时后订单档期已释放，如仍需服务请重新下单，客服可协助保留原预约信息。",
+		accentClassName: "bg-rose-500/80 dark:bg-rose-500/70",
+		cardClassName: "border-rose-200/70 dark:border-rose-800/60 bg-rose-50/60 dark:bg-rose-950/40",
+		infoCardClassName: "bg-rose-100/50 dark:bg-rose-900/20",
+		icon: "AlarmClockOff",
+		iconClassName: "text-rose-600 dark:text-rose-400",
+		badgeClassName: "bg-rose-100/80 dark:bg-rose-900/50 text-rose-800 dark:text-rose-200",
+		statusBadgeClassName: "bg-rose-500/90 dark:bg-rose-600/80 text-white dark:text-rose-50",
+	},
 	cancelled: {
 		sectionId: "cancelled",
 		sectionTitle: "已取消订单",
@@ -124,6 +162,22 @@ const STATUS_SECTION_CONFIG: Record<OrderStatus, StatusSectionConfig> = {
 		badgeClassName: "bg-purple-100/80 dark:bg-purple-900/50 text-purple-800 dark:text-purple-200",
 		statusBadgeClassName: "bg-purple-500/90 dark:bg-purple-600/80 text-white dark:text-purple-50",
 	},
+    staff_rejected: {
+        sectionId: "staff-rejected",
+        sectionTitle: "服务人员无法接单",
+        sectionDescription:
+            "原服务人员暂时无法提供服务，已为您开通重新预约入口，客服也会协助联系其他师傅。",
+        accentClassName: "bg-slate-400/70 dark:bg-slate-500/60",
+        cardClassName:
+            "border-slate-200/70 dark:border-slate-700/60 bg-slate-50/60 dark:bg-slate-900/40",
+        infoCardClassName: "bg-slate-100/50 dark:bg-slate-800/20",
+        icon: "UserX",
+        iconClassName: "text-slate-600 dark:text-slate-400",
+        badgeClassName:
+            "bg-slate-100/80 dark:bg-slate-800/50 text-slate-800 dark:text-slate-200",
+        statusBadgeClassName:
+            "bg-slate-500/90 dark:bg-slate-600/80 text-white dark:text-slate-50",
+    },
 };
 
 export const WEEKDAY_MAP: Record<string, string> = {

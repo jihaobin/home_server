@@ -25,11 +25,11 @@ function AddressItem({
     isCurrent = false,
     onPress,
 }: {
-        title: string;
-        address: string;
-        tag?: string;
-        isCurrent?: boolean;
-        onPress: () => void;
+    title: string;
+    address: string;
+    tag?: string;
+    isCurrent?: boolean;
+    onPress: () => void;
 }) {
     return (
         <Pressable
@@ -459,9 +459,9 @@ export default function SelectAddressScreen() {
                     {/* 城市选择 */}
                     <Link href="/address/select-city">
                         <View className="flex-row items-center py-2 px-3 bg-primary/10 rounded-xl active:bg-primary/20">
-                            <Text className="text-base text-primary font-semibold mr-1">
+                            <Link href={"/address/select-city"} className="text-base text-primary font-semibold mr-1">
                                 {selectedAddress?.district || selectedAddress?.city || "选择城市"}
-                            </Text>
+                            </Link>
                             <ChevronDown size={16} className="text-primary" />
                         </View>
                     </Link>

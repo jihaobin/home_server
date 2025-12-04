@@ -19,6 +19,7 @@ const paymentMethodLabels: Record<string, string> = {
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
 	pending_payment: "待付款",
+	payment_timeout: "支付超时",
 	paid: "待服务",
 	in_progress: "服务中",
 	completed: "已完成",

@@ -8,6 +8,7 @@ import { useRouter } from "expo-router";
 type PayExistingOrderParams = {
 	orderId: string;
 	amount: number;
+    paymentExpiresAt?: Date | string | null;
 };
 
 type CancelOrderParams = {
@@ -39,8 +40,12 @@ export function useOrderActions() {
 	const [isCompleting, setIsCompleting] = useState(false);
 
 	const payExistingOrder = useCallback(
-		async ({ orderId, amount }: PayExistingOrderParams) => {
-			return await payOrder({ orderId, displayAmount: amount });
+		async ({ orderId, amount, paymentExpiresAt }: PayExistingOrderParams) => {
+			return await payOrder({
+				orderId,
+				displayAmount: amount,
+				paymentExpiresAt,
+			});
 		},
 		[payOrder],
 	);

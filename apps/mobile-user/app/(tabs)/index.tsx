@@ -13,7 +13,7 @@ import {
     type LucideIcon,
     icons as lucideIconRegistry,
 } from "lucide-react-native";
-import { Suspense, useCallback, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import {
     ActivityIndicator,
     FlatList,
@@ -119,7 +119,7 @@ function ServiceProvidersList({
     userLng: number;
 }) {
     const { data } = useServicePersonnelSearch({
-        serviceId: "sdfear",
+        serviceId,
         userLat,
         userLng,
         maxDistance: 50, // 最大距离 50km
@@ -386,7 +386,7 @@ export default function HomeScreen() {
     );
 
     // 初始化第一个分类为激活状态
-    useMemo(() => {
+    useEffect(() => {
         if (!activeCategoryId && serviceCategories.length > 0) {
             setActiveCategoryId(serviceCategories[0].id);
         }

@@ -7,7 +7,7 @@ import {
 	MoreHorizontal,
 	QrCode,
 } from "lucide-react-native";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	ActivityIndicator,
 	Alert,
@@ -23,6 +23,7 @@ import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import { useOrderCheckin, useOrderDetail } from "@repo/hooks/api/order";
 import { useOrderActions } from "@/components/orders_screen/hooks/useOrderActions";
 import { cn } from "@repo/mobile-ui/lib/utils";
+import { usePaymentCountdown } from "@/hooks/usePaymentCountdown";
 
 // 状态显示配置
 const STATUS_CONFIG: Record<
@@ -30,9 +31,14 @@ const STATUS_CONFIG: Record<
 	{ label: string; color: string; description: string }
 > = {
 	pending_payment: {
-		label: "未支付取消",
-		color: "text-muted-foreground",
-		description: "订单已取消，未完成支付",
+		label: "待支付",
+		color: "text-primary",
+		description: "请尽快完成支付以锁定服务档期",
+	},
+	pending_acceptance: {
+		label: "待接单确认",
+		color: "text-amber-600",
+		description: "我们正在与服务人员确认档期，请耐心等待",
 	},
 	paid: {
 		label: "待服务",
@@ -49,6 +55,11 @@ const STATUS_CONFIG: Record<
 		color: "text-primary",
 		description: "服务已完成",
 	},
+	payment_timeout: {
+		label: "支付超时",
+		color: "text-destructive",
+		description: "支付已超时，系统自动取消该订单",
+	},
 	cancelled: {
 		label: "已取消",
 		color: "text-muted-foreground",
@@ -59,6 +70,11 @@ const STATUS_CONFIG: Record<
 		color: "text-muted-foreground",
 		description: "订单已退款",
 	},
+	staff_rejected: {
+		label: "服务人员已拒绝",
+		color: "text-muted-foreground",
+		description: "客服会协助您重新预约其他服务人员",
+	},
 };
 
 type FooterActionButtonProps = {
@@ -66,6 +82,7 @@ type FooterActionButtonProps = {
 	onPress: () => void;
 	variant?: "primary" | "secondary" | "outline" | "destructive";
 	loading?: boolean;
+    disabled?: boolean;
 };
 
 const FooterActionButton = ({
@@ -73,6 +90,7 @@ const FooterActionButton = ({
 	onPress,
 	variant = "secondary",
 	loading = false,
+    disabled = false,
 }: FooterActionButtonProps) => {
 	const buttonClass = cn(
 		"flex-1 rounded-full py-3 flex-row items-center justify-center",
@@ -101,7 +119,7 @@ const FooterActionButton = ({
 		<TouchableOpacity
 			activeOpacity={0.7}
 			onPress={onPress}
-			disabled={loading}
+			disabled={loading || disabled}
 			className={buttonClass}
 		>
 			{loading ? (
@@ -143,7 +161,27 @@ export default function OrderDetailScreen() {
 	}
 
 	// 判断是否显示二维码（订单状态为待服务）
-	const shouldShowQRCode = order.status === "paid";
+	const shouldShowQRCode =
+		order.status === "paid" || order.status === "in_progress";
+	const { formatted: paymentCountdownText, isExpired: isPaymentCountdownExpired } =
+		usePaymentCountdown(order.paymentExpiresAt);
+	const countdownRefreshRef = useRef(false);
+
+	useEffect(() => {
+		if (order.status !== "pending_payment") {
+			countdownRefreshRef.current = false;
+			return;
+		}
+		if (!isPaymentCountdownExpired) {
+			countdownRefreshRef.current = false;
+			return;
+		}
+		if (countdownRefreshRef.current) {
+			return;
+		}
+		countdownRefreshRef.current = true;
+		void refetchOrder();
+	}, [isPaymentCountdownExpired, order.status, refetchOrder]);
 
 	const statusConfig =
 		STATUS_CONFIG[order.status] ?? {
@@ -151,6 +189,28 @@ export default function OrderDetailScreen() {
 			color: "text-muted-foreground",
 			description: "请联系客户支持确认订单状态",
 		};
+
+	const servicePersonnelLabel =
+		order.assignment?.servicePersonnelId ||
+		order.servicePersonnelName ||
+		"服务人员";
+	const assignmentStatusText =
+		order.assignment?.decisionStatus === "pending"
+			? "等待服务人员确认档期"
+			: order.assignment?.decisionStatus === "accepted"
+				? "服务人员已确认，可按约定时间上门"
+				: order.assignment?.decisionStatus === "rejected"
+					? "该服务人员无法提供本次服务"
+					: "服务人员信息已同步";
+	const assignmentRejectMessage =
+		order.assignment?.decisionStatus === "rejected"
+			? order.assignment?.rejectReason || "服务人员暂时无法接单"
+			: null;
+	const assignmentAcceptedAt =
+		order.assignment?.decisionStatus === "accepted" &&
+		order.assignment?.acceptedAt
+			? formatDate(order.assignment.acceptedAt)
+			: null;
 
 	const formatDate = (date: Date | string) => {
 		const d = new Date(date);
@@ -173,8 +233,9 @@ export default function OrderDetailScreen() {
 		void payExistingOrder({
 			orderId: order.id,
 			amount: Number(order.totalAmount),
+			paymentExpiresAt: order.paymentExpiresAt,
 		});
-	}, [order.id, order.totalAmount, payExistingOrder]);
+	}, [order.id, order.paymentExpiresAt, order.totalAmount, payExistingOrder]);
 
 	const handleCancelOrder = useCallback(() => {
 		const cancelReason =
@@ -233,21 +294,31 @@ export default function OrderDetailScreen() {
 	const footerActions = useMemo<FooterAction[]>(() => {
 		const actions: FooterAction[] = [];
 
-		switch (order.status) {
-			case "pending_payment":
+			switch (order.status) {
+				case "pending_payment":
+					actions.push({
+						key: "cancel",
+						label: "取消订单",
+						variant: "outline",
+						onPress: handleCancelOrder,
+						loading: isCancelling,
+					});
+					actions.push({
+						key: "pay",
+						label: isPaymentCountdownExpired ? "支付已超时" : "立即支付",
+						variant: "primary",
+						onPress: handlePayOrder,
+						loading: isPaying,
+						disabled: isPaymentCountdownExpired,
+					});
+					break;
+			case "pending_acceptance":
 				actions.push({
 					key: "cancel",
 					label: "取消订单",
 					variant: "outline",
 					onPress: handleCancelOrder,
 					loading: isCancelling,
-				});
-				actions.push({
-					key: "pay",
-					label: "立即支付",
-					variant: "primary",
-					onPress: handlePayOrder,
-					loading: isPaying,
 				});
 				break;
 			case "paid":
@@ -277,12 +348,27 @@ export default function OrderDetailScreen() {
 				});
 				break;
 			case "cancelled":
+			case "payment_timeout":
 			case "refunded":
 				actions.push({
 					key: "reorder",
 					label: "再次预约",
 					variant: "primary",
 					onPress: handleReorder,
+				});
+				break;
+			case "staff_rejected":
+				actions.push({
+					key: "reorder",
+					label: "再次预约",
+					variant: "primary",
+					onPress: handleReorder,
+				});
+				actions.push({
+					key: "support",
+					label: "联系客服",
+					variant: "secondary",
+					onPress: handleContactSupport,
 				});
 				break;
 			default:
@@ -295,9 +381,11 @@ export default function OrderDetailScreen() {
 		handleCompleteOrder,
 		handlePayOrder,
 		handleReorder,
+        handleContactSupport,
 		isCancelling,
 		isCompleting,
 		isPaying,
+        isPaymentCountdownExpired,
 		order.status,
 	]);
 
@@ -347,20 +435,51 @@ export default function OrderDetailScreen() {
 					}
 				>
 					{/* 订单状态卡片 */}
-					<View className="mx-4 mt-4 bg-card rounded-2xl p-4 border border-border">
-						<View className="flex-row items-center justify-between">
-							<View>
-								<Text className={`text-lg font-bold ${statusConfig.color}`}>
-									{statusConfig.label}
-								</Text>
-								<Text className="text-xs text-muted-foreground mt-1">
-									{order.createdAt
-										? formatDate(order.createdAt).split(" ")[0]
-										: ""}
-								</Text>
-							</View>
+				<View className="mx-4 mt-4 bg-card rounded-2xl p-4 border border-border">
+					<View className="flex-row items-center justify-between">
+						<View>
+							<Text className={`text-lg font-bold ${statusConfig.color}`}>
+								{statusConfig.label}
+							</Text>
+							<Text className="text-xs text-muted-foreground mt-1">
+								{statusConfig.description}
+							</Text>
 						</View>
+						<Text className="text-xs text-muted-foreground">
+							{order.createdAt ? formatDate(order.createdAt) : ""}
+						</Text>
 					</View>
+					{order.status === "pending_payment" && (
+						<View className="mt-3 rounded-xl bg-destructive/5 px-3 py-2">
+							<Text className="text-xs text-destructive">
+								{isPaymentCountdownExpired
+									? "支付已超时，请重新下单"
+									: `请在 ${paymentCountdownText} 内完成支付`}
+							</Text>
+						</View>
+					)}
+					{order.status === "payment_timeout" && (
+						<View className="mt-3 rounded-xl bg-destructive/5 px-3 py-2">
+							<Text className="text-xs text-destructive">
+								支付超时，系统已取消本次预约，请重新下单以保留档期。
+							</Text>
+						</View>
+					)}
+                    {order.status === "pending_acceptance" && (
+                        <View className="mt-3 rounded-xl bg-amber-50 px-3 py-2">
+                            <Text className="text-xs text-amber-700">
+                                服务人员正在确认档期，我们会在确认结果后第一时间通知您。如需调整时间可联系客服或取消预约。
+                            </Text>
+                        </View>
+                    )}
+                    {order.status === "staff_rejected" && (
+                        <View className="mt-3 rounded-xl bg-slate-100 px-3 py-2">
+                            <Text className="text-xs text-slate-700">
+                                很抱歉，本次服务人员无法接单。您可以重新预约或联系客服协助安排其他师傅。
+                            </Text>
+                        </View>
+                    )}
+				</View>
 
 					{/* 预约时间卡片 */}
 					<View className="mx-4 mt-3 bg-card rounded-2xl p-4 border border-border">
@@ -471,11 +590,21 @@ export default function OrderDetailScreen() {
 								</View>
 								<View className="flex-1">
 									<Text className="text-base font-semibold">
-										服务人员
+										{servicePersonnelLabel}
 									</Text>
 									<Text className="text-xs text-muted-foreground mt-0.5">
-										等待分配
+										{assignmentStatusText}
 									</Text>
+									{assignmentAcceptedAt && (
+										<Text className="text-xs text-muted-foreground mt-1">
+											确认时间：{assignmentAcceptedAt}
+										</Text>
+									)}
+									{assignmentRejectMessage && (
+										<Text className="text-xs text-destructive mt-1 leading-4">
+											拒绝原因：{assignmentRejectMessage}
+										</Text>
+									)}
 								</View>
 							</View>
 						</View>

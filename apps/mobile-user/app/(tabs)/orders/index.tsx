@@ -15,6 +15,7 @@ import { useOrdersListInfinite } from "@repo/hooks/api/order";
 import { TabItem } from "@/components/orders_screen/components/TabItem";
 import { SectionHeader } from "@/components/orders_screen/components/SectionHeader";
 import { OrderCard } from "@/components/orders_screen/components/OrderCard";
+import { ReviewCard } from "@/components/orders_screen/components/ReviewCard";
 
 export default function OrdersScreen() {
 	const [activeTab, setActiveTab] = useState<OrderTab>(ORDER_TABS[0]);
@@ -115,7 +116,11 @@ export default function OrdersScreen() {
 				);
 			}
 
-			return <OrderCard order={item.order} section={item.section} />;
+			if (item.type === "order") {
+				return <OrderCard order={item.order} section={item.section} />;
+			}
+
+			return <ReviewCard review={item.review} />;
 		},
 		[],
 	);

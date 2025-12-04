@@ -677,7 +677,7 @@ export default function ServiceDetailScreen() {
                         </View>
                     )}
 
-                    {/* 相似服务推荐 */}
+                    {/* 相似服务推荐
                     <View className="mb-6">
                         <View className="mb-3 flex-row items-center justify-between">
                             <Text className="text-lg font-bold text-foreground">
@@ -735,7 +735,7 @@ export default function ServiceDetailScreen() {
                                 </View>
                             ))}
                         </View>
-                    </View>
+                    </View> */}
                 </View>
             </Animated.ScrollView>
 
