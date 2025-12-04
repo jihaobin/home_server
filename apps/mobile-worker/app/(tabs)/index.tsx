@@ -28,6 +28,30 @@ import { ErrorBoundary } from "react-error-boundary";
 
 type StaffOrder = StaffOrderListResponse["items"][number];
 
+const ORDER_STATUS_DISPLAY: Record<
+    StaffOrder["status"],
+    { label: string; color: string }
+> = {
+    pending_payment: { label: "待支付", color: "#FF9800" },
+    payment_timeout: { label: "支付超时", color: "#9E9E9E" },
+    pending_acceptance: { label: "待接单", color: "#FFB300" },
+    staff_rejected: { label: "已拒绝", color: "#9E9E9E" },
+    paid: { label: "待服务", color: "#FF9800" },
+    in_progress: { label: "服务中", color: "#4CAF50" },
+    completed: { label: "已完成", color: "#2196F3" },
+    cancelled: { label: "已取消", color: "#9E9E9E" },
+    refunded: { label: "已退款", color: "#9E9E9E" },
+};
+
+const DECISION_STATUS_DISPLAY: Record<
+    StaffOrder["decisionStatus"],
+    { label: string; color: string }
+> = {
+    pending: { label: "待接单确认", color: "#FFB300" },
+    accepted: { label: "已确认接单", color: "#4CAF50" },
+    rejected: { label: "已拒绝", color: "#9E9E9E" },
+};
+
 export default function HomeScreen() {
     return (
         <RequireAuth>
@@ -67,7 +91,6 @@ function HomeContent() {
     } = useStaffOrdersList({
         page: 1,
         limit: 20,
-        onlyAccepted: true,
         sortOrder: "asc",
     });
     const [refreshing, setRefreshing] = useState(false);
@@ -210,37 +233,75 @@ function HomeContent() {
                             <Text style={styles.emptyOrdersText}>暂无待处理订单</Text>
                         </View>
                     ) : (
-                        upcomingOrders.map((order) => (
-                            <TouchableOpacity
-                                key={order.id}
-                                style={styles.orderCard}
-                                onPress={() => router.push(`/orders/${order.id}` as never)}
-                            >
-                                <View style={styles.orderHeader}>
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={styles.orderService}>{order.serviceName}</Text>
-                                        {order.serviceSpecification ? (
-                                            <Text style={styles.orderSpec}>{order.serviceSpecification}</Text>
-                                        ) : null}
+                        upcomingOrders.map((order) => {
+                            const statusMeta =
+                                ORDER_STATUS_DISPLAY[order.status] ??
+                                ORDER_STATUS_DISPLAY.cancelled;
+                            const decisionMeta =
+                                DECISION_STATUS_DISPLAY[order.decisionStatus ?? 'pending'];
+                            return (
+                                <TouchableOpacity
+                                    key={order.id}
+                                    style={styles.orderCard}
+                                    onPress={() => router.push(`/orders/${order.id}` as never)}
+                                >
+                                    <View style={styles.orderHeader}>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={styles.orderService}>{order.serviceName}</Text>
+                                            {order.serviceSpecification ? (
+                                                <Text style={styles.orderSpec}>
+                                                    {order.serviceSpecification}
+                                                </Text>
+                                            ) : null}
+                                        </View>
+                                        <View style={styles.homeBadgeColumn}>
+                                            <View
+                                                style={[
+                                                    styles.homeStatusBadge,
+                                                    { backgroundColor: statusMeta.color },
+                                                ]}
+                                            >
+                                                <Text style={styles.homeStatusText}>
+                                                    {statusMeta.label}
+                                                </Text>
+                                            </View>
+                                            {decisionMeta ? (
+                                                <View
+                                                    style={[
+                                                        styles.homeDecisionBadge,
+                                                        { borderColor: decisionMeta.color },
+                                                    ]}
+                                                >
+                                                    <Text
+                                                        style={[
+                                                            styles.homeDecisionText,
+                                                            { color: decisionMeta.color },
+                                                        ]}
+                                                    >
+                                                        {decisionMeta.label}
+                                                    </Text>
+                                                </View>
+                                            ) : null}
+                                            <Text style={styles.orderPrice}>
+                                                ¥{formatCurrency(order.totalAmount)}
+                                            </Text>
+                                        </View>
                                     </View>
-                                    <Text style={styles.orderPrice}>
-                                        ¥{formatCurrency(order.totalAmount)}
-                                    </Text>
-                                </View>
-                                <View style={styles.orderInfo}>
-                                    <Ionicons name="location-outline" size={16} color="#666" />
-                                    <Text style={styles.orderAddress}>
-                                        {order.address || "客户未提供详细地址"}
-                                    </Text>
-                                </View>
-                                <View style={styles.orderInfo}>
-                                    <Ionicons name="time-outline" size={16} color="#666" />
-                                    <Text style={styles.orderTime}>
-                                        {formatDateTime(order.appointmentTime)}
-                                    </Text>
-                                </View>
-                            </TouchableOpacity>
-                        ))
+                                    <View style={styles.orderInfo}>
+                                        <Ionicons name="location-outline" size={16} color="#666" />
+                                        <Text style={styles.orderAddress}>
+                                            {order.address || "客户未提供详细地址"}
+                                        </Text>
+                                    </View>
+                                    <View style={styles.orderInfo}>
+                                        <Ionicons name="time-outline" size={16} color="#666" />
+                                        <Text style={styles.orderTime}>
+                                            {formatDateTime(order.appointmentTime)}
+                                        </Text>
+                                    </View>
+                                </TouchableOpacity>
+                            );
+                        })
                     )}
                 </View>
             </ScrollView>
@@ -339,7 +400,7 @@ function countTodayOrders(orders: StaffOrder[]) {
 }
 
 function selectUpcomingOrders(orders: StaffOrder[]) {
-    const TARGET_STATUSES = new Set(["paid", "in_progress"]);
+    const TARGET_STATUSES = new Set(["pending_acceptance", "paid", "in_progress"]);
     return orders
         .filter((order) => TARGET_STATUSES.has(order.status))
         .sort((a, b) => {
@@ -513,6 +574,31 @@ const styles = StyleSheet.create({
         marginTop: 4,
         fontSize: 12,
         color: "#888",
+    },
+    homeBadgeColumn: {
+        alignItems: "flex-end",
+    },
+    homeStatusBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 3,
+        borderRadius: 12,
+        marginBottom: 6,
+    },
+    homeStatusText: {
+        color: "white",
+        fontSize: 11,
+        fontWeight: "bold",
+    },
+    homeDecisionBadge: {
+        borderWidth: 1,
+        borderRadius: 10,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        marginBottom: 6,
+    },
+    homeDecisionText: {
+        fontSize: 10,
+        fontWeight: "bold",
     },
     orderPrice: {
         fontSize: 16,

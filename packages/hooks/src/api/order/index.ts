@@ -178,6 +178,52 @@ export const useCancelOrder = () => {
     });
 };
 
+export const useAcceptOrder = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({ orderId }: { orderId: string }) => {
+            return apiClient.post(`/order/${orderId}/accept`);
+        },
+        onSuccess: (_data, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['orders-list'] });
+            queryClient.invalidateQueries({ queryKey: ['orders-list-infinite'] });
+            queryClient.invalidateQueries({ queryKey: ['staff-orders-list'] });
+            if (variables?.orderId) {
+                queryClient.invalidateQueries({
+                    queryKey: ['order-detail', variables.orderId],
+                });
+            }
+        },
+        scope: {
+            id: 'acceptOrder',
+        },
+    });
+};
+
+export const useRejectOrder = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) => {
+            return apiClient.post(`/order/${orderId}/reject`, { reason });
+        },
+        onSuccess: (_data, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['orders-list'] });
+            queryClient.invalidateQueries({ queryKey: ['orders-list-infinite'] });
+            queryClient.invalidateQueries({ queryKey: ['staff-orders-list'] });
+            if (variables?.orderId) {
+                queryClient.invalidateQueries({
+                    queryKey: ['order-detail', variables.orderId],
+                });
+            }
+        },
+        scope: {
+            id: 'rejectOrder',
+        },
+    });
+};
+
 /**
  * 完成订单
  */

@@ -1,5 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useCancelOrder, useOrderCheckin, useOrderDetail } from "@repo/hooks/api/order";
+import {
+    useAcceptOrder,
+    useCancelOrder,
+    useOrderDetail,
+    useRejectOrder,
+} from "@repo/hooks/api/order";
+import type { AssignmentDecisionStatus } from "@repo/types";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { Suspense, useState } from "react";
 import {
@@ -16,14 +22,99 @@ import {
     View,
 } from "react-native";
 import { ErrorBoundary } from "react-error-boundary";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-const ORDER_STATUS_DISPLAY: Record<string, { label: string; color: string }> = {
-    pending_payment: { label: "待支付", color: "#FF9800" },
-    paid: { label: "待服务", color: "#FF9800" },
-    in_progress: { label: "服务中", color: "#4CAF50" },
-    completed: { label: "已完成", color: "#2196F3" },
-    cancelled: { label: "已取消", color: "#9E9E9E" },
-    refunded: { label: "已退款", color: "#9E9E9E" },
+const ORDER_STATUS_DISPLAY: Record<
+    string,
+    { label: string; color: string; description: string }
+> = {
+    pending_payment: {
+        label: "待支付",
+        color: "#FF9800",
+        description: "等待客户完成支付以锁定预约档期",
+    },
+    payment_timeout: {
+        label: "支付超时",
+        color: "#9E9E9E",
+        description: "支付已超时，系统自动释放预约档期",
+    },
+    pending_acceptance: {
+        label: "待接单",
+        color: "#FFB300",
+        description: "等待您确认是否接单",
+    },
+    staff_rejected: {
+        label: "已拒绝",
+        color: "#9E9E9E",
+        description: "您已拒绝该订单，客服将继续协助客户",
+    },
+    paid: {
+        label: "待服务",
+        color: "#FF9800",
+        description: "客户已支付，等待上门服务",
+    },
+    in_progress: {
+        label: "服务中",
+        color: "#4CAF50",
+        description: "服务进行中，请关注现场情况",
+    },
+    completed: {
+        label: "已完成",
+        color: "#2196F3",
+        description: "订单服务完成，等待后台确认",
+    },
+    cancelled: {
+        label: "已取消",
+        color: "#9E9E9E",
+        description: "订单已取消，无需处理",
+    },
+    refunded: {
+        label: "已退款",
+        color: "#9E9E9E",
+        description: "订单已走退款流程，注意查收通知",
+    },
+};
+
+const DECISION_STATUS_DISPLAY: Record<
+    AssignmentDecisionStatus,
+    { label: string; color: string; description: string }
+> = {
+    pending: {
+        label: "待接单确认",
+        color: "#FFB300",
+        description: "请尽快确认是否接单，系统会在倒计时后重新派单",
+    },
+    accepted: {
+        label: "已确认接单",
+        color: "#4CAF50",
+        description: "您已确认接单，记得按时到达服务地点",
+    },
+    rejected: {
+        label: "已拒绝",
+        color: "#9E9E9E",
+        description: "拒绝原因已同步给客服",
+    },
+};
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+    alipay: "支付宝",
+    wechat_pay: "微信支付",
+    bank_transfer: "银行转账",
+    cash: "现金",
+    other: "其他",
+};
+
+const PAYMENT_STATUS_LABELS: Record<string, string> = {
+    pending: "待支付",
+    succeeded: "支付成功",
+    failed: "支付失败",
+    refunded: "已退款",
+};
+
+const ASSIGNMENT_TYPE_LABELS: Record<string, string> = {
+    system_auto: "系统派单",
+    customer_designated: "客户指定",
+    grab: "抢单",
 };
 
 const DEFAULT_CANCEL_REASON = "服务人员取消：与客户协商";
@@ -46,6 +137,28 @@ function DetailErrorFallback({ error, resetErrorBoundary }: { error: Error; rese
         </View>
     );
 }
+
+type InfoRowProps = {
+    icon: React.ComponentProps<typeof Ionicons>["name"];
+    label: string;
+    value: React.ReactNode;
+};
+
+const InfoRow = ({ icon, label, value }: InfoRowProps) => (
+    <View style={styles.infoRow}>
+        <Ionicons name={icon} size={18} color="#666" />
+        <View style={styles.infoColumn}>
+            <Text style={styles.infoLabel}>{label}</Text>
+            {typeof value === "string" || typeof value === "number" ? (
+                <Text style={styles.infoValue}>{value}</Text>
+            ) : (
+                value
+            )}
+        </View>
+    </View>
+);
+
+type TimelineItem = { key: string; label: string; value: string; note?: string };
 
 export default function OrderDetailScreen() {
     const router = useRouter();
@@ -76,22 +189,111 @@ export default function OrderDetailScreen() {
 function OrderDetailContent({ orderId }: { orderId: string }) {
     const router = useRouter();
     const { data: order } = useOrderDetail(orderId);
-    const {
-        data: checkin,
-        isFetching: checkinLoading,
-        refetch: refetchCheckin,
-    } = useOrderCheckin(orderId);
     const cancelOrder = useCancelOrder();
+    const acceptOrder = useAcceptOrder();
+    const rejectOrder = useRejectOrder();
     const [cancelModalVisible, setCancelModalVisible] = useState(false);
     const [cancelReason, setCancelReason] = useState(DEFAULT_CANCEL_REASON);
     const [cancelReasonError, setCancelReasonError] = useState<string | null>(null);
+    const [rejectModalVisible, setRejectModalVisible] = useState(false);
+    const [rejectReason, setRejectReason] = useState("无法提供服务：行程冲突");
+    const [rejectReasonError, setRejectReasonError] = useState<string | null>(null);
 
     const statusMeta = ORDER_STATUS_DISPLAY[order.status] ?? ORDER_STATUS_DISPLAY.cancelled;
+    const assignmentDecision = order.assignment?.decisionStatus ?? null;
+    const decisionMeta = assignmentDecision
+        ? DECISION_STATUS_DISPLAY[assignmentDecision]
+        : null;
+    const canDecideAssignment =
+        order.status === "pending_acceptance" && assignmentDecision === "pending";
     const canCancel = ["paid", "in_progress"].includes(order.status as string);
     const description =
         (order as { note?: string; description?: string }).note ??
         (order as { note?: string; description?: string }).description ??
         "暂无补充说明";
+    const assignment = order.assignment;
+    const summaryMetrics = [
+        {
+            key: "appointment",
+            label: "预约时间",
+            value: formatDateTime(order.appointmentTime) ?? "未排期",
+        },
+        {
+            key: "amount",
+            label: "应付金额",
+            value: formatCurrency(order.totalAmount),
+        },
+    ];
+    const couponText = order.couponCode
+        ? `已使用优惠券：${order.couponCode}`
+        : "未使用优惠券";
+    const contactName = order.address?.recipientName ?? "未提供";
+    const contactPhone = order.address?.recipientPhone ?? "未提供";
+    const addressText = order.address?.detailedAddress ?? "暂未填写";
+    const serviceDescription = order.service?.description ?? "暂无服务说明";
+    const amountOriginalText = formatCurrency(order.originalAmount);
+    const amountDiscountText = order.discountAmount
+        ? `- ${formatCurrency(order.discountAmount)}`
+        : "无优惠";
+    const amountTotalText = formatCurrency(order.totalAmount);
+    const assignmentTypeLabel = assignment?.assignmentType
+        ? ASSIGNMENT_TYPE_LABELS[assignment.assignmentType] ?? "系统派单"
+        : "系统派单";
+    const decisionDescription =
+        decisionMeta?.description ?? "系统正在同步派单状态，稍后刷新即可查看最新结果。";
+    const assignedAtText = formatDateTime(assignment?.assignedAt);
+    const acceptedAtText = formatDateTime(assignment?.acceptedAt);
+    const rejectedAtText = formatDateTime(assignment?.rejectedAt);
+    const payments = order.payments ?? [];
+    const hasPayments = payments.length > 0;
+    const timelineItems: TimelineItem[] = [];
+    const appointmentText = formatDateTime(order.appointmentTime);
+    if (appointmentText) {
+        timelineItems.push({
+            key: "appointment",
+            label: "预约时间",
+            value: appointmentText,
+        });
+    }
+    if (assignedAtText) {
+        timelineItems.push({
+            key: "assigned",
+            label: "派单时间",
+            value: assignedAtText,
+        });
+    }
+    if (acceptedAtText) {
+        timelineItems.push({
+            key: "accepted",
+            label: "接单时间",
+            value: acceptedAtText,
+        });
+    }
+    const serviceStartText = formatDateTime(order.serviceStartedAt);
+    if (serviceStartText) {
+        timelineItems.push({
+            key: "serviceStart",
+            label: "开始服务",
+            value: serviceStartText,
+        });
+    }
+    const serviceCompleteText = formatDateTime(order.serviceCompletedAt);
+    if (serviceCompleteText) {
+        timelineItems.push({
+            key: "serviceComplete",
+            label: "完成服务",
+            value: serviceCompleteText,
+        });
+    }
+    const cancelledText = formatDateTime(order.cancelledAt);
+    if (cancelledText) {
+        timelineItems.push({
+            key: "cancelled",
+            label: "取消时间",
+            value: cancelledText,
+            note: order.cancelReason ?? undefined,
+        });
+    }
 
     const openCancelModal = () => {
         setCancelReason(DEFAULT_CANCEL_REASON);
@@ -120,8 +322,44 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
             Alert.alert("取消失败", (error as Error)?.message ?? "请稍后再试");
         }
     };
+
+    const handleAccept = async () => {
+        try {
+            await acceptOrder.mutateAsync({ orderId });
+            Alert.alert("接单成功", "已为您保留该预约");
+        } catch (error) {
+            Alert.alert("接单失败", (error as Error)?.message ?? "请稍后再试");
+        }
+    };
+
+    const openRejectModal = () => {
+        setRejectReason("无法提供服务：行程冲突");
+        setRejectReasonError(null);
+        setRejectModalVisible(true);
+    };
+
+    const closeRejectModal = () => {
+        setRejectModalVisible(false);
+        setRejectReasonError(null);
+    };
+
+    const handleRejectConfirm = async () => {
+        const trimmed = rejectReason.trim();
+        if (!trimmed) {
+            setRejectReasonError("请输入拒绝原因");
+            return;
+        }
+        try {
+            await rejectOrder.mutateAsync({ orderId, reason: trimmed });
+            Alert.alert("已拒绝", "系统会尽快通知客服与客户");
+            closeRejectModal();
+            router.back();
+        } catch (error) {
+            Alert.alert("拒绝失败", (error as Error)?.message ?? "请稍后再试");
+        }
+    };
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container}>
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 <View style={styles.card}>
                     <View style={styles.orderHeader}>
@@ -129,38 +367,83 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                             <Text style={styles.orderService}>{order.service?.name ?? "未知服务"}</Text>
                             <Text style={styles.orderSerial}>订单号：{order.orderSerial}</Text>
                         </View>
-                        <View style={[styles.statusBadge, { backgroundColor: statusMeta.color }]}>
-                            <Text style={styles.statusText}>{statusMeta.label}</Text>
+                        <View style={styles.headerBadges}>
+                            <View
+                                style={[
+                                    styles.statusBadge,
+                                    { backgroundColor: statusMeta.color },
+                                ]}
+                            >
+                                <Text style={styles.statusText}>{statusMeta.label}</Text>
+                            </View>
+                            {decisionMeta ? (
+                                <View
+                                    style={[
+                                        styles.decisionBadge,
+                                        { borderColor: decisionMeta.color },
+                                    ]}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.decisionText,
+                                            { color: decisionMeta.color },
+                                        ]}
+                                    >
+                                        {decisionMeta.label}
+                                    </Text>
+                                </View>
+                            ) : null}
                         </View>
                     </View>
-                    <View style={styles.infoRow}>
-                        <Ionicons name="time-outline" size={18} color="#666" />
-                        <Text style={styles.infoValue}>
-                            {formatDateTime(order.appointmentTime) ?? "未排期"}
-                        </Text>
-                    </View>
-                    <View style={styles.infoRow}>
-                        <Ionicons name="pricetag-outline" size={18} color="#666" />
-                        <Text style={styles.infoValue}>{formatCurrency(order.totalAmount)}</Text>
-                    </View>
-                </View>
-
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>服务地址</Text>
-                    <View style={styles.infoRow}>
-                        <Ionicons name="location-outline" size={18} color="#666" />
-                        <Text style={styles.infoValue}>
-                            {order.address?.detailedAddress ?? "暂未填写"}
-                        </Text>
+                    <Text style={styles.statusDescription}>{statusMeta.description}</Text>
+                    <View style={styles.summaryGrid}>
+                        {summaryMetrics.map((item) => (
+                            <View key={item.key} style={styles.summaryTile}>
+                                <Text style={styles.summaryTileLabel}>{item.label}</Text>
+                                <Text style={styles.summaryTileValue}>{item.value}</Text>
+                            </View>
+                        ))}
                     </View>
                 </View>
 
                 <View style={styles.card}>
-                    <Text style={styles.cardTitle}>客户信息</Text>
-                    <View style={styles.infoRow}>
-                        <Ionicons name="person-outline" size={18} color="#666" />
-                        <Text style={styles.infoValue}>{order.customerId}</Text>
+                    <Text style={styles.cardTitle}>金额概览</Text>
+                    <View style={styles.amountRow}>
+                        <View style={[styles.amountBox, styles.amountHalfBox]}>
+                            <Text style={styles.amountLabel}>原价金额</Text>
+                            <Text style={styles.amountValue}>{amountOriginalText}</Text>
+                        </View>
+                        <View style={[styles.amountBox, styles.amountHalfBox, styles.amountHalfBoxLast]}>
+                            <Text style={styles.amountLabel}>优惠抵扣</Text>
+                            <Text
+                                style={[
+                                    styles.amountValue,
+                                    order.discountAmount ? styles.amountDiscount : styles.amountMuted,
+                                ]}
+                            >
+                                {amountDiscountText}
+                            </Text>
+                        </View>
                     </View>
+                    <View style={styles.amountRow}>
+                        <View style={styles.amountBox}>
+                            <Text style={styles.amountLabel}>应付金额</Text>
+                            <Text style={styles.amountTotal}>{amountTotalText}</Text>
+                            <Text style={styles.amountHint}>{couponText}</Text>
+                        </View>
+                    </View>
+                </View>
+
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>服务地点与客户信息</Text>
+                    <InfoRow icon="person-circle-outline" label="联系人" value={contactName} />
+                    <InfoRow icon="call-outline" label="联系电话" value={contactPhone} />
+                    <InfoRow icon="navigate-outline" label="服务地址" value={addressText} />
+                </View>
+
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>服务说明</Text>
+                    <Text style={styles.descText}>{serviceDescription}</Text>
                 </View>
 
                 <View style={styles.card}>
@@ -169,48 +452,118 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                 </View>
 
                 <View style={styles.card}>
-                    <View style={styles.qrHeader}>
-                        <Text style={styles.cardTitle}>核验二维码</Text>
-                        <TouchableOpacity onPress={() => refetchCheckin()}>
-                            <Text style={styles.linkText}>刷新</Text>
-                        </TouchableOpacity>
-                    </View>
-                    {checkinLoading ? (
-                        <ActivityIndicator color="#2196F3" />
+                    <Text style={styles.cardTitle}>服务进展</Text>
+                    {timelineItems.length ? (
+                        timelineItems.map((item, index) => (
+                            <View key={item.key} style={styles.timelineRow}>
+                                <View style={styles.timelineIndicator}>
+                                    <View style={styles.timelineDot} />
+                                    {index < timelineItems.length - 1 ? <View style={styles.timelineLine} /> : null}
+                                </View>
+                                <View style={styles.timelineContent}>
+                                    <Text style={styles.timelineLabel}>{item.label}</Text>
+                                    <Text style={styles.timelineValue}>{item.value}</Text>
+                                    {item.note ? <Text style={styles.timelineNote}>{item.note}</Text> : null}
+                                </View>
+                            </View>
+                        ))
                     ) : (
-                        <>
-                            <Text style={styles.qrText}>
-                                有效期至：{formatDateTime(checkin?.expiresAt) ?? "获取失败"}
-                            </Text>
-                            {checkin?.token ? (
-                                <Text style={styles.monoText}>{checkin.token}</Text>
-                            ) : (
-                                <Text style={styles.descText}>获取二维码失败，请刷新后重试</Text>
-                            )}
-                            <TouchableOpacity
-                                style={styles.scanButton}
-                                onPress={() => {
-                                    router.push("/scan" as never);
-                                }}
-                            >
-                                <Text style={styles.scanButtonText}>前往扫码核验</Text>
-                            </TouchableOpacity>
-                        </>
+                        <Text style={styles.descText}>暂无进展记录，完成接单后即可查看时间节点。</Text>
                     )}
+                </View>
+
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>派单信息</Text>
+                    {assignment ? (
+                        <>
+                            <InfoRow icon="swap-horizontal-outline" label="指派方式" value={assignmentTypeLabel} />
+                            <InfoRow
+                                icon="people-outline"
+                                label="接单状态"
+                                value={
+                                    <Text
+                                        style={[
+                                            styles.assignmentStatusText,
+                                            { color: decisionMeta?.color ?? "#333" },
+                                        ]}
+                                    >
+                                        {decisionMeta?.label ?? "未指派"}
+                                    </Text>
+                                }
+                            />
+                            <Text style={styles.decisionDescription}>{decisionDescription}</Text>
+                            {assignedAtText ? (
+                                <InfoRow icon="time-outline" label="派单时间" value={assignedAtText} />
+                            ) : null}
+                            {acceptedAtText ? (
+                                <InfoRow icon="checkmark-circle-outline" label="接单时间" value={acceptedAtText} />
+                            ) : null}
+                            {rejectedAtText ? (
+                                <InfoRow icon="close-circle-outline" label="拒绝时间" value={rejectedAtText} />
+                            ) : null}
+                            {assignment.rejectReason ? (
+                                <View style={styles.noticeBox}>
+                                    <Text style={styles.noticeLabel}>拒绝原因</Text>
+                                    <Text style={styles.noticeText}>{assignment.rejectReason}</Text>
+                                </View>
+                            ) : null}
+                        </>
+                    ) : (
+                        <Text style={styles.descText}>该订单尚未派单，等待系统调度。</Text>
+                    )}
+                </View>
+
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>核验二维码</Text>
+                    <Text style={styles.descText}>
+                        客户端会展示核验二维码，您只需在上门服务时点击下方按钮前往扫码页面完成校验。
+                    </Text>
+                    <TouchableOpacity
+                        style={styles.scanButton}
+                        onPress={() => {
+                            router.push("/scan" as never);
+                        }}
+                    >
+                        <Text style={styles.scanButtonText}>前往扫码核验</Text>
+                    </TouchableOpacity>
                 </View>
             </ScrollView>
 
-            {canCancel && (
+            {(canDecideAssignment || canCancel) && (
                 <View style={styles.footer}>
-                    <TouchableOpacity
-                        style={[styles.actionButton, styles.cancelButton]}
-                        onPress={openCancelModal}
-                        disabled={cancelOrder.isPending}
-                    >
-                        <Text style={styles.cancelText}>
-                            {cancelOrder.isPending ? "取消中..." : "取消订单"}
-                        </Text>
-                    </TouchableOpacity>
+                    {canDecideAssignment ? (
+                        <>
+                            <TouchableOpacity
+                                style={[styles.actionButton, styles.rejectButton]}
+                                onPress={openRejectModal}
+                                disabled={rejectOrder.isPending || acceptOrder.isPending}
+                            >
+                                <Text style={styles.rejectText}>
+                                    {rejectOrder.isPending ? "拒绝中..." : "拒绝接单"}
+                                </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.actionButton, styles.acceptButton]}
+                                onPress={handleAccept}
+                                disabled={acceptOrder.isPending || rejectOrder.isPending}
+                            >
+                                <Text style={styles.acceptText}>
+                                    {acceptOrder.isPending ? "确认中..." : "确认接单"}
+                                </Text>
+                            </TouchableOpacity>
+                        </>
+                    ) : null}
+                    {canCancel ? (
+                        <TouchableOpacity
+                            style={[styles.actionButton, styles.cancelButton]}
+                            onPress={openCancelModal}
+                            disabled={cancelOrder.isPending}
+                        >
+                            <Text style={styles.cancelText}>
+                                {cancelOrder.isPending ? "取消中..." : "取消订单"}
+                            </Text>
+                        </TouchableOpacity>
+                    ) : null}
                 </View>
             )}
 
@@ -277,8 +630,88 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                     </KeyboardAvoidingView>
                 </View>
             </Modal>
-        </View>
+
+            <Modal
+                visible={rejectModalVisible}
+                animationType="slide"
+                transparent
+                onRequestClose={closeRejectModal}
+            >
+                <View style={styles.modalBackdrop}>
+                    <KeyboardAvoidingView
+                        style={styles.modalWrapper}
+                        behavior={Platform.select({ ios: "padding", android: undefined })}
+                    >
+                        <View style={styles.modalCard}>
+                            <Text style={styles.modalTitle}>填写拒绝原因</Text>
+                            <Text style={styles.modalSubtitle}>
+                                请说明无法接单的原因，客服会同步给客户。
+                            </Text>
+                            <TextInput
+                                style={[
+                                    styles.reasonInput,
+                                    rejectReasonError ? styles.inputError : null,
+                                ]}
+                                value={rejectReason}
+                                onChangeText={(value) => {
+                                    setRejectReason(value);
+                                    if (rejectReasonError && value.trim()) {
+                                        setRejectReasonError(null);
+                                    }
+                                }}
+                                placeholder="例如：行程冲突，无法在预约时间内到达"
+                                multiline
+                                numberOfLines={4}
+                                textAlignVertical="top"
+                                editable={!rejectOrder.isPending}
+                            />
+                            {rejectReasonError ? (
+                                <Text style={styles.inputErrorText}>{rejectReasonError}</Text>
+                            ) : null}
+                            <View style={styles.modalActions}>
+                                <TouchableOpacity
+                                    style={[styles.modalButton, styles.modalCancelButton]}
+                                    onPress={closeRejectModal}
+                                    disabled={rejectOrder.isPending}
+                                >
+                                    <Text style={styles.modalCancelText}>返回</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.modalButton,
+                                        styles.modalConfirmButton,
+                                        rejectOrder.isPending && styles.modalButtonDisabled,
+                                    ]}
+                                    onPress={handleRejectConfirm}
+                                    disabled={rejectOrder.isPending}
+                                >
+                                    {rejectOrder.isPending ? (
+                                        <ActivityIndicator color="#fff" />
+                                    ) : (
+                                        <Text style={styles.modalConfirmText}>确认拒绝</Text>
+                                    )}
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </KeyboardAvoidingView>
+                </View>
+            </Modal>
+        </SafeAreaView>
     );
+}
+
+function getPaymentStatusColor(status: string) {
+    switch (status) {
+        case "succeeded":
+            return "#2E7D32";
+        case "failed":
+            return "#D32F2F";
+        case "refunded":
+            return "#0288D1";
+        case "pending":
+        default:
+            return "#FF9800";
+    }
 }
 
 function formatDateTime(value?: string | Date | null) {
@@ -343,16 +776,66 @@ const styles = StyleSheet.create({
         color: "white",
         fontWeight: "bold",
     },
+    headerBadges: {
+        alignItems: "flex-end",
+    },
+    decisionBadge: {
+        marginTop: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 2,
+        borderRadius: 12,
+        borderWidth: 1,
+    },
+    decisionText: {
+        fontSize: 11,
+        fontWeight: "bold",
+    },
+    statusDescription: {
+        fontSize: 13,
+        color: "#666",
+        lineHeight: 20,
+    },
+    summaryGrid: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        justifyContent: "space-between",
+        marginTop: 12,
+    },
+    summaryTile: {
+        width: "48%",
+        backgroundColor: "#F7F8FA",
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 12,
+    },
+    summaryTileLabel: {
+        fontSize: 12,
+        color: "#999",
+    },
+    summaryTileValue: {
+        marginTop: 4,
+        fontSize: 16,
+        color: "#333",
+        fontWeight: "600",
+    },
     infoRow: {
         flexDirection: "row",
-        alignItems: "center",
-        marginTop: 8,
+        alignItems: "flex-start",
+        marginTop: 12,
+    },
+    infoColumn: {
+        marginLeft: 8,
+        flex: 1,
+    },
+    infoLabel: {
+        fontSize: 12,
+        color: "#999",
     },
     infoValue: {
-        marginLeft: 8,
-        fontSize: 14,
-        color: "#555",
-        flex: 1,
+        marginTop: 2,
+        fontSize: 15,
+        color: "#333",
+        lineHeight: 20,
     },
     cardTitle: {
         fontSize: 16,
@@ -365,28 +848,91 @@ const styles = StyleSheet.create({
         color: "#666",
         lineHeight: 20,
     },
-    qrHeader: {
+    amountRow: {
         flexDirection: "row",
         justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 8,
+        marginTop: 8,
+        gap: 12,
     },
-    linkText: {
-        color: "#2196F3",
-        fontSize: 14,
+    amountBox: {
+        backgroundColor: "#F7F8FA",
+        borderRadius: 12,
+        padding: 14,
+        flex: 1,
     },
-    qrText: {
-        fontSize: 13,
-        color: "#555",
-        marginBottom: 6,
+    amountHalfBox: {
+        flex: 1,
     },
-    monoText: {
-        fontFamily: "Menlo",
-        fontSize: 13,
+    amountHalfBoxLast: {
+        flex: 1,
+    },
+    amountLabel: {
+        fontSize: 12,
+        color: "#999",
+    },
+    amountValue: {
+        marginTop: 6,
+        fontSize: 18,
         color: "#333",
-        backgroundColor: "#F4F4F4",
-        padding: 8,
-        borderRadius: 8,
+        fontWeight: "600",
+    },
+    amountMuted: {
+        color: "#999",
+    },
+    amountDiscount: {
+        color: "#D32F2F",
+    },
+    amountTotal: {
+        marginTop: 8,
+        fontSize: 24,
+        color: "#2196F3",
+        fontWeight: "700",
+    },
+    amountHint: {
+        marginTop: 6,
+        fontSize: 12,
+        color: "#888",
+    },
+    timelineRow: {
+        flexDirection: "row",
+        marginBottom: 12,
+    },
+    timelineIndicator: {
+        width: 24,
+        alignItems: "center",
+    },
+    timelineDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: "#2196F3",
+        marginTop: 4,
+    },
+    timelineLine: {
+        width: 2,
+        flex: 1,
+        backgroundColor: "#E0E0E0",
+        marginTop: 4,
+    },
+    timelineContent: {
+        flex: 1,
+        paddingLeft: 8,
+    },
+    timelineLabel: {
+        fontSize: 13,
+        color: "#999",
+    },
+    timelineValue: {
+        marginTop: 2,
+        fontSize: 15,
+        color: "#333",
+        fontWeight: "500",
+    },
+    timelineNote: {
+        marginTop: 4,
+        fontSize: 13,
+        color: "#D32F2F",
+        lineHeight: 18,
     },
     scanButton: {
         marginTop: 12,
@@ -398,6 +944,68 @@ const styles = StyleSheet.create({
     scanButtonText: {
         color: "white",
         fontWeight: "bold",
+    },
+    assignmentStatusText: {
+        fontSize: 15,
+        fontWeight: "600",
+    },
+    decisionDescription: {
+        fontSize: 13,
+        color: "#777",
+        marginTop: 6,
+        lineHeight: 18,
+    },
+    noticeBox: {
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 10,
+        backgroundColor: "#FFF5F5",
+    },
+    noticeLabel: {
+        fontSize: 12,
+        color: "#D32F2F",
+        fontWeight: "600",
+    },
+    noticeText: {
+        marginTop: 4,
+        fontSize: 13,
+        color: "#D32F2F",
+        lineHeight: 18,
+    },
+    paymentItem: {
+        paddingVertical: 12,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: "#eee",
+    },
+    paymentHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+    },
+    paymentMethod: {
+        fontSize: 14,
+        color: "#333",
+        fontWeight: "500",
+    },
+    paymentAmount: {
+        fontSize: 16,
+        fontWeight: "bold",
+        color: "#333",
+    },
+    paymentStatus: {
+        marginTop: 6,
+        fontSize: 13,
+        fontWeight: "500",
+    },
+    paymentTime: {
+        marginTop: 4,
+        fontSize: 13,
+        color: "#777",
+    },
+    paymentTransaction: {
+        marginTop: 2,
+        fontSize: 12,
+        color: "#999",
     },
     footer: {
         flexDirection: "row",
@@ -414,6 +1022,14 @@ const styles = StyleSheet.create({
         alignItems: "center",
         marginHorizontal: 4,
     },
+    acceptButton: {
+        backgroundColor: "#4CAF50",
+    },
+    rejectButton: {
+        borderWidth: 1,
+        borderColor: "#F57C00",
+        backgroundColor: "white",
+    },
     cancelButton: {
         borderWidth: 1,
         borderColor: "#FF7043",
@@ -424,6 +1040,14 @@ const styles = StyleSheet.create({
     },
     cancelText: {
         color: "#FF7043",
+        fontWeight: "bold",
+    },
+    acceptText: {
+        color: "white",
+        fontWeight: "bold",
+    },
+    rejectText: {
+        color: "#F57C00",
         fontWeight: "bold",
     },
     completeText: {

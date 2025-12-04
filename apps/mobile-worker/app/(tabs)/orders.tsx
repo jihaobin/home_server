@@ -4,10 +4,8 @@ import type { StaffOrderListResponse } from "@repo/types";
 import { useRouter } from "expo-router";
 import React, { Suspense, useCallback, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
     FlatList,
     RefreshControl,
-    ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -15,8 +13,14 @@ import {
 } from "react-native";
 import { ErrorBoundary } from "react-error-boundary";
 
+type StaffOrder = StaffOrderListResponse["items"][number];
+
 const STATUS_TABS = [
     { key: "all", label: "全部" },
+    {
+        key: "pending_acceptance",
+        label: "待接单",
+    },
     { key: "paid", label: "待服务" },
     { key: "in_progress", label: "服务中" },
     { key: "completed", label: "已完成" },
@@ -24,26 +28,28 @@ const STATUS_TABS = [
 ] as const;
 
 type StatusFilter = (typeof STATUS_TABS)[number]["key"];
-
-type StaffOrder = StaffOrderListResponse["items"][number];
+type OrdersTabStatus = Exclude<StatusFilter, "all">;
 
 const ORDER_STATUS_DISPLAY: Record<string, { label: string; color: string }> = {
     pending_payment: { label: "待支付", color: "#FF9800" },
+    payment_timeout: { label: "支付超时", color: "#9E9E9E" },
+    pending_acceptance: { label: "待接单", color: "#FFB300" },
     paid: { label: "待服务", color: "#FF9800" },
     in_progress: { label: "服务中", color: "#4CAF50" },
     completed: { label: "已完成", color: "#2196F3" },
     cancelled: { label: "已取消", color: "#9E9E9E" },
     refunded: { label: "已退款", color: "#9E9E9E" },
+    staff_rejected: { label: "已拒绝", color: "#9E9E9E" },
 };
 
-function OrdersSkeleton() {
-    return (
-        <View style={styles.skeletonContainer}>
-            <ActivityIndicator size="large" color="#2196F3" />
-            <Text style={styles.skeletonText}>订单加载中...</Text>
-        </View>
-    );
-}
+const DECISION_STATUS_DISPLAY: Record<
+    StaffOrder["decisionStatus"],
+    { label: string; color: string }
+> = {
+    pending: { label: "待接单确认", color: "#FFB300" },
+    accepted: { label: "已确认接单", color: "#4CAF50" },
+    rejected: { label: "已拒绝", color: "#9E9E9E" },
+};
 
 function OrdersErrorFallback({
     error,
@@ -64,24 +70,83 @@ function OrdersErrorFallback({
 }
 
 function OrdersContent() {
-    const router = useRouter();
     const [selectedTab, setSelectedTab] = useState<StatusFilter>("all");
+    const statusParam =
+        selectedTab === "all" ? undefined : (selectedTab as OrdersTabStatus);
+    const decisionStatusFilter =
+        selectedTab === "pending_acceptance" ? ("pending" as StaffOrder["decisionStatus"]) : undefined;
+
+    return (
+        <View style={styles.container}>
+            <View style={styles.header}>
+                <Text style={styles.title}>我的订单</Text>
+                <Text style={styles.subtitle}>基于状态查看预约进展</Text>
+            </View>
+
+            <View style={styles.tabsContainer}>
+                <FlatList
+                    data={STATUS_TABS}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    keyExtractor={(item) => item.key}
+                    renderItem={({ item }) => {
+                        const isActive = selectedTab === item.key;
+                        return (
+                            <TouchableOpacity
+                                style={[styles.tabButton, isActive && styles.tabButtonActive]}
+                                onPress={() => setSelectedTab(item.key)}
+                            >
+                                <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+                                    {item.label}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    }}
+                    contentContainerStyle={styles.tabsContent}
+                />
+            </View>
+
+            <View style={styles.listWrapper}>
+                <Suspense fallback={<OrdersListSkeleton />}>
+                    <OrdersList
+                        status={statusParam}
+                        decisionStatusFilter={decisionStatusFilter}
+                    />
+                </Suspense>
+            </View>
+        </View>
+    );
+}
+
+export default function OrdersScreen() {
+    return (
+        <ErrorBoundary FallbackComponent={OrdersErrorFallback}>
+            <OrdersContent />
+        </ErrorBoundary>
+    );
+}
+
+function OrdersList({
+    status,
+    decisionStatusFilter,
+}: {
+    status?: OrdersTabStatus;
+    decisionStatusFilter?: StaffOrder["decisionStatus"];
+}) {
+    const router = useRouter();
     const [refreshing, setRefreshing] = useState(false);
 
     const { data, refetch, isFetching } = useStaffOrdersList({
         page: 1,
         limit: 20,
-        status: selectedTab === "all" ? undefined : selectedTab,
-        onlyAccepted: true,
-        sortOrder: "asc"
+        status,
+        sortOrder: "asc",
     });
 
     const handleRefresh = useCallback(async () => {
         setRefreshing(true);
         try {
             await refetch();
-        } catch (error) {
-            console.error("刷新订单列表失败", error);
         } finally {
             setRefreshing(false);
         }
@@ -96,11 +161,21 @@ function OrdersContent() {
             return dateB - dateA;
         });
     }, [orders]);
+    const filteredOrders = useMemo(() => {
+        if (!decisionStatusFilter) {
+            return sortedOrders;
+        }
+        return sortedOrders.filter(
+            (order) => order.decisionStatus === decisionStatusFilter,
+        );
+    }, [decisionStatusFilter, sortedOrders]);
 
     const renderOrderCard = ({ item }: { item: StaffOrder }) => {
         const meta = ORDER_STATUS_DISPLAY[item.status] ?? ORDER_STATUS_DISPLAY.cancelled;
         const appointment = formatDateTime(item.appointmentTime);
         const price = formatCurrency(item.totalAmount);
+        const decisionMeta =
+            DECISION_STATUS_DISPLAY[item.decisionStatus ?? "pending"];
 
         return (
             <TouchableOpacity
@@ -114,8 +189,19 @@ function OrdersContent() {
                             <Text style={styles.specText}>{item.serviceSpecification}</Text>
                         ) : null}
                     </View>
-                    <View style={[styles.statusBadge, { backgroundColor: meta.color }]}>
-                        <Text style={styles.statusText}>{meta.label}</Text>
+                    <View style={styles.badgesColumn}>
+                        <View style={[styles.statusBadge, { backgroundColor: meta.color }]}>
+                            <Text style={styles.statusText}>{meta.label}</Text>
+                        </View>
+                        {decisionMeta ? (
+                            <View
+                                style={[styles.decisionBadge, { borderColor: decisionMeta.color }]}
+                            >
+                                <Text style={[styles.decisionText, { color: decisionMeta.color }]}>
+                                    {decisionMeta.label}
+                                </Text>
+                            </View>
+                        ) : null}
                     </View>
                 </View>
 
@@ -141,64 +227,46 @@ function OrdersContent() {
     };
 
     return (
-        <View style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>我的订单</Text>
-                <Text style={styles.subtitle}>基于状态查看预约进展</Text>
-            </View>
-
-            <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.tabsContainer}
-                contentContainerStyle={styles.tabsContent}
-            >
-                {STATUS_TABS.map((tab) => {
-                    const isActive = selectedTab === tab.key;
-                    return (
-                        <TouchableOpacity
-                            key={tab.key}
-                            style={[styles.tabButton, isActive && styles.tabButtonActive]}
-                            onPress={() => setSelectedTab(tab.key)}
-                        >
-                            <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
-                                {tab.label}
-                            </Text>
-                        </TouchableOpacity>
-                    );
-                })}
-            </ScrollView>
-
-            <FlatList
-                data={sortedOrders}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.listContent}
-                renderItem={renderOrderCard}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing || isFetching}
-                        onRefresh={handleRefresh}
-                        tintColor="#2196F3"
-                    />
-                }
-                ListEmptyComponent={
-                    <View style={styles.emptyContainer}>
-                        <Ionicons name="cube-outline" size={48} color="#bbb" />
-                        <Text style={styles.emptyText}>暂无相关订单</Text>
-                    </View>
-                }
-            />
-        </View>
+        <FlatList
+            data={filteredOrders}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContent}
+            renderItem={renderOrderCard}
+            refreshControl={
+                <RefreshControl
+                    refreshing={refreshing || isFetching}
+                    onRefresh={handleRefresh}
+                    tintColor="#2196F3"
+                />
+            }
+            ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                    <Ionicons name="cube-outline" size={48} color="#bbb" />
+                    <Text style={styles.emptyText}>暂无相关订单</Text>
+                </View>
+            }
+        />
     );
 }
 
-export default function OrdersScreen() {
+function OrdersListSkeleton() {
     return (
-        <ErrorBoundary FallbackComponent={OrdersErrorFallback}>
-            <Suspense fallback={<OrdersSkeleton />}>
-                <OrdersContent />
-            </Suspense>
-        </ErrorBoundary>
+        <View style={styles.skeletonList}>
+            {Array.from({ length: 3 }).map((_, index) => (
+                <View key={index} style={styles.skeletonCard}>
+                    <View style={styles.skeletonHeader}>
+                        <View style={styles.skeletonLineLong} />
+                        <View style={styles.skeletonBadge} />
+                    </View>
+                    <View style={styles.skeletonLine} />
+                    <View style={styles.skeletonLineShort} />
+                    <View style={styles.skeletonFooter}>
+                        <View style={styles.skeletonPrice} />
+                        <View style={styles.skeletonButton} />
+                    </View>
+                </View>
+            ))}
+        </View>
     );
 }
 
@@ -221,6 +289,7 @@ function formatCurrency(value?: number | string | null) {
 
 const styles = StyleSheet.create({
     container: {
+        flex: 1,
         backgroundColor: "#F5F5F5",
     },
     header: {
@@ -230,6 +299,9 @@ const styles = StyleSheet.create({
         backgroundColor: "white",
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: "#eee",
+    },
+    listWrapper: {
+        flex: 1,
     },
     title: {
         fontSize: 24,
@@ -300,6 +372,9 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: "#999",
     },
+    badgesColumn: {
+        alignItems: "flex-end",
+    },
     statusBadge: {
         paddingHorizontal: 12,
         paddingVertical: 4,
@@ -308,6 +383,17 @@ const styles = StyleSheet.create({
     statusText: {
         color: "white",
         fontSize: 12,
+        fontWeight: "bold",
+    },
+    decisionBadge: {
+        marginTop: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 2,
+        borderWidth: 1,
+        borderRadius: 10,
+    },
+    decisionText: {
+        fontSize: 11,
         fontWeight: "bold",
     },
     orderInfo: {
@@ -353,14 +439,68 @@ const styles = StyleSheet.create({
         color: "#999",
         marginTop: 16,
     },
-    skeletonContainer: {
-        flex: 1,
-        alignItems: "center",
-        justifyContent: "center",
+    skeletonList: {
+        padding: 16,
     },
-    skeletonText: {
-        marginTop: 12,
-        color: "#666",
+    skeletonCard: {
+        backgroundColor: "white",
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 12,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    skeletonHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 12,
+    },
+    skeletonLineLong: {
+        height: 16,
+        borderRadius: 8,
+        backgroundColor: "#E0E0E0",
+        width: "60%",
+    },
+    skeletonLine: {
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: "#E0E0E0",
+        marginBottom: 8,
+    },
+    skeletonLineShort: {
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: "#E0E0E0",
+        width: "50%",
+        marginBottom: 12,
+    },
+    skeletonBadge: {
+        width: 72,
+        height: 20,
+        borderRadius: 10,
+        backgroundColor: "#E0E0E0",
+    },
+    skeletonFooter: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginTop: 8,
+    },
+    skeletonPrice: {
+        width: 80,
+        height: 18,
+        borderRadius: 8,
+        backgroundColor: "#E0E0E0",
+    },
+    skeletonButton: {
+        width: 90,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: "#E0E0E0",
     },
     errorContainer: {
         flex: 1,
