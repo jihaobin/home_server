@@ -16,7 +16,10 @@ export type UserRole = z.infer<typeof UserRoleEnum>;
 // 订单状态枚举 - MVP简化版本
 export const OrderStatusEnum = z.enum([
     "pending_payment", // 待支付
+    "payment_timeout", // 支付超时
     "paid", // 已支付（等待服务人员上门进行服务）
+    "pending_acceptance", // 待接单（等待服务人员确认）
+    "staff_rejected", // 服务人员拒绝接单
     "in_progress", // 服务中
     "completed", // 已完成（包含已评价和未评价）
     "cancelled", // 已取消（各种原因的取消统一处理）
@@ -52,6 +55,15 @@ export const AssignmentTypeEnum = z.enum([
     "grab", // 服务人员抢单
 ]);
 export type AssignmentType = z.infer<typeof AssignmentTypeEnum>;
+
+export const AssignmentDecisionStatusEnum = z.enum([
+    "pending",
+    "accepted",
+    "rejected",
+]);
+export type AssignmentDecisionStatus = z.infer<
+    typeof AssignmentDecisionStatusEnum
+>;
 
 // 提现状态枚举
 export const WithdrawalStatusEnum = z.enum([
@@ -1297,6 +1309,10 @@ export const OrdersSchema = z
             description: "服务预约时间",
             title: "服务预约时间",
         }),
+        paymentExpiresAt: z.date().meta({
+            description: "支付超时时间",
+            title: "支付超时时间",
+        }),
         serviceStartedAt: z.date().nullable().optional().meta({
             description: "服务开始时间",
             title: "服务开始时间",
@@ -1384,6 +1400,18 @@ export const OrderAssignmentsSchema = z
         acceptedAt: z.date().nullable().optional().meta({
             description: "服务人员接单时间",
             title: "接单时间",
+        }),
+        decisionStatus: AssignmentDecisionStatusEnum.default("pending").meta({
+            description: "接单决策状态",
+            title: "接单状态",
+        }),
+        rejectReason: z.string().max(500).nullable().optional().meta({
+            description: "拒绝原因",
+            title: "拒绝原因",
+        }),
+        rejectedAt: z.date().nullable().optional().meta({
+            description: "拒绝时间",
+            title: "拒绝时间",
         }),
     })
     .meta({

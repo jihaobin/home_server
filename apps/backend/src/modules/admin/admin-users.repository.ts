@@ -214,8 +214,6 @@ export class AdminUsersRepository {
         }
 
         const completedStatus = 'completed';
-        const cancelledStatus = 'cancelled';
-
         const rows = await this.db
             .select({
                 userId: orders.customerId,
@@ -224,7 +222,9 @@ export class AdminUsersRepository {
                     COUNT(*) FILTER (WHERE ${orders.status} = ${completedStatus})::int
                 `,
                 cancelledOrders: sql<number>`
-                    COUNT(*) FILTER (WHERE ${orders.status} = ${cancelledStatus})::int
+                    COUNT(*) FILTER (
+                        WHERE ${orders.status} IN ('cancelled', 'payment_timeout')
+                    )::int
                 `,
                 totalSpent: sql<string>`COALESCE(SUM(${orders.totalAmount}), '0')`,
                 lastOrderAt: sql<Date | null>`MAX(${orders.createdAt})`,

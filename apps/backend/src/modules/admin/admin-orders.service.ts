@@ -36,6 +36,7 @@ export class AdminOrdersService {
     private readonly logger = new Logger(AdminOrdersService.name);
     private readonly terminalStatuses = new Set<OrderStatus>([
         'cancelled',
+        'payment_timeout',
         'refunded',
     ]);
 

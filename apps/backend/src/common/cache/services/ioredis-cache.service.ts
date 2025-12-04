@@ -62,6 +62,59 @@ export class IoRedisCacheService implements IAdvancedCacheService {
         });
     }
 
+    private stringifyStreamValue(value: unknown): string {
+        if (value === undefined || value === null) {
+            return '';
+        }
+        if (typeof value === 'string') {
+            return value;
+        }
+        if (typeof value === 'number' || typeof value === 'bigint') {
+            return value.toString();
+        }
+        if (typeof value === 'boolean') {
+            return value ? '1' : '0';
+        }
+        if (typeof value === 'symbol' || typeof value === 'function') {
+            return value.toString();
+        }
+        if (value instanceof Date) {
+            return value.toISOString();
+        }
+        if (Buffer.isBuffer(value)) {
+            return value.toString('utf8');
+        }
+        if (value instanceof Uint8Array) {
+            return Buffer.from(value).toString('utf8');
+        }
+        if (typeof value === 'object') {
+            try {
+                return JSON.stringify(value);
+            } catch (error) {
+                this.logger.warn('序列化 Stream 消息字段失败', error);
+            }
+        }
+        return '';
+    }
+
+    private serializeStreamMessage(message: Record<string, unknown>): string[] {
+        const flattened: string[] = [];
+        for (const [field, value] of Object.entries(message)) {
+            flattened.push(field, this.stringifyStreamValue(value));
+        }
+        return flattened;
+    }
+
+    private parseStreamFields(fields: string[]): Record<string, string> {
+        const result: Record<string, string> = {};
+        for (let i = 0; i < fields.length; i += 2) {
+            const field = fields[i];
+            const value = fields[i + 1] ?? '';
+            result[field] = value;
+        }
+        return result;
+    }
+
     /**
      * 获取Redis客户端实例
      */
@@ -527,6 +580,254 @@ export class IoRedisCacheService implements IAdvancedCacheService {
         } catch (error) {
             this.logger.warn(`获取有序集合成员数量失败: ${key}`, error);
             return 0;
+        }
+    }
+
+    async bzPopMin<T = unknown>(
+        keys: string | string[],
+        timeoutSeconds: number,
+    ): Promise<{ key: string; member: T; score: number } | null> {
+        const keyList = Array.isArray(keys) ? keys : [keys];
+        if (keyList.length === 0) {
+            return null;
+        }
+
+        try {
+            const result = await this.client.bzpopmin(
+                ...keyList,
+                timeoutSeconds,
+            );
+            if (!result) {
+                return null;
+            }
+
+            const [key, rawMember, scoreString] = result;
+            let member: T;
+            try {
+                member = JSON.parse(rawMember) as T;
+            } catch {
+                member = rawMember as T;
+            }
+
+            return {
+                key,
+                member,
+                score: Number(scoreString),
+            };
+        } catch (error) {
+            this.logger.warn(
+                `阻塞式弹出有序集合失败: ${keyList.join(',')}`,
+                error,
+            );
+            return null;
+        }
+    }
+
+    // IRedisStreamOperations 实现 =================================================================
+
+    async xAdd(
+        stream: string,
+        id: string,
+        message: Record<string, unknown>,
+    ): Promise<string> {
+        try {
+            const serialized = this.serializeStreamMessage(message);
+            const result = await this.client.xadd(stream, id, ...serialized);
+            if (!result) {
+                throw new Error('Redis 未返回消息 ID');
+            }
+            return result;
+        } catch (error) {
+            this.logger.error(`写入 Stream 失败: ${stream}`, error);
+            throw new Error(
+                `写入 Stream 失败: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
+    }
+
+    async xReadGroup(
+        group: string,
+        consumer: string,
+        streams: Array<{ key: string; id: string }>,
+        options?: { count?: number; block?: number; noAck?: boolean },
+    ): Promise<
+        Array<{
+            key: string;
+            entries: Array<{
+                id: string;
+                fields: Record<string, string>;
+            }>;
+        }>
+    > {
+        if (streams.length === 0) {
+            return [];
+        }
+
+        const commandParts: Array<string | number> = ['GROUP', group, consumer];
+        if (options?.count) {
+            commandParts.push('COUNT', options.count);
+        }
+        if (options?.block) {
+            commandParts.push('BLOCK', options.block);
+        }
+        if (options?.noAck) {
+            commandParts.push('NOACK');
+        }
+        commandParts.push('STREAMS');
+        for (const stream of streams) {
+            commandParts.push(stream.key);
+        }
+        for (const stream of streams) {
+            commandParts.push(stream.id);
+        }
+
+        try {
+            const raw = await (
+                this.client as unknown as {
+                    xreadgroup: (
+                        ...args: Array<string | number>
+                    ) => Promise<Array<
+                        [string, Array<[string, string[]]>]
+                    > | null>;
+                }
+            ).xreadgroup(...commandParts);
+            if (!raw) {
+                return [];
+            }
+
+            return raw.map(([key, entries]) => ({
+                key,
+                entries: entries.map(([id, fields]) => ({
+                    id,
+                    fields: this.parseStreamFields(fields),
+                })),
+            }));
+        } catch (error) {
+            this.logger.warn(
+                `消费 Stream 失败: ${streams.map((item) => item.key).join(',')}`,
+                error,
+            );
+            return [];
+        }
+    }
+
+    async xAck(
+        stream: string,
+        group: string,
+        ...ids: string[]
+    ): Promise<number> {
+        if (ids.length === 0) {
+            return 0;
+        }
+
+        try {
+            return await this.client.xack(stream, group, ...ids);
+        } catch (error) {
+            this.logger.error(`确认 Stream 消息失败: ${stream}`, error);
+            throw new Error(
+                `确认 Stream 消息失败: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
+    }
+
+    async xPending(
+        stream: string,
+        group: string,
+        options?: {
+            start?: string;
+            end?: string;
+            count?: number;
+            consumer?: string;
+        },
+    ): Promise<
+        | {
+              type: 'summary';
+              count: number;
+              minId: string | null;
+              maxId: string | null;
+              consumers: Array<{ name: string; pending: number }>;
+          }
+        | {
+              type: 'entries';
+              entries: Array<{
+                  id: string;
+                  consumer: string;
+                  idle: number;
+                  deliveries: number;
+              }>;
+          }
+    > {
+        if (!options) {
+            try {
+                const [count, minId, maxId, consumers] =
+                    (await this.client.xpending(stream, group)) as [
+                        number,
+                        string | null,
+                        string | null,
+                        Array<[string, number]>,
+                    ];
+
+                return {
+                    type: 'summary',
+                    count,
+                    minId,
+                    maxId,
+                    consumers: (consumers ?? []).map(([name, pending]) => ({
+                        name,
+                        pending,
+                    })),
+                };
+            } catch (error) {
+                this.logger.warn(
+                    `查询 Stream Pending Summary 失败: ${stream}`,
+                    error,
+                );
+                return {
+                    type: 'summary',
+                    count: 0,
+                    minId: null,
+                    maxId: null,
+                    consumers: [],
+                };
+            }
+        }
+
+        const start = options.start ?? '-';
+        const end = options.end ?? '+';
+        const count = options.count ?? 10;
+
+        try {
+            const entries = options.consumer
+                ? await this.client.xpending(
+                      stream,
+                      group,
+                      start,
+                      end,
+                      count,
+                      options.consumer,
+                  )
+                : await this.client.xpending(stream, group, start, end, count);
+
+            return {
+                type: 'entries',
+                entries: (
+                    entries as Array<[string, string, number, number]>
+                ).map(([id, consumer, idle, deliveries]) => ({
+                    id,
+                    consumer,
+                    idle,
+                    deliveries,
+                })),
+            };
+        } catch (error) {
+            this.logger.warn(
+                `查询 Stream Pending Entries 失败: ${stream}`,
+                error,
+            );
+            return {
+                type: 'entries',
+                entries: [],
+            };
         }
     }
 

@@ -149,8 +149,7 @@ export class PayController {
     )
     @ApiOperation({
         summary: '查询收益/提现记录',
-        description:
-            '通过 category 参数，查询收入记录、提现记录或混合列表',
+        description: '通过 category 参数，查询收入记录、提现记录或混合列表',
     })
     @ApiSuccessResponse(WorkerEarningsRecordListResponseSchema, {
         description: '收益/提现聚合记录分页数据',

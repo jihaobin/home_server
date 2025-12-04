@@ -41,11 +41,19 @@ export class OrderRepository {
         OrderStatus,
         OrderStatus[]
     > = {
-        pending_payment: ['paid', 'cancelled'],
-        paid: ['in_progress', 'cancelled'],
+        pending_payment: [
+            'pending_acceptance',
+            'paid',
+            'cancelled',
+            'payment_timeout',
+        ],
+        pending_acceptance: ['paid', 'cancelled', 'staff_rejected'],
+        staff_rejected: ['pending_acceptance', 'cancelled'],
+        paid: ['in_progress', 'cancelled', 'staff_rejected'],
         in_progress: ['completed'], // 服务中状态不能再取消，只能完成
         completed: ['refunded'], // 假设完成的订单可以退款
         cancelled: [], // 取消的订单不能再改变状态
+        payment_timeout: [], // 支付超时视为终态
         refunded: [], // 退款的订单不能再改变状态
     };
 
@@ -130,6 +138,7 @@ export class OrderRepository {
                     status: orders.status,
                     totalAmount: orders.totalAmount,
                     appointmentTime: orders.appointmentTime,
+                    paymentExpiresAt: orders.paymentExpiresAt,
                     serviceName: services.name,
                     serviceDescription: services.description,
                     servicePersonnelUserId: orderAssignments.servicePersonnelId,
@@ -168,6 +177,7 @@ export class OrderRepository {
             status: row.status,
             totalAmount: row.totalAmount,
             appointmentTime: row.appointmentTime,
+            paymentExpiresAt: row.paymentExpiresAt,
             serviceName: row.serviceName || '',
             servicePersonnelName: row.userName || '服务人员',
             serviceSpecifications:
@@ -209,7 +219,7 @@ export class OrderRepository {
         }
 
         if (onlyAccepted) {
-            conditions.push(isNotNull(orderAssignments.acceptedAt));
+            conditions.push(eq(orderAssignments.decisionStatus, 'accepted'));
         }
 
         if (startTime && !endTime) {
@@ -238,6 +248,9 @@ export class OrderRepository {
                     customerAvatar: users.image,
                     address: userAddresses.detailedAddress,
                     acceptedAt: orderAssignments.acceptedAt,
+                    decisionStatus: orderAssignments.decisionStatus,
+                    rejectReason: orderAssignments.rejectReason,
+                    rejectedAt: orderAssignments.rejectedAt,
                     serviceStartedAt: orders.serviceStartedAt,
                     serviceCompletedAt: orders.serviceCompletedAt,
                 })
@@ -282,6 +295,9 @@ export class OrderRepository {
             customerAvatar: row.customerAvatar ?? null,
             address: row.address ?? null,
             acceptedAt: row.acceptedAt ?? null,
+            decisionStatus: row.decisionStatus ?? 'pending',
+            rejectReason: row.rejectReason ?? null,
+            rejectedAt: row.rejectedAt ?? null,
             serviceStartedAt: row.serviceStartedAt ?? null,
             serviceCompletedAt: row.serviceCompletedAt ?? null,
         }));
@@ -465,6 +481,7 @@ export class OrderRepository {
                 and(
                     eq(orderAssignments.servicePersonnelId, personnelId),
                     lte(orders.appointmentTime, endTime),
+                    gte(orders.appointmentTime, startTime),
                 ),
             );
 
@@ -533,7 +550,7 @@ export class OrderRepository {
                     gte(orders.appointmentTime, start),
                     lte(orders.appointmentTime, end),
                     // 只查询未取消和未退款的订单
-                    sql`${orders.status} NOT IN ('cancelled', 'refunded')`,
+                    sql`${orders.status} NOT IN ('cancelled', 'payment_timeout', 'refunded')`,
                 ),
             )
             .orderBy(asc(orders.appointmentTime));
@@ -606,6 +623,47 @@ export class OrderRepository {
     }
 
     /**
+     * 标记订单为支付超时
+     */
+    async markOrderPaymentTimeout(
+        id: string,
+        reason: string,
+        executor?: DbType,
+    ) {
+        const db = executor ?? this.db;
+        const order = await db.query.orders.findFirst({
+            where: eq(orders.id, id),
+            columns: { status: true },
+        });
+
+        if (!order) {
+            throw new BadRequestException('订单不存在');
+        }
+
+        if (!this.isValidStatusTransition(order.status, 'payment_timeout')) {
+            throw new BadRequestException('当前状态无法标记为支付超时');
+        }
+
+        const updatedOrders = await db
+            .update(orders)
+            .set({
+                status: 'payment_timeout',
+                cancelReason: reason,
+                cancelledBy: null,
+                cancelledAt: new Date(),
+                updatedAt: new Date(),
+            })
+            .where(eq(orders.id, id))
+            .returning();
+
+        if (updatedOrders.length === 0) {
+            throw new BadRequestException('支付超时标记失败');
+        }
+
+        return updatedOrders[0];
+    }
+
+    /**
      * 取消订单
      * @param id 订单ID
      * @param reason 取消原因
@@ -661,6 +719,131 @@ export class OrderRepository {
         return updatedOrders[0];
     }
 
+    async acceptAssignment(orderId: string, staffId: string) {
+        await this.db.transaction(async (tx) => {
+            const assignment = await tx.query.orderAssignments.findFirst({
+                where: eq(orderAssignments.orderId, orderId),
+                columns: {
+                    servicePersonnelId: true,
+                    decisionStatus: true,
+                },
+            });
+
+            if (!assignment) {
+                throw new BadRequestException('订单未找到分配记录');
+            }
+
+            if (assignment.servicePersonnelId !== staffId) {
+                throw new BadRequestException('您不是该订单的服务人员');
+            }
+
+            if (assignment.decisionStatus !== 'pending') {
+                throw new BadRequestException('订单接单状态已更新');
+            }
+
+            const order = await tx.query.orders.findFirst({
+                where: eq(orders.id, orderId),
+                columns: { status: true },
+            });
+
+            if (!order) {
+                throw new BadRequestException('订单不存在');
+            }
+
+            if (
+                order.status !== 'pending_acceptance' &&
+                order.status !== 'paid'
+            ) {
+                throw new BadRequestException('当前订单状态不可接单');
+            }
+
+            const now = new Date();
+            await tx
+                .update(orderAssignments)
+                .set({
+                    decisionStatus: 'accepted',
+                    acceptedAt: now,
+                    rejectReason: null,
+                    rejectedAt: null,
+                })
+                .where(eq(orderAssignments.orderId, orderId));
+
+            if (
+                order.status === 'pending_acceptance' &&
+                this.isValidStatusTransition(order.status, 'paid')
+            ) {
+                await tx
+                    .update(orders)
+                    .set({ status: 'paid', updatedAt: now })
+                    .where(eq(orders.id, orderId));
+            }
+        });
+    }
+
+    async rejectAssignment(orderId: string, staffId: string, reason: string) {
+        await this.db.transaction(async (tx) => {
+            const assignment = await tx.query.orderAssignments.findFirst({
+                where: eq(orderAssignments.orderId, orderId),
+                columns: {
+                    servicePersonnelId: true,
+                    decisionStatus: true,
+                },
+            });
+
+            if (!assignment) {
+                throw new BadRequestException('订单未找到分配记录');
+            }
+
+            if (assignment.servicePersonnelId !== staffId) {
+                throw new BadRequestException('您不是该订单的服务人员');
+            }
+
+            if (assignment.decisionStatus !== 'pending') {
+                throw new BadRequestException('订单接单状态已更新');
+            }
+
+            const order = await tx.query.orders.findFirst({
+                where: eq(orders.id, orderId),
+                columns: { status: true },
+            });
+
+            if (!order) {
+                throw new BadRequestException('订单不存在');
+            }
+
+            if (
+                order.status !== 'pending_acceptance' &&
+                order.status !== 'paid'
+            ) {
+                throw new BadRequestException('当前订单状态不可拒绝');
+            }
+
+            const now = new Date();
+            await tx
+                .update(orderAssignments)
+                .set({
+                    decisionStatus: 'rejected',
+                    rejectedAt: now,
+                    rejectReason: reason,
+                    acceptedAt: null,
+                })
+                .where(eq(orderAssignments.orderId, orderId));
+
+            if (this.isValidStatusTransition(order.status, 'staff_rejected')) {
+                await tx
+                    .update(orders)
+                    .set({
+                        status: 'staff_rejected',
+                        cancelReason: reason,
+                        cancelledBy: staffId,
+                        cancelledAt: now,
+                        updatedAt: now,
+                    })
+                    .where(eq(orders.id, orderId));
+            }
+        });
+    }
+
     /**
      * 验证状态转换是否合法
      * @param currentStatus 当前订单状态
@@ -682,7 +865,7 @@ export class OrderRepository {
 
     /**
      * 创建订单
-     * @deprecated 在MVP阶段，所有订单都通过createOrderWithDesignatedPersonnel创建
+     * 在MVP阶段，所有订单都通过createOrderWithDesignatedPersonnel创建
      * @param data 订单数据
      * @returns 创建的订单信息
      */
@@ -767,6 +950,7 @@ export class OrderRepository {
                         totalAmount: totalAmount.toString(),
                         currency: 'CNY',
                         appointmentTime: data.appointmentTime,
+                        paymentExpiresAt: data.paymentExpiresAt,
                     })
                     .returning({ id: orders.id });
 
@@ -783,7 +967,8 @@ export class OrderRepository {
                         servicePersonnelId: data.designatedPersonnelId,
                         assignmentType: 'customer_designated', // 用户指定
                         assignedAt: now,
-                        acceptedAt: now,
+                        acceptedAt: null,
+                        decisionStatus: 'pending',
                     });
 
                 // 验证分配记录是否创建成功

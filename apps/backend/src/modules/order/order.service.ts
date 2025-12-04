@@ -2,8 +2,10 @@ import {
     BadRequestException,
     Inject,
     Injectable,
+    Logger,
     forwardRef,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type {
     CreateDesignatedOrder,
     OrderListRequest,
@@ -11,6 +13,11 @@ import type {
     StaffOrderListRequest,
     UserRole,
 } from '@repo/types';
+import {
+    CACHE_SERVICE,
+    type IAdvancedCacheService,
+    OrderExpireRedisKeys,
+} from 'src/common/cache';
 import { DbType } from 'src/common/database/db';
 import { extractParams, isTimeInRange } from 'src/lib/utlis';
 import { PayService } from '../pay/pay.service';
@@ -19,6 +26,8 @@ import { OrderRepository } from './order.reposityro';
 
 @Injectable()
 export class OrderService {
+    private readonly logger = new Logger(OrderService.name);
+
     @Inject(OrderRepository)
     private readonly orderRepository: OrderRepository;
 
@@ -27,6 +36,14 @@ export class OrderService {
 
     @Inject(forwardRef(() => PayService))
     private readonly payService: PayService;
+
+    @Inject(ConfigService)
+    private readonly configService: ConfigService;
+
+    @Inject(CACHE_SERVICE)
+    private readonly cacheService: IAdvancedCacheService;
+
+    private readonly defaultPaymentExpireMinutes = 2;
 
     // 新增：安全地从 unknown 错误中提取消息，避免直接访问 any.message
     private extractErrorMessage(error: unknown): string {
@@ -38,6 +55,90 @@ export class OrderService {
             return JSON.stringify(error);
         } catch {
             return String(error);
+        }
+    }
+
+    private calculatePaymentExpiresAt(): Date {
+        const configuredMinutes = Number(
+            this.configService.get('ORDER_PAYMENT_EXPIRE_MINUTES'),
+        );
+        const minutes =
+            Number.isFinite(configuredMinutes) && configuredMinutes > 0
+                ? configuredMinutes
+                : this.defaultPaymentExpireMinutes;
+        return new Date(Date.now() + minutes * 60 * 1000);
+    }
+
+    private async schedulePaymentExpiration(
+        orderId: string,
+        paymentExpiresAt: Date,
+    ) {
+        try {
+            await this.cacheService.zAdd(
+                OrderExpireRedisKeys.delayZset,
+                paymentExpiresAt.getTime(),
+                orderId,
+            );
+        } catch (error) {
+            this.logger.error(
+                `写入支付超时延迟队列失败: ${orderId}`,
+                this.extractErrorMessage(error),
+            );
+            throw error instanceof Error ? error : new Error(String(error));
+        }
+    }
+
+    async clearPaymentExpirationSchedule(orderId: string) {
+        if (!orderId) {
+            return;
+        }
+        try {
+            await this.cacheService.zRem(
+                OrderExpireRedisKeys.delayZset,
+                orderId,
+            );
+        } catch (error) {
+            this.logger.warn(
+                `清理支付超时延迟队列失败: ${orderId}`,
+                this.extractErrorMessage(error),
+            );
+        }
+    }
+
+    private async emitAssignmentDecisionEvent({
+        orderId,
+        decisionStatus,
+        operatorId,
+        status,
+    }: {
+        orderId: string;
+        decisionStatus: 'accepted' | 'rejected';
+        operatorId: string;
+        status: OrderStatus;
+    }) {
+        const message =
+            decisionStatus === 'accepted'
+                ? '服务人员已接单'
+                : '服务人员拒绝接单';
+        try {
+            await this.cacheService.xAdd(
+                OrderExpireRedisKeys.notifyStream,
+                '*',
+                {
+                    event: 'order_assignment_decision',
+                    orderId,
+                    status,
+                    decisionStatus,
+                    operatorId,
+                    message,
+                    triggeredAt: new Date().toISOString(),
+                },
+            );
+        } catch (error) {
+            this.logger.warn(
+                `派发接单通知失败: ${orderId}`,
+                this.extractErrorMessage(error),
+            );
         }
     }
 
@@ -148,6 +249,7 @@ export class OrderService {
         createOrderDto: CreateDesignatedOrder,
     ) {
         const appointmentTime = new Date(createOrderDto.appointmentTime);
+        const paymentExpiresAt = this.calculatePaymentExpiresAt();
 
         // 验证预约时间是否合理
         if (appointmentTime < new Date()) {
@@ -246,7 +348,12 @@ export class OrderService {
         // 检查是否有时间冲突的订单
         const hasConflictingOrder = existingOrders.some((order) => {
             // 如果订单状态是已取消或已退款，则不视为冲突
-            if (order.status === 'cancelled' || order.status === 'refunded') {
+            if (
+                order.status === 'cancelled' ||
+                order.status === 'refunded' ||
+                order.status === 'pending_payment' ||
+                order.status === 'payment_timeout'
+            ) {
                 return false;
             }
 
@@ -308,7 +415,30 @@ export class OrderService {
                         createOrderDto?.discountAmount?.toString() || '0',
                     designatedPersonnelId: createOrderDto.designatedPersonnelId,
                     price: userPrice.toString(), // 使用用户看到的价格
+                    paymentExpiresAt,
                 });
+
+            try {
+                await this.schedulePaymentExpiration(
+                    result.orderId,
+                    paymentExpiresAt,
+                );
+            } catch (error) {
+                await this.orderRepository
+                    .cancelOrder(
+                        result.orderId,
+                        '系统异常：支付超时任务注册失败',
+                    )
+                    .catch((cancelError) => {
+                        this.logger.error(
+                            `订单 ${result.orderId} 回滚失败`,
+                            this.extractErrorMessage(cancelError),
+                        );
+                    });
+                throw new BadRequestException(
+                    `创建指定服务人员订单失败: ${this.extractErrorMessage(error)}`,
+                );
+            }
 
             return {
                 orderId: result.orderId,
@@ -354,6 +484,10 @@ export class OrderService {
                 newStatus,
                 tx,
             );
+
+            if (!tx && newStatus !== 'pending_payment') {
+                await this.clearPaymentExpirationSchedule(id);
+            }
 
             return updatedOrder;
         } catch (error) {
@@ -422,6 +556,7 @@ export class OrderService {
                 finalReason,
                 actorId,
             );
+            await this.clearPaymentExpirationSchedule(id);
             return cancelledOrder;
         } catch (error) {
             if (error instanceof BadRequestException) {
@@ -429,6 +564,112 @@ export class OrderService {
             }
             throw new BadRequestException(
                 `取消订单失败: ${this.extractErrorMessage(error)}`,
+            );
+        }
+    }
+
+    async cancelOrderBySystem(id: string, reason = '支付超时系统自动取消') {
+        if (!id) {
+            throw new BadRequestException('订单ID不能为空');
+        }
+
+        const order = await this.orderRepository.getOrderById(id);
+        if (!order) {
+            return null;
+        }
+
+        if (order.status !== 'pending_payment') {
+            return order;
+        }
+
+        const updated = await this.orderRepository.markOrderPaymentTimeout(
+            id,
+            reason,
+        );
+        await this.clearPaymentExpirationSchedule(id);
+        return updated;
+    }
+
+    async acceptAssignment(orderId: string, staffId: string) {
+        if (!orderId) {
+            throw new BadRequestException('订单ID不能为空');
+        }
+        if (!staffId) {
+            throw new BadRequestException('服务人员信息缺失');
+        }
+
+        try {
+            await this.orderRepository.acceptAssignment(orderId, staffId);
+            const updatedOrder =
+                await this.orderRepository.getOrderById(orderId);
+            if (updatedOrder) {
+                await this.emitAssignmentDecisionEvent({
+                    orderId,
+                    decisionStatus: 'accepted',
+                    operatorId: staffId,
+                    status: updatedOrder.status as OrderStatus,
+                });
+            }
+            return updatedOrder;
+        } catch (error) {
+            if (error instanceof BadRequestException) {
+                throw error;
+            }
+            throw new BadRequestException(
+                `接单失败: ${this.extractErrorMessage(error)}`,
+            );
+        }
+    }
+
+    async rejectAssignment(orderId: string, staffId: string, reason: string) {
+        if (!orderId) {
+            throw new BadRequestException('订单ID不能为空');
+        }
+        if (!staffId) {
+            throw new BadRequestException('服务人员信息缺失');
+        }
+        const trimmedReason = reason?.trim();
+        if (!trimmedReason) {
+            throw new BadRequestException('拒绝原因不能为空');
+        }
+
+        try {
+            await this.orderRepository.rejectAssignment(
+                orderId,
+                staffId,
+                trimmedReason,
+            );
+            const updatedOrder =
+                await this.orderRepository.getOrderById(orderId);
+
+            if (!updatedOrder) {
+                throw new BadRequestException('订单不存在');
+            }
+
+            if (updatedOrder.status === 'staff_rejected') {
+                const finalReason = `[service_personnel] ${trimmedReason}`;
+                await this.payService.requestRefund(
+                    orderId,
+                    finalReason,
+                    staffId,
+                );
+            }
+            if (updatedOrder.assignment?.decisionStatus === 'rejected') {
+                await this.emitAssignmentDecisionEvent({
+                    orderId,
+                    decisionStatus: 'rejected',
+                    operatorId: staffId,
+                    status: updatedOrder.status as OrderStatus,
+                });
+            }
+
+            return updatedOrder;
+        } catch (error) {
+            if (error instanceof BadRequestException) {
+                throw error;
+            }
+            throw new BadRequestException(
+                `拒绝接单失败: ${this.extractErrorMessage(error)}`,
             );
         }
     }

@@ -235,6 +235,34 @@ export class OrderController {
         return await this.orderService.completeOrder(id);
     }
 
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Post(':id/accept')
+    @ApiOperation({
+        summary: '服务人员接单',
+        description: '当前登录的服务人员确认接单',
+    })
+    async acceptAssignment(@Param('id') id: string, @Req() req: Request) {
+        const staffId = req.user.id;
+        return await this.orderService.acceptAssignment(id, staffId);
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Post(':id/reject')
+    @ApiOperation({
+        summary: '服务人员拒绝接单',
+        description: '当前登录的服务人员拒绝接单并填写原因',
+    })
+    async rejectAssignment(
+        @Param('id') id: string,
+        @Body('reason') reason: string,
+        @Req() req: Request,
+    ) {
+        const staffId = req.user.id;
+        return await this.orderService.rejectAssignment(id, staffId, reason);
+    }
+
     private resolveUserRole(rawRole: string | string[] | undefined): UserRole {
         if (Array.isArray(rawRole)) {
             return rawRole.includes('service_personnel')

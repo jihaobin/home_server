@@ -7,7 +7,10 @@ import { pgEnum } from 'drizzle-orm/pg-core';
  */
 export const orderStatusEnum = pgEnum('order_status', [
     'pending_payment', // 待支付
+    'payment_timeout', // 支付超时
     'paid', // 已支付（等待服务人员上门进行服务）
+    'pending_acceptance', // 待接单（等待服务人员确认）
+    'staff_rejected', // 服务人员拒绝接单
     'in_progress', // 服务中
     'completed', // 已完成（包含已评价和未评价）
     'cancelled', // 已取消（各种原因的取消统一处理）
@@ -72,6 +75,18 @@ export const assignmentTypeEnum = pgEnum('assignment_type', [
     'customer_designated', // 用户指定
     'grab', // 服务人员抢单
 ]);
+
+/**
+ * 订单分配决策状态
+ */
+export const assignmentDecisionStatusEnum = pgEnum(
+    'assignment_decision_status',
+    [
+        'pending', // 待决定
+        'accepted', // 已接单
+        'rejected', // 已拒绝
+    ],
+);
 
 /**
  * 用户角色枚举

@@ -47,6 +47,7 @@
 		"alipay-sdk": "^4.14.0",
 		"aliyun-api-gateway": "^1.1.6",
 		"blurhash": "^2.0.5",
+		"date-fns": "^4.1.0",
 		"decimal.js": "^10.6.0",
 		"drizzle-orm": "^0.44.3",
 		"expo-server-sdk": "^4.0.0",

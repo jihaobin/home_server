@@ -9,6 +9,7 @@ import {
     cacheServiceFactory,
     createIoRedisCacheService,
 } from './providers/cache.provider';
+export { OrderExpireRedisKeys } from './constants/order-expire-redis-keys';
 
 // 重新导出CacheType以便外部使用
 export { CacheType };

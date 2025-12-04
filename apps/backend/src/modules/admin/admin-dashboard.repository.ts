@@ -80,6 +80,7 @@ export class AdminDashboardRepository {
                     gte(orders.createdAt, range.start),
                     lte(orders.createdAt, range.end),
                     ne(orders.status, 'cancelled'),
+                    ne(orders.status, 'payment_timeout'),
                 ),
             );
 
@@ -100,6 +101,7 @@ export class AdminDashboardRepository {
                     gte(orders.createdAt, range.start),
                     lte(orders.createdAt, range.end),
                     ne(orders.status, 'cancelled'),
+                    ne(orders.status, 'payment_timeout'),
                 ),
             )
             .groupBy(bucket)

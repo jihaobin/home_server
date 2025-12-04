@@ -18,6 +18,7 @@ import {
     orderStatusEnum,
     paymentStatusEnum,
     assignmentTypeEnum,
+    assignmentDecisionStatusEnum,
     paymentMethodEnum,
 } from './enums';
 
@@ -65,6 +66,9 @@ export const orders = pgTable(
         appointmentTime: timestamp('appointment_time', {
             withTimezone: true,
         }).notNull(), // 预约服务时间
+        paymentExpiresAt: timestamp('payment_expires_at', {
+            withTimezone: true,
+        }).notNull(), // 支付超时时间
         serviceStartedAt: timestamp('service_started_at', {
             withTimezone: true,
         }), // 服务开始时间
@@ -100,6 +104,11 @@ export const orders = pgTable(
             .where(
                 sql`status IN ('pending_assignment', 'service_in_progress')`,
             ),
+        // 待支付订单过期扫描索引
+        index('idx_orders_status_payment_expires').on(
+            table.status,
+            table.paymentExpiresAt,
+        ),
         // 服务项目时间索引 - 用于服务统计
         index('idx_orders_service_time')
             .on(table.serviceId, table.createdAt.desc())
@@ -128,6 +137,15 @@ export const orderAssignments = pgTable(
             length: 255,
         }).references(() => servicePersonnel.userId, { onDelete: 'cascade' }), // 分配的服务人员 ID
         acceptedAt: timestamp('accepted_at', { withTimezone: true }), // 服务人员接单时间
+        decisionStatus: assignmentDecisionStatusEnum('decision_status')
+            .notNull()
+            .default('pending'), // 服务人员接单决策状态
+        rejectReason: varchar('reject_reason', {
+            length: 500,
+        }), // 拒绝原因
+        rejectedAt: timestamp('rejected_at', {
+            withTimezone: true,
+        }), // 拒绝时间
         // MVP阶段注释店铺分配字段
         // shopId: varchar('shop_id', { length: 255 }).references(() => shops.id, {
         //     onDelete: 'cascade',

@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 import { PaginationMetaSchema, PaginationQuerySchema } from "./common";
 import {
+	AssignmentDecisionStatusEnum,
 	CouponUsageRecordsSchema,
 	OrderAssignmentsSchema,
 	OrderStatusEnum,
@@ -132,8 +133,9 @@ export const OrderDetailSchema = z
 		originalAmount: z.number(),
 		discountAmount: z.number(),
 		totalAmount: z.number(),
-		appointmentTime: z.coerce.date(),
-		serviceStartedAt: z.coerce.date().nullable().optional(),
+	appointmentTime: z.coerce.date(),
+	paymentExpiresAt: z.coerce.date(),
+	serviceStartedAt: z.coerce.date().nullable().optional(),
 		serviceCompletedAt: z.coerce.date().nullable().optional(),
 		cancelledAt: z.coerce.date().nullable().optional(),
 		createdAt: z.coerce.date(),
@@ -195,6 +197,10 @@ export const OrderListSimplifiedItemSchema = z.object({
         description: "预约时间",
         title: "预约时间",
     }),
+    paymentExpiresAt: z.coerce.date().meta({
+        description: "支付过期时间",
+        title: "支付过期时间",
+    }),
     serviceName: z.string().meta({
         description: "服务名称",
         title: "服务名称",
@@ -249,6 +255,9 @@ export const StaffOrderListItemSchema = z.object({
 	customerAvatar: z.string().nullable(),
 	address: z.string().nullable(),
 	acceptedAt: z.date().nullable(),
+	decisionStatus: AssignmentDecisionStatusEnum,
+	rejectReason: z.string().nullable(),
+	rejectedAt: z.date().nullable(),
 	serviceStartedAt: z.date().nullable(),
 	serviceCompletedAt: z.date().nullable(),
 });
@@ -306,6 +315,8 @@ export const OrderListResponseItemSchema = z.object({
 		discountAmount: true,
         couponCode: true,
 	}).shape,
+	appointmentTime: z.coerce.date(),
+	paymentExpiresAt: z.coerce.date(),
     totalAmount: z.string().meta({
         description: "订单总金额，包含折扣后的最终金额",
         title: "订单总金额",

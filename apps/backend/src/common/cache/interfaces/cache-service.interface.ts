@@ -285,6 +285,100 @@ export interface IRedisSortedSetOperations {
      * @param key 有序集合键
      */
     zCard(key: string): Promise<number>;
+
+    /**
+     * 阻塞式弹出有序集合中的最小成员
+     * @param keys 参与弹出的有序集合键（可多个，按顺序检查）
+     * @param timeoutSeconds 超时时间（秒），0 表示一直阻塞
+     * @returns 包含键名、成员内容及分数的对象；若超时返回 null
+     */
+    bzPopMin<T = unknown>(
+        keys: string | string[],
+        timeoutSeconds: number,
+    ): Promise<{ key: string; member: T; score: number } | null>;
+}
+
+/**
+ * Redis Stream 操作接口
+ */
+export interface IRedisStreamOperations {
+    /**
+     * 向 Stream 写入消息
+     * @param stream Stream 名称
+     * @param id 消息 ID，通常使用 '*' 由 Redis 自动生成
+     * @param message 消息字段
+     * @returns 实际写入的消息 ID
+     */
+    xAdd(
+        stream: string,
+        id: string,
+        message: Record<string, unknown>,
+    ): Promise<string>;
+
+    /**
+     * 以消费者组方式读取 Stream
+     * @param group 消费者组名称
+     * @param consumer 消费者 ID
+     * @param streams 需要读取的 Stream 列表
+     * @param options 读取参数
+     */
+    xReadGroup(
+        group: string,
+        consumer: string,
+        streams: Array<{ key: string; id: string }>,
+        options?: { count?: number; block?: number; noAck?: boolean },
+    ): Promise<
+        Array<{
+            key: string;
+            entries: Array<{
+                id: string;
+                fields: Record<string, string>;
+            }>;
+        }>
+    >;
+
+    /**
+     * 确认消息
+     * @param stream Stream 名称
+     * @param group 消费者组
+     * @param ids 消息 ID 列表
+     * @returns 被确认的消息数量
+     */
+    xAck(stream: string, group: string, ...ids: string[]): Promise<number>;
+
+    /**
+     * 查询 Pending 消息
+     * @param stream Stream 名称
+     * @param group 消费者组
+     * @param options 可选的范围、数量与消费者过滤条件；不传则返回 Summary
+     */
+    xPending(
+        stream: string,
+        group: string,
+        options?: {
+            start?: string;
+            end?: string;
+            count?: number;
+            consumer?: string;
+        },
+    ): Promise<
+        | {
+              type: 'summary';
+              count: number;
+              minId: string | null;
+              maxId: string | null;
+              consumers: Array<{ name: string; pending: number }>;
+          }
+        | {
+              type: 'entries';
+              entries: Array<{
+                  id: string;
+                  consumer: string;
+                  idle: number;
+                  deliveries: number;
+              }>;
+          }
+    >;
 }
 
 /**
@@ -403,6 +497,7 @@ export interface IAdvancedCacheService
         IRedisListOperations,
         IRedisSetOperations,
         IRedisSortedSetOperations,
+        IRedisStreamOperations,
         IRedisLockOperations,
         IRedisPubSubOperations,
         IRedisNumericOperations {

@@ -17,6 +17,7 @@ import {
     type WorkerEarningsRecordQuery,
     type WorkerEarningsRecordCategory,
 } from '@repo/types';
+import { format } from 'date-fns';
 import Decimal from 'decimal.js';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { CACHE_SERVICE, type IAdvancedCacheService } from 'src/common/cache';
@@ -94,6 +95,14 @@ export class PayService {
 
     private getPaymentLockKey(orderId: string) {
         return `lock:payment:order:${orderId}`;
+    }
+
+    private isPaymentExpired(expiresAt?: Date | null) {
+        return Boolean(expiresAt && expiresAt.getTime() <= Date.now());
+    }
+
+    private formatAlipayTimeExpire(date: Date) {
+        return format(date, 'yyyy-MM-dd+HH:mm:ss');
     }
 
     /**
@@ -204,12 +213,12 @@ export class PayService {
                 }
 
                 if (mappedStatus === 'succeeded') {
-                    // 支付成功后更新订单状态为 'paid'
+                    // 支付成功后更新订单状态为 'pending_acceptance'
                     let orderForPayment: OrderRecord = latestOrder;
                     try {
                         const updatedOrder = await this.order.updateOrderStatus(
                             latestOrder.id,
-                            'paid',
+                            'pending_acceptance',
                             { tx: tx },
                         );
                         if (updatedOrder) {
@@ -249,6 +258,10 @@ export class PayService {
                     );
                 }
             });
+
+            if (mappedStatus === 'succeeded') {
+                await this.order.clearPaymentExpirationSchedule(orderId);
+            }
 
             return { success: true, alreadyProcessed };
         } catch (error) {
@@ -442,6 +455,17 @@ export class PayService {
         const orderInfo = await this.order.getOrderById(orderId, userId);
         let payableAmount = Number(orderInfo.totalAmount);
 
+        if (this.isPaymentExpired(orderInfo.paymentExpiresAt)) {
+            await this.order
+                .cancelOrderBySystem(orderInfo.id)
+                .catch(() =>
+                    this.logger.warn(
+                        `[PayService] 超时订单取消失败: ${orderInfo.id}`,
+                    ),
+                );
+            throw new BadRequestException('订单支付已超时，请重新下单');
+        }
+
         if (!Number.isFinite(payableAmount) || payableAmount <= 0) {
             throw new BadRequestException('订单金额异常，无法发起支付');
         }
@@ -488,6 +512,17 @@ export class PayService {
 
                 if (currentOrder.status !== 'pending_payment') {
                     throw new BadRequestException('当前状态不支持发起支付');
+                }
+
+                if (this.isPaymentExpired(currentOrder.paymentExpiresAt)) {
+                    await this.order
+                        .cancelOrderBySystem(orderId)
+                        .catch(() =>
+                            this.logger.warn(
+                                `[PayService] 超时订单取消失败: ${orderId}`,
+                            ),
+                        );
+                    throw new BadRequestException('订单支付已超时，请重新下单');
                 }
 
                 payableAmount = Number(currentOrder.totalAmount);
@@ -547,6 +582,12 @@ export class PayService {
                 `订单支付-${orderInfo.orderSerial ?? orderInfo.id}`;
             const orderBody = orderInfo.service?.description ?? '';
 
+            const paymentExpireTime = orderInfo.paymentExpiresAt
+                ? this.formatAlipayTimeExpire(
+                      new Date(orderInfo.paymentExpiresAt),
+                  )
+                : undefined;
+
             const orderString = this.alipaySdk.sdkExecute(
                 'alipay.trade.app.pay',
                 {
@@ -556,6 +597,7 @@ export class PayService {
                         subject: orderSubject,
                         product_code: 'QUICK_MSECURITY_PAY',
                         body: orderBody,
+                        time_expire: paymentExpireTime,
                     },
                     notify_url: `http://e96a2a8c.natappfree.cc/api/pay/alipay/notify`,
                 },
