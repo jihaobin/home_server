@@ -400,7 +400,11 @@ export function useBulkUpdateAdminOrderStatus() {
     });
 }
 
-const TERMINAL_ORDER_STATUSES = new Set<OrderStatus>(['cancelled', 'refunded']);
+const TERMINAL_ORDER_STATUSES = new Set<OrderStatus>([
+    'cancelled',
+    'payment_timeout',
+    'refunded',
+]);
 
 function canAdminOrderUpdate(status: OrderStatus) {
     return !TERMINAL_ORDER_STATUSES.has(status);

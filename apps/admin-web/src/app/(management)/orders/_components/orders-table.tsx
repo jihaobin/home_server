@@ -264,13 +264,16 @@ export function OrdersTable({
         [onPaginationChange, page, total],
     )
 
+    const resolvedPageCount = Math.max(Math.ceil(total / Math.max(limit, 1)), 1)
+    const displayPageIndex = Math.max(page - 1, 0)
+
     const table = useReactTable({
         data,
         columns,
         getRowId: (row, index) => row.id ?? row.orderSerial ?? `${index}`,
         getCoreRowModel: getCoreRowModel(),
         manualPagination: true,
-        pageCount: Math.max(Math.ceil(total / Math.max(limit, 1)), 1),
+        pageCount: resolvedPageCount,
         enableRowSelection: true,
         state: {
             pagination: {
@@ -352,6 +355,10 @@ export function OrdersTable({
                 table={table}
                 totalItems={total}
                 pageSize={limit}
+                pageIndex={displayPageIndex}
+                pageCount={resolvedPageCount}
+                canPreviousPage={displayPageIndex > 0}
+                canNextPage={displayPageIndex < resolvedPageCount - 1}
                 onPageSizeChange={handlePageSizeChange}
                 className="rounded-none border-t"
             />

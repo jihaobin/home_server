@@ -45,9 +45,9 @@ export function Providers({ children }: ProvidersProps) {
                 {children}
                 <Toaster position="top-center" />
                 <Analytics />
-                {process.env.NODE_ENV === "development" ? (
+                {/* {process.env.NODE_ENV === "development" ? (
                     <ReactQueryDevtools initialIsOpen={false} />
-                ) : null}
+                ) : null} */}
             </QueryClientProvider>
         </NextThemesProvider>
     )

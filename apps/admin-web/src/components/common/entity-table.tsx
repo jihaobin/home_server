@@ -207,6 +207,10 @@ export type EntityTablePaginationProps<TData> = HTMLAttributes<HTMLDivElement> &
     pageSizeOptions?: number[]
     totalItems?: number
     pageSize?: number
+    pageIndex?: number
+    pageCount?: number
+    canPreviousPage?: boolean
+    canNextPage?: boolean
     onPageSizeChange?: (pageSize: number) => void
 }
 
@@ -216,19 +220,39 @@ export function EntityTablePagination<TData>({
     pageSizeOptions = [10, 20, 50],
     totalItems,
     pageSize: controlledPageSize,
+    pageIndex: controlledPageIndex,
+    pageCount: controlledPageCount,
+    canPreviousPage: controlledCanPreviousPage,
+    canNextPage: controlledCanNextPage,
     onPageSizeChange,
     ...props
 }: EntityTablePaginationProps<TData>) {
     const pagination = table.getState().pagination
-    const pageIndex = pagination?.pageIndex ?? 0
+    const fallbackPageIndex = pagination?.pageIndex ?? 0
+    const pageIndex =
+        typeof controlledPageIndex === "number"
+            ? controlledPageIndex
+            : fallbackPageIndex
     const pageSizeFromTable = pagination?.pageSize ?? pageSizeOptions[0]
     const pageSize =
         typeof controlledPageSize === "number" ? controlledPageSize : pageSizeFromTable
     const computedPageCount = table.getPageCount()
+    const fallbackPageCount =
+        computedPageCount === -1
+            ? fallbackPageIndex + 1
+            : Math.max(computedPageCount, 1)
     const pageCount =
-        computedPageCount === -1 ? pageIndex + 1 : Math.max(computedPageCount, 1)
-    const canPreviousPage = table.getCanPreviousPage()
-    const canNextPage = table.getCanNextPage()
+        typeof controlledPageCount === "number"
+            ? Math.max(controlledPageCount, 1)
+            : fallbackPageCount
+    const canPreviousPage =
+        typeof controlledCanPreviousPage === "boolean"
+            ? controlledCanPreviousPage
+            : table.getCanPreviousPage()
+    const canNextPage =
+        typeof controlledCanNextPage === "boolean"
+            ? controlledCanNextPage
+            : table.getCanNextPage()
     const fallbackRowCount = table.getFilteredRowModel().rows.length
     const rowCount = typeof totalItems === "number" ? totalItems : fallbackRowCount
 

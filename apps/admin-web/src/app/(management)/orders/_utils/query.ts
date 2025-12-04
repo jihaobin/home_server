@@ -5,6 +5,7 @@ type RawSearchParams = Record<string, string | string[] | undefined>
 
 const ORDER_STATUS_VALUES: OrderStatus[] = [
     "pending_payment",
+    "payment_timeout",
     "paid",
     "in_progress",
     "completed",

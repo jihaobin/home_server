@@ -17,6 +17,7 @@ import {
     useUpdateAdminOrderStatus,
     adminOrdersQueryKey,
     normalizeAdminOrdersQuery,
+    adminOrderDetailQueryKey,
 } from "@repo/hooks/api/ssr"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@repo/web-ui/components/button"
@@ -39,6 +40,23 @@ import { OrdersTable } from "./orders-table"
 import { OrdersTableSkeleton } from "./orders-table-skeleton"
 import { OrderDetailDrawer } from "./order-detail-drawer"
 import { ORDER_STATUS_LABELS } from "../_constants"
+import { adminApiBaseUrl } from "@/lib/api-client"
+
+type OrderEventMessage = {
+    event: string
+    orderId: string
+    status?: string
+    message?: string
+    triggeredAt?: string
+}
+
+type IncomingOrderEvent = { data: OrderEventMessage }
+
+function normalizeOrderEvent(
+    incoming: IncomingOrderEvent,
+): OrderEventMessage | null {
+    return incoming.data ?? null
+}
 
 const BULK_STATUS_OPTIONS: OrderStatus[] = [
     "paid",
@@ -50,8 +68,11 @@ const BULK_STATUS_OPTIONS: OrderStatus[] = [
 
 const TERMINAL_ORDER_STATUSES = new Set<OrderStatus>([
     "cancelled",
+    "payment_timeout",
     "refunded",
 ])
+
+const SSE_RECONNECT_DELAY = 5000
 
 type OrdersPageContentProps = {
     initialQuery: OrdersQueryState
@@ -183,8 +204,8 @@ export function OrdersPageContent({ initialQuery }: OrdersPageContentProps) {
                 endDate: values.dateRange?.to
                     ? endOfDay(values.dateRange.to).toISOString()
                     : values.dateRange?.from
-                    ? endOfDay(values.dateRange.from).toISOString()
-                    : undefined,
+                        ? endOfDay(values.dateRange.from).toISOString()
+                        : undefined,
                 minAmount: parseAmount(values.minAmount),
                 maxAmount: parseAmount(values.maxAmount),
             }))
@@ -207,6 +228,97 @@ export function OrdersPageContent({ initialQuery }: OrdersPageContentProps) {
             maxAmount: undefined,
         }))
     }, [updateQuery])
+
+    const applyOrderEvent =
+        (incoming: IncomingOrderEvent) => {
+            const payload = normalizeOrderEvent(incoming)
+            console.log('收到订单事件', payload)
+            if (!payload?.orderId || payload.event !== 'order_payment_expired') {
+                return
+            }
+
+            const nextStatus = (payload.status as OrderStatus) ?? "payment_timeout"
+
+            if (refetchRef.current) {
+                void refetchRef.current()
+            }
+
+            queryClient.invalidateQueries({
+                queryKey: adminOrderDetailQueryKey(payload.orderId),
+            })
+
+            setSelectedOrderSummary((prev) => {
+                if (!prev || prev.id !== payload.orderId) {
+                    return prev
+                }
+                return {
+                    ...prev,
+                    status: nextStatus,
+                    canUpdateStatus: !TERMINAL_ORDER_STATUSES.has(nextStatus),
+                }
+            })
+
+            if (payload.message) {
+                toast.info(payload.message)
+            } else {
+                toast.info(
+                    `订单已更新为「${ORDER_STATUS_LABELS[nextStatus] ?? nextStatus
+                    }」`,
+                )
+            }
+        }
+
+    useEffect(() => {
+        if (typeof window === "undefined") {
+            return
+        }
+
+        const baseUrl =
+            adminApiBaseUrl && adminApiBaseUrl.length > 0
+                ? adminApiBaseUrl
+                : `${window.location.origin}/api`
+        const normalizedBase = baseUrl.endsWith("/")
+            ? baseUrl.slice(0, -1)
+            : baseUrl
+        const eventsUrl = `${normalizedBase}/orders/events`
+
+        let closed = false
+        let eventSource: EventSource | null = null
+
+        const connect = () => {
+            console.log("sse连接成功")
+
+            if (closed) {
+                return
+            }
+
+            eventSource = new EventSource(eventsUrl, { withCredentials: true })
+            eventSource.onmessage = (event) => {
+                if (!event?.data) {
+                    return
+                }
+                try {
+                    const payload = JSON.parse(event.data) as IncomingOrderEvent
+                    applyOrderEvent(payload)
+                } catch (error) {
+                    console.error("解析订单事件失败", error)
+                }
+            }
+            eventSource.onerror = () => {
+                eventSource?.close()
+                if (!closed) {
+                    setTimeout(connect, SSE_RECONNECT_DELAY)
+                }
+            }
+        }
+
+        connect()
+
+        return () => {
+            closed = true
+            eventSource?.close()
+        }
+    }, [applyOrderEvent])
 
     useEffect(() => {
         const search = buildOrdersSearchParams(queryState)
@@ -330,14 +442,14 @@ export function OrdersPageContent({ initialQuery }: OrdersPageContentProps) {
                     const nextItems = previous.items.map((item: AdminOrderListItem) =>
                         item.id === orderId
                             ? {
-                                  ...item,
-                                  status: updated.status,
-                                  assignmentType:
-                                      updated.assignment?.assignmentType ?? item.assignmentType,
-                                  canUpdateStatus: !TERMINAL_ORDER_STATUSES.has(
-                                      updated.status,
-                                  ),
-                              }
+                                ...item,
+                                status: updated.status,
+                                assignmentType:
+                                    updated.assignment?.assignmentType ?? item.assignmentType,
+                                canUpdateStatus: !TERMINAL_ORDER_STATUSES.has(
+                                    updated.status,
+                                ),
+                            }
                             : item,
                     )
 

@@ -74,6 +74,7 @@
         "@types/node": "^20",
         "@types/react": "catalog:react19-2",
         "@types/react-dom": "catalog:react19-2",
+        "baseline-browser-mapping": "^2.8.32",
         "eslint": "^9",
         "eslint-config-next": "^16.0.0",
         "tailwindcss": "^4",

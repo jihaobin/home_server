@@ -2,6 +2,7 @@ import type { AssignmentType, OrderStatus, PaymentStatus } from "@repo/types"
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
     pending_payment: "待支付",
+    payment_timeout: "支付超时",
     paid: "已支付",
     in_progress: "服务中",
     completed: "已完成",
@@ -11,6 +12,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
 
 export const ORDER_STATUS_BADGE_CLASSES: Record<OrderStatus, string> = {
     pending_payment: "bg-amber-100 text-amber-700",
+    payment_timeout: "bg-rose-100 text-rose-700",
     paid: "bg-blue-100 text-blue-700",
     in_progress: "bg-indigo-100 text-indigo-700",
     completed: "bg-emerald-100 text-emerald-700",

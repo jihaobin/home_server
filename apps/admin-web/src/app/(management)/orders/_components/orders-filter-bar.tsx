@@ -33,6 +33,7 @@ import {
 const STATUS_OPTIONS = [
     { label: "全部状态", value: "all" },
     { label: "待支付", value: "pending_payment" },
+    { label: "支付超时", value: "payment_timeout" },
     { label: "已支付", value: "paid" },
     { label: "服务中", value: "in_progress" },
     { label: "已完成", value: "completed" },
