@@ -32,9 +32,9 @@ const HTTP_STATUS_TO_ERROR_CODE: Record<number, ErrorCode> = {
   400: ErrorCode.BAD_REQUEST,
   401: ErrorCode.UNAUTHORIZED,
   403: ErrorCode.FORBIDDEN,
-    404: ErrorCode.NOT_FOUND,
+  404: ErrorCode.NOT_FOUND,
   408: ErrorCode.REQUEST_TIMEOUT,
-    409: ErrorCode.CONFLICT,
+  409: ErrorCode.CONFLICT,
   429: ErrorCode.TOO_MANY_REQUESTS,
   500: ErrorCode.INTERNAL_ERROR,
   502: ErrorCode.SERVICE_UNAVAILABLE,
@@ -126,7 +126,7 @@ export class ApiClient {
 
     this.client = ofetch.create({
         baseURL: options.baseURL,
-        timeout: options.timeout || 10000,
+        timeout: options.timeout || 1000 * 60 , // 默认1分钟
         credentials: 'include',
         ...options,
     });
