@@ -74,13 +74,83 @@ export const WithdrawalStatusEnum = z.enum([
 ]);
 export type WithdrawalStatus = z.infer<typeof WithdrawalStatusEnum>;
 
-// 通知类型枚举
-export const NotificationTypeEnum = z.enum([
-    "system", // 系统消息
-    "order_update", // 订单更新
-    "promotion", // 优惠促销
+// 通知模块枚举
+export const NotificationPriorityEnum = z.enum([
+    "high", // 关键事务，必须实时送达
+    "normal", // 默认优先级
+    "low", // 可延迟或批量处理
 ]);
-export type NotificationType = z.infer<typeof NotificationTypeEnum>;
+export type NotificationPriority = z.infer<typeof NotificationPriorityEnum>;
+
+export const NotificationStatusEnum = z.enum([
+    "pending", // 初始写入数据库，等待出队
+    "queued", // 已进入 Redis Stream 等队列
+    "dispatching", // Dispatcher 正在执行渠道
+    "succeeded", // 全部流程完成
+    "failed", // 全部渠道失败或超限
+    "cancelled", // 被业务主动撤销
+]);
+export type NotificationStatus = z.infer<typeof NotificationStatusEnum>;
+
+export const NotificationDeliveryModeEnum = z.enum([
+    "strict", // 需要客户端 ACK
+    "best-effort", // 尽力而为，发送即算完成
+]);
+export type NotificationDeliveryMode = z.infer<
+    typeof NotificationDeliveryModeEnum
+>;
+
+export const NotificationTraceLevelEnum = z.enum([
+    "none", // 不留轨迹
+    "minimal", // 只记录关键节点
+    "full", // 详细记录调度与重试
+]);
+export type NotificationTraceLevel = z.infer<
+    typeof NotificationTraceLevelEnum
+>;
+
+export const NotificationChannelEnum = z.enum([
+    "in_app", // 应用内 WS/Socket 推送
+    "tencent_cloud_push", // 腾讯云消息推送，面向后台/未启动场景
+    "sms", // 短信兜底
+]);
+export type NotificationChannel = z.infer<typeof NotificationChannelEnum>;
+
+export const NotificationTargetTypeEnum = z.enum([
+    "user", // 单个用户
+    "service_personnel", // 服务人员实体
+    "shop", // 店铺/商户
+    "role", // 按角色广播
+    "custom", // 业务自定义主体
+]);
+export type NotificationTargetType = z.infer<
+    typeof NotificationTargetTypeEnum
+>;
+
+export const NotificationDeliveryStatusEnum = z.enum([
+    "pending", // 等待渠道执行
+    "scheduled", // 渠道内部排队
+    "sent", // 渠道调用成功
+    "delivered", // 渠道确认送达
+    "failed", // 渠道失败或拒绝
+    "acknowledged", // 客户端确认收到
+]);
+export type NotificationDeliveryStatus = z.infer<
+    typeof NotificationDeliveryStatusEnum
+>;
+
+// 复用型 JSON 字段（payload/metadata 等）使用统一 schema，便于在多个表中引用。
+const JsonRecordSchema = z.record(z.string(), z.any());
+
+export const NotificationChannelPlanItemSchema = z.object({
+    channel: NotificationChannelEnum,
+    when: z.enum(["online", "offline", "always"]).optional(),
+    fallbackAfterMs: z.number().int().nonnegative().optional(),
+    metadata: JsonRecordSchema.optional(),
+});
+export type NotificationChannelPlanItem = z.infer<
+    typeof NotificationChannelPlanItemSchema
+>;
 
 // 优惠券类型枚举
 export const CouponTypeEnum = z.enum([
@@ -106,6 +176,19 @@ export type ReviewTargetType = z.infer<typeof ReviewTargetTypeEnum>;
 // 用户优惠券状态枚举
 export const UserCouponStatusEnum = z.enum(["available", "used", "expired"]);
 export type UserCouponStatus = z.infer<typeof UserCouponStatusEnum>;
+
+export const NotificationDeviceInfoSchema = z.object({
+    deviceId: z.string().max(255, "设备ID长度不能超过255个字符").optional(),
+    platform: z.enum(['ios', 'android', 'web', 'unknown']).optional(),
+    appVersion: z.string().max(64, "App 版本号长度不能超过64个字符").optional(),
+    connectionId: z.string().max(255, "连接ID长度不能超过255个字符").optional(),
+    registrationId: z.string().max(512, "RegistrationID 长度不能超过512个字符").optional(),
+    updatedAt: z.string().optional(),
+});
+export type NotificationDeviceInfo = z.infer<
+    typeof NotificationDeviceInfoSchema
+>;
+
 
 // 订单到场核验状态枚举
 export const OrderCheckinStatusEnum = z.enum([
@@ -191,6 +274,13 @@ export const UsersSchema = z
             .meta({
                 description: "用户头像的URL",
                 title: "头像URL",
+            }),
+        devices: z
+            .array(NotificationDeviceInfoSchema)
+            .default([])
+            .meta({
+                description: "用户绑定的设备列表，用于记录 RegistrationID 等推送信息",
+                title: "设备列表",
             }),
         createdAt: z.date().meta({
             description: "用户创建时间",
@@ -555,6 +645,22 @@ export const UserProfilesSchema = z
             description: "用户ID",
             title: "用户ID",
         }),
+        alipayUserId: z
+            .string()
+            .max(64)
+            .optional()
+            .meta({
+                description: "支付宝 userId",
+                title: "支付宝用户ID",
+            }),
+        alipayOpenId: z
+            .string()
+            .max(64)
+            .optional()
+            .meta({
+                description: "支付宝 openId",
+                title: "支付宝 openId",
+            }),
         realName: z.string().max(50).meta({
             description: "真实姓名",
             title: "真实姓名",
@@ -1840,37 +1946,52 @@ export const WithdrawalsSchema = z
         description: "存储用户提现记录的表",
     });
 
-// 通知表（关联用户）
+// 通知事件主表
 export const NotificationsSchema = z
     .object({
         id: z.string().max(255).meta({
             description: "通知ID",
             title: "通知ID",
         }),
-        userId: z.string().max(255).meta({
-            description: "用户ID",
-            title: "用户ID",
+        event: z.string().min(1).max(120).meta({
+            description: "事件标识，建议使用业务命名空间",
+            title: "事件",
         }),
-        type: NotificationTypeEnum.meta({
-            description: "通知类型",
-            title: "通知类型",
-            examples: [
-                "system (系统消息)",
-                "order_update (订单更新)",
-                "promotion (优惠促销)",
-            ],
+        payload: JsonRecordSchema.meta({
+            description: "业务负载，序列化后的 JSON",
+            title: "通知载荷",
         }),
-        title: z.string().max(255).meta({
-            description: "通知标题",
-            title: "通知标题",
+        metadata: JsonRecordSchema.default({}).meta({
+            description: "调度过程中的附加信息",
+            title: "元数据",
         }),
-        message: z.string().optional().meta({
-            description: "通知内容",
-            title: "通知内容",
+        priority: NotificationPriorityEnum.default("normal").meta({
+            description: "投递优先级",
+            title: "优先级",
         }),
-        isRead: z.boolean().default(false).meta({
-            description: "是否已读",
-            title: "是否已读",
+        status: NotificationStatusEnum.default("pending").meta({
+            description: "当前投递状态",
+            title: "状态",
+        }),
+        deliveryMode: NotificationDeliveryModeEnum.default("best-effort").meta({
+            description: "投递模式，strict 需要 ACK",
+            title: "投递模式",
+        }),
+        traceLevel: NotificationTraceLevelEnum.default("minimal").meta({
+            description: "追踪粒度",
+            title: "追踪级别",
+        }),
+        traceContext: JsonRecordSchema.default({}).meta({
+            description: "调试或监控需要的上下文信息",
+            title: "追踪上下文",
+        }),
+        availableAt: z.date().nullable().optional().meta({
+            description: "允许出队时间",
+            title: "可用时间",
+        }),
+        expiresAt: z.date().nullable().optional().meta({
+            description: "过期时间",
+            title: "过期时间",
         }),
         createdAt: z
             .date()
@@ -1879,10 +2000,260 @@ export const NotificationsSchema = z
                 description: "创建时间",
                 title: "创建时间",
             }),
+        updatedAt: z
+            .date()
+            .default(() => new Date())
+            .meta({
+                description: "最近更新时间",
+                title: "更新时间",
+            }),
     })
     .meta({
-        title: "通知表",
-        description: "存储用户通知信息的表",
+        title: "通知事件表",
+        description: "存储通知事件基础信息",
+    });
+
+// 通知目标表
+export const NotificationTargetsSchema = z
+    .object({
+        id: z.string().max(255).meta({
+            description: "通知目标记录ID",
+            title: "通知目标ID",
+        }),
+        notificationId: z.string().max(255).meta({
+            description: "关联的通知事件ID",
+            title: "通知ID",
+        }),
+        targetType: NotificationTargetTypeEnum.meta({
+            description: "目标类型（用户、店铺、角色等）",
+            title: "目标类型",
+        }),
+        targetId: z.string().max(255).meta({
+            description: "目标标识，例如用户ID或角色名",
+            title: "目标ID",
+        }),
+        userId: z.string().max(255).nullable().optional().meta({
+            description: "当目标为用户时的用户ID",
+            title: "用户ID",
+        }),
+        metadata: JsonRecordSchema.default({}).meta({
+            description: "用于路由或内容的扩展信息",
+            title: "目标元数据",
+        }),
+        channelPlan: z
+            .array(NotificationChannelPlanItemSchema)
+            .default([])
+            .meta({
+                description: "执行时缓存的渠道计划",
+                title: "渠道计划",
+            }),
+        createdAt: z
+            .date()
+            .default(() => new Date())
+            .meta({
+                description: "创建时间",
+                title: "创建时间",
+            }),
+        updatedAt: z
+            .date()
+            .default(() => new Date())
+            .meta({
+                description: "更新时间",
+                title: "更新时间",
+            }),
+    })
+    .meta({
+        title: "通知目标表",
+        description: "记录通知需要触达的用户或实体",
+    });
+
+// 通知投递日志
+export const NotificationDeliveriesSchema = z
+    .object({
+        deliveryId: z.string().max(255).meta({
+            description: "投递记录ID（可包含去重信息）",
+            title: "投递ID",
+        }),
+        notificationId: z.string().max(255).meta({
+            description: "关联的通知事件ID",
+            title: "通知ID",
+        }),
+        targetId: z.string().max(255).meta({
+            description: "关联的通知目标ID",
+            title: "通知目标ID",
+        }),
+        channel: NotificationChannelEnum.meta({
+            description: "实际使用的渠道",
+            title: "渠道",
+        }),
+        status: NotificationDeliveryStatusEnum.default("pending").meta({
+            description: "当前投递状态",
+            title: "状态",
+        }),
+        attempt: z
+            .number()
+            .int()
+            .min(1)
+            .default(1)
+            .meta({
+                description: "第几次尝试",
+                title: "尝试次数",
+            }),
+        lastError: z
+            .string()
+            .max(2000)
+            .nullable()
+            .optional()
+            .meta({
+                description: "最近一次失败原因",
+                title: "错误信息",
+            }),
+        context: JsonRecordSchema.default({}).meta({
+            description: "渠道调用上下文或响应",
+            title: "上下文",
+        }),
+        deliveredAt: z.date().nullable().optional().meta({
+            description: "标记为送达的时间",
+            title: "送达时间",
+        }),
+        ackAt: z.date().nullable().optional().meta({
+            description: "严格模式下客户端确认时间",
+            title: "ACK 时间",
+        }),
+        createdAt: z
+            .date()
+            .default(() => new Date())
+            .meta({
+                description: "创建时间",
+                title: "创建时间",
+            }),
+        updatedAt: z
+            .date()
+            .default(() => new Date())
+            .meta({
+                description: "更新时间",
+                title: "更新时间",
+            }),
+    })
+    .meta({
+        title: "通知投递日志",
+        description: "记录每一次渠道投递的状态与上下文",
+    });
+
+// 通知 Outbox
+export const NotificationOutboxSchema = z
+    .object({
+        notificationId: z.string().max(255).meta({
+            description: "关联的通知事件ID",
+            title: "通知ID",
+        }),
+        retryCount: z
+            .number()
+            .int()
+            .min(0)
+            .default(0)
+            .meta({
+                description: "重试次数",
+                title: "重试次数",
+            }),
+        lockedAt: z.date().nullable().optional().meta({
+            description: "锁定时间，防止重复消费",
+            title: "锁定时间",
+        }),
+        lockOwner: z.string().max(128).nullable().optional().meta({
+            description: "占用该任务的 worker 标识",
+            title: "锁所有者",
+        }),
+        sent: z.boolean().default(false).meta({
+            description: "是否已经写入队列",
+            title: "是否已发送",
+        }),
+        lastError: z
+            .string()
+            .max(2000)
+            .nullable()
+            .optional()
+            .meta({
+                description: "最近一次推进失败原因",
+                title: "错误",
+            }),
+        createdAt: z
+            .date()
+            .default(() => new Date())
+            .meta({
+                description: "创建时间",
+                title: "创建时间",
+            }),
+        updatedAt: z
+            .date()
+            .default(() => new Date())
+            .meta({
+                description: "更新时间",
+                title: "更新时间",
+            }),
+    })
+    .meta({
+        title: "通知 Outbox",
+        description: "数据出队的可靠性缓冲表",
+    });
+
+// 通知偏好表
+export const NotificationPreferencesSchema = z
+    .object({
+        id: z.string().max(255).meta({
+            description: "偏好记录ID",
+            title: "偏好ID",
+        }),
+        targetType: NotificationTargetTypeEnum.meta({
+            description: "偏好适用的目标类型",
+            title: "目标类型",
+        }),
+        targetId: z.string().max(255).meta({
+            description: "偏好适用的目标ID",
+            title: "目标ID",
+        }),
+        userId: z.string().max(255).nullable().optional().meta({
+            description: "关联用户ID，可为空表示非用户主体",
+            title: "用户ID",
+        }),
+        channelPlan: z
+            .array(NotificationChannelPlanItemSchema)
+            .default([])
+            .meta({
+                description: "用户配置的渠道计划",
+                title: "渠道计划",
+            }),
+        metadata: JsonRecordSchema.default({}).meta({
+            description: "附加配置，例如免打扰时间",
+            title: "元数据",
+        }),
+        version: z
+            .number()
+            .int()
+            .min(1)
+            .default(1)
+            .meta({
+                description: "配置版本号，可用于缓存校验",
+                title: "版本",
+            }),
+        createdAt: z
+            .date()
+            .default(() => new Date())
+            .meta({
+                description: "创建时间",
+                title: "创建时间",
+            }),
+        updatedAt: z
+            .date()
+            .default(() => new Date())
+            .meta({
+                description: "更新时间",
+                title: "更新时间",
+            }),
+    })
+    .meta({
+        title: "通知偏好表",
+        description: "存储用户或实体的通知渠道配置",
     });
 
 // 优惠券使用记录表
@@ -1967,6 +2338,14 @@ export type ReviewDataBaseStats = z.infer<typeof ReviewStatsDataBaseSchema>;
 export type Earnings = z.infer<typeof EarningsSchema>;
 export type Withdrawals = z.infer<typeof WithdrawalsSchema>;
 export type Notifications = z.infer<typeof NotificationsSchema>;
+export type NotificationTargets = z.infer<typeof NotificationTargetsSchema>;
+export type NotificationDeliveries = z.infer<
+    typeof NotificationDeliveriesSchema
+>;
+export type NotificationOutbox = z.infer<typeof NotificationOutboxSchema>;
+export type NotificationPreferences = z.infer<
+    typeof NotificationPreferencesSchema
+>;
 export type Coupons = z.infer<typeof CouponsSchema>;
 export type CouponCategoryRestrictions = z.infer<typeof CouponCategoryRestrictionsSchema>;
 export type CouponServiceRestrictions = z.infer<typeof CouponServiceRestrictionsSchema>;

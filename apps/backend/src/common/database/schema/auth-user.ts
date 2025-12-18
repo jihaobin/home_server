@@ -8,6 +8,7 @@ import {
     uniqueIndex,
     index,
     uuid,
+    jsonb,
 } from 'drizzle-orm/pg-core';
 
 import { createId, files } from '.';
@@ -16,8 +17,9 @@ import { servicePersonnel } from './shops-service';
 import { userProfiles } from './user-profiles';
 import { userAddresses } from './addresses';
 import { orders } from './orders';
-import { notifications } from './notifications';
+import { notificationTargets } from './notifications';
 import { userCoupons } from './coupons';
+import type { NotificationDeviceInfo } from '@repo/types';
 
 // -- 用户表 (users)
 // -- 存储用户的核心认证信息和基本资料。
@@ -41,6 +43,10 @@ export const users = pgTable(
         role: roleEnum('role').default('customer'),
         isActive: boolean('is_active').default(true), // 账户是否激活
         image: varchar('image', { length: 255 }).notNull().default(''),
+        devices: jsonb('devices')
+            .$type<NotificationDeviceInfo[]>()
+            .notNull()
+            .default(sql`'[]'::jsonb`),
         createdAt: timestamp('created_at').notNull().defaultNow(),
         updatedAt: timestamp('updated_at')
             .$onUpdateFn(() => new Date())
@@ -132,7 +138,7 @@ export const userRelations = relations(users, ({ many, one }) => ({
     }),
     addresses: many(userAddresses),
     orders: many(orders),
-    notifications: many(notifications),
+    notifications: many(notificationTargets),
     userCoupons: many(userCoupons),
     image: one(files, {
         fields: [users.id],

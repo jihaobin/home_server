@@ -4,8 +4,7 @@ import { createAuthClient } from "better-auth/react";
 import * as SecureStore from "expo-secure-store";
 import * as Linking from "expo-linking";
 import { roleFieldClientPlugin } from "@repo/lib/auth-schema";
-
-const API_BASE_URL = "http://192.168.0.110:5050";
+import { API_BASE_URL } from "./config";
 const AUTH_BASE_PATH = "/api/auth";
 const SIGN_OUT_URL = new URL(
     `${AUTH_BASE_PATH}/sign-out`,

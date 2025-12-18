@@ -28,7 +28,7 @@
                 "android.permission.ACCESS_FINE_LOCATION",
                 "android.permission.ACCESS_COARSE_LOCATION"
             ],
-            "package": "com.zhang3.mobileworker"
+            "package": "com.yixin.dingdong.services"
         },
         "web": {
             "bundler": "metro",
@@ -36,7 +36,21 @@
             "favicon": "./assets/images/favicon.png"
         },
         "plugins": [
+            "./plugins/withAndroidSignature",
+            [
+                "./plugins/withPushVendors",
+                {
+                    "timpushSource": "./plugins/timpush-configs.json",
+                    "agconnectSource": "./plugins/agconnect-services.json"
+                }
+            ],
             "expo-router",
+            [
+                "./plugins/withCleartextTraffic",
+                {
+                    "allowInsecureHttp": true
+                }
+            ],
             [
                 "expo-splash-screen",
                 {
@@ -67,11 +81,18 @@
                 }
             ],
             [
+                "native-expo-alipay",
+                {
+                    "appId": "2021006119612034"
+                }
+            ],
+            [
                 "expo-image-picker",
                 {
                     "photosPermission": "允许 $(PRODUCT_NAME) 访问您的相册以选择照片"
                 }
-            ]
+            ],
+            "expo-notifications"
         ],
         "experiments": {
             "typedRoutes": true

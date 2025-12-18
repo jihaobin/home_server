@@ -52,6 +52,12 @@
         },
         "plugins": [
             "./plugins/withAndroidSignature",
+            [
+                "./plugins/withTimpushConfig",
+                {
+                    "source": "./plugins/timpush-configs.json"
+                }
+            ],
             "expo-router",
             [
                 "expo-splash-screen",

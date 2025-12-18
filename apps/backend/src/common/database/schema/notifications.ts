@@ -1,62 +1,297 @@
-import { relations } from 'drizzle-orm';
+/**
+ * Notification schema:
+ * 结合 docs/notification-tech-plan.md 的出站流程，将“通知事件 + 目标 + 投递日志 + Outbox + 偏好”
+ * 抽象为统一表结构，供 Publisher/Dispatcher/Worker 以及运营后台复用。
+ */
+import { relations, sql } from 'drizzle-orm';
 import {
-    pgTable,
-    varchar,
-    text,
     boolean,
-    timestamp,
     index,
+    integer,
+    jsonb,
+    pgTable,
+    text,
+    timestamp,
+    uniqueIndex,
+    varchar,
 } from 'drizzle-orm/pg-core';
 
 import { createId } from '.';
 import { users } from './auth-user';
-import { notificationTypeEnum } from './enums';
+import {
+    notificationChannelEnum,
+    notificationDeliveryModeEnum,
+    notificationDeliveryStatusEnum,
+    notificationPriorityEnum,
+    notificationStatusEnum,
+    notificationTargetTypeEnum,
+    notificationTraceLevelEnum,
+} from './enums';
+import { NotificationChannelPlanItem } from '@repo/types';
 
-/**
- * 通知表 (notifications)
- * 存储发送给用户的各类通知
- */
+export type NotificationMetadata = Record<string, unknown>;
+
 export const notifications = pgTable(
     'notifications',
     {
         id: varchar('id', { length: 255 })
             .primaryKey()
             .$default(() => createId())
-            .unique(), // 通知唯一标识
-        userId: varchar('user_id', { length: 255 })
+            .unique(),
+        event: varchar('event', { length: 120 }).notNull(),
+        payload: jsonb('payload').$type<NotificationMetadata>().notNull(),
+        metadata: jsonb('metadata')
+            .$type<NotificationMetadata>()
             .notNull()
-            .references(() => users.id, { onDelete: 'cascade' }), // 接收通知的用户 ID
-        type: notificationTypeEnum('type').notNull(), // 通知类型
-        title: varchar('title', { length: 255 }).notNull(), // 通知标题
-        message: text('message'), // 通知内容
-        isRead: boolean('is_read').default(false), // 是否已读
-        createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+            .default(sql`'{}'::jsonb`),
+        priority: notificationPriorityEnum('priority')
+            .notNull()
+            .default('normal'),
+        status: notificationStatusEnum('status').notNull().default('pending'),
+        deliveryMode: notificationDeliveryModeEnum('delivery_mode')
+            .notNull()
+            .default('best-effort'),
+        traceLevel: notificationTraceLevelEnum('trace_level')
+            .notNull()
+            .default('minimal'),
+        traceContext: jsonb('trace_context')
+            .$type<NotificationMetadata>()
+            .notNull()
+            .default(sql`'{}'::jsonb`),
+        availableAt: timestamp('available_at', { withTimezone: true }),
+        expiresAt: timestamp('expires_at', { withTimezone: true }),
+        createdAt: timestamp('created_at', { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp('updated_at', { withTimezone: true })
+            .$onUpdateFn(() => new Date())
+            .defaultNow()
+            .notNull(),
     },
     (table) => [
-        // 用户未读通知索引 - 用于查询用户的未读通知列表
-        index('idx_notifications_user_unread').on(
-            table.userId,
-            table.isRead,
+        index('idx_notifications_status_priority').on(
+            table.status,
+            table.priority,
             table.createdAt.desc(),
         ),
-        // 通知类型时间索引 - 用于按类型查询通知
-        index('idx_notifications_type_time').on(
-            table.type,
+        index('idx_notifications_event_time').on(
+            table.event,
             table.createdAt.desc(),
         ),
-        // 用户通知类型索引 - 用于查询用户特定类型的通知
-        index('idx_notifications_user_type').on(
+        index('idx_notifications_available_at')
+            .on(table.availableAt)
+            .where(sql`available_at IS NOT NULL`),
+    ],
+);
+
+export const notificationTargets = pgTable(
+    'notification_targets',
+    {
+        id: varchar('id', { length: 255 })
+            .primaryKey()
+            .$default(() => createId())
+            .unique(),
+        notificationId: varchar('notification_id', { length: 255 })
+            .notNull()
+            .references(() => notifications.id, { onDelete: 'cascade' }),
+        targetType: notificationTargetTypeEnum('target_type').notNull(),
+        targetId: varchar('target_id', { length: 255 }).notNull(),
+        userId: varchar('user_id', { length: 255 }).references(() => users.id, {
+            onDelete: 'cascade',
+        }),
+        metadata: jsonb('metadata')
+            .$type<NotificationMetadata>()
+            .notNull()
+            .default(sql`'{}'::jsonb`),
+        channelPlan: jsonb('channel_plan')
+            .$type<NotificationChannelPlanItem[]>()
+            .notNull()
+            .default(sql`'[]'::jsonb`),
+        createdAt: timestamp('created_at', { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp('updated_at', { withTimezone: true })
+            .$onUpdateFn(() => new Date())
+            .defaultNow()
+            .notNull(),
+    },
+    (table) => [
+        uniqueIndex('notification_target_unique').on(
+            table.notificationId,
+            table.targetType,
+            table.targetId,
+        ),
+        index('idx_notification_targets_user').on(
             table.userId,
-            table.type,
-            table.isRead,
+            table.createdAt.desc(),
         ),
     ],
 );
 
-// 通知关系定义
-export const notificationsRelations = relations(notifications, ({ one }) => ({
-    user: one(users, {
-        fields: [notifications.userId],
-        references: [users.id],
+export const notificationDeliveries = pgTable(
+    'notification_deliveries',
+    {
+        deliveryId: varchar('delivery_id', { length: 255 }).primaryKey(),
+        notificationId: varchar('notification_id', { length: 255 })
+            .notNull()
+            .references(() => notifications.id, { onDelete: 'cascade' }),
+        targetId: varchar('target_id', { length: 255 })
+            .notNull()
+            .references(() => notificationTargets.id, { onDelete: 'cascade' }),
+        channel: notificationChannelEnum('channel').notNull(),
+        status: notificationDeliveryStatusEnum('status')
+            .notNull()
+            .default('pending'),
+        attempt: integer('attempt').notNull().default(1),
+        lastError: text('last_error'),
+        context: jsonb('context')
+            .$type<NotificationMetadata>()
+            .notNull()
+            .default(sql`'{}'::jsonb`),
+        deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+        ackAt: timestamp('ack_at', { withTimezone: true }),
+        createdAt: timestamp('created_at', { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp('updated_at', { withTimezone: true })
+            .$onUpdateFn(() => new Date())
+            .defaultNow()
+            .notNull(),
+    },
+    (table) => [
+        index('idx_notification_deliveries_notification').on(
+            table.notificationId,
+            table.targetId,
+            table.channel,
+        ),
+        index('idx_notification_deliveries_status').on(
+            table.status,
+            table.channel,
+            table.createdAt.desc(),
+        ),
+    ],
+);
+
+export const notificationOutbox = pgTable(
+    'notification_outbox',
+    {
+        notificationId: varchar('notification_id', { length: 255 })
+            .primaryKey()
+            .references(() => notifications.id, { onDelete: 'cascade' }),
+        retryCount: integer('retry_count').notNull().default(0),
+        lockedAt: timestamp('locked_at', { withTimezone: true }),
+        lockOwner: varchar('lock_owner', { length: 128 }),
+        sent: boolean('sent').notNull().default(false),
+        lastError: text('last_error'),
+        createdAt: timestamp('created_at', { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp('updated_at', { withTimezone: true })
+            .$onUpdateFn(() => new Date())
+            .defaultNow()
+            .notNull(),
+    },
+    (table) => [
+        index('idx_notification_outbox_ready')
+            .on(table.sent, table.lockedAt, table.createdAt)
+            .where(sql`${table.sent} = false`),
+    ],
+);
+
+export const notificationPreferences = pgTable(
+    'notification_preferences',
+    {
+        id: varchar('id', { length: 255 })
+            .primaryKey()
+            .$default(() => createId())
+            .unique(),
+        targetType: notificationTargetTypeEnum('target_type').notNull(),
+        targetId: varchar('target_id', { length: 255 }).notNull(),
+        userId: varchar('user_id', { length: 255 }).references(() => users.id, {
+            onDelete: 'cascade',
+        }),
+        channelPlan: jsonb('channel_plan')
+            .$type<NotificationChannelPlanItem[]>()
+            .notNull()
+            .default(sql`'[]'::jsonb`),
+        metadata: jsonb('metadata')
+            .$type<NotificationMetadata>()
+            .notNull()
+            .default(sql`'{}'::jsonb`),
+        version: integer('version').notNull().default(1),
+        createdAt: timestamp('created_at', { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp('updated_at', { withTimezone: true })
+            .$onUpdateFn(() => new Date())
+            .defaultNow()
+            .notNull(),
+    },
+    (table) => [
+        uniqueIndex('notification_preferences_target_unique').on(
+            table.targetType,
+            table.targetId,
+        ),
+    ],
+);
+
+export const notificationsRelations = relations(
+    notifications,
+    ({ many, one }) => ({
+        targets: many(notificationTargets),
+        deliveries: many(notificationDeliveries),
+        outboxEntry: one(notificationOutbox, {
+            fields: [notifications.id],
+            references: [notificationOutbox.notificationId],
+        }),
     }),
-}));
+);
+
+export const notificationTargetsRelations = relations(
+    notificationTargets,
+    ({ one, many }) => ({
+        notification: one(notifications, {
+            fields: [notificationTargets.notificationId],
+            references: [notifications.id],
+        }),
+        user: one(users, {
+            fields: [notificationTargets.userId],
+            references: [users.id],
+        }),
+        deliveries: many(notificationDeliveries),
+    }),
+);
+
+export const notificationDeliveriesRelations = relations(
+    notificationDeliveries,
+    ({ one }) => ({
+        notification: one(notifications, {
+            fields: [notificationDeliveries.notificationId],
+            references: [notifications.id],
+        }),
+        target: one(notificationTargets, {
+            fields: [notificationDeliveries.targetId],
+            references: [notificationTargets.id],
+        }),
+    }),
+);
+
+export const notificationOutboxRelations = relations(
+    notificationOutbox,
+    ({ one }) => ({
+        notification: one(notifications, {
+            fields: [notificationOutbox.notificationId],
+            references: [notifications.id],
+        }),
+    }),
+);
+
+export const notificationPreferencesRelations = relations(
+    notificationPreferences,
+    ({ one }) => ({
+        user: one(users, {
+            fields: [notificationPreferences.userId],
+            references: [users.id],
+        }),
+    }),
+);

@@ -58,13 +58,65 @@ export const withdrawalStatusEnum = pgEnum('withdrawal_status', [
 ]);
 
 /**
- * 通知类型枚举
+ * 通用通知模块相关枚举。
+ * 这些值需要与 docs/notification-tech-plan.md 中描述的“优先级/状态/渠道”等概念保持一致，
+ * 以便数据库、类型系统与调度逻辑共享同一套 DSL。
  */
-export const notificationTypeEnum = pgEnum('notification_type', [
-    'system', // 系统消息
-    'order_update', // 订单更新
-    'promotion', // 优惠促销
+export const notificationPriorityEnum = pgEnum('notification_priority', [
+    'high', // 最高优先级，适用于支付失败等关键事件
+    'normal', // 默认优先级，大多数业务通知
+    'low', // 低优先级，可延迟或批量发送
 ]);
+
+export const notificationStatusEnum = pgEnum('notification_status', [
+    'pending', // 刚写入数据库，等待 Outbox 处理
+    'queued', // 已写入 Redis Stream 正在等待消费
+    'dispatching', // Dispatcher 正在执行渠道计划
+    'succeeded', // 全部渠道流程完成（含可选 ACK）
+    'failed', // 所有渠道都失败或超出重试
+    'cancelled', // 被业务取消（例如订单撤销）
+]);
+
+export const notificationDeliveryModeEnum = pgEnum(
+    'notification_delivery_mode',
+    [
+        'strict', // 需要客户端 ACK 才算送达
+        'best-effort', // 尽力而为，发送成功即可
+    ],
+);
+
+export const notificationTraceLevelEnum = pgEnum('notification_trace_level', [
+    'none', // 不记录投递轨迹
+    'minimal', // 记录关键节点
+    'full', // 记录详细的调度/重试信息
+]);
+
+export const notificationChannelEnum = pgEnum('notification_channel', [
+    'in_app', // WS 内部实时通知（前台）
+    'tencent_cloud_push', // 腾讯云消息推送（后台/离线）
+    'sms', // 短信兜底渠道
+]);
+
+// 目标类型用于快速区分用户/角色等主体，便于多租户或跨业务复用。
+export const notificationTargetTypeEnum = pgEnum('notification_target_type', [
+    'user', // 直接针对单个用户
+    'service_personnel', // 服务人员（可与 userId 同步）
+    'shop', // 店铺或商户主体
+    'role', // 基于角色广播
+    'custom', // 其它业务自定义实体
+]);
+
+export const notificationDeliveryStatusEnum = pgEnum(
+    'notification_delivery_status',
+    [
+        'pending', // 等待渠道执行
+        'scheduled', // 已加入渠道内部任务
+        'sent', // 渠道调用成功但未确认送达
+        'delivered', // 渠道确认送达（若支持）
+        'failed', // 渠道发送失败
+        'acknowledged', // 客户端反馈已收到
+    ],
+);
 
 /**
  * 订单分配方式枚举

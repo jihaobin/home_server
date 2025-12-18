@@ -11,3 +11,5 @@ export * from "./userAuthRealName";
 export * from "./work-skill";
 export * from "./file";
 export * from "./admin";
+export * from "./notification";
+export * from "./pay";

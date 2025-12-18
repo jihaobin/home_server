@@ -9,6 +9,7 @@ import { PayModule } from './pay/pay.module';
 import { FilesModule } from './files/files.module';
 import { ReviewModule } from './review/review.module';
 import { AdminModule } from './admin/admin.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
     imports: [
@@ -21,6 +22,7 @@ import { AdminModule } from './admin/admin.module';
         PayModule,
         FilesModule,
         ReviewModule,
+        NotificationModule,
         AdminModule,
     ],
 })

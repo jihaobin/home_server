@@ -37,7 +37,7 @@ const connection = new Pool({
 });
 
 const db = drizzle(connection, {
-    logger: new DefaultLogger({ writer: logWriter }),
+    // logger: new DefaultLogger({ writer: logWriter }),
     schema: schemas,
     casing: 'snake_case',
 });

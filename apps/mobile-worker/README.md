@@ -48,3 +48,8 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+
+## Release 包明文 HTTP 测试开关
+
+为保证线上安全，Release 构建默认拒绝所有 http:// 明文请求。若需在某次打包中开启 HTTP 调试，只需在 `app.json` 的插件列表中为 `./plugins/withCleartextTraffic` 传入 `allowInsecureHttp: true`，然后执行 `npx expo prebuild`（或 `pnpm --filter mobile-worker android` 等会触发预构建的命令）。生成 APK 后请把该参数改回 `false`，避免将不安全配置传播到后续版本。

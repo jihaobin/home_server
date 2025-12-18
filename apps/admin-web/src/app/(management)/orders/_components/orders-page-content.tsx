@@ -9,8 +9,11 @@ import type {
     AdminOrderListItem,
     AdminOrderListResponse,
     AssignmentType,
+    NotificationEventPayload,
+    NotificationSocketServerMessage,
     OrderStatus,
 } from "@repo/types"
+import { NotificationSocketEventType } from "@repo/types"
 import {
     useAdminOrders,
     useBulkUpdateAdminOrderStatus,
@@ -28,6 +31,7 @@ import {
     DropdownMenuTrigger,
 } from "@repo/web-ui/components/dropdown-menu"
 import { toast } from "sonner"
+import { useNotificationSocket } from "@/hooks/use-notification-socket"
 import { PageHeader, PageHeaderToolbar } from "@/components/common"
 import { cn } from "@repo/web-ui/lib/utils"
 import type { OrdersQueryState } from "../_utils/query"
@@ -42,22 +46,6 @@ import { OrderDetailDrawer } from "./order-detail-drawer"
 import { ORDER_STATUS_LABELS } from "../_constants"
 import { adminApiBaseUrl } from "@/lib/api-client"
 
-type OrderEventMessage = {
-    event: string
-    orderId: string
-    status?: string
-    message?: string
-    triggeredAt?: string
-}
-
-type IncomingOrderEvent = { data: OrderEventMessage }
-
-function normalizeOrderEvent(
-    incoming: IncomingOrderEvent,
-): OrderEventMessage | null {
-    return incoming.data ?? null
-}
-
 const BULK_STATUS_OPTIONS: OrderStatus[] = [
     "paid",
     "in_progress",
@@ -71,8 +59,6 @@ const TERMINAL_ORDER_STATUSES = new Set<OrderStatus>([
     "payment_timeout",
     "refunded",
 ])
-
-const SSE_RECONNECT_DELAY = 5000
 
 type OrdersPageContentProps = {
     initialQuery: OrdersQueryState
@@ -229,15 +215,14 @@ export function OrdersPageContent({ initialQuery }: OrdersPageContentProps) {
         }))
     }, [updateQuery])
 
-    const applyOrderEvent =
-        (incoming: IncomingOrderEvent) => {
-            const payload = normalizeOrderEvent(incoming)
-            console.log('收到订单事件', payload)
-            if (!payload?.orderId || payload.event !== 'order_payment_expired') {
+    const applyOrderEvent = useCallback(
+        (payload?: NotificationEventPayload | null) => {
+            if (!payload?.orderId || payload.event !== "order_payment_expired") {
                 return
             }
 
-            const nextStatus = (payload.status as OrderStatus) ?? "payment_timeout"
+            const nextStatus =
+                (payload.status as OrderStatus) ?? "payment_timeout"
 
             if (refetchRef.current) {
                 void refetchRef.current()
@@ -262,63 +247,46 @@ export function OrdersPageContent({ initialQuery }: OrdersPageContentProps) {
                 toast.info(payload.message)
             } else {
                 toast.info(
-                    `订单已更新为「${ORDER_STATUS_LABELS[nextStatus] ?? nextStatus
+                    `订单已更新为「${
+                        ORDER_STATUS_LABELS[nextStatus] ?? nextStatus
                     }」`,
                 )
             }
-        }
+        },
+        [queryClient],
+    )
+
+    const handleNotificationMessage = useCallback(
+        (
+            message: NotificationSocketServerMessage & {
+                type: NotificationSocketEventType.Notification
+            },
+        ) => {
+            applyOrderEvent(message.payload)
+        },
+        [applyOrderEvent],
+    )
+
+    const {
+        lastError: notificationError,
+        lastAckError: notificationAckError,
+    } = useNotificationSocket({
+        onNotification: handleNotificationMessage,
+    })
 
     useEffect(() => {
-        if (typeof window === "undefined") {
+        if (!notificationError) {
             return
         }
+        console.warn("[notification] socket error", notificationError)
+    }, [notificationError])
 
-        const baseUrl =
-            adminApiBaseUrl && adminApiBaseUrl.length > 0
-                ? adminApiBaseUrl
-                : `${window.location.origin}/api`
-        const normalizedBase = baseUrl.endsWith("/")
-            ? baseUrl.slice(0, -1)
-            : baseUrl
-        const eventsUrl = `${normalizedBase}/orders/events`
-
-        let closed = false
-        let eventSource: EventSource | null = null
-
-        const connect = () => {
-            console.log("sse连接成功")
-
-            if (closed) {
-                return
-            }
-
-            eventSource = new EventSource(eventsUrl, { withCredentials: true })
-            eventSource.onmessage = (event) => {
-                if (!event?.data) {
-                    return
-                }
-                try {
-                    const payload = JSON.parse(event.data) as IncomingOrderEvent
-                    applyOrderEvent(payload)
-                } catch (error) {
-                    console.error("解析订单事件失败", error)
-                }
-            }
-            eventSource.onerror = () => {
-                eventSource?.close()
-                if (!closed) {
-                    setTimeout(connect, SSE_RECONNECT_DELAY)
-                }
-            }
+    useEffect(() => {
+        if (!notificationAckError) {
+            return
         }
-
-        connect()
-
-        return () => {
-            closed = true
-            eventSource?.close()
-        }
-    }, [applyOrderEvent])
+        console.warn("[notification] ack error", notificationAckError)
+    }, [notificationAckError])
 
     useEffect(() => {
         const search = buildOrdersSearchParams(queryState)

@@ -7,5 +7,7 @@
   "typescript.tsdk": "node_modules\\typescript\\lib",
   "oxc.enable": true,
   "commentTranslate.targetLanguage": "zh-CN",
-  "chatgpt.openOnStartup": false
+  "chatgpt.openOnStartup": false,
+  "commentTranslate.source": "Bing",
+  "commentTranslate.hover.enabled": true
 }
