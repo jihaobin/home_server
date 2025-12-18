@@ -1,9 +1,19 @@
-import { Suspense, useCallback, useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+/**
+ * Profile 页面
+ *
+ * 性能优化说明：
+ * 1. 使用 React.memo 包装所有子组件，防止不必要的重渲染
+ * 2. 使用 useCallback 缓存回调函数，保持引用稳定
+ * 3. 使用 useMemo 缓存计算结果
+ * 4. 头像上传时只更新 UserInfoCard 组件，其他组件不会重渲染
+ * 5. 避免不必要的 session refetch，防止触发全局 Suspense fallback
+ */
+import { Suspense, useCallback, useEffect, useMemo, useState, memo } from "react";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
 import { Switch } from "@repo/mobile-ui/components/ui/switch";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
+import { ImageUploader } from "@/components/image-uploader";
 import { cn } from "@repo/mobile-ui/lib/utils";
 import { icons as lucideIconRegistry } from "lucide-react-native";
 import { useColorScheme } from "nativewind";
@@ -15,6 +25,10 @@ import { LogoutButton } from "@repo/mobile-ui/components/LogoutButton";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { useUserRealNameProfile } from "@repo/hooks/api/user";
 import { useOrdersList } from "@repo/hooks/api/order";
+import { useFile, useUploadFile, useUserFiles } from "@repo/hooks/api/files";
+import { authClient } from "@repo/lib/auth-client";
+import type { OrderStatus } from "@repo/types";
+import type { OrderTabId } from "@/components/orders_screen/types";
 
 type OrderQuickActionId = "unpaid" | "pending" | "verifying";
 
@@ -70,6 +84,18 @@ const maskIdCardNumber = (value?: string) => {
 
 type OrderQuickActionCounts = Record<OrderQuickActionId, number>;
 
+const QUICK_ACTION_TARGET_TAB_MAP: Record<OrderQuickActionId, OrderTabId> = {
+    unpaid: "pending",
+    pending: "paid",
+    verifying: "paid",
+};
+
+const QUICK_ACTION_TARGET_STATUS_MAP: Record<OrderQuickActionId, OrderStatus> = {
+    unpaid: "pending_payment",
+    pending: "paid",
+    verifying: "in_progress",
+};
+
 /**
  * 使用 Suspense 的订单统计组件
  * 分别查询各个状态的订单数量
@@ -111,21 +137,61 @@ function OrderCountsFetcher({ userId }: { userId: string }) {
     return counts;
 }
 
-function UserInfoCard({
+const UserInfoCard = memo(function UserInfoCard({
     info,
     isLoading,
-    onOpenSettings,
+    avatarUrl,
+    onAvatarChange,
 }: {
     info: UserProfileSummary;
     isLoading: boolean;
-    onOpenSettings: () => void;
+    avatarUrl?: string | null;
+    onAvatarChange?: (fileIdentifier: string, fileUrl: string) => void;
 }) {
     const { colorScheme, setColorScheme } = useColorScheme();
     const isDark = colorScheme === "dark";
-    const maskedIdCard = maskIdCardNumber(info.idCardNumber);
-    const phoneNumber = info.phoneNumber ?? "未绑定手机号";
-    const realName = info.realName ?? "未完善";
     const indicatorColor = isDark ? "#94a3b8" : "#64748b";
+
+    const uploadFile = useUploadFile();
+    const realNameRows = useMemo(
+        () => [
+            {
+                id: "realName",
+                label: "姓名",
+                value: info.realName ?? "未实名",
+            },
+            {
+                id: "phone",
+                label: "手机号",
+                value: info.phoneNumber ?? "未绑定手机号",
+            },
+            {
+                id: "idCardNumber",
+                label: "身份证",
+                value: maskIdCardNumber(info.idCardNumber),
+            },
+        ],
+        [info.idCardNumber, info.phoneNumber, info.realName]
+    );
+
+    const handleAvatarUpload = useCallback(
+        async (file: { uri: string; name: string; type: string }) => {
+            // 上传文件到后端
+            const result = await uploadFile.mutateAsync({
+                file,
+                fileType: "avatar",
+            });
+
+            // result.fileUrl 实际是 fileHash，可以用于访问文件
+            // 返回格式：{ fileIdentifier: id, fileUrl: fileHash }
+            // fileHash 可以通过 GET /files/{fileHash} 获取实际的图片URL
+            return {
+                fileIdentifier: result.id,
+                fileUrl: result.fileUrl, // 这是 fileHash
+            };
+        },
+        [uploadFile]
+    );
 
     return (
         <View
@@ -139,9 +205,18 @@ function UserInfoCard({
             }}
         >
             <View className="flex-row items-center">
-                <View className="h-16 w-16 items-center justify-center rounded-full bg-primary/10 dark:bg-primary/20">
-                    <Icon as={lucideIconRegistry.User} size={32} className="text-primary" />
-                </View>
+                <ImageUploader
+                    value={avatarUrl}
+                    onUpload={handleAvatarUpload}
+                    onUploadSuccess={onAvatarChange}
+                    size={64}
+                    circular
+                    maxWidth={512}
+                    maxHeight={512}
+                    maxFileSize={1024 * 1024}
+                    compressQuality={0.8}
+                    className="shadow-sm"
+                />
 
                 <View className="ml-4 flex-1">
                     <View className="flex-row items-center">
@@ -168,15 +243,6 @@ function UserInfoCard({
                             </View>
                         )}
                     </View>
-                    <Text className="mt-1 text-sm text-muted-foreground" numberOfLines={1}>
-                        实名姓名：{realName}
-                    </Text>
-                    <Text className="mt-1 text-sm text-muted-foreground" numberOfLines={1}>
-                        身份证号：{maskedIdCard}
-                    </Text>
-                    <Text className="mt-1 text-sm text-muted-foreground" numberOfLines={1}>
-                        绑定手机：{phoneNumber}
-                    </Text>
                 </View>
                 {/*
                 <Pressable
@@ -209,11 +275,48 @@ function UserInfoCard({
                     }}
                 />
             </View>
+
+            <View className="mt-4 rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-3 dark:bg-muted/40">
+                <View className="flex-row items-center justify-between">
+                    <Text className="text-sm font-semibold text-foreground">实名信息</Text>
+                    {isLoading ? (
+                        <Skeleton className="h-4 w-12" />
+                    ) : (
+                        <Text
+                            className={cn(
+                                "text-xs font-medium",
+                                info.verified ? "text-emerald-600" : "text-amber-600",
+                            )}
+                        >
+                            {info.verified ? "已认证" : "待完善"}
+                        </Text>
+                    )}
+                </View>
+
+                {realNameRows.map((row, index) => (
+                    <View
+                        key={row.id}
+                        className={cn(
+                            "flex-row items-center justify-between",
+                            index !== 0 ? "mt-3 border-t border-border/60 pt-3" : "mt-3",
+                        )}
+                    >
+                        <Text className="text-xs text-muted-foreground">{row.label}</Text>
+                        {isLoading ? (
+                            <Skeleton className="h-4 w-24" />
+                        ) : (
+                            <Text className="max-w-[60%] text-right text-sm text-foreground" numberOfLines={1}>
+                                {row.value}
+                            </Text>
+                        )}
+                    </View>
+                ))}
+            </View>
         </View>
     );
-}
+});
 
-function OrderQuickActionsCard({
+const OrderQuickActionsCard = memo(function OrderQuickActionsCard({
     actions,
     onViewAll,
 }: {
@@ -275,82 +378,10 @@ function OrderQuickActionsCard({
             </View>
         </View>
     );
-}
+});
 
-function ServiceActionsCard({
-    onOpenCart,
-    onOpenHistory,
-    onOpenFavorites,
-}: {
-    onOpenCart: () => void;
-    onOpenHistory: () => void;
-    onOpenFavorites: () => void;
-}) {
-    return (
-        <View
-            className="mx-4 mt-4 rounded-2xl border border-border bg-card p-4"
-            style={{
-                shadowColor: "rgba(15, 23, 42, 0.08)",
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.12,
-                shadowRadius: 10,
-                elevation: 3,
-            }}
-        >
-            <View className="mb-3">
-                <Text className="text-base font-semibold text-foreground">
-                    我的服务
-                </Text>
-            </View>
 
-            <View className="flex-row items-center justify-around">
-                <Pressable
-                    className="items-center"
-                    onPress={onOpenCart}
-                    android_ripple={{
-                        color: "rgba(148, 163, 184, 0.16)",
-                        borderless: true,
-                    }}
-                >
-                    <View className="h-12 w-12 items-center justify-center rounded-full bg-primary/10 dark:bg-primary/20">
-                        <Icon as={lucideIconRegistry.ShoppingCart} size={24} className="text-primary" />
-                    </View>
-                    <Text className="mt-2 text-xs text-foreground">购物车</Text>
-                </Pressable>
-
-                <Pressable
-                    className="items-center"
-                    onPress={onOpenHistory}
-                    android_ripple={{
-                        color: "rgba(148, 163, 184, 0.16)",
-                        borderless: true,
-                    }}
-                >
-                    <View className="h-12 w-12 items-center justify-center rounded-full bg-primary/10 dark:bg-primary/20">
-                        <Icon as={lucideIconRegistry.History} size={24} className="text-primary" />
-                    </View>
-                    <Text className="mt-2 text-xs text-foreground">浏览历史</Text>
-                </Pressable>
-
-                <Pressable
-                    className="items-center"
-                    onPress={onOpenFavorites}
-                    android_ripple={{
-                        color: "rgba(148, 163, 184, 0.16)",
-                        borderless: true,
-                    }}
-                >
-                    <View className="h-12 w-12 items-center justify-center rounded-full bg-primary/10 dark:bg-primary/20">
-                        <Icon as={lucideIconRegistry.Star} size={24} className="text-primary" />
-                    </View>
-                    <Text className="mt-2 text-xs text-foreground">关注</Text>
-                </Pressable>
-            </View>
-        </View>
-    );
-}
-
-function MenuList({ items }: { items: MenuItem[] }) {
+const MenuList = memo(function MenuList({ items }: { items: MenuItem[] }) {
     return (
         <View
             className="mx-4 mt-3 rounded-2xl border border-border bg-card"
@@ -392,12 +423,12 @@ function MenuList({ items }: { items: MenuItem[] }) {
             </View>
         </View>
     );
-}
+});
 
 /**
  * 带 Suspense 的订单快捷操作卡片
  */
-function OrderQuickActionsCardWithData({
+const OrderQuickActionsCardWithData = memo(function OrderQuickActionsCardWithData({
     userId,
     onViewAll,
     navigateToOrderCenter,
@@ -417,12 +448,12 @@ function OrderQuickActionsCardWithData({
     }, [navigateToOrderCenter, orderCounts]);
 
     return <OrderQuickActionsCard actions={orderQuickActions} onViewAll={onViewAll} />;
-}
+});
 
 /**
  * 订单快捷操作卡片骨架屏
  */
-function OrderQuickActionsCardSkeleton() {
+const OrderQuickActionsCardSkeleton = memo(function OrderQuickActionsCardSkeleton() {
     return (
         <View
             className="mx-4 mt-3 rounded-2xl border border-border bg-card p-4"
@@ -449,15 +480,27 @@ function OrderQuickActionsCardSkeleton() {
             </View>
         </View>
     );
-}
+});
 
 export default function Profile() {
-    const { session } = useSession();
+    const { session, refetch: refetchSession } = useSession();
+
     const user = session?.user;
     const userId = user?.id;
     const router = useRouter();
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const queryClient = useQueryClient();
+    // avatarFileHash 存储 fileHash，用于获取实际图片 URL
+    const [avatarFileHash, setAvatarFileHash] = useState<string | null>(user?.image || null);
+
+    // 同步 session 中的头像变化到本地状态（仅在 user.image 变化时更新）
+    // 注意：只依赖 user?.image，避免 avatarFileHash 变化时触发回滚
+    useEffect(() => {
+        // 只有当 session 的 image 有值，且与当前本地状态不同时才更新
+        // 这样可以在应用重启时同步 session 数据，但不会干扰手动上传的过程
+        if (user?.image !== undefined) {
+            setAvatarFileHash(user.image);
+        }
+    }, [user?.image]);
 
     const {
         data: userProfile,
@@ -465,6 +508,10 @@ export default function Profile() {
         isFetching: isProfileFetching,
         refetch: refetchUserProfile,
     } = useUserRealNameProfile(userId);
+
+    // 通过 fileHash 获取实际的图片 URL
+    const { data: avatarFileData } = useFile(avatarFileHash);
+    const avatarUrl = avatarFileData?.fileUrl || null;
 
     const userInfo = useMemo<UserProfileSummary>(() => ({
         displayName: user?.name ?? "未命名用户",
@@ -475,9 +522,23 @@ export default function Profile() {
     }), [user, userProfile]);
 
     const navigateToOrderCenter = useCallback(
-        (_target?: OrderQuickActionId) => {
-            // TODO: 根据目标状态跳转并筛选订单
-            router.push("/(tabs)/orders");
+        (target?: OrderQuickActionId) => {
+            if (!target) {
+                router.push("/(tabs)/orders");
+                return;
+            }
+
+            const tab = QUICK_ACTION_TARGET_TAB_MAP[target];
+            const status = QUICK_ACTION_TARGET_STATUS_MAP[target];
+
+            router.push({
+                pathname: "/(tabs)/orders",
+                params: {
+                    tab,
+                    status,
+                    requestId: Date.now().toString(),
+                },
+            });
         },
         [router],
     );
@@ -487,25 +548,42 @@ export default function Profile() {
     }, [navigateToOrderCenter]);
 
     const handleFeaturePlaceholder = useCallback((feature: string) => {
-        // TODO: 替换为 `${feature}` 功能的实际实现
-        console.log(`[Profile] ${feature} 功能待实现`);
-    }, []);
+        if (feature === "服务地址") {
+            router.push("/address/service-address");
+        }
+    }, [router]);
 
-    const handleOpenProfileSettings = useCallback(() => {
-        handleFeaturePlaceholder("个人资料设置");
-    }, [handleFeaturePlaceholder]);
+    const handleAvatarChange = useCallback(
+        async (fileIdentifier: string, fileUrl: string) => {
 
-    const handleOpenShoppingCart = useCallback(() => {
-        handleFeaturePlaceholder("购物车");
-    }, [handleFeaturePlaceholder]);
+            try {
+                // fileUrl 实际上是 fileHash，立即更新本地状态用于获取实际图片 URL
+                setAvatarFileHash(fileUrl);
 
-    const handleOpenBrowsingHistory = useCallback(() => {
-        handleFeaturePlaceholder("浏览历史");
-    }, [handleFeaturePlaceholder]);
+                // 调用 better-auth 的 updateUser API 更新用户头像
+                // 注意：这里存储的是 fileHash，不是完整 URL
+                const result = await authClient.updateUser({
+                    image: fileUrl,
+                });
 
-    const handleOpenFavorites = useCallback(() => {
-        handleFeaturePlaceholder("关注");
-    }, [handleFeaturePlaceholder]);
+                if (result.error) {
+                    console.error("[Profile] 更新用户头像失败:", result.error);
+                    // 如果更新失败，回滚本地状态
+                    setAvatarFileHash(user?.image || null);
+                    return;
+                }
+
+                // 注意：不立即刷新 session，避免触发全局 Suspense fallback
+                // 本地状态已更新，UI 会立即反映变化
+                // session 会在下次应用重启或需要时自动获取最新数据
+            } catch (error) {
+                console.error("[Profile] 更新用户头像异常:", error);
+                // 回滚本地状态
+                setAvatarFileHash(user?.image || null);
+            }
+        },
+        [user?.image]
+    );
 
     const menuItems = useMemo<MenuItem[]>(() => {
         return MENU_CONFIG.map((item) => ({
@@ -517,15 +595,11 @@ export default function Profile() {
     const handleRefresh = useCallback(async () => {
         setIsRefreshing(true);
         try {
-            await Promise.all([
-                refetchUserProfile({ throwOnError: false }),
-                queryClient.invalidateQueries({ queryKey: ["orders-list"] }),
-                queryClient.invalidateQueries({ queryKey: ["orders-list-infinite"] }),
-            ]);
+            await refetchUserProfile({ throwOnError: false });
         } finally {
             setIsRefreshing(false);
         }
-    }, [queryClient, refetchUserProfile]);
+    }, [refetchUserProfile]);
 
     const isRefreshingState = isRefreshing || isProfileFetching;
 
@@ -548,7 +622,8 @@ export default function Profile() {
                     <UserInfoCard
                         info={userInfo}
                         isLoading={isProfileLoading || isProfileFetching}
-                        onOpenSettings={handleOpenProfileSettings}
+                        avatarUrl={avatarUrl}
+                        onAvatarChange={handleAvatarChange}
                     />
                     {userId ? (
                         <Suspense fallback={<OrderQuickActionsCardSkeleton />}>
@@ -561,11 +636,6 @@ export default function Profile() {
                     ) : (
                         <OrderQuickActionsCardSkeleton />
                     )}
-                    <ServiceActionsCard
-                        onOpenCart={handleOpenShoppingCart}
-                        onOpenHistory={handleOpenBrowsingHistory}
-                        onOpenFavorites={handleOpenFavorites}
-                    />
                     <MenuList items={menuItems} />
                 </ScrollView>
             </SafeAreaView>

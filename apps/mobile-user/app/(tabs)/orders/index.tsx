@@ -1,11 +1,11 @@
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import type { OrderStatus } from "@repo/types";
 import { FlashList, type RenderTarget } from "@shopify/flash-list";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FlatList, type ListRenderItemInfo, View } from "react-native";
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import { ORDER_TABS, TAB_STATUS_MAP } from "@/components/orders_screen/mock";
-import type { OrdersListRow, OrderTab } from "@/components/orders_screen/types";
+import type { OrdersListRow, OrderTab, OrderTabId } from "@/components/orders_screen/types";
 import {
 	buildSections,
 	flattenSectionsToRows,
@@ -16,13 +16,54 @@ import { TabItem } from "@/components/orders_screen/components/TabItem";
 import { SectionHeader } from "@/components/orders_screen/components/SectionHeader";
 import { OrderCard } from "@/components/orders_screen/components/OrderCard";
 import { ReviewCard } from "@/components/orders_screen/components/ReviewCard";
+import { useLocalSearchParams } from "expo-router";
+
+const ORDER_STATUS_WHITELIST = new Set<OrderStatus>(
+	Object.values(TAB_STATUS_MAP).flat() as OrderStatus[],
+);
 
 export default function OrdersScreen() {
+	const params = useLocalSearchParams<{
+		tab?: OrderTabId;
+		status?: OrderStatus;
+		requestId?: string;
+	}>();
+	const paramTab = Array.isArray(params.tab) ? params.tab[0] : params.tab;
+	const paramStatus = Array.isArray(params.status)
+		? params.status[0]
+		: params.status;
+	const paramRequestId = Array.isArray(params.requestId)
+		? params.requestId[0]
+		: params.requestId;
 	const [activeTab, setActiveTab] = useState<OrderTab>(ORDER_TABS[0]);
+	const [quickFilterStatus, setQuickFilterStatus] = useState<OrderStatus>();
 	const { session } = useSession();
 
+	useEffect(() => {
+		if (!paramTab && !paramStatus) {
+			setQuickFilterStatus(undefined);
+			return;
+		}
+
+		if (paramTab) {
+			const targetTab = ORDER_TABS.find((tab) => tab.id === paramTab);
+			if (targetTab) {
+				setActiveTab(targetTab);
+			}
+		}
+
+		if (paramStatus && ORDER_STATUS_WHITELIST.has(paramStatus)) {
+			setQuickFilterStatus(paramStatus);
+		}
+	}, [paramTab, paramStatus, paramRequestId]);
+
+	const handleTabPress = useCallback((tab: OrderTab) => {
+		setQuickFilterStatus(undefined);
+		setActiveTab(tab);
+	}, []);
+
 	// 根据tab获取对应的状态筛选
-	const statusFilter = useMemo<OrderStatus | undefined>(() => {
+	const tabStatusFilter = useMemo<OrderStatus | undefined>(() => {
 		if (activeTab.id === "all") {
 			return undefined; // 不传状态则获取所有
 		}
@@ -34,6 +75,7 @@ export default function OrdersScreen() {
 		}
 		return undefined;
 	}, [activeTab.id]);
+	const statusFilter = quickFilterStatus ?? tabStatusFilter;
 
 	// 获取订单列表数据
 	const {
@@ -55,20 +97,24 @@ export default function OrdersScreen() {
 		if (!session?.user?.id) {
 			return [];
 		}
-		const orders = data?.pages.flatMap((page) => page.data) ?? [];
+		let orders = data?.pages.flatMap((page) => page.data) ?? [];
 
 		// 如果该tab对应多个状态，需要在前端过滤
 		if (activeTab.id !== "all") {
 			const targetStatuses = TAB_STATUS_MAP[activeTab.id];
-			if (targetStatuses && targetStatuses.length > 1) {
-				return orders.filter((order) =>
+			if (targetStatuses && targetStatuses.length > 1 && !quickFilterStatus) {
+				orders = orders.filter((order) =>
 					targetStatuses.includes(order.status as OrderStatus),
 				);
 			}
 		}
 
+		if (quickFilterStatus) {
+			orders = orders.filter((order) => order.status === quickFilterStatus);
+		}
+
 		return orders;
-	}, [data, session?.user?.id, activeTab.id]);
+	}, [data, session?.user?.id, activeTab.id, quickFilterStatus]);
 
 	const sections = useMemo(
 		() => buildSections(allOrders, activeTab.id),
@@ -88,10 +134,10 @@ export default function OrdersScreen() {
 			<TabItem
 				item={item}
 				isActive={item.id === activeTab.id}
-				onPress={setActiveTab}
+				onPress={handleTabPress}
 			/>
 		),
-		[activeTab.id],
+		[activeTab.id, handleTabPress],
 	);
 
 	const tabKeyExtractor = useCallback((item: OrderTab) => item.id, []);

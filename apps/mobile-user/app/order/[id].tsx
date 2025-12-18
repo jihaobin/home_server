@@ -191,8 +191,8 @@ export default function OrderDetailScreen() {
 		};
 
 	const servicePersonnelLabel =
+		order.assignment?.servicePersonnel?.userId ||
 		order.assignment?.servicePersonnelId ||
-		order.servicePersonnelName ||
 		"服务人员";
 	const assignmentStatusText =
 		order.assignment?.decisionStatus === "pending"
@@ -206,12 +206,6 @@ export default function OrderDetailScreen() {
 		order.assignment?.decisionStatus === "rejected"
 			? order.assignment?.rejectReason || "服务人员暂时无法接单"
 			: null;
-	const assignmentAcceptedAt =
-		order.assignment?.decisionStatus === "accepted" &&
-		order.assignment?.acceptedAt
-			? formatDate(order.assignment.acceptedAt)
-			: null;
-
 	const formatDate = (date: Date | string) => {
 		const d = new Date(date);
 		return d.toLocaleString("zh-CN", {
@@ -228,6 +222,12 @@ export default function OrderDetailScreen() {
 		const num = typeof amount === "string" ? Number.parseFloat(amount) : amount;
 		return `${num.toFixed(2)}元`;
 	};
+
+	const assignmentAcceptedAt =
+		order.assignment?.decisionStatus === "accepted" &&
+		order.assignment?.acceptedAt
+			? formatDate(order.assignment.acceptedAt)
+			: null;
 
 	const handlePayOrder = useCallback(() => {
 		void payExistingOrder({
