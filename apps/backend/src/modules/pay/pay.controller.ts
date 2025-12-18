@@ -1,6 +1,7 @@
 import {
     Body,
     Controller,
+    Delete,
     Get,
     HttpCode,
     HttpStatus,
@@ -27,6 +28,12 @@ import {
     WorkerEarningsRecordListResponseSchema,
     WorkerEarningsRecordQuerySchema,
     type WorkerEarningsRecordQuery,
+    EarningsOverviewResponseSchema,
+    WorkerAlipayAuthorizeParamsResponseSchema,
+    WorkerAlipayAuthExchangeBodySchema,
+    WorkerAlipayAuthExchangeResponseSchema,
+    WorkerAlipayBindingStatusSchema,
+    WorkerAlipayUnbindResponseSchema,
 } from '@repo/types';
 import type { Request } from 'express';
 import { ApiErrorResponses, ApiSuccessResponse } from 'src/common/decorator';
@@ -37,20 +44,8 @@ import { Public, Roles } from '../auth/decorators';
 import { PayService } from './pay.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { Cron } from '@nestjs/schedule';
-import z from 'zod/v4';
 import { createAliPaySdk } from 'src/lib/alipaySdk';
-
-const EarningsOverviewResponseSchema = z.object({
-    balance: z.object({
-        available: z.number().nonnegative(),
-        frozen: z.number().nonnegative(),
-        total: z.number().nonnegative(),
-        currency: z.string().min(1),
-    }),
-    monthlyEarnings: z.number().nonnegative(),
-    totalEarnings: z.number().nonnegative(),
-    updatedAt: z.date(),
-});
+import z from 'zod/v4';
 
 @ApiTags('支付')
 @Controller('pay')
@@ -162,6 +157,74 @@ export class PayController {
     }
 
     @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Get('worker/alipay/authorize-params')
+    @ApiOperation({
+        summary: '获取服务人员端支付宝授权参数串',
+        description:
+            '服务端按 APP 授权文档（https://opendocs.alipay.com/open/218/105327）拼接 `alipay.open.auth.sdk.code.get` 所需参数串，客户端直接透传给支付宝 SDK 拉起授权。',
+    })
+    @ApiSuccessResponse(WorkerAlipayAuthorizeParamsResponseSchema, {
+        description: '返回 APP 端唤起支付宝授权页所需的参数串及元信息',
+    })
+    async getWorkerAlipayAuthorizeParams(@Req() req: Request) {
+        return this.payService.generateWorkerAlipayAuthorizeParams(req.user.id);
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Post('worker/alipay/auth/exchange')
+    @UsePipes(
+        createZodPipe(
+            WorkerAlipayAuthExchangeBodySchema,
+            '支付宝授权数据校验失败',
+        ),
+    )
+    @ApiOperation({
+        summary: '换取并保存支付宝用户标识',
+        description:
+            '客户端完成授权后上传 auth_code，服务端通过 alipay.system.oauth.token 换取 user_id/open_id 并落库',
+    })
+    @ApiBodies(WorkerAlipayAuthExchangeBodySchema)
+    @ApiSuccessResponse(WorkerAlipayAuthExchangeResponseSchema, {
+        description: '返回绑定结果与支付宝账号标识',
+    })
+    async exchangeWorkerAlipayAuthCode(
+        @Body() body: z.infer<typeof WorkerAlipayAuthExchangeBodySchema>,
+        @Req() req: Request,
+    ) {
+        return this.payService.exchangeWorkerAlipayAuthCode(req.user.id, body);
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Get('worker/alipay/binding')
+    @ApiOperation({
+        summary: '查询服务人员支付宝绑定状态',
+        description: '返回当前绑定的支付宝 userId/openId',
+    })
+    @ApiSuccessResponse(WorkerAlipayBindingStatusSchema, {
+        description: '绑定状态',
+    })
+    async getWorkerAlipayBinding(@Req() req: Request) {
+        return this.payService.getWorkerAlipayBindingStatus(req.user.id);
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Delete('worker/alipay/binding')
+    @ApiOperation({
+        summary: '解绑服务人员支付宝账号',
+        description: '清空用户资料中的支付宝 userId/openId',
+    })
+    @ApiSuccessResponse(WorkerAlipayUnbindResponseSchema, {
+        description: '解绑结果',
+    })
+    async unbindWorkerAlipay(@Req() req: Request) {
+        return this.payService.unbindWorkerAlipay(req.user.id);
+    }
+
+    @UseGuards(AuthGuard)
     @Get('orders/:orderId/payment-status')
     @UsePipes(
         createMultiZodPipe({
@@ -189,14 +252,6 @@ export class PayController {
     @Cron('0 */5 * * * *')
     async handleInterval() {
         await this.payService.scanAndQueryPendingPayments();
-    }
-
-    @Get('getAuthSign')
-    @ApiOperation({
-        summary: '获取第三方授权登录时所需要的签名字符串',
-    })
-    getAuthSign() {
-        return this.payService.generateAuthString();
     }
 
     @Get('test-pay-config')

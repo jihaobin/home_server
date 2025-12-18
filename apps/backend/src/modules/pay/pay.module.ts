@@ -9,6 +9,9 @@ import { AdminRevenueLogsRepository } from './admin-revenue-logs.repository';
 import { AdminWithdrawalsController } from './admin-withdrawals.controller';
 import { AdminWithdrawalsService } from './admin-withdrawals.service';
 import { AdminWithdrawalsRepository } from './admin-withdrawals.repository';
+import { AlipayRefundProvider } from './refund/alipay-refund.provider';
+import { REFUND_PROVIDERS } from './refund/refund.interface';
+import { RefundDispatcher } from './refund/refund.dispatcher';
 
 @Module({
     controllers: [
@@ -23,6 +26,15 @@ import { AdminWithdrawalsRepository } from './admin-withdrawals.repository';
         AdminRevenueLogsRepository,
         AdminWithdrawalsService,
         AdminWithdrawalsRepository,
+        AlipayRefundProvider,
+        RefundDispatcher,
+        {
+            provide: REFUND_PROVIDERS,
+            useFactory: (alipayRefundProvider: AlipayRefundProvider) => [
+                alipayRefundProvider,
+            ],
+            inject: [AlipayRefundProvider],
+        },
     ],
     imports: [forwardRef(() => OrderModule)],
     exports: [PayService],

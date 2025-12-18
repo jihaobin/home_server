@@ -2,6 +2,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
+    useExchangeWorkerAlipayAuthCode,
+    useWorkerAlipayAuthorizeParams,
+    useWorkerAlipayBindingStatus,
+    useUnbindWorkerAlipay,
+} from "@repo/hooks/api/pay";
+import { aliAuth } from "@repo/lib/pay";
+import {
+    ActivityIndicator,
     Alert,
     ScrollView,
     StyleSheet,
@@ -17,44 +25,89 @@ interface AccountInfo {
     name: string;
 }
 
+const maskAccount = (value?: string | null) => {
+    if (!value) return "";
+    if (value.length <= 4) return value;
+    return `${value.slice(0, 2)}****${value.slice(-2)}`;
+};
+
 export default function AccountBindingScreen() {
     const router = useRouter();
-    const [alipayAccount, setAlipayAccount] = useState("");
-    const [alipayName, setAlipayName] = useState("");
+    const [boundAccounts, setBoundAccounts] = useState<AccountInfo[]>([]);
     const [wechatAccount, setWechatAccount] = useState("");
     const [wechatName, setWechatName] = useState("");
-
-    // 模拟已绑定的账户
-    const [boundAccounts, setBoundAccounts] = useState<AccountInfo[]>([
-        {
-            type: "alipay",
-            account: "138****1234",
-            name: "张**",
-        },
-    ]);
-
-    const [showAlipayForm, setShowAlipayForm] = useState(false);
     const [showWechatForm, setShowWechatForm] = useState(false);
+    const [authError, setAuthError] = useState<string | null>(null);
+    const [isBindingAlipay, setIsBindingAlipay] = useState(false);
 
-    const handleBindAlipay = () => {
-        if (!alipayAccount.trim() || !alipayName.trim()) {
-            Alert.alert("提示", "请填写完整的支付宝信息");
-            return;
+    const {
+        refetch: refetchAlipayParams,
+        isFetching: isFetchingAlipayParams,
+        isLoading: isLoadingAlipayParams,
+    } = useWorkerAlipayAuthorizeParams({ enabled: false });
+    const {
+        data: bindingStatus,
+        refetch: refetchBindingStatus,
+        isFetching: isFetchingBindingStatus,
+    } = useWorkerAlipayBindingStatus();
+    const {
+        mutateAsync: exchangeAlipayAuthCode,
+        isPending: isExchangingAlipayAuth,
+    } = useExchangeWorkerAlipayAuthCode();
+    const {
+        mutateAsync: unbindAlipay,
+        isPending: isUnbindingAlipay,
+    } = useUnbindWorkerAlipay();
+
+    const alipayBindingLoading =
+        isBindingAlipay ||
+        isFetchingAlipayParams ||
+        isLoadingAlipayParams ||
+        isExchangingAlipayAuth ||
+        isFetchingBindingStatus ||
+        isUnbindingAlipay;
+
+    const handleBindAlipay = async () => {
+        if (alipayBindingLoading) return;
+
+        setAuthError(null);
+        setIsBindingAlipay(true);
+        try {
+            const { data } = await refetchAlipayParams();
+            console.log("Fetched Alipay params:", data);
+            if (!data?.paramString) {
+                throw new Error("无法获取支付宝授权参数，请稍后重试");
+            }
+
+            const authResult = await aliAuth(data.paramString);
+            console.log("Alipay auth result:", authResult);
+            if (authResult.resultStatus !== "9000") {
+                throw new Error(authResult.memo || "用户取消授权");
+            }
+
+            const parsed = new URLSearchParams(authResult.result ?? "");
+            if (parsed.get("result_code") !== "200") {
+                throw new Error("支付宝未授权成功，请稍后重试");
+            }
+
+            console.log("Parsed Alipay auth params:", authResult.result);
+
+            const authCode = parsed.get("auth_code") ?? undefined;
+
+            if (!authCode) {
+                throw new Error("未能获取到支付宝授权码，请重新授权");
+            }
+
+            refetchBindingStatus();
+            Alert.alert("授权成功", "系统将自动完成支付宝绑定，请耐心等待。");
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : "授权失败，请稍后再试";
+            setAuthError(message);
+            Alert.alert("授权失败", message);
+        } finally {
+            setIsBindingAlipay(false);
         }
-
-        // TODO: 调用API绑定支付宝
-        Alert.alert("绑定成功", "支付宝账号已绑定");
-        setBoundAccounts((prev) => [
-            ...prev.filter((acc) => acc.type !== "alipay"),
-            {
-                type: "alipay",
-                account: alipayAccount,
-                name: alipayName,
-            },
-        ]);
-        setShowAlipayForm(false);
-        setAlipayAccount("");
-        setAlipayName("");
     };
 
     const handleBindWechat = () => {
@@ -63,7 +116,6 @@ export default function AccountBindingScreen() {
             return;
         }
 
-        // TODO: 调用API绑定微信
         Alert.alert("绑定成功", "微信账号已绑定");
         setBoundAccounts((prev) => [
             ...prev.filter((acc) => acc.type !== "wechat"),
@@ -78,6 +130,32 @@ export default function AccountBindingScreen() {
         setWechatName("");
     };
 
+    const handleUnbindAlipay = () => {
+        Alert.alert("确认解绑", "解绑后需要重新授权才能提现，是否继续？", [
+            { text: "取消", style: "cancel" },
+            {
+                text: "确定",
+                style: "destructive",
+                onPress: async () => {
+                    try {
+                        await unbindAlipay();
+                        setBoundAccounts((prev) =>
+                            prev.filter((acc) => acc.type !== "alipay"),
+                        );
+                        await refetchBindingStatus();
+                        Alert.alert("解绑成功");
+                    } catch (error) {
+                        const message =
+                            error instanceof Error
+                                ? error.message
+                                : "解绑失败，请稍后再试";
+                        Alert.alert("解绑失败", message);
+                    }
+                },
+            },
+        ]);
+    };
+
     const handleUnbind = (type: "alipay" | "wechat") => {
         Alert.alert(
             "确认解绑",
@@ -87,8 +165,9 @@ export default function AccountBindingScreen() {
                 {
                     text: "确定",
                     onPress: () => {
-                        // TODO: 调用API解绑
-                        setBoundAccounts((prev) => prev.filter((acc) => acc.type !== type));
+                        setBoundAccounts((prev) =>
+                            prev.filter((acc) => acc.type !== type),
+                        );
                         Alert.alert("解绑成功");
                     },
                     style: "destructive",
@@ -97,7 +176,13 @@ export default function AccountBindingScreen() {
         );
     };
 
-    const isAlipayBound = boundAccounts.some((acc) => acc.type === "alipay");
+    const alipayAccountDisplay = maskAccount(
+        bindingStatus?.alipayUserId ||
+        bindingStatus?.alipayOpenId ||
+        boundAccounts.find((acc) => acc.type === "alipay")?.account ||
+        "",
+    );
+    const isAlipayBound = Boolean(bindingStatus?.bound);
     const isWechatBound = boundAccounts.some((acc) => acc.type === "wechat");
 
     return (
@@ -114,15 +199,13 @@ export default function AccountBindingScreen() {
             </View>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                {/* 提示信息 */}
                 <View style={styles.tipCard}>
                     <Ionicons name="information-circle" size={20} color="#2196F3" />
                     <Text style={styles.tipText}>
-                        绑定支付宝或微信账号，用于提现服务收益
+                        绑定支付宝账号用于提现收益，授权过程由支付宝官方应用完成。
                     </Text>
                 </View>
 
-                {/* 支付宝 */}
                 <View style={styles.accountCard}>
                     <View style={styles.accountHeader}>
                         <View style={styles.accountLeft}>
@@ -131,78 +214,65 @@ export default function AccountBindingScreen() {
                             </View>
                             <Text style={styles.accountType}>支付宝</Text>
                         </View>
-                        {!isAlipayBound && !showAlipayForm && (
-                            <TouchableOpacity
-                                style={styles.bindButton}
-                                onPress={() => setShowAlipayForm(true)}
-                            >
-                                <Text style={styles.bindButtonText}>绑定</Text>
-                            </TouchableOpacity>
-                        )}
+                        <TouchableOpacity
+                            style={[
+                                styles.bindButton,
+                                alipayBindingLoading && styles.disabledButton,
+                            ]}
+                            onPress={handleBindAlipay}
+                            disabled={alipayBindingLoading}
+                        >
+                            {alipayBindingLoading ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <Text style={styles.bindButtonText}>
+                                    {isAlipayBound ? "重新授权" : "绑定"}
+                                </Text>
+                            )}
+                        </TouchableOpacity>
                     </View>
 
-                    {isAlipayBound && (
+                    {isAlipayBound ? (
                         <View style={styles.accountInfo}>
                             <View>
                                 <Text style={styles.accountName}>
-                                    {
-                                        boundAccounts.find((acc) => acc.type === "alipay")
-                                            ?.name
-                                    }
+                                    支付宝账号
                                 </Text>
                                 <Text style={styles.accountNumber}>
-                                    {
-                                        boundAccounts.find((acc) => acc.type === "alipay")
-                                            ?.account
-                                    }
+                                    {alipayAccountDisplay || "已授权"}
                                 </Text>
                             </View>
-                            <TouchableOpacity onPress={() => handleUnbind("alipay")}>
+                            <TouchableOpacity onPress={handleUnbindAlipay}>
                                 <Text style={styles.unbindText}>解绑</Text>
                             </TouchableOpacity>
                         </View>
+                    ) : (
+                        <Text style={styles.unboundText}>
+                            暂未绑定支付宝账号，点击右上角按钮授权绑定。
+                        </Text>
                     )}
 
-                    {showAlipayForm && !isAlipayBound && (
-                        <View style={styles.formSection}>
-                            <View style={styles.formGroup}>
-                                <Text style={styles.label}>支付宝账号</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    value={alipayAccount}
-                                    onChangeText={setAlipayAccount}
-                                    placeholder="手机号或邮箱"
-                                    keyboardType="email-address"
-                                />
-                            </View>
-                            <View style={styles.formGroup}>
-                                <Text style={styles.label}>真实姓名</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    value={alipayName}
-                                    onChangeText={setAlipayName}
-                                    placeholder="与支付宝实名认证一致"
-                                />
-                            </View>
-                            <View style={styles.formActions}>
-                                <TouchableOpacity
-                                    style={styles.cancelButton}
-                                    onPress={() => setShowAlipayForm(false)}
-                                >
-                                    <Text style={styles.cancelButtonText}>取消</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={styles.confirmButton}
-                                    onPress={handleBindAlipay}
-                                >
-                                    <Text style={styles.confirmButtonText}>确认绑定</Text>
-                                </TouchableOpacity>
-                            </View>
+                    {authError && (
+                        <View style={styles.authError}>
+                            <Text style={styles.authErrorText}>{authError}</Text>
+                        </View>
+                    )}
+
+                    {bindingStatus?.bound && (
+                        <View style={styles.authSummary}>
+                            <Text style={styles.summaryTitle}>绑定信息</Text>
+                            <Text style={styles.summaryText}>
+                                当前绑定：{alipayAccountDisplay || "已授权"}
+                            </Text>
+                            {bindingStatus.boundAt && (
+                                <Text style={styles.summaryText}>
+                                    更新于：{new Date(bindingStatus.boundAt).toLocaleString()}
+                                </Text>
+                            )}
                         </View>
                     )}
                 </View>
 
-                {/* 微信 */}
                 <View style={styles.accountCard}>
                     <View style={styles.accountHeader}>
                         <View style={styles.accountLeft}>
@@ -281,7 +351,6 @@ export default function AccountBindingScreen() {
                     )}
                 </View>
 
-                {/* 安全提示 */}
                 <View style={styles.securityCard}>
                     <View style={styles.securityItem}>
                         <Ionicons name="shield-checkmark" size={18} color="#4CAF50" />
@@ -349,9 +418,9 @@ const styles = StyleSheet.create({
         marginBottom: 12,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
+        shadowOpacity: 0.05,
         shadowRadius: 4,
-        elevation: 3,
+        elevation: 2,
     },
     accountHeader: {
         flexDirection: "row",
@@ -379,7 +448,10 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingVertical: 8,
         borderRadius: 16,
-        backgroundColor: "#2196F3",
+        backgroundColor: "#1677FF",
+    },
+    disabledButton: {
+        opacity: 0.6,
     },
     bindButtonText: {
         fontSize: 14,
@@ -395,6 +467,11 @@ const styles = StyleSheet.create({
         borderTopWidth: 1,
         borderTopColor: "#f5f5f5",
     },
+    unboundText: {
+        marginTop: 12,
+        fontSize: 13,
+        color: "#757575",
+    },
     accountName: {
         fontSize: 14,
         color: "#333",
@@ -407,6 +484,33 @@ const styles = StyleSheet.create({
     unbindText: {
         fontSize: 14,
         color: "#FF5722",
+    },
+    authSummary: {
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 12,
+        backgroundColor: "#F4F6FF",
+    },
+    summaryTitle: {
+        fontSize: 14,
+        fontWeight: "600",
+        color: "#1677FF",
+        marginBottom: 6,
+    },
+    summaryText: {
+        fontSize: 13,
+        color: "#45526C",
+        marginTop: 2,
+    },
+    authError: {
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 12,
+        backgroundColor: "#FFF3F0",
+    },
+    authErrorText: {
+        color: "#D93025",
+        fontSize: 13,
     },
     formSection: {
         marginTop: 12,

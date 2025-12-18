@@ -26,6 +26,8 @@ export const userProfiles = pgTable(
                 onDelete: 'cascade',
             })
             .unique(), // 关联到 users 表的主键
+        alipayUserId: varchar('alipay_user_id', { length: 64 }), // 支付宝 userId
+        alipayOpenId: varchar('alipay_open_id', { length: 64 }), // 支付宝 openId
         realName: varchar('real_name', { length: 50 }), // 真实姓名
         idCardNumber: varchar('id_card_number', { length: 18 }).unique(), // 身份证号码，唯一约束
         faceRecognitionData: text('face_recognition_data'), // 面部识别数据（加密存储或存储特征值）

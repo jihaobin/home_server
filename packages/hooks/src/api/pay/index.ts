@@ -4,6 +4,11 @@ import type {
 	QueryPaymentStatusResponse,
 	UserWithdrawBody,
 	UserWithdrawResponse,
+	WorkerAlipayAuthorizeParamsResponse,
+	WorkerAlipayAuthExchangeBody,
+	WorkerAlipayAuthExchangeResponse,
+	WorkerAlipayBindingStatus,
+	WorkerAlipayUnbindResponse,
 	WorkerEarningsRecordListResponse,
 	WorkerEarningsRecordQuery,
 } from "@repo/types";
@@ -60,6 +65,27 @@ export const useEarningsOverview = () =>
 	});
 
 /**
+ * 获取服务人员支付宝授权参数串
+ */
+export const useWorkerAlipayAuthorizeParams = (options?: {
+	enabled?: boolean;
+}) =>
+	useQuery({
+		queryKey: ["worker-alipay-authorize-params"],
+		queryFn: async () => {
+			const response =
+				await apiClient.get<WorkerAlipayAuthorizeParamsResponse>(
+					"/pay/worker/alipay/authorize-params",
+				);
+			return response.data;
+		},
+		enabled: options?.enabled ?? true,
+	meta: {
+		errorMessage: "获取支付宝授权参数失败",
+	},
+});
+
+/**
  * 获取收益/提现记录
  */
 export const useWorkerEarningsRecords = (
@@ -87,8 +113,49 @@ export const useWorkerEarningsRecords = (
 		},
 		meta: {
 			errorMessage: "收益流水获取失败",
+	},
+	enabled: options?.enabled ?? true,
+});
+
+export const useExchangeWorkerAlipayAuthCode = () =>
+	useMutation({
+		mutationFn: (payload: WorkerAlipayAuthExchangeBody) => {
+			return apiClient.post<WorkerAlipayAuthExchangeResponse>(
+				"/pay/worker/alipay/auth/exchange",
+				payload,
+			);
+		},
+		meta: {
+			errorMessage: "上传支付宝授权信息失败",
+		},
+	});
+
+export const useWorkerAlipayBindingStatus = (options?: { enabled?: boolean }) =>
+	useQuery({
+		queryKey: ["worker-alipay-binding-status"],
+		queryFn: async () => {
+			const response = await apiClient.get<WorkerAlipayBindingStatus>(
+				"/pay/worker/alipay/binding",
+			);
+			return response.data;
+		},
+		meta: {
+			errorMessage: "获取支付宝绑定状态失败",
 		},
 		enabled: options?.enabled ?? true,
+	});
+
+export const useUnbindWorkerAlipay = () =>
+	useMutation({
+		mutationFn: async () => {
+			const response = await apiClient.delete<WorkerAlipayUnbindResponse>(
+				"/pay/worker/alipay/binding",
+			);
+			return response.data;
+		},
+		meta: {
+			errorMessage: "解绑失败，请稍后重试",
+		},
 	});
 
 export const useInfiniteWorkerEarningsRecords = (

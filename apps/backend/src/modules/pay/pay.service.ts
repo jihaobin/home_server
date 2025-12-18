@@ -1,4 +1,4 @@
-import { createSign } from 'node:crypto';
+import { createHash, createSign } from 'node:crypto';
 import {
     BadRequestException,
     forwardRef,
@@ -16,6 +16,9 @@ import {
     type WorkerEarningsRecordListResponse,
     type WorkerEarningsRecordQuery,
     type WorkerEarningsRecordCategory,
+    type WorkerAlipayAuthExchangeBody,
+    type WorkerAlipayAuthExchangeResponse,
+    OrderStatus,
 } from '@repo/types';
 import { format } from 'date-fns';
 import Decimal from 'decimal.js';
@@ -30,20 +33,52 @@ import {
     orders,
     payments,
     userBalances,
+    userProfiles,
     users,
 } from 'src/common/database/schema';
-import { createAliPaySdk } from 'src/lib/alipaySdk';
+import { createAliPaySdk, createWorkerAliPaySdk } from 'src/lib/alipaySdk';
 import { OrderService } from '../order/order.service';
+import { OrderRepository } from '../order/order.reposityro';
 import { PayRepository } from './pay.repository';
+import { RefundDispatcher } from './refund/refund.dispatcher';
 
 type PaymentInsert = typeof payments.$inferInsert;
 
 type PaymentRecord = typeof payments.$inferSelect;
 type OrderRecord = typeof orders.$inferSelect;
+type PaymentRecordWithOrder = PaymentRecord & { order: OrderRecord | null };
 
 type PaymentStatus = (typeof payments.status.enumValues)[number];
 
+type BuildAlipayAuthParamOptions = {
+    appId: string;
+    pid: string;
+    targetId: string;
+    signType?: 'RSA2' | 'RSA';
+    scope?: string;
+    authType?: string;
+    appName?: string;
+    productId?: string;
+    method?: string;
+    apiname?: string;
+    bizType?: string;
+    extraParams?: Record<string, string | number | boolean | null | undefined>;
+    encodeValues?: boolean;
+    encodeSign?: boolean;
+};
+
 type TradeStatus = PayNotification['trade_status'];
+
+type AlipayOauthTokenResponse = {
+    userId?: string;
+    openId?: string;
+};
+
+const maskAlipayId = (value?: string | null) => {
+    if (!value) return null;
+    if (value.length <= 6) return value;
+    return `${value.slice(0, 3)}****${value.slice(-3)}`;
+};
 
 const TRADE_STATUS_TO_PAYMENT_STATUS: Record<TradeStatus, PaymentStatus> = {
     WAIT_BUYER_PAY: 'pending',
@@ -76,6 +111,7 @@ export interface EarningsOverview {
 export class PayService {
     // 实例化客户端
     private alipaySdk = createAliPaySdk();
+    private workerAlipaySdk = createWorkerAliPaySdk();
 
     @Inject(DB)
     private db: DbType;
@@ -83,11 +119,17 @@ export class PayService {
     @Inject(forwardRef(() => OrderService))
     private order: OrderService;
 
+    @Inject(OrderRepository)
+    private orderRepository: OrderRepository;
+
     @Inject(PayRepository)
     private payRepository: PayRepository;
 
     @Inject(CACHE_SERVICE)
     private cacheService: IAdvancedCacheService;
+
+    @Inject(RefundDispatcher)
+    private refundDispatcher: RefundDispatcher;
 
     private logger = new Logger(PayService.name);
 
@@ -103,6 +145,102 @@ export class PayService {
 
     private formatAlipayTimeExpire(date: Date) {
         return format(date, 'yyyy-MM-dd+HH:mm:ss');
+    }
+
+    private parseAlipayOauthTokenResponse(
+        raw: unknown,
+    ): AlipayOauthTokenResponse | null {
+        if (!raw || typeof raw !== 'object') {
+            return null;
+        }
+
+        const payload = raw as Record<string, unknown>;
+        const response =
+            'alipay_system_oauth_token_response' in payload &&
+            payload.alipay_system_oauth_token_response
+                ? (payload.alipay_system_oauth_token_response as
+                      | Record<string, unknown>
+                      | null
+                      | undefined)
+                : payload.error_response
+                  ? (payload.error_response as Record<string, unknown>)
+                  : payload;
+
+        if (!response || typeof response !== 'object') {
+            return null;
+        }
+
+        const data = response;
+
+        const code =
+            (data.code as string | undefined) ??
+            (data.result_code as string | undefined);
+
+        if (code && code !== '10000') {
+            return {
+                userId: undefined,
+                openId: undefined,
+            };
+        }
+
+        return {
+            userId:
+                (data.user_id as string | undefined) ??
+                (data.alipay_user_id as string | undefined) ??
+                (data.userId as string | undefined),
+            openId:
+                (data.open_id as string | undefined) ??
+                (data.alipay_open_id as string | undefined) ??
+                (data.openId as string | undefined),
+        };
+    }
+
+    private async saveWorkerAlipayBinding(
+        userId: string,
+        info: {
+            alipayUserId?: string | null;
+            alipayOpenId?: string | null;
+        },
+    ) {
+        const alipayUserId = info.alipayUserId ?? null;
+        const alipayOpenId = info.alipayOpenId ?? null;
+
+        if (alipayUserId) {
+            const existingProfileWithAlipayId =
+                await this.db.query.userProfiles.findFirst({
+                    where: eq(userProfiles.alipayUserId, alipayUserId),
+                });
+
+            if (
+                existingProfileWithAlipayId &&
+                existingProfileWithAlipayId.userId !== userId
+            ) {
+                throw new BadRequestException('该支付宝账号已绑定其他用户');
+            }
+        }
+
+        const now = new Date();
+
+        const [record] = await this.db
+            .insert(userProfiles)
+            .values({
+                userId,
+                alipayUserId,
+                alipayOpenId,
+                createdAt: now,
+                updatedAt: now,
+            })
+            .onConflictDoUpdate({
+                target: userProfiles.userId,
+                set: {
+                    alipayUserId,
+                    alipayOpenId,
+                    updatedAt: now,
+                },
+            })
+            .returning();
+
+        return record;
     }
 
     /**
@@ -152,6 +290,7 @@ export class PayService {
 
             let alreadyProcessed = false;
 
+            let pendingAcceptanceOrderId: string | null = null;
             await this.db.transaction(async (tx) => {
                 const latestOrder = await tx.query.orders.findFirst({
                     where: eq(orders.id, orderId),
@@ -256,8 +395,15 @@ export class PayService {
                         transactionValues,
                         tx,
                     );
+                    pendingAcceptanceOrderId = orderForPayment.id;
                 }
             });
+
+            if (pendingAcceptanceOrderId) {
+                await this.order.notifyPendingAcceptance(
+                    pendingAcceptanceOrderId,
+                );
+            }
 
             if (mappedStatus === 'succeeded') {
                 await this.order.clearPaymentExpirationSchedule(orderId);
@@ -286,6 +432,37 @@ export class PayService {
         }
     }
 
+    private async markPaymentFailedAndCancelOrder(
+        payment: PaymentRecordWithOrder,
+    ) {
+        if (!payment?.order || payment.status !== 'pending') {
+            return;
+        }
+
+        try {
+            await this.payRepository.updatePaymentById(payment.id, {
+                status: 'failed',
+            });
+        } catch (error) {
+            this.logger.warn(
+                `[PayService] 标记支付 ${payment.id} 失败状态异常`,
+                error instanceof Error ? error.message : error,
+            );
+        }
+
+        try {
+            await this.order.cancelOrderBySystem(
+                payment.order.id,
+                '支付宝未产生交易记录，系统自动取消',
+            );
+        } catch (error) {
+            this.logger.warn(
+                `[PayService] 取消订单 ${payment.order.id} 失败`,
+                error instanceof Error ? error.message : error,
+            );
+        }
+    }
+
     private async isUserExist(id: string, role?: UserRole | UserRole[]) {
         if (!id) {
             return false;
@@ -305,42 +482,31 @@ export class PayService {
     }
 
     // 封装支付宝账号授权请求参数串，便于客户端直接拉起(参数说明请参考这个文档 https://opendocs.alipay.com/open-v3/05w8m8?pathHash=70e53558)
-    public buildAlipayAuthParamString({
-        appId,
-        pid,
-        targetId,
-        signType = 'RSA2',
-        scope = 'kuaijie',
-        authType = 'AUTHACCOUNT',
-        appName = 'mc',
-        productId = 'APP_FAST_LOGIN',
-        method = 'alipay.open.auth.sdk.code.get',
-        apiname = 'com.alipay.account.auth',
-        bizType = 'openservice',
-        extraParams = {},
-        encodeValues = false,
-        encodeSign = true,
-        privateKey,
-    }: {
-        appId: string;
-        pid: string;
-        targetId: string;
-        signType?: 'RSA2' | 'RSA';
-        scope?: string;
-        authType?: string;
-        appName?: string;
-        productId?: string;
-        method?: string;
-        apiname?: string;
-        bizType?: string;
-        extraParams?: Record<
-            string,
-            string | number | boolean | null | undefined
-        >;
-        encodeValues?: boolean;
-        encodeSign?: boolean;
-        privateKey?: string;
-    }): string {
+    public buildAlipayAuthParamString(
+        options: BuildAlipayAuthParamOptions,
+    ): string {
+        return this.buildAlipayAuthParamStringInternal(options, this.alipaySdk);
+    }
+
+    private buildAlipayAuthParamStringInternal(
+        {
+            appId,
+            pid,
+            targetId,
+            signType = 'RSA2',
+            scope = 'kuaijie',
+            authType = 'AUTHACCOUNT',
+            appName = 'mc',
+            productId = 'APP_FAST_LOGIN',
+            method = 'alipay.open.auth.sdk.code.get',
+            apiname = 'com.alipay.account.auth',
+            bizType = 'openservice',
+            extraParams = {},
+            encodeValues = false,
+            encodeSign = true,
+        }: BuildAlipayAuthParamOptions,
+        sdk?: { config?: { privateKey?: string } },
+    ): string {
         if (!appId?.trim()) {
             throw new BadRequestException('支付宝应用 ID 缺失');
         }
@@ -394,12 +560,9 @@ export class PayService {
             .map(([key, value]) => `${key}=${value}`)
             .join('&');
 
-        const sdkPrivateKey = (
-            this.alipaySdk as unknown as { config?: { privateKey?: string } }
-        )?.config?.privateKey;
+        const sdkPrivateKey = sdk?.config?.privateKey;
 
         const rawPrivateKey = (
-            privateKey ??
             sdkPrivateKey ??
             process.env.ALIPAY_PRIVATE_KEY ??
             ''
@@ -430,6 +593,171 @@ export class PayService {
         pairs.push(`sign=${encodeValue('sign', sign)}`);
 
         return pairs.join('&');
+    }
+
+    public async generateWorkerAlipayAuthorizeParams(userId: string) {
+        if (!userId?.trim()) {
+            throw new BadRequestException('用户信息缺失');
+        }
+
+        const isWorker = await this.isUserExist(userId, 'service_personnel');
+        if (!isWorker) {
+            throw new BadRequestException('仅服务人员可发起绑定');
+        }
+
+        const appId: string | undefined = process.env.ALIPAY_WORKER_APP_ID;
+        if (!appId) {
+            throw new BadRequestException('未配置服务人员端支付宝应用 ID');
+        }
+
+        const pid = process.env.ALIPAY_WORKER_PID || '';
+
+        if (!pid) {
+            throw new BadRequestException('未配置服务人员签约 PID');
+        }
+
+        const scope = 'kuaijie';
+
+        const targetPrefix = 'worker';
+        const hashedUserId = createHash('md5')
+            .update(userId)
+            .digest('hex')
+            .slice(0, 8);
+        const rawTargetId = `${targetPrefix}${hashedUserId}${createId()}`;
+        const targetId = rawTargetId.replace(/[^0-9a-zA-Z]/g, '').slice(0, 32);
+
+        const paramString = this.buildAlipayAuthParamStringInternal(
+            {
+                appId,
+                pid,
+                targetId,
+                scope,
+            },
+            this.workerAlipaySdk as unknown as {
+                config?: { privateKey?: string };
+            },
+        );
+
+        return {
+            paramString,
+            params: {
+                appId,
+                pid,
+                scope,
+                targetId,
+            },
+        };
+    }
+
+    public async exchangeWorkerAlipayAuthCode(
+        userId: string,
+        payload: WorkerAlipayAuthExchangeBody,
+    ): Promise<WorkerAlipayAuthExchangeResponse> {
+        if (!userId?.trim()) {
+            throw new BadRequestException('用户信息缺失');
+        }
+
+        const isWorker = await this.isUserExist(userId, 'service_personnel');
+        if (!isWorker) {
+            throw new BadRequestException('仅服务人员可发起绑定');
+        }
+
+        const authCode = payload.authCode?.trim();
+        if (!authCode) {
+            throw new BadRequestException('授权码无效，请重新授权');
+        }
+
+        let rawResponse: unknown;
+        try {
+            rawResponse = await this.workerAlipaySdk.exec(
+                'alipay.system.oauth.token',
+                {
+                    grant_type: 'authorization_code',
+                    code: authCode,
+                },
+            );
+        } catch (error) {
+            this.logger.error(
+                '[PayService] 调用 alipay.system.oauth.token 失败',
+                error instanceof Error ? error.message : error,
+            );
+            throw new BadRequestException('获取支付宝授权信息失败，请稍后重试');
+        }
+
+        const parsed = this.parseAlipayOauthTokenResponse(rawResponse);
+        if (!parsed) {
+            throw new BadRequestException('支付宝授权返回异常，请稍后重试');
+        }
+
+        console.log(parsed);
+
+        if (!parsed.userId && !parsed.openId) {
+            throw new BadRequestException(
+                '未能获取到支付宝用户标识，请重新授权',
+            );
+        }
+
+        await this.saveWorkerAlipayBinding(userId, {
+            alipayUserId: parsed.userId ?? null,
+            alipayOpenId: parsed.openId ?? null,
+        });
+
+        const maskedUserId = maskAlipayId(parsed.userId);
+        const maskedOpenId = maskAlipayId(parsed.openId);
+
+        return {
+            bound: true,
+            alipayUserId: maskedUserId,
+            alipayOpenId: maskedOpenId,
+        };
+    }
+
+    async getWorkerAlipayBindingStatus(userId: string): Promise<{
+        bound: boolean;
+        alipayUserId: string | null;
+        alipayOpenId: string | null;
+        boundAt?: string;
+    }> {
+        if (!userId?.trim()) {
+            throw new BadRequestException('用户信息缺失');
+        }
+
+        const profile = await this.db.query.userProfiles.findFirst({
+            where: eq(userProfiles.userId, userId),
+            columns: {
+                alipayUserId: true,
+                alipayOpenId: true,
+                updatedAt: true,
+            },
+        });
+
+        const alipayUserId = profile?.alipayUserId ?? null;
+        const alipayOpenId = profile?.alipayOpenId ?? null;
+        const bound = Boolean(alipayUserId || alipayOpenId);
+
+        return {
+            bound,
+            alipayUserId: maskAlipayId(alipayUserId),
+            alipayOpenId: maskAlipayId(alipayOpenId),
+            boundAt: bound ? profile?.updatedAt?.toISOString() : undefined,
+        };
+    }
+
+    async unbindWorkerAlipay(userId: string) {
+        if (!userId?.trim()) {
+            throw new BadRequestException('用户信息缺失');
+        }
+
+        await this.db
+            .update(userProfiles)
+            .set({
+                alipayUserId: null,
+                alipayOpenId: null,
+                updatedAt: new Date(),
+            })
+            .where(eq(userProfiles.userId, userId));
+
+        return { success: true };
     }
 
     async pay({
@@ -857,10 +1185,11 @@ export class PayService {
                             failCount++;
                         }
                     } else if (response.code === '40004') {
-                        // 订单不存在,可能用户还未支付,保持pending状态
+                        // 订单不存在,标记为失败并触发系统取消，避免重复查询
                         this.logger.log(
                             `[PayService] 订单 ${outTradeNo} 尚未在支付宝产生交易记录`,
                         );
+                        await this.markPaymentFailedAndCancelOrder(payment);
                     }
                 } catch (error) {
                     failCount++;
@@ -1073,8 +1402,14 @@ export class PayService {
             throw new BadRequestException('订单不存在');
         }
 
-        // 2. 校验订单状态(只有已支付、已完成的订单才能退款)
-        if (!['paid', 'completed'].includes(order.status)) {
+        // 2. 校验订单状态(只有特定状态的订单才允许退款)
+        const refundableStatuses: OrderStatus[] = [
+            'pending_acceptance',
+            'paid',
+            'staff_rejected',
+            'completed',
+        ];
+        if (!refundableStatuses.includes(order.status)) {
             throw new BadRequestException(
                 `订单状态为 ${order.status}，不允许退款`,
             );
@@ -1100,6 +1435,8 @@ export class PayService {
                 alreadyRefunded: true,
             };
         }
+
+        const refundChannel = successPayment.paymentMethod;
 
         // 4. 计算退款金额并检查累计退款限制
         const orderAmount = Number(order.totalAmount);
@@ -1182,56 +1519,24 @@ export class PayService {
                 `[PayService] 发起退款 - 订单:${outTradeNo}, 金额:${requestRefundAmount}, 原因:${reason}, 操作人:${refundedById}`,
             );
 
-            // 6. 调用支付宝退款接口
-            let alipayResponseRaw: unknown;
-            try {
-                alipayResponseRaw = await this.alipaySdk.exec(
-                    'alipay.trade.refund',
-                    {
-                        bizContent: {
-                            out_trade_no: outTradeNo,
-                            refund_amount: requestRefundAmount.toFixed(2),
-                            refund_reason: reason || '用户申请退款',
-                            out_request_no: outRequestNo,
-                        },
-                    },
-                );
-            } catch (error) {
-                this.logger.error(
-                    `[PayService] 调用支付宝退款接口失败:`,
-                    error instanceof Error ? error.message : error,
-                );
-                throw new BadRequestException('退款请求失败，请稍后重试');
-            }
-
-            // 7. 解析退款响应
-            const response = alipayResponseRaw as {
-                code: string;
-                msg: string;
-                sub_code?: string;
-                sub_msg?: string;
-                trade_no?: string;
-                out_trade_no?: string;
-                buyer_logon_id?: string;
-                refund_fee?: string;
-                fund_change?: 'Y' | 'N';
-            };
-
-            this.logger.log('支付宝退款请求参数:', alipayResponseRaw);
-
-            this.logger.log(
-                `[PayService] 支付宝退款响应 - code:${response.code}, msg:${response.msg}`,
+            // 6. 调用退款供应商接口
+            const refundResponse = await this.refundDispatcher.refund(
+                refundChannel,
+                {
+                    outTradeNo,
+                    outRequestNo,
+                    amount: requestRefundAmount,
+                    reason,
+                },
             );
 
-            // 8. 处理退款结果
-            if (response.code !== '10000') {
-                const errorMessage =
-                    response.sub_msg || response.msg || '退款失败';
+            // 7. 处理退款结果
+            if (!refundResponse.success) {
                 this.logger.error(
-                    `[PayService] 支付宝退款失败 - sub_code:${response.sub_code}, sub_msg:${response.sub_msg}`,
+                    `[PayService] 退款失败 - channel:${refundChannel}, code:${refundResponse.code}, message:${refundResponse.message}`,
                 );
                 throw new BadRequestException(
-                    `支付宝退款失败: ${errorMessage}`,
+                    `退款失败: ${refundResponse.message}`,
                 );
             }
 
@@ -1252,15 +1557,22 @@ export class PayService {
                     );
                 }
 
-                // 9.3 更新订单状态(只有全额退款才改为已退款)
+                // 9.3 更新订单状态(只有全额退款才改为已退款/已取消)
                 if (isFullRefund) {
-                    await tx
-                        .update(orders)
-                        .set({
-                            status: 'refunded',
-                            updatedAt: new Date(),
-                        })
-                        .where(eq(orders.id, orderId));
+                    if (order.status === 'completed') {
+                        await this.orderRepository.updateOrderStatus(
+                            orderId,
+                            'refunded',
+                            tx,
+                        );
+                    } else {
+                        await this.orderRepository.cancelOrder(
+                            orderId,
+                            reason,
+                            refundedById,
+                            tx,
+                        );
+                    }
                 }
 
                 // 9.4 记录退款流水
@@ -1277,18 +1589,17 @@ export class PayService {
                             0,
                             500,
                         ),
-                        referenceId: response.trade_no,
+                        referenceId: refundResponse.tradeNo,
                         metadata: JSON.stringify({
                             outRequestNo,
                             outTradeNo,
-                            buyerLogonId: response.buyer_logon_id,
-                            fundChange: response.fund_change,
-                            refundFee: response.refund_fee,
+                            refundChannel,
                             refundedById,
                             isFullRefund,
                             totalRefundedBefore: totalRefunded,
                             totalRefundedAfter:
                                 totalRefunded + requestRefundAmount,
+                            providerMetadata: refundResponse.metadata,
                         }),
                     },
                     tx,
@@ -1306,15 +1617,16 @@ export class PayService {
             });
 
             this.logger.log(
-                `[PayService] 退款成功 - 订单:${outTradeNo}, 退款金额:${response.refund_fee}`,
+                `[PayService] 退款成功 - 渠道:${refundChannel}, 订单:${outTradeNo}, 退款金额:${refundResponse.refundAmount}`,
             );
 
             return {
                 success: true,
                 message: '退款成功',
-                refundAmount: Number(response.refund_fee),
-                tradeNo: response.trade_no,
+                refundAmount: refundResponse.refundAmount,
+                tradeNo: refundResponse.tradeNo,
                 outRequestNo,
+                refundChannel,
             };
         } finally {
             // 释放分布式锁
@@ -1660,20 +1972,5 @@ export class PayService {
         };
 
         return response;
-    }
-
-    generateAuthString() {
-        const targetId = createId();
-        return this.alipaySdk.sdkExecute('alipay.open.auth.sdk.code.get', {
-            apiname: 'com.alipay.account.auth',
-            appId: process.env.ALIPAY_APP_ID!,
-            pid: '2088721080157591',
-            targetId,
-            app_name: 'mc',
-            biz_type: 'openservice',
-            product_id: 'kuaijie',
-            auth_type: 'AUTHACCOUNT',
-            sign_type: 'RSA2',
-        });
     }
 }

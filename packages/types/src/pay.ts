@@ -1051,6 +1051,100 @@ export const UserWithdrawResponseSchema = z
 
 export type UserWithdrawResponse = z.infer<typeof UserWithdrawResponseSchema>;
 
+export const EarningsOverviewResponseSchema = z
+	.object({
+		balance: z.object({
+			available: z.number().nonnegative(),
+			frozen: z.number().nonnegative(),
+			total: z.number().nonnegative(),
+			currency: z.string().min(1),
+		}),
+		monthlyEarnings: z.number().nonnegative(),
+		totalEarnings: z.number().nonnegative(),
+		updatedAt: z.date(),
+	})
+	.meta({
+		title: "收益概览响应",
+		description: "返回余额、月收益与累计收益及更新时间。",
+	});
+export type EarningsOverviewResponse = z.infer<
+	typeof EarningsOverviewResponseSchema
+>;
+
+export const WorkerAlipayAuthorizeParamsResponseSchema = z
+	.object({
+		paramString: z.string().min(1),
+		params: z.object({
+			appId: z.string().min(1),
+			pid: z.string().min(1),
+			scope: z.string().min(1),
+			targetId: z.string().min(1),
+		}),
+	})
+	.meta({
+		title: "服务人员支付宝授权参数",
+		description: "服务端生成的 `alipay.open.auth.sdk.code.get` 参数串及元信息。",
+	});
+export type WorkerAlipayAuthorizeParamsResponse = z.infer<
+	typeof WorkerAlipayAuthorizeParamsResponseSchema
+>;
+
+export const WorkerAlipayAuthExchangeBodySchema = z
+	.object({
+		authCode: createBoundedString(128, "授权码"),
+		appId: z.string().optional(),
+		scope: z.string().optional(),
+		targetId: z.string().optional(),
+	})
+	.meta({
+		title: "服务人员支付宝授权回传",
+		description: "客户端将 auth_code 传到服务端换取 user_id/open_id",
+	});
+export type WorkerAlipayAuthExchangeBody = z.infer<
+	typeof WorkerAlipayAuthExchangeBodySchema
+>;
+
+export const WorkerAlipayAuthExchangeResponseSchema = z
+	.object({
+		bound: z.literal(true),
+		alipayUserId: createOptionalBoundedString(64, "支付宝 userId").nullable(),
+		alipayOpenId: z.string().max(64).nullable(),
+	})
+	.meta({
+		title: "服务人员支付宝授权绑定结果",
+		description: "换取到的支付宝用户标识",
+	});
+export type WorkerAlipayAuthExchangeResponse = z.infer<
+	typeof WorkerAlipayAuthExchangeResponseSchema
+>;
+
+export const WorkerAlipayBindingStatusSchema = z
+	.object({
+		bound: z.boolean(),
+		alipayUserId: createOptionalBoundedString(64, "支付宝 userId").nullable(),
+        alipayOpenId: z.string().max(64).nullable(),
+        boundAt: z.string().optional(),
+	})
+	.meta({
+		title: "服务人员支付宝绑定状态",
+		description: "服务人员当前支付宝绑定标识",
+	});
+export type WorkerAlipayBindingStatus = z.infer<
+	typeof WorkerAlipayBindingStatusSchema
+>;
+
+export const WorkerAlipayUnbindResponseSchema = z
+	.object({
+		success: z.literal(true),
+	})
+	.meta({
+		title: "服务人员支付宝解绑响应",
+		description: "解绑成功标识",
+	});
+export type WorkerAlipayUnbindResponse = z.infer<
+	typeof WorkerAlipayUnbindResponseSchema
+>;
+
 export const UserWithdrawalItemSchema = z
     .object({
         id: z.string().min(1),
