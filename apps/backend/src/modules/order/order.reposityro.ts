@@ -57,6 +57,13 @@ export class OrderRepository {
         refunded: [], // 退款的订单不能再改变状态
     };
 
+    private readonly cancellableStatuses: OrderStatus[] = [
+        'pending_payment',
+        'pending_acceptance',
+        'paid',
+        'staff_rejected',
+    ];
+
     private buildPaginationMeta(total: number, page: number, limit: number) {
         const safePage = page > 0 ? page : 1;
         const safeLimit = limit > 0 ? limit : 10;
@@ -691,8 +698,11 @@ export class OrderRepository {
 
         const currentStatus = order.status;
 
-        // 2. 验证状态转换是否合法 (只能从 pending_payment 或 paid 状态转换到 cancelled)
-        if (!this.isValidStatusTransition(currentStatus, 'cancelled')) {
+        // 2. 验证状态转换是否合法
+        if (
+            !this.cancellableStatuses.includes(currentStatus) ||
+            !this.isValidStatusTransition(currentStatus, 'cancelled')
+        ) {
             throw new BadRequestException(
                 `当前状态 ${currentStatus} 无法取消订单`,
             );

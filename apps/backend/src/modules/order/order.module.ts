@@ -12,12 +12,12 @@ import { OrderCheckinRepository } from './order-checkin.repository';
 import { OrderRepository } from './order.reposityro';
 import { OrderExpireScannerService } from './workers/order-expire-scanner.service';
 import { OrderExpireConsumerService } from './workers/order-expire-consumer.service';
-import { OrderNotifySseService } from './order-notify-sse.service';
-import { OrderEventsController } from './order-events.controller';
-import { OrderNotifyRelayService } from './workers/order-notify-relay.service';
+import { PendingAcceptanceReminderWorker } from './workers/pending-acceptance-reminder.worker';
+import { ServiceEtaReminderWorker } from './workers/service-eta-reminder.worker';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
-    controllers: [OrderController, OrderEventsController],
+    controllers: [OrderController],
     providers: [
         OrderService,
         OrderRepository,
@@ -26,15 +26,16 @@ import { OrderNotifyRelayService } from './workers/order-notify-relay.service';
         GeoLocationService,
         OrderExpireScannerService,
         OrderExpireConsumerService,
-        OrderNotifySseService,
-        OrderNotifyRelayService,
+        PendingAcceptanceReminderWorker,
+        ServiceEtaReminderWorker,
     ],
     imports: [
         ConfigModule,
         ServiceModule,
         WorkSkillModule,
+        NotificationModule,
         forwardRef(() => PayModule),
     ],
-    exports: [OrderService, OrderCheckinService],
+    exports: [OrderService, OrderCheckinService, OrderRepository],
 })
 export class OrderModule {}

@@ -7,7 +7,7 @@ import {
     OnModuleInit,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import {
     CACHE_SERVICE,
@@ -16,8 +16,16 @@ import {
 } from 'src/common/cache';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
-import { orders, payments } from 'src/common/database/schema/orders';
+import {
+    orderAssignments,
+    orders,
+    payments,
+} from 'src/common/database/schema/orders';
+import { users } from 'src/common/database/schema/auth-user';
+import type { NotificationTargetDescriptor } from '@repo/types';
 import { OrderRepository } from '../order.reposityro';
+import { NotificationPublisher } from 'src/modules/notification/notification.publisher';
+import { ADMIN_ROLES } from 'src/modules/auth/rbac.utils';
 
 interface StreamEntry {
     id: string;
@@ -44,6 +52,7 @@ export class OrderExpireConsumerService
         private readonly orderRepository: OrderRepository,
         @Inject(CACHE_SERVICE)
         private readonly cacheService: IAdvancedCacheService,
+        private readonly notificationPublisher: NotificationPublisher,
     ) {
         const baseClient = this.cacheService.getClient<Redis>();
         this.streamClient = baseClient.duplicate();
@@ -132,12 +141,47 @@ export class OrderExpireConsumerService
     }
 
     private async notify(orderId: string) {
-        await this.cacheService.xAdd(OrderExpireRedisKeys.notifyStream, '*', {
+        const [adminUserIds, servicePersonnelId] = await Promise.all([
+            this.getAdminUserIds(),
+            this.getAssignedServicePersonnel(orderId),
+        ]);
+
+        const targets: NotificationTargetDescriptor[] = [];
+
+        for (const adminId of adminUserIds) {
+            targets.push({
+                targetId: `${orderId}:admin:${adminId}`,
+                targetType: 'user',
+                userId: adminId,
+            });
+        }
+
+        if (servicePersonnelId) {
+            targets.push({
+                targetId: `${orderId}:service_personnel:${servicePersonnelId}`,
+                targetType: 'user',
+                userId: servicePersonnelId,
+            });
+        }
+
+        if (!targets.length) {
+            targets.push({
+                targetId: orderId,
+                targetType: 'custom',
+            });
+        }
+
+        await this.notificationPublisher.publish({
             event: 'order_payment_expired',
-            orderId,
-            status: 'payment_timeout',
-            message: '订单支付超时，系统自动取消',
-            triggeredAt: new Date().toISOString(),
+            payload: {
+                event: 'order_payment_expired',
+                orderId,
+                status: 'payment_timeout',
+                message: '订单支付超时，系统自动取消',
+                triggeredAt: new Date().toISOString(),
+                targetId: orderId,
+            },
+            targets,
         });
     }
 
@@ -239,5 +283,25 @@ export class OrderExpireConsumerService
                 await sleep(1000);
             }
         }
+    }
+
+    private async getAdminUserIds(): Promise<string[]> {
+        const rows = await this.db
+            .select({ id: users.id })
+            .from(users)
+            .where(
+                and(inArray(users.role, ADMIN_ROLES), eq(users.isActive, true)),
+            );
+        return rows.map((row) => row.id);
+    }
+
+    private async getAssignedServicePersonnel(
+        orderId: string,
+    ): Promise<string | null> {
+        const assignment = await this.db.query.orderAssignments.findFirst({
+            columns: { servicePersonnelId: true },
+            where: eq(orderAssignments.orderId, orderId),
+        });
+        return assignment?.servicePersonnelId ?? null;
     }
 }

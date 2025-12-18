@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type {
     CreateDesignatedOrder,
+    NotificationEventPayload,
     OrderListRequest,
     OrderStatus,
     StaffOrderListRequest,
@@ -22,7 +23,40 @@ import { DbType } from 'src/common/database/db';
 import { extractParams, isTimeInRange } from 'src/lib/utlis';
 import { PayService } from '../pay/pay.service';
 import { WorkSkillService } from '../work-skill/work-skill.service';
+import { NotificationPublisher } from '../notification/notification.publisher';
 import { OrderRepository } from './order.reposityro';
+import {
+    PendingAcceptanceReminderRedisKeys,
+    PENDING_ACCEPTANCE_REMINDER_SEQUENCE,
+    type PendingAcceptanceReminderTask,
+} from './pending-acceptance-reminder.constants';
+import {
+    ServiceEtaReminderRedisKeys,
+    SERVICE_ETA_REMINDER_SEQUENCE,
+    type ServiceEtaReminderTask,
+} from './service-eta-reminder.constants';
+
+type DetailedOrder = Awaited<ReturnType<OrderRepository['getOrderById']>>;
+
+interface ServiceNotificationConfig {
+    event: string;
+    message: string;
+    payload?: Partial<NotificationEventPayload>;
+}
+
+interface PendingAcceptanceReminderEntry {
+    member: PendingAcceptanceReminderTask;
+    score: number;
+    payload: PendingAcceptanceReminderTask;
+    formattedTime: string;
+}
+
+interface ServiceEtaReminderEntry {
+    member: ServiceEtaReminderTask;
+    score: number;
+    payload: ServiceEtaReminderTask;
+    formattedTime: string;
+}
 
 @Injectable()
 export class OrderService {
@@ -43,7 +77,11 @@ export class OrderService {
     @Inject(CACHE_SERVICE)
     private readonly cacheService: IAdvancedCacheService;
 
+    @Inject(NotificationPublisher)
+    private readonly notificationPublisher: NotificationPublisher;
+
     private readonly defaultPaymentExpireMinutes = 2;
+    private readonly defaultPendingAcceptanceTimeoutMinutes = 120;
 
     // 新增：安全地从 unknown 错误中提取消息，避免直接访问 any.message
     private extractErrorMessage(error: unknown): string {
@@ -67,6 +105,210 @@ export class OrderService {
                 ? configuredMinutes
                 : this.defaultPaymentExpireMinutes;
         return new Date(Date.now() + minutes * 60 * 1000);
+    }
+
+    private getPendingAcceptanceTimeoutMs(): number {
+        const configuredMinutes = Number(
+            this.configService.get('ORDER_PENDING_ACCEPTANCE_TIMEOUT_MINUTES'),
+        );
+        const minutes =
+            Number.isFinite(configuredMinutes) && configuredMinutes > 0
+                ? configuredMinutes
+                : this.defaultPendingAcceptanceTimeoutMinutes;
+        return minutes * 60 * 1000;
+    }
+
+    private calculatePendingAcceptanceDeadline(
+        order: DetailedOrder | null,
+    ): Date | null {
+        if (!order) {
+            return null;
+        }
+        const appointment = order.appointmentTime
+            ? new Date(order.appointmentTime)
+            : null;
+        if (appointment && !Number.isNaN(appointment.getTime())) {
+            return appointment;
+        }
+        if (!order.assignment) {
+            return null;
+        }
+        const base =
+            order.assignment.assignedAt ??
+            order.updatedAt ??
+            order.createdAt ??
+            null;
+        if (!base) {
+            return null;
+        }
+        const baseDate = base instanceof Date ? base : new Date(base);
+        if (Number.isNaN(baseDate.getTime())) {
+            return null;
+        }
+        const deadline = new Date(
+            baseDate.getTime() + this.getPendingAcceptanceTimeoutMs(),
+        );
+        if (Number.isNaN(deadline.getTime())) {
+            return null;
+        }
+        return deadline;
+    }
+
+    private buildPendingAcceptanceReminderEntries(
+        order: DetailedOrder | null,
+        deadline: Date,
+    ): PendingAcceptanceReminderEntry[] {
+        if (!order?.assignment?.id) {
+            return [];
+        }
+        const assignmentId = order.assignment.id;
+        if (!assignmentId) {
+            return [];
+        }
+        const deadlineMs = deadline.getTime();
+        const entries: PendingAcceptanceReminderEntry[] = [];
+        for (const definition of PENDING_ACCEPTANCE_REMINDER_SEQUENCE) {
+            const scheduledAtMs = deadlineMs - definition.offsetMs;
+            if (!Number.isFinite(scheduledAtMs) || scheduledAtMs <= 0) {
+                continue;
+            }
+            const scheduledAt = new Date(scheduledAtMs);
+            const payload: PendingAcceptanceReminderTask = {
+                orderId: order.id,
+                assignmentId,
+                stage: definition.stage,
+                deadline: deadline.toISOString(),
+                scheduledAt: scheduledAt.toISOString(),
+                warningLevel: definition.warningLevel,
+            };
+            entries.push({
+                payload,
+                member: payload,
+                score: scheduledAtMs,
+                formattedTime: scheduledAt.toISOString(),
+            });
+        }
+        return entries;
+    }
+
+    private async removePendingAcceptanceReminders(
+        entries: PendingAcceptanceReminderEntry[],
+    ): Promise<number> {
+        if (!entries.length) {
+            return 0;
+        }
+        try {
+            const removed = await this.cacheService.zRem(
+                PendingAcceptanceReminderRedisKeys.scheduleZset,
+                ...entries.map((entry) => entry.member),
+            );
+            return removed;
+        } catch (error) {
+            this.logger.warn(
+                '清理待接单提醒调度失败',
+                this.extractErrorMessage(error),
+            );
+            return 0;
+        }
+    }
+
+    private async clearPendingAcceptanceReminderSchedules(
+        order: DetailedOrder | null,
+    ) {
+        if (!order?.assignment?.id) {
+            return;
+        }
+        const deadline = this.calculatePendingAcceptanceDeadline(order);
+        if (!deadline) {
+            return;
+        }
+        const entries = this.buildPendingAcceptanceReminderEntries(
+            order,
+            deadline,
+        );
+        const removed = await this.removePendingAcceptanceReminders(entries);
+        if (removed > 0) {
+            this.logger.debug?.(
+                `订单 ${order.id} 清理 ${removed} 条历史待接单提醒`,
+            );
+        }
+    }
+
+    private buildServiceEtaReminderEntries(
+        order: DetailedOrder | null,
+        appointment: Date,
+    ): ServiceEtaReminderEntry[] {
+        if (!order?.assignment?.id) {
+            return [];
+        }
+        const appointmentMs = appointment.getTime();
+        if (!Number.isFinite(appointmentMs)) {
+            return [];
+        }
+        const entries: ServiceEtaReminderEntry[] = [];
+        for (const definition of SERVICE_ETA_REMINDER_SEQUENCE) {
+            const scheduledAtMs = appointmentMs - definition.offsetMs;
+            if (!Number.isFinite(scheduledAtMs) || scheduledAtMs <= 0) {
+                continue;
+            }
+            const scheduledAt = new Date(scheduledAtMs);
+            const payload: ServiceEtaReminderTask = {
+                orderId: order.id,
+                assignmentId: order.assignment.id,
+                stage: definition.stage,
+                appointmentTime: appointment.toISOString(),
+                scheduledAt: scheduledAt.toISOString(),
+                warningLevel: definition.warningLevel,
+            };
+            entries.push({
+                payload,
+                member: payload,
+                score: scheduledAtMs,
+                formattedTime: scheduledAt.toISOString(),
+            });
+        }
+        return entries;
+    }
+
+    private async removeServiceEtaReminders(
+        entries: ServiceEtaReminderEntry[],
+    ): Promise<number> {
+        if (!entries.length) {
+            return 0;
+        }
+        try {
+            return await this.cacheService.zRem(
+                ServiceEtaReminderRedisKeys.scheduleZset,
+                ...entries.map((entry) => entry.member),
+            );
+        } catch (error) {
+            this.logger.warn(
+                '清理上门提醒调度失败',
+                this.extractErrorMessage(error),
+            );
+            return 0;
+        }
+    }
+
+    private async clearServiceEtaReminderSchedules(
+        order: DetailedOrder | null,
+    ) {
+        if (!order?.assignment?.id) {
+            return;
+        }
+        const appointment = order.appointmentTime
+            ? new Date(order.appointmentTime)
+            : null;
+        if (!appointment || Number.isNaN(appointment.getTime())) {
+            return;
+        }
+        const entries = this.buildServiceEtaReminderEntries(order, appointment);
+        const removed = await this.removeServiceEtaReminders(entries);
+        if (removed > 0) {
+            this.logger.debug?.(
+                `订单 ${order.id} 清理 ${removed} 条上门提醒调度`,
+            );
+        }
     }
 
     private async schedulePaymentExpiration(
@@ -105,6 +347,30 @@ export class OrderService {
         }
     }
 
+    async notifyPendingAcceptance(orderId: string) {
+        if (!orderId) {
+            return;
+        }
+        const order = await this.orderRepository.getOrderById(orderId);
+        if (!order) {
+            return;
+        }
+        await this.notifyServicePersonnel(order, {
+            event: 'order_pending_acceptance_assigned',
+            message: '有新的订单需要处理，请尽快确认是否接单',
+            payload: {
+                status: order.status,
+                appointmentTime: order.appointmentTime
+                    ? new Date(order.appointmentTime).toISOString()
+                    : undefined,
+                totalAmount: order.totalAmount,
+                serviceName: order.service?.name ?? order.serviceId,
+                assignmentType: order.assignment?.assignmentType ?? undefined,
+            },
+        });
+        await this.schedulePendingAcceptanceReminders(order);
+    }
+
     private async emitAssignmentDecisionEvent({
         orderId,
         decisionStatus,
@@ -121,19 +387,27 @@ export class OrderService {
                 ? '服务人员已接单'
                 : '服务人员拒绝接单';
         try {
-            await this.cacheService.xAdd(
-                OrderExpireRedisKeys.notifyStream,
-                '*',
-                {
+            await this.notificationPublisher.publish({
+                event: 'order_assignment_decision',
+                payload: {
                     event: 'order_assignment_decision',
                     orderId,
                     status,
                     decisionStatus,
                     operatorId,
                     message,
+                    userId: operatorId,
+                    targetId: operatorId,
                     triggeredAt: new Date().toISOString(),
                 },
-            );
+                targets: [
+                    {
+                        targetId: operatorId,
+                        userId: operatorId,
+                        targetType: 'service_personnel',
+                    },
+                ],
+            });
         } catch (error) {
             this.logger.warn(
                 `派发接单通知失败: ${orderId}`,
@@ -547,17 +821,27 @@ export class OrderService {
                 throw new BadRequestException('订单不存在');
             }
 
-            if (order.status === 'paid') {
+            const refundableStatuses: OrderStatus[] = [
+                'pending_acceptance',
+                'paid',
+                'staff_rejected',
+            ];
+            if (refundableStatuses.includes(order.status)) {
                 await this.payService.requestRefund(id, finalReason, actorId);
+            } else {
+                await this.orderRepository.cancelOrder(
+                    id,
+                    finalReason,
+                    actorId,
+                );
             }
-
-            const cancelledOrder = await this.orderRepository.cancelOrder(
-                id,
-                finalReason,
-                actorId,
-            );
             await this.clearPaymentExpirationSchedule(id);
-            return cancelledOrder;
+            const detailedOrder =
+                (await this.orderRepository.getOrderById(id)) ?? order;
+            await this.clearPendingAcceptanceReminderSchedules(detailedOrder);
+            await this.clearServiceEtaReminderSchedules(detailedOrder);
+            await this.notifyOrderCancellation(detailedOrder, finalReason);
+            return detailedOrder;
         } catch (error) {
             if (error instanceof BadRequestException) {
                 throw error;
@@ -603,12 +887,18 @@ export class OrderService {
             const updatedOrder =
                 await this.orderRepository.getOrderById(orderId);
             if (updatedOrder) {
+                await this.clearPendingAcceptanceReminderSchedules(
+                    updatedOrder,
+                );
                 await this.emitAssignmentDecisionEvent({
                     orderId,
                     decisionStatus: 'accepted',
                     operatorId: staffId,
-                    status: updatedOrder.status as OrderStatus,
+                    status: updatedOrder.status,
                 });
+                if (updatedOrder.status === 'paid') {
+                    await this.scheduleServiceEtaReminders(updatedOrder);
+                }
             }
             return updatedOrder;
         } catch (error) {
@@ -645,6 +935,7 @@ export class OrderService {
             if (!updatedOrder) {
                 throw new BadRequestException('订单不存在');
             }
+            await this.clearPendingAcceptanceReminderSchedules(updatedOrder);
 
             if (updatedOrder.status === 'staff_rejected') {
                 const finalReason = `[service_personnel] ${trimmedReason}`;
@@ -659,7 +950,7 @@ export class OrderService {
                     orderId,
                     decisionStatus: 'rejected',
                     operatorId: staffId,
-                    status: updatedOrder.status as OrderStatus,
+                    status: updatedOrder.status,
                 });
             }
 
@@ -707,6 +998,7 @@ export class OrderService {
 
             // 订单完成后处理收益分配
             await this.payService.handleOrderCompletion(id);
+            await this.clearServiceEtaReminderSchedules(order);
 
             return updatedOrder;
         } catch (error) {
@@ -717,5 +1009,218 @@ export class OrderService {
                 `完成订单失败: ${this.extractErrorMessage(error)}`,
             );
         }
+    }
+
+    private async notifyServicePersonnel(
+        order: DetailedOrder | null,
+        config: ServiceNotificationConfig,
+    ) {
+        if (!order?.assignment?.servicePersonnel?.userId) {
+            return;
+        }
+        const serviceUserId = order.assignment.servicePersonnel.userId;
+        try {
+            const payload: NotificationEventPayload = {
+                event: config.event,
+                orderId: order.id,
+                status: order.status,
+                appointmentTime: order.appointmentTime
+                    ? new Date(order.appointmentTime).toISOString()
+                    : undefined,
+                serviceName: order.service?.name ?? order.serviceId,
+                totalAmount: order.totalAmount,
+                message: config.message,
+                ...config.payload,
+                userId: serviceUserId,
+                targetId: serviceUserId,
+            };
+            await this.notificationPublisher.publish({
+                event: config.event,
+                payload,
+                targets: [
+                    {
+                        targetId: serviceUserId,
+                        userId: serviceUserId,
+                        targetType: 'service_personnel',
+                    },
+                ],
+            });
+        } catch (error) {
+            this.logger.warn(
+                `派发服务人员通知失败: ${order.id}`,
+                this.extractErrorMessage(error),
+            );
+        }
+    }
+
+    private async notifyOrderCancellation(
+        order: DetailedOrder | null,
+        reason: string,
+    ) {
+        if (!order) {
+            return;
+        }
+        await this.notifyServicePersonnel(order, {
+            event: 'order_cancelled',
+            message: reason,
+            payload: {
+                cancelReason: reason,
+            },
+        });
+    }
+
+    private async schedulePendingAcceptanceReminders(
+        order: DetailedOrder | null,
+    ) {
+        if (
+            !order?.assignment?.id ||
+            !order.assignment.servicePersonnel?.userId
+        ) {
+            return;
+        }
+        if (
+            order.status !== 'pending_acceptance' ||
+            order.assignment.decisionStatus !== 'pending'
+        ) {
+            return;
+        }
+        const deadline = this.calculatePendingAcceptanceDeadline(order);
+        if (!deadline) {
+            this.logger.warn(
+                `订单 ${order.id} 缺少可用于计算待接单超时时间的字段，跳过提醒调度`,
+            );
+            return;
+        }
+        const entries = this.buildPendingAcceptanceReminderEntries(
+            order,
+            deadline,
+        );
+        if (!entries.length) {
+            this.logger.debug?.(
+                `订单 ${order.id} 无待接单提醒调度任务，截止 ${deadline.toISOString()}`,
+            );
+            return;
+        }
+        this.logger.debug?.(
+            `订单 ${order.id} 待接单提醒原始任务: ${entries
+                .map((entry) => `${entry.payload.stage}@${entry.formattedTime}`)
+                .join(', ')}`,
+        );
+        const removed = await this.removePendingAcceptanceReminders(entries);
+        if (removed > 0) {
+            this.logger.debug?.(
+                `订单 ${order.id} 清理 ${removed} 条旧待接单提醒后重新写入`,
+            );
+        }
+        const now = Date.now();
+        const upcomingEntries = entries.filter((entry) => entry.score > now);
+        if (!upcomingEntries.length) {
+            this.logger.debug?.(
+                `订单 ${order.id} 待接单提醒生成 ${entries.length} 条但全部过期（当前 ${new Date(
+                    now,
+                ).toISOString()}）`,
+            );
+            return;
+        }
+        await Promise.all(
+            upcomingEntries.map((entry) =>
+                this.cacheService
+                    .zAdd(
+                        PendingAcceptanceReminderRedisKeys.scheduleZset,
+                        entry.score,
+                        entry.member,
+                    )
+                    .then(() =>
+                        this.logger.debug?.(
+                            `订单 ${order.id} 待接单提醒写入 ${entry.payload.stage} @ ${entry.formattedTime}`,
+                        ),
+                    )
+                    .catch((error) =>
+                        this.logger.warn(
+                            `订单 ${order.id} 写入待接单提醒 ${entry.payload.stage} 失败`,
+                            this.extractErrorMessage(error),
+                        ),
+                    ),
+            ),
+        );
+        this.logger.debug?.(
+            `订单 ${order.id} 待接单提醒已调度，总计 ${upcomingEntries.length} 条，最晚 ${deadline.toISOString()}`,
+        );
+    }
+
+    private async scheduleServiceEtaReminders(order: DetailedOrder | null) {
+        if (
+            !order?.assignment?.id ||
+            !order.assignment.servicePersonnel?.userId
+        ) {
+            return;
+        }
+        if (
+            order.assignment.decisionStatus !== 'accepted' ||
+            (order.status !== 'paid' && order.status !== 'in_progress')
+        ) {
+            return;
+        }
+        const appointment = order.appointmentTime
+            ? new Date(order.appointmentTime)
+            : null;
+        if (!appointment || Number.isNaN(appointment.getTime())) {
+            this.logger.warn(
+                `订单 ${order.id} 缺少有效预约时间，无法调度上门提醒`,
+            );
+            return;
+        }
+        const entries = this.buildServiceEtaReminderEntries(order, appointment);
+        if (!entries.length) {
+            this.logger.debug?.(
+                `订单 ${order.id} 上门提醒生成 0 条任务，预约 ${appointment.toISOString()}`,
+            );
+            return;
+        }
+        this.logger.debug?.(
+            `订单 ${order.id} 上门提醒原始任务: ${entries
+                .map((entry) => `${entry.payload.stage}@${entry.formattedTime}`)
+                .join(', ')}`,
+        );
+        const removed = await this.removeServiceEtaReminders(entries);
+        if (removed > 0) {
+            this.logger.debug?.(
+                `订单 ${order.id} 清理 ${removed} 条旧上门提醒后重新写入`,
+            );
+        }
+        const now = Date.now();
+        const futureEntries = entries.filter((entry) => entry.score > now);
+        if (!futureEntries.length) {
+            this.logger.debug?.(
+                `订单 ${order.id} 上门提醒全部过期（当前 ${new Date(
+                    now,
+                ).toISOString()}）`,
+            );
+            return;
+        }
+        await Promise.all(
+            futureEntries.map((entry) =>
+                this.cacheService
+                    .zAdd(
+                        ServiceEtaReminderRedisKeys.scheduleZset,
+                        entry.score,
+                        entry.member,
+                    )
+                    .then(() =>
+                        this.logger.debug?.(
+                            `订单 ${order.id} 上门提醒写入 ${entry.payload.stage} @ ${entry.formattedTime}`,
+                        ),
+                    )
+                    .catch((error) =>
+                        this.logger.warn(
+                            `订单 ${order.id} 写入上门提醒 ${entry.payload.stage} 失败`,
+                            this.extractErrorMessage(error),
+                        ),
+                    ),
+            ),
+        );
+        this.logger.debug?.(
+            `订单 ${order.id} 上门提醒已调度，总计 ${futureEntries.length} 条，预约 ${appointment.toISOString()}`,
+        );
     }
 }
