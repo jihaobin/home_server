@@ -1873,7 +1873,7 @@ export class PayService {
             throw new BadRequestException('用户不存在');
         }
 
-        const { amount, currency, payType, payee, remark } = payload;
+        const { amount, currency, payType, remark } = payload;
         if (payType !== 'alipay') {
             throw new BadRequestException('当前仅支持支付宝提现');
         }
@@ -1882,6 +1882,43 @@ export class PayService {
             2,
             Decimal.ROUND_HALF_UP,
         );
+
+        if (amountDecimal.lt(0.1)) {
+            throw new BadRequestException('提现金额需大于或等于 0.1 元');
+        }
+
+        const normalizedRemark = remark?.trim() ?? '';
+        if (amountDecimal.greaterThanOrEqualTo(50000) && !normalizedRemark) {
+            throw new BadRequestException('单笔提现满 50000 元时备注必填');
+        }
+
+        const profile = await this.db.query.userProfiles.findFirst({
+            where: eq(userProfiles.userId, userId),
+            columns: {
+                alipayUserId: true,
+                alipayOpenId: true,
+                realName: true,
+            },
+        });
+
+        const alipayUserId = profile?.alipayUserId?.trim();
+        const alipayOpenId = profile?.alipayOpenId?.trim();
+        const payeeName = profile?.realName?.trim() || null;
+
+        let payeeAccount: string | null = null;
+        let payeeAccountType: 'ALIPAY_USER_ID' | 'ALIPAY_OPEN_ID' | null = null;
+
+        if (alipayUserId) {
+            payeeAccount = alipayUserId;
+            payeeAccountType = 'ALIPAY_USER_ID';
+        } else if (alipayOpenId) {
+            payeeAccount = alipayOpenId;
+            payeeAccountType = 'ALIPAY_OPEN_ID';
+        }
+
+        if (!payeeAccount || !payeeAccountType) {
+            throw new BadRequestException('请先绑定支付宝账号后再提现');
+        }
 
         const freezeContext = await this.db.transaction(async (tx) => {
             const balanceRecord =
@@ -1897,7 +1934,6 @@ export class PayService {
             const frozenBefore = new Decimal(
                 balanceRecord.frozenBalance ?? '0',
             );
-            const totalBefore = new Decimal(balanceRecord.totalBalance ?? '0');
 
             if (availableBefore.lt(amountDecimal)) {
                 throw new BadRequestException('可用余额不足');
@@ -1930,10 +1966,10 @@ export class PayService {
                     currency,
                     status: 'pending',
                     method: payType,
-                    payeeAccount: payee.identity,
-                    payeeAccountType: payee.identity_type,
-                    payeeName: payee.name,
-                    remark: remark ?? null,
+                    payeeAccount,
+                    payeeAccountType,
+                    payeeName,
+                    remark: normalizedRemark || null,
                 },
                 tx,
             );

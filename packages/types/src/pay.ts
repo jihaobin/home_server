@@ -819,6 +819,7 @@ const ALIPAY_WITHDRAW_ERROR_CODES = [
 	"SIGN_PARAM_INVALID",
 	"SIGN_QUERY_AGGREMENT_ERROR",
 	"SIGN_QUERY_APP_INFO_ERROR",
+	"TRANSFER_SCENE_NAME_ILLEGAL",
 	"TRUSTEESHIP_ACCOUNT_NOT_EXIST",
 	"TRUSTEESHIP_RECIEVE_QUOTA_LIMIT",
 	"USER_AGREEMENT_VERIFY_FAIL",
@@ -841,35 +842,34 @@ const alipayWithdrawBaseResponseSchema = z
 	.object({
 		code: createBoundedString(16, "code"),
 		msg: z.string().min(1, "msg 不能为空").max(128, "msg 最大长度 128"),
-		sub_code: alipayWithdrawErrorCodeSchema.optional(),
-		sub_msg: z.string().min(1).max(512, "sub_msg 最大长度 512").optional(),
-		trace_id: createOptionalBoundedString(64, "trace_id"),
+		subCode: alipayWithdrawErrorCodeSchema.optional(),
+		subMsg: z.string().min(1).max(512, "subMsg 最大长度 512").optional(),
 		traceId: createOptionalBoundedString(64, "traceId"),
 	})
 	.meta({
 		title: "转账接口基础响应",
-		description: "所有转账响应均包含的标准字段。",
+		description: "所有转账响应均包含的标准字段，支付宝实际返回字段为驼峰写法。",
 	});
 
 export const alipayWithdrawSuccessResponseSchema = alipayWithdrawBaseResponseSchema
 	.extend({
-		out_biz_no: createBoundedString(64, "out_biz_no"),
-		order_id: createBoundedString(32, "order_id"),
-		pay_fund_order_id: createBoundedString(32, "pay_fund_order_id"),
-		trans_date: payDateTimeSecondsSchema,
+		outBizNo: createBoundedString(64, "outBizNo"),
+		orderId: createBoundedString(32, "orderId"),
+		payFundOrderId: createBoundedString(32, "payFundOrderId"),
+		transDate: payDateTimeSecondsSchema,
 		status: alipayWithdrawStatusSchema.optional(),
 	})
 	.meta({
 		title: "转账成功响应",
-		description: "业务处理成功时返回的核心字段。",
+		description: "业务处理成功时返回的核心字段，字段名为驼峰命名。",
 		examples: [
 			{
 				code: "10000",
 				msg: "Success",
-				out_biz_no: "201806300001",
-				order_id: "20190801110070000006380000250621",
-				pay_fund_order_id: "20190801110070001506380000251556",
-				trans_date: "2019-08-21 00:00:00",
+				outBizNo: "201806300001",
+				orderId: "20190801110070000006380000250621",
+				payFundOrderId: "20190801110070001506380000251556",
+				transDate: "2019-08-21 00:00:00",
 				status: "SUCCESS",
 			},
 		],
@@ -880,17 +880,17 @@ export type AlipayWithdrawSuccessResponse = z.infer<
 
 export const alipayWithdrawErrorResponseSchema = alipayWithdrawBaseResponseSchema
 	.extend({
-		sub_code: alipayWithdrawErrorCodeSchema,
+		subCode: alipayWithdrawErrorCodeSchema,
 	})
 	.meta({
 		title: "转账失败响应",
-		description: "业务失败时将包含 sub_code 及 sub_msg 等信息。",
+		description: "业务失败时将包含 subCode 及 subMsg 等信息。",
 		examples: [
 			{
 				code: "20000",
 				msg: "Service Currently Unavailable",
-				sub_code: "SYSTEM_ERROR",
-				sub_msg: "系统繁忙",
+				subCode: "SYSTEM_ERROR",
+				subMsg: "系统繁忙",
 			},
 		],
 	});
@@ -982,9 +982,9 @@ export type AlipayNotifyResponse = z.infer<typeof AlipayNotifyResponseSchema>;
 
 
 const withdrawAmountNumberSchema = z
-	.number( "提现金额必须为数字")
+	.number("提现金额必须为数字")
 	.refine((value) => Number.isFinite(value), "提现金额格式有误")
-	.refine((value) => value > 0, "提现金额必须大于 0")
+	.refine((value) => value >= 0.1, "提现金额至少 0.1 元")
 	.refine(
 		(value) => Math.round(value * 100) === value * 100,
 		"提现金额最多保留两位小数",
@@ -1005,12 +1005,11 @@ export const UserWithdrawBodySchema = z
 			(value) => value === "alipay",
 			"当前仅支持支付宝提现",
 		),
-		payee: alipayWithdrawPayeeSchema,
 		remark: alipayWithdrawRemarkSchema,
 	})
 	.meta({
 		title: "用户提现请求体",
-		description: "前端提交的提现金额与收款账户信息",
+		description: "前端提交的提现申请信息，收款账号由后端根据绑定信息自动填充",
 	});
 
 export type UserWithdrawBody = z.infer<typeof UserWithdrawBodySchema>;

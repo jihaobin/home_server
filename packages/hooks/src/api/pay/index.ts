@@ -269,7 +269,7 @@ export const useQueryPaymentStatus = (orderId: string) => {
 
 /**
  * 用户提现
- * @description 校验余额并立即发起支付宝转账，成功后记录提现流水
+ * @description 校验余额并冻结提现金额，提交申请等待管理员审核后打款
  */
 export const useWithdraw = () => {
 	const queryClient = useQueryClient();

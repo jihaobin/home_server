@@ -24,7 +24,6 @@
 
 ### 2.2 非目标（本期不做）
 
-- 自动打款（无审核）；
 - 支付宝转账结果不确定时的“自动查询最终状态”（`alipay.fund.trans.common.query`）与后台补偿任务；
 - 提现状态细分为 `processing` 等（仍沿用现有 `pending/approved/rejected/completed`）。
 

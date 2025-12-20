@@ -10,6 +10,7 @@ import type {
     AdminWithdrawal,
     AdminWithdrawalListQuery,
     AdminWithdrawalListResponse,
+    AlipayWithdrawResponse,
 } from '@repo/types';
 import {
     alipayWithdrawResponseSchema,
@@ -18,17 +19,34 @@ import {
 import Decimal from 'decimal.js';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
-import { createAliPaySdk } from 'src/lib/alipaySdk';
+import { createWorkerAliPaySdk } from 'src/lib/alipaySdk';
 import { PayRepository } from './pay.repository';
 import {
     AdminWithdrawalsRepository,
     type AdminWithdrawalFilters,
     type AdminWithdrawalRecord,
 } from './admin-withdrawals.repository';
+import z from 'zod/v4';
+
+const unwrapAlipayResponsePayload = (raw: unknown) => {
+    if (!raw || typeof raw !== 'object' || raw === null) {
+        return raw;
+    }
+
+    const payload = raw as Record<string, unknown>;
+    if ('alipay_fund_trans_uni_transfer_response' in payload) {
+        const nested = payload.alipay_fund_trans_uni_transfer_response;
+        if (nested && typeof nested === 'object') {
+            return nested;
+        }
+    }
+
+    return payload;
+};
 
 @Injectable()
 export class AdminWithdrawalsService {
-    private readonly alipaySdk = createAliPaySdk();
+    private readonly alipaySdk = createWorkerAliPaySdk();
     private readonly logger = new Logger(AdminWithdrawalsService.name);
 
     constructor(
@@ -291,6 +309,13 @@ export class AdminWithdrawalsService {
             biz_scene: 'DIRECT_TRANSFER',
             product_code: 'TRANS_ACCOUNT_NO_PWD',
             order_title: '服务人员提现',
+            transfer_scene_name: '佣金报酬',
+            transfer_scene_report_infos: [
+                {
+                    info_type: '佣金报酬说明',
+                    info_content: '服务人员提现',
+                },
+            ],
             payee_info: {
                 identity: payeeAccount,
                 identity_type: payeeAccountType,
@@ -310,6 +335,7 @@ export class AdminWithdrawalsService {
                     bizContent,
                 },
             );
+            console.log('支付宝打款接口返回：', rawResponse);
         } catch (error) {
             this.logger.error(
                 `调用支付宝打款接口失败: ${withdrawalId}`,
@@ -318,26 +344,66 @@ export class AdminWithdrawalsService {
             throw new BadRequestException('支付宝打款失败，请稍后重试');
         }
 
-        const parsed = alipayWithdrawResponseSchema.parse(rawResponse);
-        const successResult =
-            alipayWithdrawSuccessResponseSchema.safeParse(parsed);
+        const normalizedPayload = unwrapAlipayResponsePayload(
+            rawResponse,
+        ) as Record<string, unknown>;
 
-        if (
-            !successResult.success ||
-            (successResult.data.status && successResult.data.status === 'FAIL')
-        ) {
+        const parsedResult =
+            alipayWithdrawResponseSchema.safeParse(normalizedPayload);
+        if (!parsedResult.success) {
+            this.logger.warn(
+                '[AdminWithdrawalsService] 支付宝打款响应格式异常',
+                {
+                    withdrawalId,
+                    errors: z.treeifyError(parsedResult.error),
+                    response: normalizedPayload,
+                },
+            );
+        }
+
+        const responsePayload:
+            | AlipayWithdrawResponse
+            | Record<string, unknown> = parsedResult.success
+            ? parsedResult.data
+            : normalizedPayload;
+
+        const responseCode =
+            typeof responsePayload.code === 'string'
+                ? responsePayload.code
+                : '';
+
+        if (responseCode !== '10000') {
+            const payloadRecord = responsePayload as Record<string, unknown>;
+            const getStringField = (key: string) => {
+                const value = payloadRecord[key];
+                return typeof value === 'string' ? value : null;
+            };
             const errorMessage =
-                'sub_msg' in parsed && parsed.sub_msg
-                    ? parsed.sub_msg
-                    : parsed.msg;
+                getStringField('subMsg') ??
+                getStringField('sub_msg') ??
+                getStringField('msg');
             throw new BadRequestException(
                 `支付宝打款失败：${errorMessage || '未知错误'}`,
             );
         }
 
-        const data = successResult.data;
+        const successData =
+            alipayWithdrawSuccessResponseSchema.safeParse(responsePayload);
+        if (!successData.success) {
+            this.logger.warn(
+                '[AdminWithdrawalsService] 支付宝打款成功但响应字段缺失',
+                {
+                    withdrawalId,
+                    response: responsePayload,
+                    errors: successData.error.flatten(),
+                },
+            );
+            throw new BadRequestException('支付宝打款结果解析失败，请稍后重试');
+        }
+
         return {
-            referenceId: data.pay_fund_order_id ?? data.order_id,
+            referenceId:
+                successData.data.payFundOrderId ?? successData.data.orderId,
         };
     }
 

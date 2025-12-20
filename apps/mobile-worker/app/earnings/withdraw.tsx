@@ -4,6 +4,7 @@ import {
     useEarningsOverview,
     useWithdraw,
     useInfiniteWorkerEarningsRecords,
+    useWorkerAlipayBindingStatus,
 } from "@repo/hooks/api/pay";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -30,11 +31,14 @@ export default function WithdrawScreen() {
 function WithdrawContent() {
     const router = useRouter();
     const [amount, setAmount] = useState("");
-    const [selectedAccount, setSelectedAccount] = useState<"alipay" | "wechat">(
-        "alipay",
-    );
+    const [remark, setRemark] = useState("");
     const { data: overview, refetch: refetchOverview } = useEarningsOverview();
     const { mutateAsync: submitWithdraw, isPending: isWithdrawing } = useWithdraw();
+    const {
+        data: bindingStatus,
+        isLoading: isBindingStatusLoading,
+        refetch: refetchBindingStatus,
+    } = useWorkerAlipayBindingStatus();
     const withdrawalQueryParams = useMemo(
         () => ({
             limit: 3,
@@ -53,17 +57,6 @@ function WithdrawContent() {
     const maxWithdraw = 5000;
 
     const quickAmounts = [100, 500, 1000, 2000];
-
-    const accounts = {
-        alipay: {
-            name: "张**",
-            account: "138****1234",
-        },
-        wechat: {
-            name: "张三",
-            account: "wxid_****",
-        },
-    };
 
     const availableBalance = overview?.balance?.available ?? 0;
     const withdrawableLimit = Math.min(availableBalance, maxWithdraw);
@@ -87,7 +80,12 @@ function WithdrawContent() {
         [withdrawalRecords],
     );
     const isWithdrawButtonDisabled =
-        !amount || isWithdrawing || hasPendingReview || hasSubmitted;
+        !amount ||
+        isWithdrawing ||
+        hasPendingReview ||
+        hasSubmitted ||
+        isBindingStatusLoading ||
+        !bindingStatus?.bound;
 
     useEffect(() => {
         if (!hasPendingReview) {
@@ -115,32 +113,53 @@ function WithdrawContent() {
         } as never);
     };
 
+    const handleOpenBinding = () => {
+        router.push("/profile/account-binding" as never);
+    };
+
     const handleRefresh = useCallback(async () => {
         setRefreshing(true);
         try {
             await Promise.allSettled([
                 refetchOverview(),
                 refetchWithdrawalRecords(),
+                refetchBindingStatus(),
             ]);
         } finally {
             setRefreshing(false);
         }
-    }, [refetchOverview, refetchWithdrawalRecords]);
+    }, [refetchOverview, refetchWithdrawalRecords, refetchBindingStatus]);
 
     const handleWithdraw = () => {
         if (hasPendingReview) {
             Alert.alert("提示", "当前有提现申请正在审核，请等待审核完成后再试。");
             return;
         }
-        if (selectedAccount !== "alipay") {
-            Alert.alert("提示", "当前仅支持提现到支付宝账号");
+        if (isBindingStatusLoading) {
+            Alert.alert("提示", "正在获取支付宝绑定信息，请稍后重试");
+            return;
+        }
+        if (!bindingStatus?.bound) {
+            Alert.alert("提示", "请先绑定支付宝账号后再提现。", [
+                { text: "取消", style: "cancel" },
+                {
+                    text: "去绑定",
+                    onPress: handleOpenBinding,
+                },
+            ]);
             return;
         }
 
         const withdrawAmount = parseFloat(amount);
+        const normalizedRemark = remark.trim();
 
         if (!amount || isNaN(withdrawAmount)) {
             Alert.alert("提示", "请输入提现金额");
+            return;
+        }
+
+        if (withdrawAmount < 0.1) {
+            Alert.alert("提示", "提现金额需大于或等于 0.1 元");
             return;
         }
 
@@ -154,9 +173,19 @@ function WithdrawContent() {
             return;
         }
 
+        if (withdrawAmount >= 50000 && !normalizedRemark) {
+            Alert.alert("提示", "单笔提现金额满 50000 元时需填写备注");
+            return;
+        }
+
+        const targetAccount =
+            bindingStatus?.alipayUserId ||
+            bindingStatus?.alipayOpenId ||
+            "已绑定支付宝";
+
         Alert.alert(
             "确认提现",
-            `提现申请提交后将进入后台审核，预计1-3个工作日内完成打款。确认提交¥${withdrawAmount}的提现申请吗？`,
+            `提现申请提交后将进入后台审核并打款至 ${targetAccount}，预计1-3个工作日内完成。确认提交¥${withdrawAmount}的提现申请吗？`,
             [
                 { text: "取消", style: "cancel" },
                 {
@@ -169,24 +198,20 @@ function WithdrawContent() {
 
     const submitWithdrawRequest = async (withdrawAmount: number) => {
         try {
-            const account = accounts[selectedAccount];
             await submitWithdraw({
                 amount: withdrawAmount,
                 currency: "CNY",
                 payType: "alipay",
-                payee: {
-                    identity: account.account,
-                    identity_type: "ALIPAY_LOGON_ID",
-                    name: account.name,
-                },
-                remark: "师傅端提现",
+                remark: remark.trim() || undefined,
             });
             setHasSubmitted(true);
             setAmount("");
             await Promise.allSettled([
                 refetchOverview(),
                 refetchWithdrawalRecords(),
+                refetchBindingStatus(),
             ]);
+            setRemark("");
             Alert.alert("提现申请已提交", "后台正在进行审核，预计 1-3 个工作日内完成，请关注提现记录更新。", [
                 {
                     text: "确定",
@@ -314,6 +339,24 @@ function WithdrawContent() {
                     </View>
                 </View>
 
+                <View style={styles.remarkSection}>
+                    <Text style={styles.sectionTitle}>提现备注</Text>
+                    <View style={[styles.inputCard, styles.remarkInputCard]}>
+                        <TextInput
+                            style={styles.remarkInput}
+                            value={remark}
+                            onChangeText={setRemark}
+                            placeholder="可填写打款备注，单笔金额 ≥ 50000 元时必填"
+                            multiline
+                            maxLength={200}
+                            textAlignVertical="top"
+                        />
+                    </View>
+                    <Text style={styles.hint}>
+                        备注会随提现申请传递给审核及打款流程，留空则为无备注
+                    </Text>
+                </View>
+
                 <View style={styles.historySection}>
                     <View style={styles.historyHeader}>
                         <Text style={styles.sectionTitle}>提现记录</Text>
@@ -402,17 +445,15 @@ function WithdrawContent() {
                     )}
                 </View>
 
-                {/* 选择提现账户 */}
+                {/* 收款账户 */}
                 <View style={styles.accountSection}>
-                    <Text style={styles.sectionTitle}>提现到</Text>
+                    <Text style={styles.sectionTitle}>收款账户</Text>
 
-                    {/* 支付宝 */}
-                    <TouchableOpacity
+                    <View
                         style={[
                             styles.accountCard,
-                            selectedAccount === "alipay" && styles.accountCardActive,
+                            !bindingStatus?.bound && styles.accountCardPending,
                         ]}
-                        onPress={() => setSelectedAccount("alipay")}
                     >
                         <View style={styles.accountLeft}>
                             <View
@@ -423,54 +464,30 @@ function WithdrawContent() {
                             <View style={styles.accountInfo}>
                                 <Text style={styles.accountType}>支付宝</Text>
                                 <Text style={styles.accountDetail}>
-                                    {accounts.alipay.name} {accounts.alipay.account}
+                                    {isBindingStatusLoading
+                                        ? "加载中..."
+                                        : bindingStatus?.bound
+                                            ? `已绑定 ${bindingStatus.alipayUserId || bindingStatus.alipayOpenId || ""}`
+                                            : "未绑定，绑定后才能提交提现"}
                                 </Text>
                             </View>
                         </View>
-                        <View
-                            style={[
-                                styles.radio,
-                                selectedAccount === "alipay" && styles.radioActive,
-                            ]}
+                        <TouchableOpacity
+                            style={styles.accountActionButton}
+                            onPress={handleOpenBinding}
+                            disabled={isBindingStatusLoading}
                         >
-                            {selectedAccount === "alipay" && (
-                                <View style={styles.radioDot} />
-                            )}
-                        </View>
-                    </TouchableOpacity>
+                            <Text style={styles.accountActionButtonText}>
+                                {bindingStatus?.bound ? "更换账号" : "去绑定"}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
 
-                    {/* 微信 */}
-                    <TouchableOpacity
-                        style={[
-                            styles.accountCard,
-                            selectedAccount === "wechat" && styles.accountCardActive,
-                        ]}
-                        onPress={() => setSelectedAccount("wechat")}
-                    >
-                        <View style={styles.accountLeft}>
-                            <View
-                                style={[styles.accountIcon, { backgroundColor: "#07C160" }]}
-                            >
-                                <Ionicons name="logo-wechat" size={24} color="white" />
-                            </View>
-                            <View style={styles.accountInfo}>
-                                <Text style={styles.accountType}>微信</Text>
-                                <Text style={styles.accountDetail}>
-                                    {accounts.wechat.name} {accounts.wechat.account}
-                                </Text>
-                            </View>
-                        </View>
-                        <View
-                            style={[
-                                styles.radio,
-                                selectedAccount === "wechat" && styles.radioActive,
-                            ]}
-                        >
-                            {selectedAccount === "wechat" && (
-                                <View style={styles.radioDot} />
-                            )}
-                        </View>
-                    </TouchableOpacity>
+                    {!bindingStatus?.bound ? (
+                        <Text style={styles.accountWarning}>
+                            绑定支付宝账号后才能发起提现，点击按钮前往绑定
+                        </Text>
+                    ) : null}
                 </View>
 
                 {/* 提现说明 */}
@@ -792,6 +809,19 @@ const styles = StyleSheet.create({
         color: "#2196F3",
         fontWeight: "bold",
     },
+    remarkSection: {
+        paddingHorizontal: 16,
+        marginBottom: 16,
+    },
+    remarkInputCard: {
+        alignItems: "flex-start",
+    },
+    remarkInput: {
+        flex: 1,
+        fontSize: 14,
+        color: "#333",
+        minHeight: 72,
+    },
     reviewNotice: {
         marginTop: 16,
         flexDirection: "row",
@@ -844,6 +874,9 @@ const styles = StyleSheet.create({
         shadowRadius: 4,
         elevation: 3,
     },
+    accountCardPending: {
+        borderColor: "#FF9800",
+    },
     accountCardActive: {
         borderColor: "#2196F3",
     },
@@ -872,6 +905,23 @@ const styles = StyleSheet.create({
     accountDetail: {
         fontSize: 12,
         color: "#999",
+    },
+    accountActionButton: {
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 10,
+        backgroundColor: "#2196F3",
+    },
+    accountActionButtonText: {
+        color: "#fff",
+        fontSize: 13,
+        fontWeight: "600",
+    },
+    accountWarning: {
+        fontSize: 12,
+        color: "#FF9800",
+        marginTop: 4,
+        marginLeft: 4,
     },
     radio: {
         width: 20,
