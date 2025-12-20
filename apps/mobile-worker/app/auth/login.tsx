@@ -16,6 +16,7 @@ import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { toast } from "sonner-native";
 import { EmailVerificationSheet } from "../../components/EmailVerificationSheet";
 import { authClient, signOutWithCleanup } from "../../lib/auth";
+import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
 
 export default function WorkerLoginScreen() {
     const navigation = useNavigation();
@@ -64,7 +65,7 @@ export default function WorkerLoginScreen() {
             });
 
             if (error) {
-                toast.error(error.message || "登录失败，请稍后重试");
+                toast.error(translateAuthErrorMessage(error));
                 return;
             }
 
@@ -79,7 +80,7 @@ export default function WorkerLoginScreen() {
             refetch();
             router.replace("/(tabs)");
         } catch (err) {
-            toast.error("网络连接失败，请稍后重试");
+            toast.error(translateAuthErrorMessage(err));
         } finally {
             setIsSubmitting(false);
         }

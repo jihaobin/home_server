@@ -9,6 +9,7 @@ import { zodValidator } from "@tanstack/zod-form-adapter"
 import { useQueryClient } from "@tanstack/react-query"
 import { AdminLoginRequestSchema } from "@repo/types"
 import { ApiClientError } from "@repo/utils/api-client"
+import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
 import { adminProfileQueryOptions } from "@repo/hooks/api/ssr"
 import { Input } from "@repo/web-ui/components/input"
 import { Button } from "@repo/web-ui/components/button"
@@ -56,11 +57,12 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
                 onSuccess?.()
                 router.replace(redirectTo)
             } catch (error) {
+                const fallback = "登录失败，请稍后重试";
                 if (error instanceof ApiClientError) {
-                    setFormError(error.message)
-                    return
+                    setFormError(translateAuthErrorMessage(error, fallback));
+                    return;
                 }
-                setFormError("登录失败，请稍后重试")
+                setFormError(translateAuthErrorMessage(error, fallback));
             }
         },
     })

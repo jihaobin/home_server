@@ -21,6 +21,7 @@ import {
 } from "react-native";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { authClient } from "@repo/lib/auth-client";
+import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
 import { EmailVerificationModal } from "../../components/EmailVerificationModal";
 import { toast } from "sonner-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -76,7 +77,7 @@ export default function LoginScreen() {
             });
 
             if (error) {
-                toast.error(error.message || "登录时发生错误");
+                toast.error(translateAuthErrorMessage(error));
             } else {
                 // 检查邮箱是否已验证
                 if (data?.user && !data.user.emailVerified) {
@@ -90,7 +91,7 @@ export default function LoginScreen() {
                 }
             }
         } catch (error) {
-            toast.error("网络连接失败，请稍后重试");
+            toast.error(translateAuthErrorMessage(error));
         } finally {
             setIsLoading(false);
         }
