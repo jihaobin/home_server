@@ -51,6 +51,7 @@ export function createAuth(
                 secure: isProd,
                 sameSite: isProd ? 'none' : 'lax', // Allows CORS-based cookie sharing across subdomains
                 partitioned: isProd, // New browser standards will mandate this for foreign cookies
+                path: '/', // Ensure admin APIs outside /auth can读取会话
             },
         },
         emailAndPassword: {

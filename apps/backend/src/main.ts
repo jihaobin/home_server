@@ -4,7 +4,10 @@ import { HttpExceptionFilter } from './common/exceptions';
 import { AppLoggerService } from './common/logger';
 import { setupScalarSwagger } from './swagger-scalar.setup';
 
-const trustedOrigins = (process.env.TRUSTED_ORIGINS as string).split(',');
+const trustedOrigins = (process.env.TRUSTED_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean);
 
 async function bootstrap() {
     const app = await NestFactory.create(AppModule, {
@@ -12,7 +15,17 @@ async function bootstrap() {
     });
 
     app.enableCors({
-        origin: trustedOrigins,
+        origin: (origin, callback) => {
+            if (!origin) {
+                // 非浏览器场景直接放行
+                return callback(null, true);
+            }
+            const normalized = origin.replace(/\/$/, '');
+            if (trustedOrigins.includes(normalized)) {
+                return callback(null, true);
+            }
+            return callback(new Error(`Not allowed by CORS: ${origin}`), false);
+        },
         credentials: true,
     });
 

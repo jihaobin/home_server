@@ -3,13 +3,12 @@
 import { useState } from "react"
 import { Bell, LogOut } from "lucide-react"
 import { usePathname, useRouter } from "next/navigation"
-import { useQueryClient } from "@tanstack/react-query"
 import { Avatar, AvatarFallback } from "@repo/web-ui/components/avatar"
 import { Button } from "@repo/web-ui/components/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@repo/web-ui/components/dropdown-menu"
 import { Separator } from "@repo/web-ui/components/separator"
 import { SidebarTrigger } from "@repo/web-ui/components/sidebar"
-import { adminProfileQueryOptions, useAdminProfile } from "@repo/hooks/api/ssr"
+import { useAdminProfile } from "@repo/hooks/api/ssr"
 import { toast } from "sonner"
 import { adminLogout } from "@/lib/auth"
 import { getNavItemByPath } from "@/components/layout/nav-config"
@@ -21,7 +20,6 @@ export function TopBar() {
     const avatarFallback = getAvatarInitials(profile?.name, profile?.email)
     const roleSummary = profile?.roles?.join(" · ")
     const router = useRouter()
-    const queryClient = useQueryClient()
     const [isLoggingOut, setIsLoggingOut] = useState(false)
 
     const handleLogout = async () => {
@@ -30,9 +28,6 @@ export function TopBar() {
         setIsLoggingOut(true)
         try {
             await adminLogout()
-            queryClient.removeQueries({
-                queryKey: adminProfileQueryOptions().queryKey,
-            })
             router.replace("/auth/login")
         } catch (error) {
             console.error(error)

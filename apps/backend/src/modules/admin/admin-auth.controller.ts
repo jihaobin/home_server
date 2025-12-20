@@ -88,18 +88,33 @@ export class AdminAuthController {
     private forwardAuthHeaders(res: Response, headers?: Headers) {
         if (!headers) return;
 
-        const setCookie: string[] = [];
+        type HeadersWithCookies = Headers & {
+            getSetCookie?: () => string[];
+            raw?: () => Record<string, string[]>;
+        };
+
+        const headersWithCookies = headers as HeadersWithCookies;
+        const setCookieHeaders: string[] = [];
+
+        if (typeof headersWithCookies.getSetCookie === 'function') {
+            setCookieHeaders.push(...headersWithCookies.getSetCookie());
+        } else if (typeof headersWithCookies.raw === 'function') {
+            const rawCookies = headersWithCookies.raw()?.['set-cookie'];
+            if (rawCookies?.length) {
+                setCookieHeaders.push(...rawCookies);
+            }
+        }
+
         headers.forEach((value, key) => {
             if (key.toLowerCase() === 'set-cookie') {
-                setCookie.push(value);
                 return;
             }
 
             res.setHeader(key, value);
         });
 
-        if (setCookie.length > 0) {
-            res.setHeader('set-cookie', setCookie);
+        if (setCookieHeaders.length > 0) {
+            res.setHeader('set-cookie', setCookieHeaders);
         }
     }
 }
