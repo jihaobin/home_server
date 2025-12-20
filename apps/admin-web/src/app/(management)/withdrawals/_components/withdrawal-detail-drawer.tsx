@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import type { AdminWithdrawal } from "@repo/types"
 import {
     AlertDialog,
@@ -45,19 +45,26 @@ export function WithdrawalDetailDrawer({
     query,
     onWithdrawalUpdated,
 }: WithdrawalDetailDrawerProps) {
-    const [note, setNote] = useState("")
+    const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({})
     const [pendingAction, setPendingAction] = useState<"approve" | "reject" | null>(
         null,
     )
     const reviewMutation = useReviewAdminWithdrawal(query)
 
-    useEffect(() => {
-        if (withdrawal) {
-            setNote(withdrawal.reviewNote ?? "")
-        } else {
-            setNote("")
+    const activeWithdrawalId = withdrawal?.id ?? null
+    const serverNote = withdrawal?.reviewNote ?? ""
+    const note =
+        activeWithdrawalId ? noteDrafts[activeWithdrawalId] ?? serverNote : ""
+
+    const handleNoteChange = (value: string) => {
+        if (!activeWithdrawalId) {
+            return
         }
-    }, [withdrawal])
+        setNoteDrafts((prev) => ({
+            ...prev,
+            [activeWithdrawalId]: value,
+        }))
+    }
 
     const canReview = withdrawal?.status === "pending"
 
@@ -66,6 +73,7 @@ export function WithdrawalDetailDrawer({
             return
         }
         const trimmedNote = note.trim()
+        const targetWithdrawalId = withdrawal.id
         if (pendingAction === "reject" && !trimmedNote) {
             toast.error("驳回时请填写备注")
             return
@@ -80,6 +88,14 @@ export function WithdrawalDetailDrawer({
                 },
             })
             onWithdrawalUpdated?.(updated)
+            setNoteDrafts((prev) => {
+                if (!targetWithdrawalId) {
+                    return prev
+                }
+                const next = { ...prev }
+                delete next[targetWithdrawalId]
+                return next
+            })
             toast.success(
                 pendingAction === "approve"
                     ? "提现已通过并打款"
@@ -87,7 +103,7 @@ export function WithdrawalDetailDrawer({
             )
             setPendingAction(null)
         } catch (error) {
-            console.error(error)
+            toast.error(`审核提现失败：${(error as Error).message}`)
         }
     }
 
@@ -158,7 +174,7 @@ export function WithdrawalDetailDrawer({
                                             id="review-note"
                                             placeholder="记录本次审核的备注信息"
                                             value={note}
-                                            onChange={(event) => setNote(event.target.value)}
+                                            onChange={(event) => handleNoteChange(event.target.value)}
                                             disabled={!canReview || reviewMutation.isPending}
                                             rows={3}
                                         />
@@ -243,7 +259,7 @@ export function WithdrawalDetailDrawer({
                                             value={
                                                 withdrawal.reviewer
                                                     ? withdrawal.reviewer.name ??
-                                                      withdrawal.reviewer.id
+                                                    withdrawal.reviewer.id
                                                     : "待分配"
                                             }
                                         />
@@ -337,11 +353,11 @@ const METHOD_LABELS: Record<AdminWithdrawal["method"], string> = {
 }
 
 const ACCOUNT_TYPE_LABELS: Record<AdminWithdrawal["payeeAccountType"], string> =
-    {
-        ALIPAY_USER_ID: "支付宝 UID",
-        ALIPAY_LOGON_ID: "支付宝登录号",
-        ALIPAY_OPEN_ID: "支付宝 OpenID",
-    }
+{
+    ALIPAY_USER_ID: "支付宝 UID",
+    ALIPAY_LOGON_ID: "支付宝登录号",
+    ALIPAY_OPEN_ID: "支付宝 OpenID",
+}
 
 function formatAmount(withdrawal: AdminWithdrawal) {
     const amount = withdrawal.amount.amount ?? 0

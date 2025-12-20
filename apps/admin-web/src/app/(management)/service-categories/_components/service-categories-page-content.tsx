@@ -45,7 +45,7 @@ import {
 } from "@repo/hooks/api/ssr"
 import { useUploadFile } from "@repo/hooks/api/files"
 import type { AdminServiceCategory, AdminServiceCategoryTree } from "@repo/types"
-import { useForm, type FieldApi } from "@tanstack/react-form"
+import { useForm, type AnyFieldApi } from "@tanstack/react-form"
 import { z } from "zod/v4"
 import { toast } from "sonner"
 import {
@@ -60,6 +60,7 @@ import {
 import { PageHeader, PageHeaderToolbar } from "@/components/common"
 import { ApiClientError } from "@repo/utils/api-client"
 import { resolveFileUrl } from "@/lib/files"
+import Image from "next/image"
 
 type DialogState =
     | { mode: "create"; parentId: string | null; open: boolean }
@@ -97,26 +98,25 @@ export function ServiceCategoriesPageContent() {
     const deleteMutation = useDeleteAdminServiceCategory()
     const uploadFile = useUploadFile()
 
-    const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(
+    const [selectedCategoryIdState, setSelectedCategoryId] = useState<string | null>(
         data.flat[0]?.id ?? null,
     )
     const [dialogState, setDialogState] = useState<DialogState | null>(null)
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
-    useEffect(() => {
+    const selectedCategoryId = useMemo(() => {
         if (data.flat.length === 0) {
-            setSelectedCategoryId(null)
-            return
+            return null
         }
-        if (!selectedCategoryId) {
-            setSelectedCategoryId(data.flat[0].id)
-            return
+        const fallbackId = data.flat[0]?.id ?? null
+        if (!selectedCategoryIdState) {
+            return fallbackId
         }
-        const exists = data.flat.some((category) => category.id === selectedCategoryId)
-        if (!exists) {
-            setSelectedCategoryId(data.flat[0].id)
-        }
-    }, [data.flat, selectedCategoryId])
+        const exists = data.flat.some(
+            (category) => category.id === selectedCategoryIdState,
+        )
+        return exists ? selectedCategoryIdState : fallbackId
+    }, [data.flat, selectedCategoryIdState])
 
     const selectedCategory = useMemo(
         () => data.flat.find((category) => category.id === selectedCategoryId) ?? null,
@@ -498,7 +498,7 @@ function CategoryTreeNode({
             </button>
             {Array.isArray(node.children) && node.children.length > 0 ? (
                 <ul className="ml-4 mt-1 space-y-1 border-l border-dashed border-border pl-3">
-                    {node.children.map((child) => (
+                    {node.children.map((child: AdminServiceCategoryTree) => (
                         <CategoryTreeNode
                             key={child.id}
                             node={child}
@@ -601,11 +601,13 @@ function CategoryDetailPanel({
             <div className="flex items-center gap-3">
                 <div className="relative flex size-16 items-center justify-center overflow-hidden rounded-lg border bg-muted">
                     {iconUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <Image
                             src={iconUrl}
                             alt={`${category.name} 图标`}
                             className="size-full object-cover"
+                            width={200}
+                            height={200}
+                            unoptimized
                         />
                     ) : (
                         <ShieldCheck className="size-6 text-muted-foreground" />
@@ -655,9 +657,9 @@ function ServiceCategoryFormDialog({
                 : String(suggestedSortOrder ?? 0),
         icon: category?.iconFileId
             ? {
-                  id: category.iconFileId,
-                  url: normalizeIconUrl(category.iconFileUrl) ?? "",
-              }
+                id: category.iconFileId,
+                url: normalizeIconUrl(category.iconFileUrl) ?? "",
+            }
             : null,
     }
 
@@ -766,8 +768,7 @@ function ServiceCategoryFormDialog({
                         validators={{
                             onChange: z
                                 .string()
-                                .max(300, "描述不超过 300 字")
-                                .optional(),
+                                .max(300, "描述不超过 300 字"),
                         }}
                     >
                         {(field) => (
@@ -876,11 +877,7 @@ function ServiceCategoryFormDialog({
     )
 }
 
-function FieldError({
-    field,
-}: {
-    field: FieldApi<ServiceCategoryFormValues, keyof ServiceCategoryFormValues>
-}) {
+function FieldError({ field }: { field: AnyFieldApi }) {
     if (!field.state.meta.errors.length) return null
     return (
         <p className="text-xs text-destructive">

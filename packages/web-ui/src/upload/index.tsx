@@ -84,11 +84,11 @@ export function UploadField({
                 {value ? (
                     <div className="flex items-center gap-3 p-4">
                         <PreviewBadge value={value} />
-                        <div className="flex-1 space-y-0.5">
-                            <p className="text-sm font-medium leading-tight">
+                        <div className="flex-1 min-w-0 space-y-0.5">
+                            <p className="text-sm font-medium leading-tight break-all">
                                 {value.name ?? '已上传文件'}
                             </p>
-                            <p className="text-xs text-muted-foreground">
+                            <p className="text-xs text-muted-foreground break-all">
                                 {value.mimeType ?? value.url}
                             </p>
                         </div>
