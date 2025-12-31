@@ -20,12 +20,13 @@ import {
     View,
 } from "react-native";
 import { authClient } from "@repo/lib/auth-client";
+import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
 import { toast } from "sonner-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function ForgotPasswordScreen() {
     const [formData, setFormData] = useState({
-        email: "",
+        phone: "",
         otp: "",
         newPassword: "",
         confirmPassword: "",
@@ -49,45 +50,35 @@ export default function ForgotPasswordScreen() {
 
     // 发送验证码
     const handleSendOTP = async () => {
-        // 验证邮箱格式
-        if (!formData.email.trim()) {
-            toast.error("请先输入邮箱地址");
-            return;
-        }
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(formData.email)) {
-            toast.error("请输入有效的邮箱地址");
+        const normalizedPhone = formData.phone.trim();
+        if (!/^1\d{10}$/.test(normalizedPhone)) {
+            toast.error("请输入有效的手机号");
             return;
         }
 
         setIsSendingOTP(true);
         try {
-            const { error } = await authClient.emailOtp.sendVerificationOtp({
-                email: formData.email.trim(),
-                type: "forget-password",
+            const { error } = await authClient.phoneNumber.requestPasswordReset({
+                phoneNumber: normalizedPhone,
             });
 
             if (error) {
-                toast.error(error.message || "验证码发送失败");
+                toast.error(translateAuthErrorMessage(error));
             } else {
                 setCountdown(60); // 60秒倒计时
-                toast.success("验证码已发送到您的邮箱，请查收");
+                toast.success("验证码已发送到您的手机，请查收");
             }
         } catch (error) {
-            toast.error("网络连接失败，请稍后重试");
+            toast.error(translateAuthErrorMessage(error));
         } finally {
             setIsSendingOTP(false);
         }
     };
 
     const validateForm = () => {
-        if (!formData.email.trim()) {
-            toast.error("请输入邮箱地址");
-            return false;
-        }
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(formData.email)) {
-            toast.error("请输入有效的邮箱地址");
+        const normalizedPhone = formData.phone.trim();
+        if (!/^1\d{10}$/.test(normalizedPhone)) {
+            toast.error("请输入有效的手机号");
             return false;
         }
         if (!formData.otp.trim()) {
@@ -118,22 +109,20 @@ export default function ForgotPasswordScreen() {
 
         setIsLoading(true);
         try {
-            // 使用OTP重置密码（同时会验证邮箱）
-            const resetResult = await authClient.emailOtp.resetPassword({
-                email: formData.email.trim(),
+            const resetResult = await authClient.phoneNumber.resetPassword({
+                phoneNumber: formData.phone.trim(),
                 otp: formData.otp.trim(),
-                password: formData.newPassword,
+                newPassword: formData.newPassword,
             });
 
             if (resetResult.error) {
-                toast.error(resetResult.error.message || "验证码错误或已过期");
+                toast.error(translateAuthErrorMessage(resetResult.error));
             } else {
-                // 密码重置成功
-                toast.success("密码已更新，邮箱已验证！请使用新密码登录。");
+                toast.success("密码已更新，请使用新密码登录。");
                 router.replace("/auth/login" as any);
             }
         } catch (error) {
-            toast.error("网络连接失败，请稍后重试");
+            toast.error(translateAuthErrorMessage(error));
         } finally {
             setIsLoading(false);
         }
@@ -142,7 +131,7 @@ export default function ForgotPasswordScreen() {
     const handleRefresh = useCallback(() => {
         setIsRefreshing(true);
         setFormData({
-            email: "",
+            phone: "",
             otp: "",
             newPassword: "",
             confirmPassword: "",
@@ -173,7 +162,7 @@ export default function ForgotPasswordScreen() {
                             </View>
                             <Text className="text-2xl font-bold text-foreground">忘记密码</Text>
                             <Text className="text-sm text-muted-foreground mt-1 text-center">
-                                通过邮箱验证来重置您的密码
+                                通过手机号验证来重置您的密码
                             </Text>
                         </View>
 
@@ -182,19 +171,18 @@ export default function ForgotPasswordScreen() {
                             <CardHeader className="space-y-1">
                                 <CardTitle className="text-xl text-center">重置密码</CardTitle>
                                 <CardDescription className="text-center">
-                                    输入您的邮箱地址，我们将发送验证码
+                                    输入您的手机号，我们将发送验证码
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 <View className="space-y-2">
-                                    <Label>邮箱地址</Label>
+                                    <Label>手机号</Label>
                                     <Input
-                                        placeholder="输入您的邮箱"
-                                        value={formData.email}
-                                        onChangeText={(value) => handleInputChange("email", value)}
-                                        keyboardType="email-address"
-                                        autoCapitalize="none"
-                                        autoComplete="email"
+                                        placeholder="输入您的手机号"
+                                        value={formData.phone}
+                                        onChangeText={(value) => handleInputChange("phone", value)}
+                                        keyboardType="phone-pad"
+                                        autoComplete="tel"
                                         className="w-full"
                                     />
                                 </View>
@@ -220,8 +208,8 @@ export default function ForgotPasswordScreen() {
                                                 {countdown > 0
                                                     ? `${countdown}秒`
                                                     : isSendingOTP
-                                                    ? "发送中..."
-                                                    : "获取验证码"}
+                                                        ? "发送中..."
+                                                        : "获取验证码"}
                                             </Text>
                                         </Button>
                                     </View>
@@ -288,12 +276,13 @@ export default function ForgotPasswordScreen() {
                         {/* Footer */}
                         <View className="mt-8 items-center">
                             <Text className="text-xs text-muted-foreground text-center">
-                                验证码有效期为5分钟，如未收到请检查垃圾邮件箱
+                                验证码有效期为5分钟，如未收到请稍后重试
                             </Text>
                         </View>
                     </View>
                 </ScrollView>
             </SafeAreaView>
+            <StatusBar style="auto" />
         </KeyboardAvoidingView>
     );
 }

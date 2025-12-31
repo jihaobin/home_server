@@ -1,5 +1,5 @@
 import { expoClient } from "@better-auth/expo/client";
-import { emailOTPClient } from "better-auth/client/plugins";
+import { phoneNumberClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import * as SecureStore from "expo-secure-store";
 import * as Linking from "expo-linking";
@@ -21,7 +21,7 @@ const authClient = createAuthClient({
             storagePrefix: "mobile-worker",
             storage: SecureStore,
         }),
-        emailOTPClient()
+        phoneNumberClient(),
     ],
 });
 

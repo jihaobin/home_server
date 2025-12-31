@@ -8,12 +8,11 @@ import { Label } from "@repo/mobile-ui/components/ui/label";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { toast } from "sonner-native";
 import { authClient } from "../../lib/auth";
-
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
 
 export default function WorkerForgotPasswordScreen() {
     const [formData, setFormData] = useState({
-        email: "",
+        phone: "",
         otp: "",
         newPassword: "",
         confirmPassword: "",
@@ -34,35 +33,34 @@ export default function WorkerForgotPasswordScreen() {
         setFormData((prev) => ({ ...prev, [field]: value }));
 
     const handleSendOtp = async () => {
-        if (!formData.email.trim() || !emailRegex.test(formData.email)) {
-            toast.error("请输入有效的邮箱地址");
+        if (!formData.phone.trim() || !/^1\d{10}$/.test(formData.phone)) {
+            toast.error("请输入 11 位大陆手机号");
             return;
         }
 
         setIsSendingOtp(true);
         try {
-            const { error } = await authClient.emailOtp.sendVerificationOtp({
-                email: formData.email.trim(),
-                type: "forget-password",
+            const { error } = await authClient.phoneNumber.requestPasswordReset({
+                phoneNumber: formData.phone.trim(),
             });
 
             if (error) {
-                toast.error(error.message || "验证码发送失败");
+                toast.error(translateAuthErrorMessage(error));
                 return;
             }
 
-            toast.success("验证码已发送至邮箱，请查收");
+            toast.success("验证码已发送至手机，请查收");
             setCountdown(60);
         } catch (err) {
-            toast.error("网络连接失败，请稍后再试");
+            toast.error(translateAuthErrorMessage(err));
         } finally {
             setIsSendingOtp(false);
         }
     };
 
     const validateForm = () => {
-        if (!formData.email.trim() || !emailRegex.test(formData.email)) {
-            toast.error("请输入正确的邮箱");
+        if (!formData.phone.trim() || !/^1\d{10}$/.test(formData.phone)) {
+            toast.error("请输入正确的手机号");
             return false;
         }
         if (!formData.otp.trim() || formData.otp.length !== 6) {
@@ -87,21 +85,21 @@ export default function WorkerForgotPasswordScreen() {
 
         setIsSubmitting(true);
         try {
-            const result = await authClient.emailOtp.resetPassword({
-                email: formData.email.trim(),
+            const result = await authClient.phoneNumber.resetPassword({
+                phoneNumber: formData.phone.trim(),
                 otp: formData.otp.trim(),
-                password: formData.newPassword,
+                newPassword: formData.newPassword,
             });
 
             if (result.error) {
-                toast.error(result.error.message || "验证码错误或已过期");
+                toast.error(translateAuthErrorMessage(result.error));
                 return;
             }
 
             toast.success("密码已更新，请使用新密码登录");
             router.replace("/auth/login" as never);
         } catch (err) {
-            toast.error("网络连接失败，请稍后再试");
+            toast.error(translateAuthErrorMessage(err));
         } finally {
             setIsSubmitting(false);
         }
@@ -120,20 +118,20 @@ export default function WorkerForgotPasswordScreen() {
                             <Text className="text-sm uppercase tracking-[4px] text-primary">Account</Text>
                             <Text className="text-3xl font-semibold text-foreground">重置服务人员密码</Text>
                             <Text className="text-base text-muted-foreground">
-                                输入绑定邮箱并完成验证码验证，即可重新设置密码。
+                                输入绑定手机号并完成验证码验证，即可重新设置密码。
                             </Text>
                         </View>
 
                         <View className="mt-8 gap-5">
                             <View className="gap-2">
-                                <Label className="text-xs text-muted-foreground">绑定邮箱</Label>
+                                <Label className="text-xs text-muted-foreground">绑定手机号</Label>
                                 <Input
                                     autoCapitalize="none"
-                                    autoComplete="email"
-                                    keyboardType="email-address"
-                                    placeholder="name@company.com"
-                                    value={formData.email}
-                                    onChangeText={setField("email")}
+                                    autoComplete="tel"
+                                    keyboardType="phone-pad"
+                                    placeholder="请输入 11 位手机号"
+                                    value={formData.phone}
+                                    onChangeText={setField("phone")}
                                 />
                             </View>
 

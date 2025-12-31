@@ -10,7 +10,7 @@ import { Input } from "@repo/mobile-ui/components/ui/input";
 import { Label } from "@repo/mobile-ui/components/ui/label";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { router, useFocusEffect, useNavigation } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
     BackHandler,
     KeyboardAvoidingView,
@@ -22,18 +22,27 @@ import {
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { authClient } from "@repo/lib/auth-client";
 import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
-import { EmailVerificationModal } from "../../components/EmailVerificationModal";
 import { toast } from "sonner-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function LoginScreen() {
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
+    const [phone, setPhone] = useState("");
+    const [otp, setOtp] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const [showVerificationModal, setShowVerificationModal] = useState(false);
+    const [isSendingOtp, setIsSendingOtp] = useState(false);
+    const [countdown, setCountdown] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const { refetch } = useSession();
     const navigation = useNavigation();
+
+    // 倒计时
+    useEffect(() => {
+        if (countdown <= 0) return;
+        const timer = setInterval(() => {
+            setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [countdown]);
 
     useFocusEffect(
         useCallback(() => {
@@ -63,33 +72,53 @@ export default function LoginScreen() {
         }, [navigation]),
     );
 
+    const handleSendOtp = async () => {
+        const normalizedPhone = phone.trim();
+        if (!/^1\d{10}$/.test(normalizedPhone)) {
+            toast.error("请输入有效的手机号");
+            return;
+        }
+        setIsSendingOtp(true);
+        try {
+            const { error } = await authClient.phoneNumber.sendOtp({
+                phoneNumber: normalizedPhone,
+            });
+            if (error) {
+                toast.error(translateAuthErrorMessage(error));
+                return;
+            }
+            toast.success("验证码已发送，请注意查收");
+            setCountdown(60);
+        } catch (error) {
+            toast.error(translateAuthErrorMessage(error));
+        } finally {
+            setIsSendingOtp(false);
+        }
+    };
+
     const handleLogin = async () => {
-        if (!email.trim() || !password.trim()) {
-            toast.error("请填写邮箱和密码");
+        const normalizedPhone = phone.trim();
+        if (!/^1\d{10}$/.test(normalizedPhone)) {
+            toast.error("请输入有效的手机号");
+            return;
+        }
+        if (!otp.trim()) {
+            toast.error("请输入短信验证码");
             return;
         }
 
         setIsLoading(true);
         try {
-            const { data, error } = await authClient.signIn.email({
-                email: email.trim(),
-                password: password,
+            const { error } = await authClient.phoneNumber.verify({
+                phoneNumber: normalizedPhone,
+                code: otp.trim(),
             });
-
             if (error) {
                 toast.error(translateAuthErrorMessage(error));
-            } else {
-                // 检查邮箱是否已验证
-                if (data?.user && !data.user.emailVerified) {
-                    // 邮箱未验证，退出登录并显示验证弹窗
-                    await authClient.signOut();
-                    setShowVerificationModal(true);
-                } else {
-                    // 邮箱已验证，登录成功
-                    refetch();
-                    router.replace("/(tabs)");
-                }
+                return;
             }
+            refetch();
+            router.replace("/(tabs)");
         } catch (error) {
             toast.error(translateAuthErrorMessage(error));
         } finally {
@@ -97,30 +126,12 @@ export default function LoginScreen() {
         }
     };
 
-    // 验证成功后的处理
-    const handleVerified = async () => {
-        // 重新登录
-        try {
-            const { error } = await authClient.signIn.email({
-                email: email.trim(),
-                password: password,
-            });
-
-            if (!error) {
-                refetch();
-                router.replace("/(tabs)");
-            }
-        } catch (error) {
-            console.error("重新登录失败:", error);
-        }
-    };
-
     const handleRefresh = useCallback(async () => {
         setIsRefreshing(true);
         try {
-            setEmail("");
-            setPassword("");
-            setShowVerificationModal(false);
+            setPhone("");
+            setOtp("");
+            setCountdown(0);
         } finally {
             setIsRefreshing(false);
         }
@@ -157,40 +168,44 @@ export default function LoginScreen() {
                             <CardHeader className="space-y-1">
                                 <CardTitle className="text-2xl text-center">登录</CardTitle>
                                 <CardDescription className="text-center">
-                                    输入您的邮箱和密码来登录账户
+                                    使用手机号和验证码登录
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-4">
                                 <View className="space-y-2">
-                                    <Label>邮箱</Label>
+                                    <Label>手机号</Label>
                                     <Input
-                                        placeholder="输入您的邮箱"
-                                        value={email}
-                                        onChangeText={setEmail}
-                                        keyboardType="email-address"
-                                        autoCapitalize="none"
-                                        autoComplete="email"
+                                        placeholder="请输入手机号"
+                                        value={phone}
+                                        onChangeText={setPhone}
+                                        keyboardType="phone-pad"
+                                        autoComplete="tel"
                                         className="w-full"
                                     />
                                 </View>
 
                                 <View className="space-y-2">
                                     <View className="flex-row justify-between items-center">
-                                        <Label>密码</Label>
+                                        <Label>验证码</Label>
                                         <Button
-                                            variant="link"
+                                            variant="ghost"
                                             className="p-0 h-auto"
-                                            onPress={() => router.push("/auth/forgot-password" as any)}
+                                            disabled={isSendingOtp || countdown > 0}
+                                            onPress={handleSendOtp}
                                         >
-                                            <Text className="text-xs text-primary">忘记密码?</Text>
+                                            <Text className="text-xs text-primary">
+                                                {countdown > 0
+                                                    ? `${countdown}s 后重发`
+                                                    : "发送验证码"}
+                                            </Text>
                                         </Button>
                                     </View>
                                     <Input
-                                        placeholder="输入您的密码"
-                                        value={password}
-                                        onChangeText={setPassword}
-                                        secureTextEntry
-                                        autoComplete="password"
+                                        placeholder="请输入短信验证码"
+                                        value={otp}
+                                        onChangeText={setOtp}
+                                        keyboardType="number-pad"
+                                        autoComplete="one-time-code"
                                         className="w-full"
                                     />
                                 </View>
@@ -223,6 +238,19 @@ export default function LoginScreen() {
                                         <Text className="text-primary">立即注册</Text>
                                     </Button>
                                 </View>
+
+                                {/* Forgot Password */}
+                                <View className="flex-row justify-center items-center space-x-1 mt-2">
+                                    <Button
+                                        variant="link"
+                                        className="p-0"
+                                        onPress={() => router.push("/auth/forgot-password" as any)}
+                                    >
+                                        <Text className="text-xs text-muted-foreground">
+                                            忘记密码？
+                                        </Text>
+                                    </Button>
+                                </View>
                             </CardContent>
                         </Card>
 
@@ -236,14 +264,6 @@ export default function LoginScreen() {
                         </View>
                     </View>
                 </ScrollView>
-
-                {/* 邮箱验证弹窗 */}
-                <EmailVerificationModal
-                    visible={showVerificationModal}
-                    onClose={() => setShowVerificationModal(false)}
-                    email={email.trim()}
-                    onVerified={handleVerified}
-                />
             </SafeAreaView>
         </KeyboardAvoidingView>
     );

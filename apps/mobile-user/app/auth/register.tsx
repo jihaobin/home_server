@@ -10,7 +10,7 @@ import { Input } from "@repo/mobile-ui/components/ui/input";
 import { Label } from "@repo/mobile-ui/components/ui/label";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { router } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
     KeyboardAvoidingView,
     Platform,
@@ -19,147 +19,83 @@ import {
     View,
 } from "react-native";
 import { authClient } from "@repo/lib/auth-client";
+import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
 import { toast } from "sonner-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function RegisterScreen() {
-    const [formData, setFormData] = useState({
-        name: "",
-        email: "",
-        phone: "",
-        password: "",
-        confirmPassword: "",
-        otp: "", // 新增验证码字段
-    });
+    const [phone, setPhone] = useState("");
+    const [otp, setOtp] = useState("");
+    const [name, setName] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const [isSendingOTP, setIsSendingOTP] = useState(false);
-    const [otpSent, setOtpSent] = useState(false);
+    const [isSendingOtp, setIsSendingOtp] = useState(false);
     const [countdown, setCountdown] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
 
-    // 倒计时效果
-    React.useEffect(() => {
-        if (countdown > 0) {
-            const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-            return () => clearTimeout(timer);
-        }
+    useEffect(() => {
+        if (countdown <= 0) return;
+        const timer = setInterval(() => {
+            setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+        }, 1000);
+        return () => clearInterval(timer);
     }, [countdown]);
 
-    const handleInputChange = (field: keyof typeof formData, value: string) => {
-        setFormData((prev) => ({ ...prev, [field]: value }));
-    };
-
-    // 发送验证码
-    const handleSendOTP = async () => {
-        // 验证邮箱格式
-        if (!formData.email.trim()) {
-            toast.error("请先输入邮箱地址");
-            return;
-        }
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(formData.email)) {
-            toast.error("请输入有效的邮箱地址");
-            return;
-        }
-
-        setIsSendingOTP(true);
-        try {
-            const { error } = await authClient.emailOtp.sendVerificationOtp({
-                email: formData.email.trim(),
-                type: "email-verification",
-            });
-
-            if (error) {
-                toast.error(error.message || "验证码发送失败");
-            } else {
-                setOtpSent(true);
-                setCountdown(60); // 60秒倒计时
-                toast.success("验证码已发送到您的邮箱，请查收");
-            }
-        } catch (error) {
-            toast.error("网络连接失败，请稍后重试");
-        } finally {
-            setIsSendingOTP(false);
-        }
-    };
-
-    const validateForm = () => {
-        if (!formData.name.trim()) {
-            toast.error("请输入姓名");
-            return false;
-        }
-        if (!formData.email.trim()) {
-            toast.error("请输入邮箱");
-            return false;
-        }
-        if (!formData.phone.trim()) {
-            toast.error("请输入手机号");
-            return false;
-        }
-        if (!formData.otp.trim()) {
-            toast.error("请输入邮箱验证码");
-            return false;
-        }
-        if (formData.otp.length !== 6) {
-            toast.error("验证码应为6位数字");
-            return false;
-        }
-        if (formData.password.length < 6) {
-            toast.error("密码至少需要6位字符");
-            return false;
-        }
-        if (formData.password !== formData.confirmPassword) {
-            toast.error("两次输入的密码不一致");
-            return false;
-        }
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(formData.email)) {
-            toast.error("请输入有效的邮箱地址");
-            return false;
-        }
-        const phoneRegex = /^1[3-9]\d{9}$/;
-        if (!phoneRegex.test(formData.phone)) {
+    const handleSendOtp = async () => {
+        const normalizedPhone = phone.trim();
+        if (!/^1\d{10}$/.test(normalizedPhone)) {
             toast.error("请输入有效的手机号");
-            return false;
+            return;
         }
-        return true;
+        setIsSendingOtp(true);
+        try {
+            const { error } = await authClient.phoneNumber.sendOtp({
+                phoneNumber: normalizedPhone,
+            });
+            if (error) {
+                toast.error(translateAuthErrorMessage(error));
+                return;
+            }
+            toast.success("验证码已发送，请注意查收");
+            setCountdown(60);
+        } catch (error) {
+            toast.error(translateAuthErrorMessage(error));
+        } finally {
+            setIsSendingOtp(false);
+        }
     };
 
     const handleRegister = async () => {
-        if (!validateForm()) return;
+        const normalizedPhone = phone.trim();
+        if (!/^1\d{10}$/.test(normalizedPhone)) {
+            toast.error("请输入有效的手机号");
+            return;
+        }
+        if (!otp.trim()) {
+            toast.error("请输入短信验证码");
+            return;
+        }
 
         setIsLoading(true);
         try {
-            // 步骤1: 先创建账户（邮箱未验证状态）
-            const signUpResult = await authClient.signUp.email({
-                email: formData.email.trim(),
-                password: formData.password,
-                name: formData.name.trim(),
+            const { error } = await authClient.phoneNumber.verify({
+                phoneNumber: normalizedPhone,
+                code: otp.trim(),
             });
-
-            if (signUpResult.error) {
-                toast.error(signUpResult.error.message || "注册时发生错误");
-                setIsLoading(false);
+            if (error) {
+                toast.error(translateAuthErrorMessage(error));
                 return;
             }
 
-            // 步骤2: 账户创建成功后，使用verifyEmail验证邮箱
-            const verifyResult = await authClient.emailOtp.verifyEmail({
-                email: formData.email.trim(),
-                otp: formData.otp.trim(),
-            });
-
-            if (verifyResult.error) {
-                // 验证失败，但账户已创建
-                toast.warning("账户已创建，但邮箱验证失败。请登录后重新验证邮箱。");
-                router.replace("/auth/login" as any);
-            } else {
-                // 注册并验证成功
-                toast.success("账户创建成功，邮箱已验证！请前往登录。");
-                router.replace("/auth/login" as any);
+            if (name.trim()) {
+                await authClient.updateUser({
+                    name: name.trim(),
+                });
             }
+
+            toast.success("注册成功，已为你自动登录");
+            router.replace("/(tabs)");
         } catch (error) {
-            toast.error("网络连接失败，请稍后重试");
+            toast.error(translateAuthErrorMessage(error));
         } finally {
             setIsLoading(false);
         }
@@ -167,15 +103,9 @@ export default function RegisterScreen() {
 
     const handleRefresh = useCallback(() => {
         setIsRefreshing(true);
-        setFormData({
-            name: "",
-            email: "",
-            phone: "",
-            password: "",
-            confirmPassword: "",
-            otp: "",
-        });
-        setOtpSent(false);
+        setPhone("");
+        setOtp("");
+        setName("");
         setCountdown(0);
         setTimeout(() => setIsRefreshing(false), 200);
     }, []);
@@ -193,114 +123,72 @@ export default function RegisterScreen() {
                     }
                 >
                     <View className="flex-1 justify-center px-6 py-12 bg-background">
-                        {/* Logo/Brand Section */}
+                        {/* Header */}
                         <View className="items-center mb-8">
                             <View className="w-20 h-20 rounded-full bg-primary items-center justify-center mb-4">
                                 <Text className="text-primary-foreground text-2xl font-bold">
                                     H
                                 </Text>
                             </View>
-                            <Text className="text-2xl font-bold text-foreground">叮咚上门</Text>
+                            <Text className="text-2xl font-bold text-foreground">创建账户</Text>
                             <Text className="text-sm text-muted-foreground mt-1">
-                                创建账户，开始便民服务之旅
+                                输入手机号并完成验证码验证
                             </Text>
                         </View>
 
-                        {/* Register Form */}
                         <Card className="w-full max-w-sm mx-auto">
-                            <CardHeader className="gap-y-1">
-                                <CardTitle className="text-2xl text-center">注册账户</CardTitle>
+                            <CardHeader className="space-y-1">
+                                <CardTitle className="text-2xl text-center">手机号注册</CardTitle>
                                 <CardDescription className="text-center">
-                                    填写以下信息来创建您的账户
+                                    验证手机号后自动完成注册并登录
                                 </CardDescription>
                             </CardHeader>
-                            <CardContent className="gap-y-2">
-                                <View className="gap-y-2">
-                                    <Label>姓名</Label>
-                                    <Input
-                                        placeholder="输入您的姓名"
-                                        value={formData.name}
-                                        onChangeText={(value) => handleInputChange("name", value)}
-                                        autoComplete="name"
-                                        className="w-full"
-                                    />
-                                </View>
-
-                                <View className="gap-y-2">
-                                    <Label>邮箱</Label>
-                                    <Input
-                                        placeholder="输入您的邮箱"
-                                        value={formData.email}
-                                        onChangeText={(value) => handleInputChange("email", value)}
-                                        keyboardType="email-address"
-                                        autoCapitalize="none"
-                                        autoComplete="email"
-                                        className="w-full"
-                                    />
-                                </View>
-
-                                <View className="gap-y-2">
-                                    <Label>邮箱验证码</Label>
-                                    <View className="flex-row gap-2">
-                                        <Input
-                                            placeholder="输入6位验证码"
-                                            value={formData.otp}
-                                            onChangeText={(value) => handleInputChange("otp", value)}
-                                            keyboardType="number-pad"
-                                            maxLength={6}
-                                            className="flex-1"
-                                        />
-                                        <Button
-                                            variant="outline"
-                                            onPress={handleSendOTP}
-                                            disabled={isSendingOTP || countdown > 0}
-                                            className="px-4"
-                                        >
-                                            <Text className="text-sm">
-                                                {countdown > 0
-                                                    ? `${countdown}秒`
-                                                    : isSendingOTP
-                                                        ? "发送中..."
-                                                        : "获取验证码"}
-                                            </Text>
-                                        </Button>
-                                    </View>
-                                </View>
-
-                                <View className="gap-y-2">
+                            <CardContent className="space-y-4">
+                                <View className="space-y-2">
                                     <Label>手机号</Label>
                                     <Input
-                                        placeholder="输入您的手机号"
-                                        value={formData.phone}
-                                        onChangeText={(value) => handleInputChange("phone", value)}
+                                        placeholder="请输入手机号"
+                                        value={phone}
+                                        onChangeText={setPhone}
                                         keyboardType="phone-pad"
                                         autoComplete="tel"
                                         className="w-full"
                                     />
                                 </View>
 
-                                <View className="gap-y-2">
-                                    <Label>密码</Label>
+                                <View className="space-y-2">
+                                    <View className="flex-row justify-between items-center">
+                                        <Label>验证码</Label>
+                                        <Button
+                                            variant="ghost"
+                                            className="p-0 h-auto"
+                                            disabled={isSendingOtp || countdown > 0}
+                                            onPress={handleSendOtp}
+                                        >
+                                            <Text className="text-xs text-primary">
+                                                {countdown > 0
+                                                    ? `${countdown}s 后重发`
+                                                    : "发送验证码"}
+                                            </Text>
+                                        </Button>
+                                    </View>
                                     <Input
-                                        placeholder="输入密码（至少6位）"
-                                        value={formData.password}
-                                        onChangeText={(value) => handleInputChange("password", value)}
-                                        secureTextEntry
-                                        autoComplete="new-password"
+                                        placeholder="请输入短信验证码"
+                                        value={otp}
+                                        onChangeText={setOtp}
+                                        keyboardType="number-pad"
+                                        autoComplete="one-time-code"
                                         className="w-full"
                                     />
                                 </View>
 
-                                <View className="gap-y-2">
-                                    <Label>确认密码</Label>
+                                <View className="space-y-2">
+                                    <Label>昵称（可选）</Label>
                                     <Input
-                                        placeholder="再次输入密码"
-                                        value={formData.confirmPassword}
-                                        onChangeText={(value) =>
-                                            handleInputChange("confirmPassword", value)
-                                        }
-                                        secureTextEntry
-                                        autoComplete="new-password"
+                                        placeholder="输入昵称，方便好友识别"
+                                        value={name}
+                                        onChangeText={setName}
+                                        autoComplete="name"
                                         className="w-full"
                                     />
                                 </View>
@@ -311,48 +199,22 @@ export default function RegisterScreen() {
                                     disabled={isLoading}
                                 >
                                     <Text className={isLoading ? "opacity-50" : ""}>
-                                        {isLoading ? "注册中..." : "创建账户"}
+                                        {isLoading ? "注册中..." : "完成注册并登录"}
                                     </Text>
                                 </Button>
 
-                                {/* Divider */}
-                                <View className="flex-row items-center my-4">
-                                    <View className="flex-1 h-px bg-border" />
-                                    <Text className="px-3 text-muted-foreground text-sm">或</Text>
-                                    <View className="flex-1 h-px bg-border" />
-                                </View>
-
-                                {/* Login Link */}
-                                <View className="flex-row justify-center items-center gap-x-1">
+                                <View className="flex-row justify-center items-center space-x-1 mt-3">
                                     <Text className="text-muted-foreground">已有账户？</Text>
                                     <Button
                                         variant="link"
                                         className="p-0"
                                         onPress={() => router.replace("/auth/login" as any)}
                                     >
-                                        <Text className="text-primary">立即登录</Text>
-                                    </Button>
-                                </View>
-
-                                {/* Forgot Password Link */}
-                                <View className="flex-row justify-center items-center mt-2">
-                                    <Button
-                                        variant="link"
-                                        className="p-0"
-                                        onPress={() => router.push("/auth/forgot-password" as any)}
-                                    >
-                                        <Text className="text-xs text-muted-foreground">忘记密码?</Text>
+                                        <Text className="text-primary">去登录</Text>
                                     </Button>
                                 </View>
                             </CardContent>
                         </Card>
-
-                        {/* Footer */}
-                        <View className="mt-8 items-center">
-                            <Text className="text-xs text-muted-foreground text-center">
-                                注册即表示您同意我们的服务条款和隐私政策
-                            </Text>
-                        </View>
                     </View>
                 </ScrollView>
             </SafeAreaView>

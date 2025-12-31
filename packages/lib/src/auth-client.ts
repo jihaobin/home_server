@@ -1,5 +1,5 @@
 import { expoClient } from "@better-auth/expo/client";
-import { emailOTPClient } from "better-auth/client/plugins";
+import { phoneNumberClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import * as SecureStore from "expo-secure-store";
 import { roleFieldClientPlugin } from "./auth-schema";
@@ -13,6 +13,6 @@ export const authClient = createAuthClient({
             storagePrefix: "home-server-user",
             storage: SecureStore,
         }),
-        emailOTPClient()
+        phoneNumberClient(),
     ],
 });

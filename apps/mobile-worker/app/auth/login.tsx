@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
     BackHandler,
     KeyboardAvoidingView,
@@ -14,18 +14,24 @@ import { Label } from "@repo/mobile-ui/components/ui/label";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { toast } from "sonner-native";
-import { EmailVerificationSheet } from "../../components/EmailVerificationSheet";
-import { authClient, signOutWithCleanup } from "../../lib/auth";
+import { authClient } from "../../lib/auth";
 import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
 
 export default function WorkerLoginScreen() {
     const navigation = useNavigation();
     const { refetch } = useSession();
 
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
+    const [phone, setPhone] = useState("");
+    const [otp, setOtp] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [showVerificationSheet, setShowVerificationSheet] = useState(false);
+    const [isSendingOtp, setIsSendingOtp] = useState(false);
+    const [countdown, setCountdown] = useState(0);
+
+    useEffect(() => {
+        if (countdown <= 0) return;
+        const timer = setInterval(() => setCountdown((prev) => (prev > 0 ? prev - 1 : 0)), 1000);
+        return () => clearInterval(timer);
+    }, [countdown]);
 
     useFocusEffect(
         useCallback(() => {
@@ -51,28 +57,50 @@ export default function WorkerLoginScreen() {
         }, [navigation])
     );
 
+    const handleSendOtp = async () => {
+        const normalizedPhone = phone.trim();
+        if (!/^1\d{10}$/.test(normalizedPhone)) {
+            toast.error("请输入 11 位大陆手机号");
+            return;
+        }
+        setIsSendingOtp(true);
+        try {
+            const { error } = await authClient.phoneNumber.sendOtp({
+                phoneNumber: normalizedPhone,
+            });
+            if (error) {
+                toast.error(translateAuthErrorMessage(error));
+                return;
+            }
+            toast.success("验证码已发送，请注意查收");
+            setCountdown(60);
+        } catch (err) {
+            toast.error(translateAuthErrorMessage(err));
+        } finally {
+            setIsSendingOtp(false);
+        }
+    };
+
     const handleLogin = async () => {
-        if (!email.trim() || !password.trim()) {
-            toast.error("请填写邮箱和密码");
+        const normalizedPhone = phone.trim();
+        if (!/^1\d{10}$/.test(normalizedPhone)) {
+            toast.error("请输入 11 位大陆手机号");
+            return;
+        }
+        if (!otp.trim()) {
+            toast.error("请输入短信验证码");
             return;
         }
 
         setIsSubmitting(true);
         try {
-            const { data, error } = await authClient.signIn.email({
-                email: email.trim(),
-                password,
+            const { error } = await authClient.phoneNumber.verify({
+                phoneNumber: normalizedPhone,
+                code: otp.trim(),
             });
 
             if (error) {
                 toast.error(translateAuthErrorMessage(error));
-                return;
-            }
-
-            if (data?.user && !data.user.emailVerified) {
-                await signOutWithCleanup();
-                setShowVerificationSheet(true);
-                toast.info("请先完成邮箱验证");
                 return;
             }
 
@@ -83,23 +111,6 @@ export default function WorkerLoginScreen() {
             toast.error(translateAuthErrorMessage(err));
         } finally {
             setIsSubmitting(false);
-        }
-    };
-
-    const handleVerified = async () => {
-        try {
-            const { error } = await authClient.signIn.email({
-                email: email.trim(),
-                password,
-            });
-
-            if (!error) {
-                toast.success("登录成功，已解锁工作台");
-                refetch();
-                router.replace("/(tabs)");
-            }
-        } catch (err) {
-            toast.error("重新登录失败，请稍后再试");
         }
     };
 
@@ -119,40 +130,43 @@ export default function WorkerLoginScreen() {
                             </View>
                             <Text className="text-3xl font-semibold text-foreground">服务人员登录</Text>
                             <Text className="text-base text-muted-foreground text-center">
-                                使用平台账户登录，实时跟进指派、收益与待办
+                                使用手机号登录，实时跟进指派、收益与待办
                             </Text>
                         </View>
 
                         <View className="mt-10 gap-5">
                             <View className="gap-2">
-                                <Label className="text-xs text-muted-foreground">工作邮箱</Label>
+                                <Label className="text-xs text-muted-foreground">手机号</Label>
                                 <Input
                                     autoCapitalize="none"
-                                    keyboardType="email-address"
-                                    autoComplete="email"
-                                    placeholder="name@company.com"
-                                    value={email}
-                                    onChangeText={setEmail}
+                                    keyboardType="phone-pad"
+                                    autoComplete="tel"
+                                    placeholder="请输入 11 位手机号"
+                                    value={phone}
+                                    onChangeText={setPhone}
                                 />
                             </View>
 
                             <View className="gap-2">
                                 <View className="flex-row items-center justify-between">
-                                    <Label className="text-xs text-muted-foreground">登录密码</Label>
+                                    <Label className="text-xs text-muted-foreground">短信验证码</Label>
                                     <Button
                                         variant="link"
                                         className="h-auto p-0"
-                                        onPress={() => router.push("/auth/forgot-password" as never)}
+                                        disabled={isSendingOtp || countdown > 0}
+                                        onPress={handleSendOtp}
                                     >
-                                        <Text className="text-xs">忘记密码？</Text>
+                                        <Text className="text-xs text-primary">
+                                            {countdown > 0 ? `${countdown}s 后重发` : "获取验证码"}
+                                        </Text>
                                     </Button>
                                 </View>
                                 <Input
-                                    secureTextEntry
-                                    autoComplete="password"
-                                    placeholder="请输入密码"
-                                    value={password}
-                                    onChangeText={setPassword}
+                                    keyboardType="number-pad"
+                                    autoComplete="one-time-code"
+                                    placeholder="请输入验证码"
+                                    value={otp}
+                                    onChangeText={setOtp}
                                 />
                             </View>
 
@@ -179,16 +193,19 @@ export default function WorkerLoginScreen() {
                                     <Text className="text-primary">申请服务账号</Text>
                                 </Button>
                             </View>
+
+                            <View className="flex-row items-center justify-center gap-2">
+                                <Button
+                                    variant="link"
+                                    className="p-0"
+                                    onPress={() => router.push("/auth/forgot-password" as never)}
+                                >
+                                    <Text className="text-xs text-muted-foreground">忘记密码？</Text>
+                                </Button>
+                            </View>
                         </View>
                     </View>
                 </ScrollView>
-
-                <EmailVerificationSheet
-                    visible={showVerificationSheet}
-                    email={email.trim()}
-                    onClose={() => setShowVerificationSheet(false)}
-                    onVerified={handleVerified}
-                />
             </SafeAreaView>
         </KeyboardAvoidingView>
     );

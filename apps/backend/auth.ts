@@ -1,13 +1,13 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { genericOAuth, emailOTP } from 'better-auth/plugins';
+import { genericOAuth, phoneNumber, openAPI } from 'better-auth/plugins';
 import db from './src/common/database/db';
-import { openAPI } from 'better-auth/plugins';
 
 import * as schema from 'src/common/database/schema';
 import { MailService } from 'src/common/mail/mail.service';
 import { expo } from '@better-auth/expo';
 import { eq } from 'drizzle-orm';
+import { SmsService } from 'src/common/sms/sms.service';
 
 const envTrustedOrigins = process.env.TRUSTED_ORIGINS
     ? process.env.TRUSTED_ORIGINS.split(',').map((origin) => origin.trim())
@@ -21,12 +21,14 @@ const isProd = process.env.NODE_ENV === 'production';
 /**
  * 创建 Better Auth 实例的工厂函数
  * @param mailService NestJS MailService 实例
+ * @param smsService 短信服务实例
  * @param options 邮箱验证配置选项
  * @returns Better Auth 实例
  */
 
 export function createAuth(
     mailService?: MailService,
+    smsService?: SmsService,
     options?: {
         emailVerification?: {
             verificationPagePath?: string;
@@ -153,28 +155,46 @@ export function createAuth(
             },
         },
         plugins: [
-            emailOTP({
-                async sendVerificationOTP({ email, otp, type }) {
-                    if (!mailService) {
-                        console.error('MailService未配置，无法发送OTP验证码');
-                        throw new Error('邮件服务未配置');
+            phoneNumber({
+                otpLength: 6,
+                expiresIn: 300,
+                allowedAttempts: 3,
+                requireVerification: true,
+                phoneNumberValidator: (value) => /^1\d{10}$/.test(value),
+                async sendOTP({ phoneNumber, code }) {
+                    if (!smsService) {
+                        console.error('SmsService未配置，无法发送短信验证码');
+                        throw new Error('短信服务未配置');
                     }
-                    try {
-                        await mailService.sendOTPEmail(email, otp, type);
-                        console.log(
-                            `OTP验证码已发送到: ${email}, 类型: ${type}`,
-                        );
-                    } catch (error) {
-                        console.error('发送OTP验证码失败:', error);
-                        throw new Error('验证码发送失败，请稍后重试');
-                    }
+                    await smsService.sendTemplateSms({
+                        phone: phoneNumber,
+                        templateCode:
+                            process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION ||
+                            process.env.ALIYUN_SMS_TEMPLATE_CODE ||
+                            '',
+                        templateParams: { code },
+                    });
                 },
-                overrideDefaultEmailVerification: true, // 覆盖默认的邮箱验证方式，使用OTP
-                sendVerificationOnSignUp: false, // 不在注册时自动发送OTP
-                disableSignUp: false, // 允许自动注册
-                otpLength: 6, // 6位验证码
-                expiresIn: 300, // 5分钟过期
-                allowedAttempts: 3, // 最多尝试3次
+                async sendPasswordResetOTP({ phoneNumber, code }) {
+                    if (!smsService) {
+                        console.error(
+                            'SmsService未配置，无法发送找回密码短信验证码',
+                        );
+                        throw new Error('短信服务未配置');
+                    }
+                    await smsService.sendTemplateSms({
+                        phone: phoneNumber,
+                        templateCode:
+                            process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION ||
+                            process.env.ALIYUN_SMS_TEMPLATE_CODE ||
+                            '',
+                        templateParams: { code },
+                    });
+                },
+                signUpOnVerification: {
+                    getTempEmail: (phone) => `${phone}@phone.local`,
+                    getTempName: (phone) => `用户${phone.slice(-4)}`,
+                },
             }),
             genericOAuth({
                 config: [

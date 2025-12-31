@@ -25,12 +25,14 @@ import {
 import { SkipBodyParsingMiddleware } from './middlewares';
 import { AdminSessionMiddleware } from './admin-session.middleware';
 import { toNodeHandler } from 'better-auth/node';
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { createAuthMiddleware } from 'better-auth/plugins';
 import 'dotenv/config';
 import { WeChatModule } from './wechat/wechat.module';
 import { MailModule } from 'src/common/mail/main.module';
 import { MailService } from 'src/common/mail/mail.service';
+import { SmsModule } from 'src/common/sms/sms.module';
+import { SmsService } from 'src/common/sms/sms.service';
 import { createAuth } from 'auth';
 
 type AuthModuleOptions = {
@@ -46,7 +48,7 @@ const HOOKS = [
 
 @Global()
 @Module({
-    imports: [DiscoveryModule, MailModule, WeChatModule],
+    imports: [DiscoveryModule, MailModule, SmsModule, WeChatModule],
 })
 export class AuthModule implements NestModule, OnModuleInit {
     private logger = new Logger(AuthModule.name);
@@ -124,10 +126,16 @@ export class AuthModule implements NestModule, OnModuleInit {
 
         // 在底层 Express 实例上直接挂载 better-auth 处理器
         // 这样做是为了绕过 NestJS 的路由系统，让 better-auth 能够完全控制认证相关的请求处理
+        // 注意：Express 在带前缀的 use 中会剥掉前缀，导致 better-auth 无法匹配 /api/auth。
+        // 这里在全局中间件里自己判断前缀，并把 originalUrl 传给 better-auth，确保路径完整。
         this.adapter.httpAdapter
-            .getInstance() // 获取底层的 Express 应用实例
-            .use(`${basePath}/*splat`, (req: Request, res: Response) => {
-                // 将请求交给 better-auth 处理器处理
+            .getInstance()
+            .use((req: Request, res: Response, next: NextFunction) => {
+                const originalUrl = req.originalUrl || req.url;
+                if (!originalUrl.startsWith(basePath)) {
+                    return next();
+                }
+                req.url = originalUrl;
                 return handler(req, res);
             });
         this.logger.log(
@@ -177,10 +185,13 @@ export class AuthModule implements NestModule, OnModuleInit {
         const providers: Provider[] = [
             {
                 provide: AUTH_INSTANCE_KEY,
-                useFactory: (mailService: MailService) => {
-                    return createAuth(mailService);
+                useFactory: (
+                    mailService: MailService,
+                    smsService: SmsService,
+                ) => {
+                    return createAuth(mailService, smsService);
                 },
-                inject: [MailService],
+                inject: [MailService, SmsService],
             },
             {
                 provide: AUTH_MODULE_OPTIONS_KEY,
@@ -197,10 +208,13 @@ export class AuthModule implements NestModule, OnModuleInit {
             exports: [
                 {
                     provide: AUTH_INSTANCE_KEY,
-                    useFactory: (mailService: MailService) => {
-                        return createAuth(mailService);
+                    useFactory: (
+                        mailService: MailService,
+                        smsService: SmsService,
+                    ) => {
+                        return createAuth(mailService, smsService);
                     },
-                    inject: [MailService],
+                    inject: [MailService, SmsService],
                 },
                 {
                     provide: AUTH_MODULE_OPTIONS_KEY,
