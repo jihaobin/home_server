@@ -355,78 +355,78 @@ export class ServicePersonnelRepository {
         });
     }
 
-    /**
-     * 批量获取服务人员技能信息
-     */
-    private async getBatchPersonnelSkills(userIds: string[]) {
-        if (userIds.length === 0) {
-            return new Map<string, PersonnelSkill[]>();
-        }
+    // /**
+    //  * 批量获取服务人员技能信息
+    //  */
+    // private async getBatchPersonnelSkills(userIds: string[]) {
+    //     if (userIds.length === 0) {
+    //         return new Map<string, PersonnelSkill[]>();
+    //     }
 
-        // 一次查询获取所有技能信息，包含定价信息
-        const allSkills = await this.db
-            .select({
-                userId: servicePersonnelSkills.userId,
-                serviceId: servicePersonnelSkills.serviceId,
-                category: serviceCategories.name,
-                serviceName: services.name,
-                serviceDescription: services.description,
-                serviceCurrency: services.currency,
-                serviceActive: services.isActive,
-                // 从servicePersonnelPricing表获取价格和时长
-                pricingId: servicePersonnelPricing.id,
-                price: servicePersonnelPricing.price,
-                estimatedDurationMinutes:
-                    servicePersonnelPricing.estimatedDurationMinutes,
-            })
-            .from(servicePersonnelSkills)
-            .innerJoin(
-                services,
-                eq(services.id, servicePersonnelSkills.serviceId),
-            )
-            .innerJoin(
-                serviceCategories,
-                eq(services.categoryId, serviceCategories.id),
-            )
-            .leftJoin(
-                servicePersonnelPricing,
-                and(
-                    eq(
-                        servicePersonnelPricing.userId,
-                        servicePersonnelSkills.userId,
-                    ),
-                    eq(
-                        servicePersonnelPricing.serviceId,
-                        servicePersonnelSkills.serviceId,
-                    ),
-                    eq(servicePersonnelPricing.isActive, true),
-                ),
-            )
-            .where(inArray(servicePersonnelSkills.userId, userIds));
+    //     // 一次查询获取所有技能信息，包含定价信息
+    //     const allSkills = await this.db
+    //         .select({
+    //             userId: servicePersonnelSkills.userId,
+    //             serviceId: servicePersonnelSkills.serviceId,
+    //             category: serviceCategories.name,
+    //             serviceName: services.name,
+    //             serviceDescription: services.description,
+    //             serviceCurrency: sql<string>`COALESCE(${servicePersonnelPricing.currency}, 'CNY')`,
+    //             serviceActive: services.isActive,
+    //             // 从servicePersonnelPricing表获取价格和时长
+    //             pricingId: servicePersonnelPricing.id,
+    //             price: servicePersonnelPricing.price,
+    //             estimatedDurationMinutes:
+    //                 servicePersonnelPricing.estimatedDurationMinutes,
+    //         })
+    //         .from(servicePersonnelSkills)
+    //         .innerJoin(
+    //             services,
+    //             eq(services.id, servicePersonnelSkills.serviceId),
+    //         )
+    //         .innerJoin(
+    //             serviceCategories,
+    //             eq(services.categoryId, serviceCategories.id),
+    //         )
+    //         .leftJoin(
+    //             servicePersonnelPricing,
+    //             and(
+    //                 eq(
+    //                     servicePersonnelPricing.userId,
+    //                     servicePersonnelSkills.userId,
+    //                 ),
+    //                 eq(
+    //                     servicePersonnelPricing.serviceId,
+    //                     servicePersonnelSkills.serviceId,
+    //                 ),
+    //                 eq(servicePersonnelPricing.isActive, true),
+    //             ),
+    //         )
+    //         .where(inArray(servicePersonnelSkills.userId, userIds));
 
-        // 在内存中按用户ID分组
-        const skillsMap = new Map<string, PersonnelSkill[]>();
+    //     // 在内存中按用户ID分组
+    //     const skillsMap = new Map<string, PersonnelSkill[]>();
 
-        for (const skill of allSkills) {
-            const userId = skill.userId;
-            if (!skillsMap.has(userId)) {
-                skillsMap.set(userId, []);
-            }
+    //     for (const skill of allSkills) {
+    //         const userId = skill.userId;
+    //         if (!skillsMap.has(userId)) {
+    //             skillsMap.set(userId, []);
+    //         }
 
-            skillsMap.get(userId)?.push({
-                id: skill.serviceId,
-                category: skill.category,
-                name: skill.serviceName,
-                description: skill.serviceDescription,
-                basePrice: skill.price || '0', // 使用pricing表中的价格
-                currency: skill.serviceCurrency,
-                estimatedDurationMinutes: skill.estimatedDurationMinutes || 0,
-                isActive: skill.serviceActive,
-            });
-        }
+    //         skillsMap.get(userId)?.push({
+    //             id: skill.serviceId,
+    //             category: skill.category,
+    //             name: skill.serviceName,
+    //             description: skill.serviceDescription,
+    //             basePrice: skill.price || '0', // 使用pricing表中的价格
+    //             currency: skill.serviceCurrency || 'CNY',
+    //             estimatedDurationMinutes: skill.estimatedDurationMinutes || 0,
+    //             isActive: skill.serviceActive,
+    //         });
+    //     }
 
-        return skillsMap;
-    }
+    //     return skillsMap;
+    // }
 
     async getPersonnelServiceDetails(personnelId: string, serviceId: string) {
         const query = await this.db.query.servicePersonnel.findFirst({
@@ -480,6 +480,7 @@ export class ServicePersonnelRepository {
             specifications: query?.pricing || [],
             description: firstSkill?.description || null,
             servicedCount: firstSkill?.servicedCount || 0,
+            galleryFileIds: firstSkill?.galleryFileIds ?? [],
             occupiedTimeSlots,
         };
     }

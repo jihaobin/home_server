@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 import { ServiceService } from './service.service';
 import { ServiceController } from './service.controller';
 import { ServiceRepository } from './service.repository';
+import { FilesModule } from '../files/files.module';
 
 @Module({
+    imports: [FilesModule],
     controllers: [ServiceController],
     providers: [ServiceService, ServiceRepository],
     exports: [ServiceService],

@@ -2,6 +2,7 @@ import {
     Body,
     Controller,
     Get,
+    NotFoundException,
     Param,
     Post,
     Query,
@@ -97,7 +98,14 @@ export class ReviewController {
         @Param('orderId') orderId: string,
         @Req() req: Request,
     ): Promise<CreateReviewResponse> {
-        return await this.reviewService.getReviewByOrder(orderId, req.user.id);
+        const review = await this.reviewService.getReviewByOrder(
+            orderId,
+            req.user.id,
+        );
+        if (!review) {
+            throw new NotFoundException('未找到对应的评价记录');
+        }
+        return review;
     }
 
     @Get('target/:targetType/:targetId')

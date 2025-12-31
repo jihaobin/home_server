@@ -77,7 +77,10 @@ export const services = pgTable(
             .references(() => serviceCategories.id, { onDelete: 'restrict' }), // 所属分类 ID
         name: varchar('name', { length: 100 }).notNull(), // 服务名称
         description: text('description'), // 服务详细描述
-        currency: varchar('currency', { length: 3 }).default('CNY').notNull(), // 币种代码
+        imageFileId: varchar('image_file_id', { length: 255 }).references(
+            () => files.id,
+            { onDelete: 'set null' },
+        ),
         isActive: boolean('is_active').default(true).notNull(), // 服务是否上架
     },
     (table) => [
@@ -106,6 +109,10 @@ export const servicePersonnelSkills = pgTable(
             .notNull()
             .references(() => services.id, { onDelete: 'cascade' }), // 服务项目 ID
         description: text('description'), // 用于用户自定义服务详情页中的信息
+        galleryFileIds: varchar('gallery_file_ids', { length: 255 })
+            .array()
+            .notNull()
+            .default(sql`'{}'::varchar[]`),
         // 服务了多少个订单
         servicedCount: integer('serviced_count').default(0).notNull(),
     },
@@ -152,6 +159,10 @@ export const servicesRelations = relations(services, ({ one, many }) => ({
     category: one(serviceCategories, {
         fields: [services.categoryId],
         references: [serviceCategories.id],
+    }),
+    imageFile: one(files, {
+        fields: [services.imageFileId],
+        references: [files.id],
     }),
     personnelSkills: many(servicePersonnelSkills),
 }));

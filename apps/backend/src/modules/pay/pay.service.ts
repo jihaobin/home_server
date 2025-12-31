@@ -1274,9 +1274,9 @@ export class PayService {
             return;
         }
 
-        // 按 80% 给服务人员、20% 留给平台计算拆分金额
+        // 按 70% 给服务人员、30% 留给平台计算拆分金额
         const serviceShareDecimal = totalAmountDecimal
-            .mul(80)
+            .mul(70)
             .div(100)
             .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 

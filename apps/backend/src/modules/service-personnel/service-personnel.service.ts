@@ -22,9 +22,10 @@ type RawPersonnelSkill = {
     id: string;
     name: string;
     description?: string | null;
-    currency: string;
+    currency?: string | null;
     isActive: boolean;
     personnelDescription?: string | null;
+    galleryFileIds?: string[] | null;
     specifications: Array<{
         id: string;
         userId: string;
@@ -70,10 +71,20 @@ export class ServicePersonnelService {
         serviceId: string;
     }) {
         // 获取服务人员的详细信息和所提供的服务详情
-        return await this.servicePersonnelRepository.getPersonnelServiceDetails(
-            personnelId,
-            serviceId,
-        );
+        const details =
+            await this.servicePersonnelRepository.getPersonnelServiceDetails(
+                personnelId,
+                serviceId,
+            );
+
+        const galleryFileIds = details?.galleryFileIds ?? [];
+        const gallery = await this.buildFileAccessList(galleryFileIds);
+
+        return {
+            ...details,
+            galleryFileIds,
+            gallery,
+        };
     }
 
     /**
@@ -98,8 +109,8 @@ export class ServicePersonnelService {
         const avatar = userInfo.image
             ? await this.getFileAccessInfoSafely(userInfo.image)
             : null;
-        const services = (personnel.skills ?? []).map(
-            (skill: RawPersonnelSkill) => {
+        const services = await Promise.all(
+            (personnel.skills ?? []).map(async (skill: RawPersonnelSkill) => {
                 const specs = (skill.specifications ?? []).map((spec) => ({
                     id: spec.id,
                     userId: spec.userId,
@@ -110,17 +121,25 @@ export class ServicePersonnelService {
                     estimatedDurationMinutes:
                         spec.estimatedDurationMinutes ?? undefined,
                 }));
+                const galleryFileIds = skill.galleryFileIds ?? [];
+                const gallery = await this.buildFileAccessList(galleryFileIds);
+                const currency =
+                    skill.currency ||
+                    specs.find((spec) => spec.currency)?.currency ||
+                    'CNY';
 
                 return {
                     serviceId: skill.id,
                     serviceName: skill.name,
                     serviceDescription: skill.description ?? null,
                     personnelDescription: skill.personnelDescription ?? null,
-                    currency: skill.currency,
+                    currency,
                     isActive: skill.isActive,
+                    galleryFileIds,
+                    gallery,
                     specifications: specs,
                 };
-            },
+            }),
         );
 
         let location: { lng: number; lat: number } | null = null;

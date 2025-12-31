@@ -63,6 +63,7 @@ export const orders = pgTable(
         }).notNull(), // 订单总金额（使用优惠券后）
         currency: varchar('currency', { length: 3 }).default('CNY').notNull(), // 币种代码
         couponCode: varchar('coupon_code', { length: 50 }), // 使用的优惠券代码
+        remark: varchar('remark', { length: 500 }), // 订单备注
         appointmentTime: timestamp('appointment_time', {
             withTimezone: true,
         }).notNull(), // 预约服务时间

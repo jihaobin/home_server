@@ -208,6 +208,7 @@ export class WorkSkillRepository {
             return {
                 ...skill.service,
                 specifications,
+                galleryFileIds: skill.galleryFileIds ?? [],
                 personnelDescription: skill.description ?? null,
             };
         });
@@ -366,9 +367,19 @@ export class WorkSkillRepository {
             throw new BadRequestException('该服务人员不存在');
         }
 
+        const normalizedServices = services.map((service) => {
+            const galleryFileIds = Array.from(
+                new Set(service.galleryFileIds ?? []),
+            );
+            if (galleryFileIds.length > 5) {
+                throw new BadRequestException('宣传图片最多 5 张');
+            }
+            return { ...service, galleryFileIds };
+        });
+
         await this.db.transaction(async (tx) => {
             const targetServiceIds = Array.from(
-                new Set(services.map((service) => service.serviceId)),
+                new Set(normalizedServices.map((service) => service.serviceId)),
             );
 
             const existingSkills = await tx
@@ -417,10 +428,13 @@ export class WorkSkillRepository {
                 );
             }
 
-            for (const service of services) {
+            for (const service of normalizedServices) {
                 await tx
                     .update(servicePersonnelSkills)
-                    .set({ description: service.description ?? null })
+                    .set({
+                        description: service.description ?? null,
+                        galleryFileIds: service.galleryFileIds ?? [],
+                    })
                     .where(
                         and(
                             eq(servicePersonnelSkills.userId, personnelId),
@@ -455,7 +469,7 @@ export class WorkSkillRepository {
             const retainedSpecIds = new Set<string>();
             const now = new Date();
 
-            for (const service of services) {
+            for (const service of normalizedServices) {
                 for (const spec of service.specifications) {
                     if (spec.id && specById.has(spec.id)) {
                         await tx

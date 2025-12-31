@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type {
     CreateDesignatedOrder,
+    NotificationDeliveryMode,
     NotificationEventPayload,
     OrderListRequest,
     OrderStatus,
@@ -24,6 +25,7 @@ import { extractParams, isTimeInRange } from 'src/lib/utlis';
 import { PayService } from '../pay/pay.service';
 import { WorkSkillService } from '../work-skill/work-skill.service';
 import { NotificationPublisher } from '../notification/notification.publisher';
+import { NotificationTemplateService } from '../notification/notification-template.service';
 import { OrderRepository } from './order.reposityro';
 import {
     PendingAcceptanceReminderRedisKeys,
@@ -42,6 +44,7 @@ interface ServiceNotificationConfig {
     event: string;
     message: string;
     payload?: Partial<NotificationEventPayload>;
+    deliveryMode?: NotificationDeliveryMode;
 }
 
 interface PendingAcceptanceReminderEntry {
@@ -61,6 +64,9 @@ interface ServiceEtaReminderEntry {
 @Injectable()
 export class OrderService {
     private readonly logger = new Logger(OrderService.name);
+    constructor(
+        private readonly notificationTemplateService: NotificationTemplateService,
+    ) {}
 
     @Inject(OrderRepository)
     private readonly orderRepository: OrderRepository;
@@ -80,7 +86,7 @@ export class OrderService {
     @Inject(NotificationPublisher)
     private readonly notificationPublisher: NotificationPublisher;
 
-    private readonly defaultPaymentExpireMinutes = 2;
+    private readonly defaultPaymentExpireMinutes = 15;
     private readonly defaultPendingAcceptanceTimeoutMinutes = 120;
 
     // 新增：安全地从 unknown 错误中提取消息，避免直接访问 any.message
@@ -355,9 +361,16 @@ export class OrderService {
         if (!order) {
             return;
         }
+        const message = this.notificationTemplateService.getTemplate(
+            'order_pending_acceptance_assigned',
+            {
+                serviceName: order.service?.name ?? order.serviceId,
+            },
+        );
         await this.notifyServicePersonnel(order, {
             event: 'order_pending_acceptance_assigned',
-            message: '有新的订单需要处理，请尽快确认是否接单',
+            message,
+            deliveryMode: 'strict',
             payload: {
                 status: order.status,
                 appointmentTime: order.appointmentTime
@@ -382,10 +395,17 @@ export class OrderService {
         operatorId: string;
         status: OrderStatus;
     }) {
-        const message =
+        const templateKey =
             decisionStatus === 'accepted'
-                ? '服务人员已接单'
-                : '服务人员拒绝接单';
+                ? 'order_assignment_decision_accepted'
+                : 'order_assignment_decision_rejected';
+        const message = this.notificationTemplateService.getTemplate(
+            templateKey,
+            {
+                decisionStatus,
+                orderId,
+            },
+        );
         try {
             await this.notificationPublisher.publish({
                 event: 'order_assignment_decision',
@@ -690,6 +710,7 @@ export class OrderService {
                     designatedPersonnelId: createOrderDto.designatedPersonnelId,
                     price: userPrice.toString(), // 使用用户看到的价格
                     paymentExpiresAt,
+                    remark: createOrderDto.remark?.trim() || null,
                 });
 
             try {
@@ -1037,6 +1058,7 @@ export class OrderService {
             await this.notificationPublisher.publish({
                 event: config.event,
                 payload,
+                deliveryMode: config.deliveryMode,
                 targets: [
                     {
                         targetId: serviceUserId,
@@ -1060,9 +1082,13 @@ export class OrderService {
         if (!order) {
             return;
         }
+        const message = this.notificationTemplateService.getTemplate(
+            'order_cancelled',
+            { reason },
+        );
         await this.notifyServicePersonnel(order, {
             event: 'order_cancelled',
-            message: reason,
+            message,
             payload: {
                 cancelReason: reason,
             },

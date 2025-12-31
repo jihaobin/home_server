@@ -25,6 +25,7 @@ import { users } from 'src/common/database/schema/auth-user';
 import type { NotificationTargetDescriptor } from '@repo/types';
 import { OrderRepository } from '../order.reposityro';
 import { NotificationPublisher } from 'src/modules/notification/notification.publisher';
+import { NotificationTemplateService } from 'src/modules/notification/notification-template.service';
 import { ADMIN_ROLES } from 'src/modules/auth/rbac.utils';
 
 interface StreamEntry {
@@ -53,6 +54,7 @@ export class OrderExpireConsumerService
         @Inject(CACHE_SERVICE)
         private readonly cacheService: IAdvancedCacheService,
         private readonly notificationPublisher: NotificationPublisher,
+        private readonly notificationTemplateService: NotificationTemplateService,
     ) {
         const baseClient = this.cacheService.getClient<Redis>();
         this.streamClient = baseClient.duplicate();
@@ -171,13 +173,17 @@ export class OrderExpireConsumerService
             });
         }
 
+        const message = this.notificationTemplateService.getTemplate(
+            'order_payment_expired',
+            { orderId },
+        );
         await this.notificationPublisher.publish({
             event: 'order_payment_expired',
             payload: {
                 event: 'order_payment_expired',
                 orderId,
                 status: 'payment_timeout',
-                message: '订单支付超时，系统自动取消',
+                message,
                 triggeredAt: new Date().toISOString(),
                 targetId: orderId,
             },

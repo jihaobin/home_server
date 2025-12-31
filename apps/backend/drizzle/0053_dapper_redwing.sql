@@ -1,0 +1,1 @@
+ALTER TABLE "service_personnel_skills" ADD COLUMN "gallery_file_ids" varchar(255)[] DEFAULT '{}'::varchar[] NOT NULL;

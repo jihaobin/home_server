@@ -11,6 +11,7 @@ import {
 
 import { CACHE_SERVICE, type IAdvancedCacheService } from 'src/common/cache';
 import { NotificationPublisher } from 'src/modules/notification/notification.publisher';
+import { NotificationTemplateService } from 'src/modules/notification/notification-template.service';
 import { OrderRepository } from '../order.reposityro';
 import {
     ServiceEtaReminderRedisKeys,
@@ -42,6 +43,7 @@ export class ServiceEtaReminderWorker implements OnModuleInit, OnModuleDestroy {
         private readonly cacheService: IAdvancedCacheService,
         private readonly orderRepository: OrderRepository,
         private readonly notificationPublisher: NotificationPublisher,
+        private readonly notificationTemplateService: NotificationTemplateService,
     ) {
         const baseClient = this.cacheService.getClient<Redis>();
         this.blockingClient = baseClient.duplicate();
@@ -153,7 +155,14 @@ export class ServiceEtaReminderWorker implements OnModuleInit, OnModuleDestroy {
         const remainingMinutes = this.calculateRemainingMinutes(appointment);
         const orderLabel =
             order.service?.name ?? `订单 ${order.id.slice(0, 6)}`;
-        const message = `${orderLabel} ${definition.escalateLabel}`;
+        const message = this.notificationTemplateService.getTemplate(
+            'order_service_eta_warning',
+            {
+                orderLabel,
+                escalateLabel: definition.escalateLabel,
+                warningLevel: payload.warningLevel,
+            },
+        );
         await this.notificationPublisher.publish({
             event: 'order_service_eta_warning',
             payload: {

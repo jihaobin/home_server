@@ -53,7 +53,10 @@ export class ReviewService {
                 imageIds: reviewData.imageIds,
             });
 
-            return review;
+            return {
+                ...review,
+                images: [],
+            };
         } catch (error) {
             if (error instanceof BadRequestException) {
                 throw error;
@@ -160,7 +163,35 @@ export class ReviewService {
                 reviewerId,
             );
 
-            return review;
+            if (!review) {
+                return null;
+            }
+
+            const imageIds = review.imageIds || [];
+            const images = await Promise.all(
+                imageIds.map(async (id) => {
+                    try {
+                        const image =
+                            await this.filesService.getFileAccessInfo(id);
+                        return {
+                            url: image.fileUrl,
+                            blurhash: image.blurhash,
+                        };
+                    } catch (_error) {
+                        return null;
+                    }
+                }),
+            );
+
+            const validImages = images.filter(
+                (img): img is { url: string; blurhash: string | undefined } =>
+                    Boolean(img),
+            );
+
+            return {
+                ...review,
+                images: validImages,
+            };
         } catch (error) {
             if (error instanceof BadRequestException) {
                 throw error;
@@ -242,6 +273,8 @@ export class ReviewService {
                     url: string;
                     blurhash?: string;
                 }>,
+                reviewerAvatarUrl: item.reviewerAvatar || null,
+                reviewerName: item.reviewerName || null,
             }));
 
             return {

@@ -17,6 +17,7 @@ import {
     type PendingAcceptanceReminderTask,
     PENDING_ACCEPTANCE_REMINDER_SEQUENCE,
 } from '../pending-acceptance-reminder.constants';
+import { NotificationTemplateService } from 'src/modules/notification/notification-template.service';
 
 type DetailedOrder = Awaited<ReturnType<OrderRepository['getOrderById']>>;
 
@@ -38,6 +39,7 @@ export class PendingAcceptanceReminderWorker
         private readonly cacheService: IAdvancedCacheService,
         private readonly orderRepository: OrderRepository,
         private readonly notificationPublisher: NotificationPublisher,
+        private readonly notificationTemplateService: NotificationTemplateService,
     ) {
         const baseClient = this.cacheService.getClient<Redis>();
         this.blockingClient = baseClient.duplicate();
@@ -145,7 +147,14 @@ export class PendingAcceptanceReminderWorker
         const remainingMinutes = this.calculateRemainingMinutes(deadline);
         const orderLabel =
             order.service?.name ?? `订单 ${order.id.slice(0, 6)}`;
-        const message = `${orderLabel} ${definition.escalateLabel}`;
+        const message = this.notificationTemplateService.getTemplate(
+            'order_pending_acceptance_warning',
+            {
+                orderLabel,
+                escalateLabel: definition.escalateLabel,
+                warningLevel: payload.warningLevel,
+            },
+        );
         try {
             await this.notificationPublisher.publish({
                 event: 'order_pending_acceptance_warning',
@@ -246,6 +255,10 @@ export class PendingAcceptanceReminderWorker
         }
         const serviceUserId = order.assignment.servicePersonnel.userId;
         try {
+            const message = this.notificationTemplateService.getTemplate(
+                'order_cancelled',
+                { reason },
+            );
             await this.notificationPublisher.publish({
                 event: 'order_cancelled',
                 payload: {
@@ -253,7 +266,7 @@ export class PendingAcceptanceReminderWorker
                     orderId: order.id,
                     status: 'cancelled',
                     cancelReason: reason,
-                    message: reason,
+                    message,
                 },
                 targets: [
                     {

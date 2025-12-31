@@ -254,6 +254,7 @@ export class OrderRepository {
                     customerPhone: users.phoneNumber,
                     customerAvatar: users.image,
                     address: userAddresses.detailedAddress,
+                    remark: orders.remark,
                     acceptedAt: orderAssignments.acceptedAt,
                     decisionStatus: orderAssignments.decisionStatus,
                     rejectReason: orderAssignments.rejectReason,
@@ -301,6 +302,7 @@ export class OrderRepository {
             customerPhone: row.customerPhone ?? null,
             customerAvatar: row.customerAvatar ?? null,
             address: row.address ?? null,
+            remark: row.remark ?? null,
             acceptedAt: row.acceptedAt ?? null,
             decisionStatus: row.decisionStatus ?? 'pending',
             rejectReason: row.rejectReason ?? null,
@@ -440,7 +442,14 @@ export class OrderRepository {
         const assignmentWithPersonnel = orderRow.assignment
             ? {
                   ...orderRow.assignment,
-                  servicePersonnel: orderRow.servicePersonnel || null,
+                  servicePersonnel: orderRow.servicePersonnel
+                      ? {
+                            ...orderRow.servicePersonnel,
+                            avatarUrl: orderRow.userImage || undefined,
+                            image: orderRow.userImage || undefined,
+                            userName: orderRow.userName || undefined,
+                        }
+                      : null,
               }
             : null;
 
@@ -928,6 +937,7 @@ export class OrderRepository {
         discountAmount: string;
         designatedPersonnelId: string;
         price: string;
+        remark?: string | null;
     }) {
         // 生成订单流水号 (格式: ORD + YYYYMMDD + 8位随机字符)
         const now = new Date();
@@ -961,6 +971,7 @@ export class OrderRepository {
                         currency: 'CNY',
                         appointmentTime: data.appointmentTime,
                         paymentExpiresAt: data.paymentExpiresAt,
+                        remark: data.remark ?? null,
                     })
                     .returning({ id: orders.id });
 

@@ -284,11 +284,6 @@ export class ServiceRepository {
                         case 'name':
                             comparison = a.name.localeCompare(b.name);
                             break;
-                        case 'basePrice':
-                            // 注意：basePrice排序已移除，因为价格现在在servicePersonnelPricing表中
-                            // 如果需要按价格排序，需要join并获取价格数据
-                            comparison = a.name.localeCompare(b.name);
-                            break;
                         case 'createdAt':
                         default:
                             comparison = a.name.localeCompare(b.name);
@@ -311,6 +306,7 @@ export class ServiceRepository {
             offset + limit,
         );
 
+        const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
         return {
             items: paginatedItems,
             total,
@@ -321,8 +317,8 @@ export class ServiceRepository {
 
     /**
      * 根据ID获取服务项目详情
-     * 注意：basePrice和estimatedDurationMinutes已从service表移除
-     * 这些信息现在存储在servicePersonnelPricing表中
+     * 注意：定价、时长、币种已从service表移除
+     * 价格与时长信息存储在servicePersonnelPricing表中
      */
     async getServiceById(id: string): Promise<ServiceDetail | null> {
         const [service] = await this.db
@@ -331,8 +327,7 @@ export class ServiceRepository {
                 categoryId: services.categoryId,
                 name: services.name,
                 description: services.description,
-                // basePrice和estimatedDurationMinutes已从service表移除
-                currency: services.currency,
+                imageFileId: services.imageFileId,
                 isActive: services.isActive,
                 category: {
                     id: serviceCategories.id,

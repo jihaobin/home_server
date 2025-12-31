@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, sql } from 'drizzle-orm';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
 import {
@@ -8,6 +8,7 @@ import {
 } from 'src/common/database/schema/reviews-social';
 import { orders } from 'src/common/database/schema/orders';
 import type { ReviewTargetType } from '@repo/types';
+import { users } from 'src/common/database/schema';
 
 @Injectable()
 export class ReviewRepository {
@@ -434,10 +435,18 @@ export class ReviewRepository {
                 conditions.push(eq(reviews.serviceId, serviceId));
             }
 
+            const reviewColumns = getTableColumns(reviews);
+            const userColumns = getTableColumns(users);
+
             // 查询评价列表
             const reviewList = await this.db
-                .select()
+                .select({
+                    ...reviewColumns,
+                    reviewerName: userColumns.name,
+                    reviewerAvatar: userColumns.image,
+                })
                 .from(reviews)
+                .leftJoin(users, eq(reviews.reviewerId, users.id))
                 .where(and(...conditions))
                 .orderBy(desc(reviews.createdAt))
                 .limit(limit)
