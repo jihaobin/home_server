@@ -24,9 +24,7 @@ interface StreamEntry {
 }
 
 @Injectable()
-export class NotificationRelayService
-    implements OnModuleInit, OnModuleDestroy
-{
+export class NotificationRelayService implements OnModuleInit, OnModuleDestroy {
     private readonly logger = new Logger(NotificationRelayService.name);
     private readonly consumerId = process.pid + '-' + randomUUID();
     private running = false;

@@ -7,6 +7,7 @@ import type {
     NotificationEventPayload,
     NotificationTargetDescriptor,
     NotificationDeliveryStatus,
+    NotificationDeliveryMode,
 } from '@repo/types';
 
 import { NOTIFICATION_CHANNELS } from './notification.constants';
@@ -326,7 +327,7 @@ export class NotificationDispatcher {
 
         await this.notificationRepository.updateDeliveryLog(
             deliveryId,
-            this.mapDeliveryUpdate(result),
+            this.mapDeliveryUpdate(result, basePayload.deliveryMode),
         );
         this.metrics.recordDeliveryResult(channel, result.status, {
             event: basePayload.event,
@@ -345,26 +346,32 @@ export class NotificationDispatcher {
         };
     }
 
-    private mapDeliveryUpdate(result: NotificationChannelResult): {
+    private mapDeliveryUpdate(
+        result: NotificationChannelResult,
+        deliveryMode?: NotificationDeliveryMode,
+    ): {
         status: NotificationDeliveryStatus;
         lastError?: string | null;
         deliveredAt?: Date | null;
         context?: Record<string, unknown>;
     } {
-        const status = this.mapChannelStatus(result.status);
+        const status = this.mapChannelStatus(result.status, deliveryMode);
+        const deliveredAt =
+            status === 'delivered' || status === 'sent' ? new Date() : null;
         return {
             status,
             lastError: result.error ?? null,
-            deliveredAt: status === 'delivered' ? new Date() : null,
+            deliveredAt,
         };
     }
 
     private mapChannelStatus(
         status: NotificationChannelResult['status'],
+        deliveryMode?: NotificationDeliveryMode,
     ): NotificationDeliveryStatus {
         switch (status) {
             case 'success':
-                return 'delivered';
+                return deliveryMode === 'strict' ? 'sent' : 'delivered';
             case 'skipped':
                 return 'failed';
             case 'unavailable':

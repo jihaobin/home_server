@@ -217,7 +217,19 @@ export class NotificationOutboxRelayService
             }
         }
         if (!record.event && payload['event']) {
-            record.event = String(payload['event']);
+            const eventValue = payload['event'];
+            if (typeof eventValue === 'string') {
+                record.event = eventValue;
+            } else if (
+                typeof eventValue === 'number' ||
+                typeof eventValue === 'boolean'
+            ) {
+                record.event = String(eventValue);
+            } else if (eventValue instanceof Date) {
+                record.event = eventValue.toISOString();
+            } else {
+                record.event = JSON.stringify(eventValue);
+            }
         }
         if (!record.triggeredAt) {
             record.triggeredAt = new Date().toISOString();

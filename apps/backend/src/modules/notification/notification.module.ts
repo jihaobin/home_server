@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 
 import { SmsModule } from 'src/common/sms/sms.module';
 import { NotificationWsGateway } from './notification-ws.gateway';
@@ -23,10 +24,17 @@ import { TencentPushCallbackService } from './tencent-push-callback.service';
 import { TencentPushCallbackController } from './tencent-push-callback.controller';
 import { NotificationMetricsService } from './notification-metrics.service';
 import { NotificationRetryService } from './notification-retry.service';
+import { NotificationTemplateService } from './notification-template.service';
+import { SmsCallbackController } from './sms-callback.controller';
+import { SmsCallbackService } from './sms-callback.service';
 
 @Module({
-    imports: [SmsModule],
-    controllers: [NotificationController, TencentPushCallbackController],
+    imports: [ConfigModule, SmsModule],
+    controllers: [
+        NotificationController,
+        TencentPushCallbackController,
+        SmsCallbackController,
+    ],
     providers: [
         NotificationPublisher,
         NotificationRelayService,
@@ -47,6 +55,8 @@ import { NotificationRetryService } from './notification-retry.service';
         SmsChannel,
         NotificationRetryService,
         NotificationRepository,
+        NotificationTemplateService,
+        SmsCallbackService,
         {
             provide: NOTIFICATION_CHANNELS,
             useFactory: (
@@ -57,6 +67,10 @@ import { NotificationRetryService } from './notification-retry.service';
             inject: [InAppChannel, TencentCloudPushChannel, SmsChannel],
         },
     ],
-    exports: [NotificationPublisher, NotificationWsService],
+    exports: [
+        NotificationPublisher,
+        NotificationWsService,
+        NotificationTemplateService,
+    ],
 })
 export class NotificationModule {}

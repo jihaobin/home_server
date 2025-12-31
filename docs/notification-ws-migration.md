@@ -94,6 +94,6 @@
 - ✅ 后端 SSE 入口（`/orders/events`, `/notifications/stream`）已确认下线，由 `NotificationWsService` / `NotificationWsGateway` 统一承载实时推送。
 - ✅ `NotificationRelayService` → `NotificationDispatcher` 链路已切换到 WebSocket 推送，废除了 `NotificationSseService` 依赖。
 - ✅ 管理端订单页已完成 WebSocket 订阅改造，基于 `useNotificationSocket` hook 统一封装连接 / 心跳 / 重连，并在订单模块实测通过。
-- 🚧 移动端（Expo）服务人员 App 通过 `useNotificationSocket` 统一封装心跳、Offline 信令与 AppState 管理，并与腾讯云推送 SDK 联动，前后台通知链路均已打通；仍需补完严格通知的 `/notifications/ack` 调用与预约提醒等业务事件。
+- 🕒 移动端（Expo）服务人员 App 已通过 `useNotificationSocket` 统一封装心跳、Offline 信令与 AppState 管理，并串联腾讯云推送 SDK；Hook 同时内置 `/notifications/ack` 调用，但服务端尚未投递 `deliveryMode='strict'` 事件，ACK/重放链路仍待后端放量验证。
 - ⏳ ACK / Heartbeat 接口的对外文档、`NotificationSocketEventType` 使用示例仍待沉淀到开发手册，方便前端同学集成与排障。
-- 🕒 WebSocket 推送已接入通知模块的 Prometheus 指标与重试任务，`/notifications/metrics` 可观测链路健康，但仍需结合客户端 ACK/文档完善整体闭环。
+- 🕒 WebSocket 推送已接入通知模块的 Prometheus 指标与重试任务，`/notifications/metrics` 可观测链路健康，但 Dispatcher 仍把成功状态直接标记为 `delivered`，ACK 超时重试暂时拿不到数据，需等严格模式上线后再补闭环。

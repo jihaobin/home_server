@@ -126,15 +126,19 @@ Dispatcher 将按计划执行，并动态跳过被用户禁用的渠道或根据
    - Drizzle schema、`packages/types` 类型、新的 `NotificationModule`/Publisher/SSE/Relay 已落地并合入主模块。
 2. **事件流迁移**：✅ 完成
    - 订单模块已改为调用 `NotificationPublisher`，Redis Stream 统一为 `stream:notifications`，旧 `OrderNotify*` 服务删除。
-3. **渠道实现**：✅ 完成  
-   - NotificationDispatcher + PreferenceService 已上线，可按“前台 InApp → 后台腾讯云推送 → 短信兜底”的链路调度渠道，并写入 `notification_deliveries`；腾讯云推送/Sms 目前为占位实现，等待绑定真实凭证。
-4. **客户端改造**：🕒 进行中  
+3. **渠道实现**：🕒 进行中
+   - Dispatcher、WebSocket 渠道、腾讯云推送及其回调链路均已投入使用，投递日志也会回写 `notification_deliveries`。
+   - `SmsChannel` 已接入 `SmsService`，会按事件选择短信模板并解析手机号发送，腾讯云推送失败后可降级到短信；当前尚未叠加额外限流/监控，后续需要补齐告警与防重。
+   - `NotificationPublisher` 会在入库时把所有 `targetType` 归一为 `user`，导致 `notification_preferences` 表与当前 seeder 的 `role/service_personnel_default` 配置无法命中，偏好配置仍是常量 `DEFAULT_NOTIFICATION_CHANNEL_PLAN`，后续需要恢复原始 targetType 并提供角色/用户级配置。
+4. **客户端改造**：🕒 进行中
    - 管理端与服务端 App 均已迁移到 `useNotificationSocket` Hook，基于 `socket.io-client` 建立 WebSocket 长连并定时发送心跳，在前台即可实时刷新工单列表。
    - 移动端整合了腾讯云推送 SDK、AppState 切换和 `notifications:client` Offline 信令，后台或被系统杀掉时仍由离线推送兜底。
-   - 仍待落地：严格通知的 `/notifications/ack` 调用、预约/提醒类事件的服务端调度逻辑，以及 ACK/心跳接口在客户端文档中的示例说明。
+   - `/notifications/ack` 已由 admin-web 与 mobile-worker hook 内置调用，但服务端仍然全部以默认 `deliveryMode='best-effort'` 下发，`notification_deliveries` 也会被立即标记为 `delivered`，严格模式与 ACK 文档尚未对齐，后续需要挑选必须确认送达的事件并补齐文档示例。
+   - 待接单/上门提醒 Worker（`PendingAcceptanceReminderWorker` / `ServiceEtaReminderWorker`）已经运行，预约提醒链路已具备，但仍需在客户端文档中补充接入与心跳说明。
 5. **监控与重试**：🕒 进行中
-   - 已上线 `NotificationMetricsService` + `/notifications/metrics`，覆盖事件发布量、各渠道投递结果、重试次数以及 Outbox/失败堆积指标；`NotificationRetryService` 每分钟扫描失败投递与严格模式 ACK 超时记录，并恢复过期 Outbox 锁后触发重试。
-   - 待办：将指标接入统一监控告警、根据实际运行数据调优批次大小/锁策略，并对重试结果做运营可视化。
+   - 已上线 `NotificationMetricsService` + `/notifications/metrics`，覆盖事件发布量、各渠道投递结果、重试次数以及 Outbox/失败堆积指标；`NotificationRetryService` 每分钟扫描失败投递并恢复过期 Outbox 锁后触发重试。
+   - Dispatcher 在 `deliveryMode='strict'` 时会将成功投递写为 `sent` 等待 ACK，`NotificationRetryService` 能扫描未 ACK 的 `sent` 记录并重试；需要按事件挑选必须严格送达的场景，在业务侧开启 strict 与 ACK。
+   - 待办：将指标接入统一监控告警、根据实际运行数据调优批次大小/锁策略，并对重试结果做运营可视化。(未接入运营平台，暂时不做)
 6. **推广 & 清理**：未启动
    - 需要在渠道与监控闭环后逐步接入更多业务。
 
@@ -143,3 +147,23 @@ Dispatcher 将按计划执行，并动态跳过被用户禁用的渠道或根据
 - 服务人员新订单可在 App 前台 1 秒内收到通知，后台/离线可通过推送/短信收到。
 - 通知投递状态可查询、可追踪，失败会自动切换渠道且有日志。
 - 新增通知场景无需修改核心业务代码，只需调用统一接口。
+
+## 配置与使用提示
+
+- 短信模板环境变量：`SmsChannel` 依赖以下模板 ID，请在部署环境提供对应值：`ALIYUN_SMS_TEMPLATE_NEW_ORDER`（新订单待接单）、`ALIYUN_SMS_TEMPLATE_PENDING_ACCEPTANCE`（接单提醒）、`ALIYUN_SMS_TEMPLATE_SERVICE_REMINDER`（上门提醒）、`ALIYUN_SMS_TEMPLATE_ORDER_CANCELLED`（订单取消）。
+- 严格模式示例：业务发送需要必达的通知时可设置 `deliveryMode='strict'`，例如：
+
+```ts
+await notificationPublisher.publish({
+    event: 'order_pending_acceptance_assigned',
+    deliveryMode: 'strict',
+    targets: [{ userId: serviceUserId }],
+    payload: {
+        userId: serviceUserId,
+        orderId,
+        event: 'order_pending_acceptance_assigned',
+        message: '有新的待接单订单',
+    },
+});
+// 客户端收到后调用 POST /notifications/ack { deliveryId } 完成 ACK，未 ACK 的 sent 记录会被重试任务扫描。
+```

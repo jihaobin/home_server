@@ -21,20 +21,21 @@ import { authClient } from "../lib/auth";
 
 import Push from '@tencentcloud/react-native-push';
 
-
-
 if (Platform.OS !== "web") {
     Notifications.setNotificationHandler({
         handleNotification: async () => ({
             shouldShowAlert: true,
+            shouldShowBanner: true,
+            shouldShowList: true,
             shouldPlaySound: true,
             shouldSetBadge: false,
         }),
     });
 }
 
-const SDKAppID = 1600116684; // 您的 SDKAppID
-const appKey = '8kK2UIxF54fxcy7qK5R31rhkcbwtNEd3gOvV2vRMwAIEOEu8GZGAZHcHdNg8KNQp'; // 客户端密钥
+const SDKAppID = Number(process.env.EXPO_PUBLIC_TENCENT_PUSH_SDK_APP_ID || 0); // 来自环境变量
+const appKey = process.env.EXPO_PUBLIC_TENCENT_PUSH_APP_KEY; // 来自环境变量
+const canInitPush = !!Push && Number.isFinite(SDKAppID) && SDKAppID > 0 && !!appKey;
 
 type RegistrationListener = (registrationId: string) => void;
 const registrationIdListeners = new Set<RegistrationListener>();
@@ -61,14 +62,13 @@ function useRegistrationIdValue() {
     return registrationId;
 }
 
-if (Push) {
+if (canInitPush) {
     // 如果您需要与 Chat 的登录 userID 打通（即向此 userID 推送消息），请使用 setRegistrationID 接口
     // Push.setRegistrationID(userID, () => {
     // console.log('setRegistrationID ok', userID);
     // });
 
     Push.registerPush(SDKAppID, appKey, (data) => {
-        console.log('registerPush ok', data);
         Push.getRegistrationID((registrationID) => {
             console.log('getRegistrationID ok', registrationID);
             emitRegistrationId(registrationID);
@@ -96,6 +96,10 @@ if (Push) {
         // res 为被撤回的消息 ID
         console.log('message revoked', res);
     });
+} else if (Push) {
+    console.warn(
+        "[push] 缺少 EXPO_PUBLIC_TENCENT_PUSH_SDK_APP_ID 或 EXPO_PUBLIC_TENCENT_PUSH_APP_KEY，已跳过推送初始化",
+    );
 }
 export default function RootLayout() {
     const hasMounted = React.useRef(false);
@@ -218,13 +222,6 @@ function RootNavigation() {
                         name="scan/index"
                         options={{
                             title: "扫码核验",
-                            headerShown: false,
-                        }}
-                    />
-                    <Stack.Screen
-                        name="scan/explore"
-                        options={{
-                            title: "扫码记录",
                             headerShown: false,
                         }}
                     />
@@ -421,8 +418,11 @@ function NotificationSocketBridge({ enabled }: { enabled: boolean }) {
     return null;
 }
 
+const hasDomWindow =
+    typeof globalThis !== "undefined" &&
+    typeof (globalThis as { window?: unknown }).window !== "undefined";
 const useIsomorphicLayoutEffect =
-    Platform.OS === "web" && typeof window === "undefined"
+    Platform.OS === "web" && !hasDomWindow
         ? React.useEffect
         : React.useLayoutEffect;
 

@@ -223,15 +223,55 @@ export class SmsService {
         phone: string,
         code: string | number,
     ): Promise<SmsSendResult> {
+        const templateCode =
+            process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION ||
+            process.env.ALIYUN_SMS_TEMPLATE_CODE ||
+            '';
+        return this.sendTemplateSms({
+            phone,
+            templateCode,
+            templateParams: { code: code.toString() },
+        });
+    }
+
+    /**
+     * 使用指定模板发送短信
+     * @param params 参数
+     * @param params.phone 手机号
+     * @param params.templateCode 短信模板编码
+     * @param params.templateParams 模板参数
+     * @param params.signName 签名
+     * @returns
+     */
+    async sendTemplateSms(params: {
+        phone: string;
+        templateCode: string;
+        templateParams?: Record<string, string | number>;
+        signName?: string;
+        outId?: string;
+    }): Promise<SmsSendResult> {
+        const { phone, templateCode, templateParams, signName, outId } = params;
+        if (!templateCode) {
+            const error = '短信模板未配置';
+            this.logger.error(error);
+            return {
+                success: false,
+                error,
+            };
+        }
         try {
             // 获取SMS客户端（使用STS临时凭证）
             const client = await this.getClient();
 
             const sendSmsRequest = new Dysmsapi.SendSmsRequest({
                 phoneNumbers: phone,
-                signName: process.env.ALIYUN_SMS_SIGN_NAME,
-                templateCode: process.env.ALIYUN_SMS_TEMPLATE_CODE,
-                templateParam: JSON.stringify({ code }),
+                signName: signName || process.env.ALIYUN_SMS_SIGN_NAME,
+                templateCode,
+                templateParam:
+                    templateParams && Object.keys(templateParams).length > 0
+                        ? JSON.stringify(templateParams)
+                        : undefined,
+                outId,
             });
 
             const runtime = new Util.RuntimeOptions({});
