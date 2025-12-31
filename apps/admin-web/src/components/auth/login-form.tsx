@@ -167,12 +167,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
                             />
                             <span>记住登录状态</span>
                         </label>
-                        <Link
-                            href="/auth/forgot-password"
-                            className="text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
-                        >
-                            忘记密码？
-                        </Link>
+                        
                     </div>
                 )}
             </form.Field>
