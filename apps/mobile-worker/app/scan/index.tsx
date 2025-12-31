@@ -11,12 +11,19 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { useVerifyCheckIn } from "@repo/hooks/api/order";
+import useLocation from "@repo/hooks/useLocation";
 
 export default function ScanQRScreen() {
     const [facing, setFacing] = useState<"front" | "back">("back");
     const [permission, requestPermission] = useCameraPermissions();
     const router = useRouter();
     const [hasScanned, setHasScanned] = useState(false);
+    const { location, isLocating, locationStatus, error: locationError } = useLocation();
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [statusType, setStatusType] = useState<"info" | "success" | "error">("info");
+    const verifyMutation = useVerifyCheckIn();
+    const isVerifying = verifyMutation.isPending;
 
     useEffect(() => {
         if (!permission) {
@@ -31,36 +38,96 @@ export default function ScanQRScreen() {
         }, []),
     );
 
+    const parsePayload = useCallback((data: string) => {
+        try {
+            const parsed = JSON.parse(data);
+            if (parsed?.orderId && parsed?.token) {
+                return {
+                    orderId: String(parsed.orderId),
+                    token: String(parsed.token),
+                };
+            }
+        } catch {
+            // 忽略解析错误，继续尝试其他分支
+        }
+        return null;
+    }, []);
+
+    const handleResetScan = useCallback(() => {
+        setHasScanned(false);
+        setStatusType("info");
+        setStatusMessage(null);
+    }, []);
+
+    const showBlockingAlert = useCallback(
+        (title: string, message: string) => {
+            Alert.alert(
+                title,
+                message,
+                [
+                    {
+                        text: "知道了",
+                        onPress: handleResetScan,
+                    },
+                ],
+                { cancelable: false, onDismiss: handleResetScan },
+            );
+        },
+        [handleResetScan],
+    );
+
     const handleBarCodeScanned = useCallback(
-        ({ data }: { data: string }) => {
+        async ({ data }: { data: string }) => {
             if (!data) {
                 Alert.alert("无法识别二维码", "请重新尝试扫描");
                 return;
             }
 
-            if (hasScanned) {
+            if (hasScanned || isVerifying) {
                 return;
             }
             setHasScanned(true);
 
-            let params: Record<string, string>;
-            try {
-                const parsed = JSON.parse(data);
-                if (parsed?.orderId && parsed?.token) {
-                    params = {
-                        orderId: String(parsed.orderId),
-                        token: String(parsed.token),
-                    };
-                } else {
-                    params = { qrData: data };
-                }
-            } catch {
-                params = { qrData: data };
+            const payload = parsePayload(data);
+            if (!payload) {
+                const message = "二维码格式无效，请重新扫描";
+                setStatusType("error");
+                setStatusMessage(message);
+                showBlockingAlert("无法识别二维码", message);
+                return;
             }
 
-            router.push({ pathname: "/scan/explore", params } as never);
+            if (!location) {
+                const message = locationError || (isLocating ? "定位中，请稍后再试" : "未能获取定位信息");
+                setStatusType("error");
+                setStatusMessage(message);
+                showBlockingAlert("定位未就绪", message);
+                return;
+            }
+
+            try {
+                setStatusType("info");
+                setStatusMessage("正在核验到场信息...");
+                const response = await verifyMutation.mutateAsync({
+                    orderId: payload.orderId,
+                    token: payload.token,
+                    latitude: location.latitude,
+                    longitude: location.longitude,
+                });
+                const successMessage = (response as { message?: string } | undefined)?.message || "核验成功";
+                setStatusType("success");
+                setStatusMessage(successMessage);
+                showBlockingAlert("核验成功", successMessage);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : "核验失败，请重试";
+                setStatusType("error");
+                setStatusMessage(message);
+                showBlockingAlert("核验失败", message);
+            } finally {
+                // 保持扫码锁定，直至用户关闭弹窗
+            }
         },
-        [hasScanned, router],
+        [hasScanned, isVerifying, parsePayload, location, locationError, isLocating, verifyMutation, showBlockingAlert],
     );
 
     const toggleCameraFacing = () => {
@@ -107,16 +174,26 @@ export default function ScanQRScreen() {
                         <View style={[styles.corner, styles.cornerBottomLeft]} />
                         <View style={[styles.corner, styles.cornerBottomRight]} />
                     </View>
-                    {hasScanned ? (
+                    {isVerifying ? (
                         <View style={styles.processing}>
                             <ActivityIndicator color="#fff" size="small" />
-                            <Text style={styles.processingText}>解析二维码中...</Text>
+                            <Text style={styles.processingText}>
+                                核验到场中...
+                            </Text>
                         </View>
                     ) : null}
                 </View>
 
                 <View style={styles.controls}>
                     <Text style={styles.instruction}>将二维码置于框内，系统会自动核验</Text>
+                    {hasScanned && !isVerifying ? (
+                        <TouchableOpacity
+                            style={styles.rescanButton}
+                            onPress={handleResetScan}
+                        >
+                            <Text style={styles.rescanButtonText}>继续扫码</Text>
+                        </TouchableOpacity>
+                    ) : null}
                     <TouchableOpacity
                         style={styles.flipButton}
                         onPress={toggleCameraFacing}
@@ -212,6 +289,35 @@ const styles = StyleSheet.create({
         color: "white",
         fontSize: 16,
         marginBottom: 20,
+        textAlign: "center",
+    },
+    statusMessage: {
+        color: "white",
+        fontSize: 15,
+        textAlign: "center",
+    },
+    statusMessageSuccess: {
+        color: "#8df0a9",
+    },
+    statusMessageError: {
+        color: "#f5a3a3",
+    },
+    locationText: {
+        color: "#dfe6e9",
+        fontSize: 12,
+        textAlign: "center",
+    },
+    rescanButton: {
+        backgroundColor: "#2d3436",
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 14,
+        marginBottom: 12,
+    },
+    rescanButtonText: {
+        color: "white",
+        fontSize: 15,
+        fontWeight: "600",
         textAlign: "center",
     },
     flipButton: {

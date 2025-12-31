@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { Directory, Paths } from "expo-file-system";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -17,14 +18,29 @@ export default function SettingsScreen() {
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [vibrationEnabled, setVibrationEnabled] = useState(true);
 
+    const clearCache = () => {
+        try {
+            const cacheDir = new Directory(Paths.cache);
+            if (!cacheDir.exists) {
+                Alert.alert("提示", "没有可清理的缓存");
+                return;
+            }
+
+            cacheDir.list().forEach((entry) => entry.delete());
+
+            Alert.alert("成功", "缓存已清除");
+        } catch (error) {
+            Alert.alert("提示", "清除缓存时出现问题，请稍后再试");
+        }
+    };
+
     const handleClearCache = () => {
         Alert.alert("清除缓存", "确定要清除缓存吗？", [
             { text: "取消", style: "cancel" },
             {
                 text: "确定",
                 onPress: () => {
-                    // TODO: 实现清除缓存逻辑
-                    Alert.alert("成功", "缓存已清除");
+                    clearCache();
                 },
             },
         ]);

@@ -37,43 +37,42 @@ const ServiceAddressItem = ({
         selectable?: boolean;
 }) => {
     return (
-        <Card className="mx-4 mb-3 bg-card rounded-2xl shadow-sm border border-border/50 overflow-hidden relative">
+        <Card className="mx-4 mb-3 bg-card rounded-2xl shadow-sm border border-border/50 overflow-hidden relative p-0">
+            {/* 右上角关闭按钮 - 固定在卡片顶端 */}
+            {onDelete && (
+                <Dialog>
+                    <DialogTrigger asChild>
+                        <Pressable className="absolute top-3 right-3 z-20 p-1.5 bg-muted/80 rounded-full shadow-sm">
+                            <X size={14} className="text-muted-foreground" />
+                        </Pressable>
+                    </DialogTrigger>
+                    <DialogContent className="bg-card rounded-2xl shadow-xl w-80 border border-border">
+                        <DialogHeader>
+                            <DialogTitle className="text-foreground">删除地址</DialogTitle>
+                            <DialogDescription className="text-muted-foreground">
+                                确认删除此地址吗?删除后将无法恢复。
+                            </DialogDescription>
+                        </DialogHeader>
+                        <DialogFooter className="flex-row gap-2">
+                            <DialogClose asChild>
+                                <Button variant="outline" className="flex-1 rounded-xl">
+                                    <Text className="text-foreground">取消</Text>
+                                </Button>
+                            </DialogClose>
+                            <Button onPress={() => onDelete(address)} className="flex-1 rounded-xl bg-destructive">
+                                <Text className="text-destructive-foreground">确认删除</Text>
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            )}
             <Pressable
                 onPress={() => selectable && onSelect?.(address)}
                 disabled={!selectable}
                 className={selectable ? "active:opacity-70 active:scale-[0.98]" : ""}
             >
-                <CardContent className="p-4">
-                    {/* 右上角关闭按钮 */}
-                    {onDelete && (
-                        <Dialog>
-                            <DialogTrigger asChild>
-                                <Pressable className="absolute top-3 right-3 z-10 p-1.5 bg-muted/80 rounded-full">
-                                    <X size={14} className="text-muted-foreground" />
-                                </Pressable>
-                            </DialogTrigger>
-                            <DialogContent className="bg-card rounded-2xl shadow-xl w-80 border border-border">
-                                <DialogHeader>
-                                    <DialogTitle className="text-foreground">删除地址</DialogTitle>
-                                    <DialogDescription className="text-muted-foreground">
-                                        确认删除此地址吗?删除后将无法恢复。
-                                    </DialogDescription>
-                                </DialogHeader>
-                                <DialogFooter className="flex-row gap-2">
-                                    <DialogClose asChild>
-                                        <Button variant="outline" className="flex-1 rounded-xl">
-                                            <Text className="text-foreground">取消</Text>
-                                        </Button>
-                                    </DialogClose>
-                                    <Button onPress={() => onDelete(address)} className="flex-1 rounded-xl bg-destructive">
-                                        <Text className="text-destructive-foreground">确认删除</Text>
-                                    </Button>
-                                </DialogFooter>
-                            </DialogContent>
-                        </Dialog>
-                    )}
-
-                    <View className="flex-row items-start justify-between">
+                <CardContent className="p-0">
+                    <View className="relative p-4 pr-16">
                         <View className="flex-row items-start flex-1 pr-2">
                             {/* 左侧定位图标容器 */}
                             <View className="mr-3 mt-1 bg-primary/10 rounded-full p-2">
@@ -111,11 +110,11 @@ const ServiceAddressItem = ({
                             </View>
                         </View>
 
-                        {/* 右侧编辑按钮 */}
+                        {/* 右侧编辑按钮 - 居右居中 */}
                         {!selectable && (
                             <Pressable
                                 onPress={() => onEdit(address)}
-                                className="mt-1 p-2 bg-muted/50 rounded-full active:bg-muted"
+                                className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-muted/50 rounded-full active:bg-muted"
                             >
                                 <Edit size={16} className="text-muted-foreground" />
                             </Pressable>

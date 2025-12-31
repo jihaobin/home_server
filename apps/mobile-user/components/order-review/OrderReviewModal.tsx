@@ -23,6 +23,10 @@ export interface OrderReviewModalProps {
     orderId: string;
     targetId: string;
     targetType: "personnel" | "shop";
+    serviceName?: string;
+    serviceDescription?: string | null;
+    serviceImageUrl?: string | null;
+    orderSerial?: string | null;
     onSubmit: (review: CreateReviewBody) => Promise<void>;
 }
 
@@ -47,6 +51,10 @@ export function OrderReviewModal({
     orderId,
     targetId,
     targetType,
+    serviceName,
+    serviceDescription,
+    serviceImageUrl,
+    orderSerial,
     onSubmit,
 }: OrderReviewModalProps) {
     // 评分相关状态
@@ -252,16 +260,26 @@ export function OrderReviewModal({
                     {/* 服务商品信息展示 */}
                     <View className="mt-4 flex-row items-center gap-3 p-3 bg-muted/30 rounded-lg border border-border">
                         <View className="w-16 h-16 rounded-lg overflow-hidden bg-muted">
-                            <View className="w-full h-full items-center justify-center">
-                                <Text className="text-xs text-muted-foreground">商品</Text>
-                            </View>
+                            {serviceImageUrl ? (
+                                <Image
+                                    source={{ uri: serviceImageUrl }}
+                                    style={{ width: "100%", height: "100%" }}
+                                    contentFit="cover"
+                                />
+                            ) : (
+                                <View className="w-full h-full items-center justify-center">
+                                    <Text className="text-xs text-muted-foreground">商品</Text>
+                                </View>
+                            )}
                         </View>
                         <View className="flex-1">
                             <Text className="text-sm font-medium text-foreground" numberOfLines={1}>
-                                商品分类:首次开通Pro(30...
+                                {serviceName || "商品信息"}
                             </Text>
                             <Text className="text-xs text-muted-foreground mt-0.5">
-                                订单编号: {orderId.slice(-8)}
+                                {serviceDescription?.trim()
+                                    ? serviceDescription
+                                    : `订单编号: ${orderSerial || orderId.slice(-8)}`}
                             </Text>
                         </View>
                     </View>

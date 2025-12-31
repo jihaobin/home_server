@@ -1,6 +1,7 @@
 import { Button } from "@repo/mobile-ui/components/ui/button";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
 import { Text } from "@repo/mobile-ui/components/ui/text";
+import { useFile } from "@repo/hooks/api/files";
 import type { MatchedPersonnel } from "@repo/types";
 import { icons as lucideIconRegistry } from "lucide-react-native";
 import {
@@ -35,6 +36,11 @@ function ServiceProviderCard({
     onSelect?: (provider: MatchedPersonnel) => void;
     onDetail?: (provider: MatchedPersonnel) => void;
 }) {
+    const avatarIdentifier = provider.avatarUrl?.trim() || null;
+    const isDirectAvatarUrl = Boolean(avatarIdentifier && /^https?:\/\//i.test(avatarIdentifier));
+    const { data: avatarFileData } = useFile(!isDirectAvatarUrl ? avatarIdentifier : null);
+    const avatarUrl = (isDirectAvatarUrl && avatarIdentifier) || avatarFileData?.fileUrl || null;
+
     // 格式化距离显示
     const formatDistance = () => {
         const distKm = Number(provider.distance ?? 0);
@@ -97,9 +103,9 @@ function ServiceProviderCard({
             {/* 头部：头像、姓名、经验 */}
             <View className="flex-row items-start">
                 <View className="mr-3 h-16 w-16 items-center justify-center rounded-full bg-primary/10 dark:bg-primary/20">
-                    {provider.avatarUrl ? (
+                    {avatarUrl ? (
                         <Image
-                            source={{ uri: provider.avatarUrl }}
+                            source={{ uri: avatarUrl }}
                             style={{
                                 width: 64,
                                 height: 64,

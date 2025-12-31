@@ -8,15 +8,18 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
+    Image,
     View,
 } from "react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { useServicePersonnelProfile } from "@repo/hooks/api/service-personnel";
 import { useUpdateServiceOfferings } from "@repo/hooks/api/work-skill";
+import { useUploadFile } from "@repo/hooks/api/files";
 import { useQuery } from "@tanstack/react-query";
-import type { ServiceListResponse } from "@repo/types";
+import type { FileDownloadUrlResponse, ServiceListResponse } from "@repo/types";
 import { apiClient } from "@repo/lib/http-client";
+import * as ImagePicker from "expo-image-picker";
 
 type EditableSpecification = {
     id?: string;
@@ -27,12 +30,18 @@ type EditableSpecification = {
     currency: string;
 };
 
+type EditableImage = {
+    id: string;
+    url: string;
+};
+
 type EditableService = {
     serviceId: string;
     name: string;
     categoryName?: string;
     description: string;
     specs: EditableSpecification[];
+    gallery: EditableImage[];
 };
 
 export default function ServiceSettingsScreen() {
@@ -47,11 +56,17 @@ export default function ServiceSettingsScreen() {
     } = useServicePersonnelProfile(userId);
 
     const updateOfferings = useUpdateServiceOfferings();
+    const uploadFile = useUploadFile();
 
     const [selectedServices, setSelectedServices] = useState<EditableService[]>([]);
     const [search, setSearch] = useState("");
     const [saving, setSaving] = useState(false);
+    const [uploadingServiceId, setUploadingServiceId] = useState<string | null>(null);
     const specIdRef = useRef(0);
+    const fetchFileUrl = useCallback(async (fileIdentifier: string) => {
+        const response = await apiClient.get<FileDownloadUrlResponse>(`/files/${fileIdentifier}`);
+        return response.data.fileUrl;
+    }, []);
 
     const buildSpec = useCallback(
         (initial?: Partial<EditableSpecification>) => {
@@ -72,24 +87,31 @@ export default function ServiceSettingsScreen() {
         if (!profile) return;
         const mapped: EditableService[] = profile.services.map((service) => {
             const specs = (service as any)?.specifications ?? [];
+            const galleryItems = (((service as any)?.gallery ?? []) as any[])
+                .map((file) => ({
+                    id: file?.fileId ?? file?.id,
+                    url: file?.url ?? file?.fileUrl,
+                }))
+                .filter((item) => item.id && item.url);
             return {
                 serviceId: service.serviceId,
                 name: service.serviceName,
                 categoryName: (service as any)?.categoryName ?? undefined,
                 description: (service as any)?.personnelDescription ?? "",
+                gallery: galleryItems,
                 specs:
                     specs.length > 0
                         ? specs.map((spec: any) =>
-                              buildSpec({
-                                  id: spec.id,
-                                  name: spec.name ?? "",
-                                  price: spec.price ?? "",
-                                  duration: spec.estimatedDurationMinutes
-                                      ? String(spec.estimatedDurationMinutes)
-                                      : "",
-                                  currency: spec.currency ?? "CNY",
-                              }),
-                          )
+                            buildSpec({
+                                id: spec.id,
+                                name: spec.name ?? "",
+                                price: spec.price ?? "",
+                                duration: spec.estimatedDurationMinutes
+                                    ? String(spec.estimatedDurationMinutes)
+                                    : "",
+                                currency: spec.currency ?? "CNY",
+                            }),
+                        )
                         : [buildSpec()],
             };
         });
@@ -180,6 +202,83 @@ export default function ServiceSettingsScreen() {
         setSelectedServices((prev) => prev.filter((item) => item.serviceId !== serviceId));
     };
 
+    const handleAddGalleryImage = useCallback(
+        async (serviceId: string) => {
+            const target = selectedServices.find((item) => item.serviceId === serviceId);
+            if (!target) return;
+            if (target.gallery.length >= 5) {
+                Alert.alert("提示", "最多上传 5 张宣传图片");
+                return;
+            }
+
+            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (!permission.granted) {
+                Alert.alert("提示", "需要相册权限才能上传图片");
+                return;
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: false,
+                quality: 0.8,
+            });
+
+            if (result.canceled || !result.assets?.length) return;
+            const asset = result.assets[0];
+
+            setUploadingServiceId(serviceId);
+            try {
+                const response = await uploadFile.mutateAsync({
+                    file: {
+                        uri: asset.uri,
+                        name: asset.fileName ?? `service_${Date.now()}.jpg`,
+                        type: asset.mimeType ?? "image/jpeg",
+                    },
+                });
+
+                let accessibleUrl = asset.uri;
+                try {
+                    accessibleUrl = await fetchFileUrl(response.id);
+                } catch (err) {
+                    accessibleUrl = asset.uri;
+                }
+
+                setSelectedServices((prev) =>
+                    prev.map((service) =>
+                        service.serviceId === serviceId
+                            ? {
+                                ...service,
+                                gallery: [
+                                    ...service.gallery,
+                                    { id: response.id, url: accessibleUrl },
+                                ].slice(0, 5),
+                            }
+                            : service,
+                    ),
+                );
+            } catch (error) {
+                console.error("[ServiceSettings] 图片上传失败", error);
+                Alert.alert("上传失败", "请稍后重试");
+            } finally {
+                setUploadingServiceId(null);
+            }
+        },
+        [fetchFileUrl, selectedServices, uploadFile],
+    );
+
+    const handleRemoveGalleryImage = useCallback((serviceId: string, imageId: string) => {
+        setSelectedServices((prev) =>
+            prev.map((service) =>
+                service.serviceId === serviceId
+                    ? {
+                        ...service,
+                        gallery: service.gallery.filter((img) => img.id !== imageId),
+                    }
+                    : service,
+            ),
+        );
+    }, []);
+
     const handleAddService = (
         service: ServiceListResponse["items"][number]["children"][number],
         categoryName?: string,
@@ -195,6 +294,7 @@ export default function ServiceSettingsScreen() {
                 name: service.name,
                 categoryName,
                 description: "",
+                gallery: [],
                 specs: [buildSpec()],
             },
         ]);
@@ -212,6 +312,10 @@ export default function ServiceSettingsScreen() {
         for (const service of selectedServices) {
             if (service.specs.length === 0) {
                 Alert.alert("提示", `${service.name} 需要至少一个服务规格`);
+                return;
+            }
+            if ((service.gallery?.length ?? 0) > 5) {
+                Alert.alert("提示", `${service.name} 的宣传图片最多 5 张`);
                 return;
             }
             for (const spec of service.specs) {
@@ -237,6 +341,7 @@ export default function ServiceSettingsScreen() {
                 description: service.description.trim()
                     ? service.description.trim()
                     : undefined,
+                galleryFileIds: (service.gallery ?? []).map((item) => item.id),
                 specifications: service.specs.map((spec) => ({
                     id: spec.id,
                     name: spec.name.trim(),
@@ -316,10 +421,10 @@ export default function ServiceSettingsScreen() {
                                     {service.categoryName ? (
                                         <Text style={styles.serviceCategory}>{service.categoryName}</Text>
                                     ) : null}
-                                    <View style={styles.formItemColumn}>
+                                    <View>
                                         <Text style={styles.label}>服务描述</Text>
                                         <TextInput
-                                            style={[styles.textArea, styles.descriptionInput]}
+                                            style={[styles.descriptionInput]}
                                             multiline
                                             value={service.description}
                                             placeholder="介绍服务优势、适用场景等，帮助用户了解您的能力"
@@ -327,6 +432,54 @@ export default function ServiceSettingsScreen() {
                                                 handleUpdateDescription(service.serviceId, text)
                                             }
                                         />
+                                    </View>
+                                    <View style={styles.gallerySection}>
+                                        <View style={styles.galleryHeader}>
+                                            <Text style={styles.subSectionTitle}>宣传图片</Text>
+                                            <Text style={styles.helperText}>
+                                                {`最多 5 张，已选 ${service.gallery?.length ?? 0}`}
+                                            </Text>
+                                        </View>
+                                        <View style={styles.galleryList}>
+                                            {(service.gallery ?? []).map((image) => (
+                                                <View key={image.id} style={styles.galleryItem}>
+                                                    <Image
+                                                        source={{ uri: image.url }}
+                                                        style={styles.galleryImage}
+                                                        resizeMode="cover"
+                                                    />
+                                                    <TouchableOpacity
+                                                        style={styles.removeGalleryButton}
+                                                        onPress={() =>
+                                                            handleRemoveGalleryImage(service.serviceId, image.id)
+                                                        }
+                                                    >
+                                                        <Ionicons name="close" size={14} color="#fff" />
+                                                    </TouchableOpacity>
+                                                </View>
+                                            ))}
+                                            {(service.gallery?.length ?? 0) < 5 && (
+                                                <TouchableOpacity
+                                                    style={[
+                                                        styles.galleryItem,
+                                                        styles.galleryAddButton,
+                                                        uploadingServiceId === service.serviceId &&
+                                                        styles.galleryAddButtonDisabled,
+                                                    ]}
+                                                    onPress={() => handleAddGalleryImage(service.serviceId)}
+                                                    disabled={uploadingServiceId === service.serviceId}
+                                                >
+                                                    {uploadingServiceId === service.serviceId ? (
+                                                        <ActivityIndicator size="small" color="#2563eb" />
+                                                    ) : (
+                                                        <>
+                                                            <Ionicons name="add" size={20} color="#2563eb" />
+                                                            <Text style={styles.galleryAddText}>上传</Text>
+                                                        </>
+                                                    )}
+                                                </TouchableOpacity>
+                                            )}
+                                        </View>
                                     </View>
                                     <View style={styles.specHeader}>
                                         <Text style={styles.subSectionTitle}>服务规格</Text>
@@ -557,6 +710,57 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "space-between",
         marginBottom: 8,
+    },
+    gallerySection: {
+        marginTop: 12,
+    },
+    galleryHeader: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: 8,
+    },
+    galleryList: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+    },
+    galleryItem: {
+        width: 76,
+        height: 76,
+        borderRadius: 10,
+        overflow: "hidden",
+        backgroundColor: "#f3f4f6",
+        marginRight: 8,
+        marginBottom: 8,
+        position: "relative",
+        alignItems: "center",
+        justifyContent: "center",
+        borderWidth: 1,
+        borderColor: "#e5e7eb",
+    },
+    galleryImage: {
+        width: "100%",
+        height: "100%",
+    },
+    removeGalleryButton: {
+        position: "absolute",
+        top: 4,
+        right: 4,
+        backgroundColor: "rgba(0,0,0,0.6)",
+        borderRadius: 12,
+        padding: 4,
+    },
+    galleryAddButton: {
+        borderStyle: "dashed",
+        backgroundColor: "#f8fafc",
+    },
+    galleryAddButtonDisabled: {
+        opacity: 0.6,
+    },
+    galleryAddText: {
+        fontSize: 12,
+        color: "#2563eb",
+        marginTop: 4,
     },
     subSectionTitle: {
         fontSize: 14,

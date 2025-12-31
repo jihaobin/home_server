@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import {
     AlertDialog,
     AlertDialogAction,
@@ -44,12 +45,23 @@ import {
     useDeleteAdminServiceCategory,
 } from "@repo/hooks/api/ssr"
 import { useUploadFile } from "@repo/hooks/api/files"
-import type { AdminServiceCategory, AdminServiceCategoryTree } from "@repo/types"
+import {
+    type AdminServiceCategory,
+    type AdminServiceCategoryTree,
+    type CategoryWithServices,
+} from "@repo/types"
+import {
+    useCreateService,
+    useDeleteService,
+    useUpdateService,
+    useServiceListSinglePage,
+} from "@repo/hooks/api/service"
 import { useForm, type AnyFieldApi } from "@tanstack/react-form"
 import { z } from "zod/v4"
 import { toast } from "sonner"
 import {
     FolderTree,
+    Loader2,
     PenSquare,
     PlusCircle,
     RefreshCcw,
@@ -75,6 +87,20 @@ type ServiceCategoryFormValues = {
     icon: UploadValue | null
 }
 
+type ServiceDialogState =
+    | { mode: "create"; categoryId: string | null; open: boolean }
+    | { mode: "edit"; service: ServiceListItem; open: boolean }
+
+type ServiceFormValues = {
+    name: string
+    description: string
+    categoryId: string
+    isActive: boolean
+    image: UploadValue | null
+}
+
+type ServiceListItem = CategoryWithServices["children"][number]
+
 const ROOT_KEY = "__root__"
 
 function normalizeIconUrl(value?: string | null) {
@@ -93,9 +119,13 @@ function normalizeIconUrl(value?: string | null) {
 
 export function ServiceCategoriesPageContent() {
     const { data, refetch, isFetching } = useAdminServiceCategories()
+    const queryClient = useQueryClient()
     const createMutation = useCreateAdminServiceCategory()
     const updateMutation = useUpdateAdminServiceCategory()
-    const deleteMutation = useDeleteAdminServiceCategory()
+    const deleteCategoryMutation = useDeleteAdminServiceCategory()
+    const createServiceMutation = useCreateService()
+    const updateServiceMutation = useUpdateService()
+    const deleteServiceMutation = useDeleteService()
     const uploadFile = useUploadFile()
 
     const [selectedCategoryIdState, setSelectedCategoryId] = useState<string | null>(
@@ -103,6 +133,11 @@ export function ServiceCategoriesPageContent() {
     )
     const [dialogState, setDialogState] = useState<DialogState | null>(null)
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+    const [serviceDialogState, setServiceDialogState] =
+        useState<ServiceDialogState | null>(null)
+    const [serviceToDelete, setServiceToDelete] = useState<ServiceListItem | null>(
+        null,
+    )
 
     const selectedCategoryId = useMemo(() => {
         if (data.flat.length === 0) {
@@ -122,6 +157,32 @@ export function ServiceCategoriesPageContent() {
         () => data.flat.find((category) => category.id === selectedCategoryId) ?? null,
         [data.flat, selectedCategoryId],
     )
+
+    const {
+        data: serviceListResponse,
+        isFetching: isServiceFetching,
+        refetch: refetchServices,
+    } = useServiceListSinglePage({
+        categoryId: selectedCategoryId ?? undefined,
+        page: 1,
+        limit: 200,
+        enabled: Boolean(selectedCategoryId),
+    })
+
+    const serviceCategories: CategoryWithServices[] = useMemo(
+        () => serviceListResponse?.items ?? [],
+        [serviceListResponse],
+    )
+
+    const services = useMemo(() => {
+        if (!selectedCategoryId) {
+            return []
+        }
+        const matched = serviceCategories.find(
+            (item) => item.id === selectedCategoryId,
+        )
+        return matched?.children ?? []
+    }, [selectedCategoryId, serviceCategories])
 
     const parentsMap = useMemo(() => {
         const map = new Map<string, AdminServiceCategory>()
@@ -153,9 +214,12 @@ export function ServiceCategoriesPageContent() {
     }, [data.flat.length, rootCategories.length])
 
     const handleRefresh = useCallback(async () => {
-        await refetch()
-        toast.success("已刷新分类数据")
-    }, [refetch])
+        await Promise.all([
+            refetch(),
+            selectedCategoryId ? refetchServices() : Promise.resolve(),
+        ])
+        toast.success("已刷新分类与服务数据")
+    }, [refetch, refetchServices, selectedCategoryId])
 
     const openCreateDialog = useCallback(
         (parentId: string | null) => {
@@ -233,13 +297,105 @@ export function ServiceCategoriesPageContent() {
     const handleDeleteCategory = useCallback(async () => {
         if (!selectedCategory) return
         try {
-            await deleteMutation.mutateAsync(selectedCategory.id)
+            await deleteCategoryMutation.mutateAsync(selectedCategory.id)
             toast.success(`已删除分类「${selectedCategory.name}」`)
             setDeleteDialogOpen(false)
         } catch (error) {
             handleFormError(error, "删除分类失败")
         }
-    }, [deleteMutation, selectedCategory])
+    }, [deleteCategoryMutation, selectedCategory])
+
+    const openCreateServiceDialog = useCallback(() => {
+        if (!selectedCategoryId) {
+            toast.error("请选择左侧分类后再添加服务")
+            return
+        }
+        setServiceDialogState({
+            mode: "create",
+            categoryId: selectedCategoryId,
+            open: true,
+        })
+    }, [selectedCategoryId])
+
+    const openEditServiceDialog = useCallback((service: ServiceListItem) => {
+        setServiceDialogState({ mode: "edit", service, open: true })
+    }, [])
+
+    const closeServiceDialog = useCallback(() => {
+        setServiceDialogState(null)
+    }, [])
+
+    const refreshServices = useCallback(async () => {
+        if (!selectedCategoryId) {
+            return
+        }
+        await Promise.all([
+            refetchServices(),
+            queryClient.invalidateQueries({ queryKey: ["service-list"] }),
+            queryClient.invalidateQueries({ queryKey: ["service-list-single"] }),
+        ])
+    }, [queryClient, refetchServices, selectedCategoryId])
+
+    const handleCreateService = useCallback(
+        async (values: ServiceFormValues) => {
+            try {
+                await createServiceMutation.mutateAsync({
+                    name: values.name.trim(),
+                    description: values.description.trim()
+                        ? values.description.trim()
+                        : null,
+                    categoryId: values.categoryId,
+                    imageFileId: values.image?.id ?? null,
+                    isActive: values.isActive,
+                })
+                toast.success("已创建服务")
+                closeServiceDialog()
+                await refreshServices()
+            } catch (error) {
+                handleFormError(error, "创建服务失败")
+            }
+        },
+        [closeServiceDialog, createServiceMutation, refreshServices],
+    )
+
+    const handleUpdateService = useCallback(
+        async (serviceId: string, values: ServiceFormValues) => {
+            try {
+                await updateServiceMutation.mutateAsync({
+                    id: serviceId,
+                    data: {
+                        name: values.name.trim(),
+                        description: values.description.trim()
+                            ? values.description.trim()
+                            : null,
+                        categoryId: values.categoryId,
+                        imageFileId: values.image?.id ?? null,
+                        isActive: values.isActive,
+                    },
+                })
+                toast.success("已更新服务信息")
+                closeServiceDialog()
+                await refreshServices()
+            } catch (error) {
+                handleFormError(error, "更新服务失败")
+            }
+        },
+        [closeServiceDialog, refreshServices, updateServiceMutation],
+    )
+
+    const handleDeleteService = useCallback(async () => {
+        if (!serviceToDelete) {
+            return
+        }
+        try {
+            await deleteServiceMutation.mutateAsync(serviceToDelete.id)
+            toast.success(`已删除服务「${serviceToDelete.name}」`)
+            setServiceToDelete(null)
+            await refreshServices()
+        } catch (error) {
+            handleFormError(error, "删除服务失败")
+        }
+    }, [deleteServiceMutation, refreshServices, serviceToDelete])
 
     const editingCategory =
         dialogState?.mode === "edit"
@@ -333,24 +489,34 @@ export function ServiceCategoriesPageContent() {
                         onSelect={setSelectedCategoryId}
                         totals={totals}
                     />
-                    <CategoryDetailPanel
-                        category={selectedCategory}
-                        parent={
-                            selectedCategory?.parentId
-                                ? parentsMap.get(selectedCategory.parentId) ?? null
-                                : null
-                        }
-                        childCount={
-                            selectedCategory
-                                ? childCounts.get(selectedCategory.id) ?? 0
-                                : 0
-                        }
-                        onEdit={() =>
-                            selectedCategory ? openEditDialog(selectedCategory.id) : undefined
-                        }
-                        onDelete={() => setDeleteDialogOpen(true)}
-                        isDeleting={deleteMutation.isPending}
-                    />
+                    <div className="space-y-4">
+                        <CategoryDetailPanel
+                            category={selectedCategory}
+                            parent={
+                                selectedCategory?.parentId
+                                    ? parentsMap.get(selectedCategory.parentId) ?? null
+                                    : null
+                            }
+                            childCount={
+                                selectedCategory
+                                    ? childCounts.get(selectedCategory.id) ?? 0
+                                    : 0
+                            }
+                            onEdit={() =>
+                                selectedCategory ? openEditDialog(selectedCategory.id) : undefined
+                            }
+                            onDelete={() => setDeleteDialogOpen(true)}
+                            isDeleting={deleteCategoryMutation.isPending}
+                        />
+                        <ServiceListPanel
+                            category={selectedCategory}
+                            services={services}
+                            isLoading={isServiceFetching}
+                            onAddService={openCreateServiceDialog}
+                            onEditService={openEditServiceDialog}
+                            onDeleteService={setServiceToDelete}
+                        />
+                    </div>
                 </CardContent>
             </Card>
 
@@ -382,6 +548,60 @@ export function ServiceCategoriesPageContent() {
                 />
             ) : null}
 
+            {serviceDialogState ? (
+                <ServiceFormDialog
+                    open={serviceDialogState.open}
+                    mode={serviceDialogState.mode}
+                    service={serviceDialogState.mode === "edit" ? serviceDialogState.service : null}
+                    categoryId={
+                        serviceDialogState.mode === "create"
+                            ? serviceDialogState.categoryId
+                            : serviceDialogState.service.categoryId
+                    }
+                    categories={data.flat}
+                    onClose={closeServiceDialog}
+                    uploadImage={handleUploadIcon}
+                    onSubmit={async (values) => {
+                        if (serviceDialogState.mode === "create") {
+                            await handleCreateService(values)
+                        } else {
+                            await handleUpdateService(serviceDialogState.service.id, values)
+                        }
+                    }}
+                    isSubmitting={
+                        createServiceMutation.isPending || updateServiceMutation.isPending
+                    }
+                />
+            ) : null}
+
+            <AlertDialog
+                open={Boolean(serviceToDelete)}
+                onOpenChange={(open) => (!open ? setServiceToDelete(null) : undefined)}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>确认删除服务</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            删除后不可恢复，且可能影响服务人员配置。确定删除
+                            {serviceToDelete ? `「${serviceToDelete.name}」` : ""}
+                            吗？
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={deleteServiceMutation.isPending}>
+                            取消
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => void handleDeleteService()}
+                            disabled={deleteServiceMutation.isPending}
+                        >
+                            {deleteServiceMutation.isPending ? "删除中..." : "确认删除"}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
             <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
                 <AlertDialogContent>
                     <AlertDialogHeader>
@@ -391,15 +611,15 @@ export function ServiceCategoriesPageContent() {
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel disabled={deleteMutation.isPending}>
+                        <AlertDialogCancel disabled={deleteCategoryMutation.isPending}>
                             取消
                         </AlertDialogCancel>
                         <AlertDialogAction
                             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                             onClick={() => void handleDeleteCategory()}
-                            disabled={deleteMutation.isPending}
+                            disabled={deleteCategoryMutation.isPending}
                         >
-                            {deleteMutation.isPending ? "删除中..." : "确认删除"}
+                            {deleteCategoryMutation.isPending ? "删除中..." : "确认删除"}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
@@ -617,6 +837,142 @@ function CategoryDetailPanel({
                     {iconUrl ? "点击编辑可替换图标" : "暂未上传图标"}
                 </div>
             </div>
+        </div>
+    )
+}
+
+function ServiceListPanel({
+    category,
+    services,
+    isLoading,
+    onAddService,
+    onEditService,
+    onDeleteService,
+}: {
+    category: AdminServiceCategory | null
+    services: ServiceListItem[]
+    isLoading: boolean
+    onAddService: () => void
+    onEditService: (service: ServiceListItem) => void
+    onDeleteService: (service: ServiceListItem) => void
+}) {
+    return (
+        <div className="rounded-xl border bg-card p-4">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="space-y-1">
+                    <p className="text-base font-semibold text-foreground">分类下的服务</p>
+                    <p className="text-xs text-muted-foreground">
+                        {category
+                            ? `已选分类：${category.name}`
+                            : "请选择左侧分类以查看服务列表"}
+                    </p>
+                </div>
+                <Button
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={onAddService}
+                    disabled={!category}
+                >
+                    <PlusCircle className="size-4" />
+                    新增服务
+                </Button>
+            </div>
+
+            <Separator className="my-3" />
+
+            {!category ? (
+                <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
+                    请选择分类后进行服务维护
+                </div>
+            ) : isLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                    <span>服务加载中...</span>
+                </div>
+            ) : services.length === 0 ? (
+                <div className="flex flex-col gap-3 rounded-lg border border-dashed p-4">
+                    <p className="text-sm text-muted-foreground">该分类暂无服务</p>
+                    <Button
+                        size="sm"
+                        variant="secondary"
+                        className="w-fit gap-1.5"
+                        onClick={onAddService}
+                    >
+                        <PlusCircle className="size-4" />
+                        立即添加
+                    </Button>
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    {services.map((service) => {
+                        const imageUrl = normalizeIconUrl(
+                            service.imageFileUrl ?? service.imageFileId ?? null,
+                        )
+                        return (
+                            <div
+                                key={service.id}
+                                className="flex flex-col gap-3 rounded-lg border px-3 py-2 md:flex-row md:items-center md:justify-between"
+                            >
+                                <div className="flex gap-3">
+                                    <div className="relative h-16 w-16 overflow-hidden rounded-md border bg-muted">
+                                        {imageUrl ? (
+                                            <Image
+                                                src={imageUrl}
+                                                alt={service.name}
+                                                className="h-full w-full object-cover"
+                                                width={160}
+                                                height={160}
+                                                unoptimized
+                                            />
+                                        ) : (
+                                            <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                                                <Sparkles className="size-5" />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="space-y-1">
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-sm font-semibold leading-tight">
+                                                {service.name}
+                                            </p>
+                                            <Badge
+                                                variant={service.isActive ? "default" : "secondary"}
+                                            >
+                                                {service.isActive ? "启用" : "停用"}
+                                            </Badge>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">
+                                            {service.description || "暂无描述"}
+                                        </p>
+                                        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                                            <span>ID {service.id}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => onEditService(service)}
+                                    >
+                                        <PenSquare className="mr-1.5 size-4" />
+                                        编辑
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-destructive hover:text-destructive"
+                                        onClick={() => onDeleteService(service)}
+                                    >
+                                        <Trash2 className="mr-1.5 size-4" />
+                                        删除
+                                    </Button>
+                                </div>
+                            </div>
+                        )
+                    })}
+                </div>
+            )}
         </div>
     )
 }
@@ -846,6 +1202,215 @@ function ServiceCategoryFormDialog({
                                 accept="image/png,image/jpeg,image/svg+xml"
                                 helperText="上传后自动生成文件标识，可在详情中预览"
                             />
+                        )}
+                    </form.Field>
+
+                    <DialogFooter>
+                        <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
+                            {([canSubmit, isFormSubmitting]) => (
+                                <>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={onClose}
+                                        disabled={isSubmitting}
+                                    >
+                                        取消
+                                    </Button>
+                                    <Button
+                                        type="submit"
+                                        disabled={!canSubmit || isSubmitting || isFormSubmitting}
+                                    >
+                                        {isSubmitting || isFormSubmitting ? "提交中..." : "保存"}
+                                    </Button>
+                                </>
+                            )}
+                        </form.Subscribe>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    )
+}
+
+function ServiceFormDialog({
+    open,
+    mode,
+    service,
+    categoryId,
+    categories,
+    onClose,
+    uploadImage,
+    onSubmit,
+    isSubmitting,
+}: {
+    open: boolean
+    mode: "create" | "edit"
+    service: ServiceListItem | null
+    categoryId: string | null
+    categories: AdminServiceCategory[]
+    onClose: () => void
+    uploadImage: (file: File) => Promise<UploadValue>
+    onSubmit: (values: ServiceFormValues) => Promise<void>
+    isSubmitting: boolean
+}) {
+    const defaultValues: ServiceFormValues = {
+        name: service?.name ?? "",
+        description: service?.description ?? "",
+        categoryId: service?.categoryId ?? categoryId ?? "",
+        isActive: service?.isActive ?? true,
+        image: service?.imageFileUrl || service?.imageFileId
+            ? {
+                id: service.imageFileId ?? "",
+                url:
+                    normalizeIconUrl(service.imageFileUrl ?? service.imageFileId) ??
+                    "",
+            }
+            : null,
+    }
+
+    const form = useForm({
+        defaultValues,
+        onSubmit: async ({ value }) => {
+            await onSubmit(value)
+        },
+    })
+
+    useEffect(() => {
+        if (open) {
+            form.reset(defaultValues)
+        }
+    }, [defaultValues, form, open])
+
+    const categoryOptions = categories.map((item) => ({
+        label: `${item.dep === 2 ? "二级" : "一级"} · ${item.name}`,
+        value: item.id,
+    }))
+
+    return (
+        <Dialog open={open} onOpenChange={(nextOpen) => (!nextOpen ? onClose() : undefined)}>
+            <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                    <DialogTitle>{mode === "create" ? "新增服务" : "编辑服务"}</DialogTitle>
+                    <DialogDescription>
+                        维护服务名称、描述、展示图片与所属分类，字段校验遵循后台服务接口要求。
+                    </DialogDescription>
+                </DialogHeader>
+
+                <form
+                    className="space-y-5"
+                    onSubmit={(event) => {
+                        event.preventDefault()
+                        void form.handleSubmit()
+                    }}
+                >
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <form.Field
+                            name="name"
+                            validators={{
+                                onChange: z
+                                    .string()
+                                    .min(1, "服务名称不能为空")
+                                    .max(100, "名称不超过 100 字"),
+                            }}
+                        >
+                            {(field) => (
+                                <div className="space-y-2">
+                                    <Label>服务名称</Label>
+                                    <Input
+                                        value={field.state.value}
+                                        onChange={(event) => field.handleChange(event.target.value)}
+                                        onBlur={field.handleBlur}
+                                        placeholder="如 房间收纳"
+                                    />
+                                    <FieldError field={field} />
+                                </div>
+                            )}
+                        </form.Field>
+
+                        <form.Field
+                            name="categoryId"
+                            validators={{
+                                onChange: z.string().min(1, "请选择所属分类"),
+                            }}
+                        >
+                            {(field) => (
+                                <div className="space-y-2">
+                                    <Label>所属分类</Label>
+                                    <Select
+                                        value={field.state.value}
+                                        onValueChange={(value) => field.handleChange(value)}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="选择分类" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {categoryOptions.map((option) => (
+                                                <SelectItem key={option.value} value={option.value}>
+                                                    {option.label}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <p className="text-xs text-muted-foreground">
+                                        建议在叶子节点维护服务，便于前台检索展示。
+                                    </p>
+                                </div>
+                            )}
+                        </form.Field>
+                    </div>
+
+                    <form.Field
+                        name="description"
+                        validators={{
+                            onChange: z.string().max(300, "描述不超过 300 字"),
+                        }}
+                    >
+                        {(field) => (
+                            <div className="space-y-2">
+                                <Label>描述</Label>
+                                <Textarea
+                                    placeholder="服务亮点、范围说明等"
+                                    value={field.state.value}
+                                    onChange={(event) => field.handleChange(event.target.value)}
+                                    onBlur={field.handleBlur}
+                                    rows={3}
+                                />
+                                <FieldError field={field} />
+                            </div>
+                        )}
+                    </form.Field>
+
+                    <form.Field name="image">
+                        {(field) => (
+                            <UploadField
+                                label="服务图片"
+                                description="建议 800x800，支持 PNG/JPEG/WebP"
+                                value={field.state.value}
+                                onChange={field.handleChange}
+                                onUpload={uploadImage}
+                                accept="image/png,image/jpeg,image/webp"
+                                helperText="用于前台服务展示，非必填"
+                            />
+                        )}
+                    </form.Field>
+
+                    <form.Field name="isActive">
+                        {(field) => (
+                            <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                                <div>
+                                    <p className="text-sm font-medium text-foreground">启用状态</p>
+                                    <p className="text-xs text-muted-foreground">
+                                        关闭后前台不可选购
+                                    </p>
+                                </div>
+                                <Switch
+                                    checked={field.state.value}
+                                    onCheckedChange={(checked) =>
+                                        field.handleChange(Boolean(checked))
+                                    }
+                                />
+                            </div>
                         )}
                     </form.Field>
 

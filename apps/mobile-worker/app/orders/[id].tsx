@@ -208,6 +208,7 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
         order.status === "pending_acceptance" && assignmentDecision === "pending";
     const canCancel = ["paid", "in_progress"].includes(order.status as string);
     const description =
+        (order as { remark?: string; note?: string; description?: string }).remark ??
         (order as { note?: string; description?: string }).note ??
         (order as { note?: string; description?: string }).description ??
         "暂无补充说明";

@@ -47,6 +47,7 @@ export interface PaySheetProps {
 		designatedPersonnelId: string;
 		specificationId: string;
 		displayPrice: number;
+		remark?: string;
 	};
 	totalAmount: number;
 	onPaymentSuccess?: (orderId: string) => void;

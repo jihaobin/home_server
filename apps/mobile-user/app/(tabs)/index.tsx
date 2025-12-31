@@ -8,6 +8,7 @@ import { BottomSheetModal } from "@repo/mobile-ui/components/ui/modal/BottomShee
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { cn } from "@repo/mobile-ui/lib/utils";
 import type { CategoryWithServices } from "@repo/types";
+import { useFile } from "@repo/hooks/api/files";
 import { router } from "expo-router";
 import {
     type LucideIcon,
@@ -92,15 +93,37 @@ function mapServiceListToCategories(
             id: category.id,
             label: category.name,
             description: category.description,
+            // 分类标签不展示图片
             icon: null,
             items: category.children
                 .filter((service) => service.isActive)
-                .map<ServiceItem>((service) => ({
-                    id: service.id,
-                    label: service.name,
-                    description: service.description,
-                    icon: null,
-                })),
+                .map<ServiceItem>((service) => {
+                    const galleryCover =
+                        Array.isArray((service as any)?.gallery) &&
+                        (service as any).gallery.length > 0
+                            ? (service as any).gallery[0]
+                            : null;
+                    const iconCandidate =
+                        (service as any).imageFileUrl ||
+                        (service as any).imageFileId ||
+                        galleryCover?.url ||
+                        galleryCover?.fileUrl ||
+                        galleryCover?.fileId ||
+                        (service as any).iconFileUrl ||
+                        (service as any).icon ||
+                        null;
+
+                    return {
+                        id: service.id,
+                        label: service.name,
+                        description:
+                            service.description ??
+                            (service as any)?.personnelDescription ??
+                            category.description ??
+                            "暂无描述",
+                        icon: iconCandidate,
+                    };
+                }),
         }))
         .filter((category) => category.items.length > 0);
 }
@@ -164,8 +187,6 @@ function ServiceProviderSheetWithData({
                 });
                 setServiceId(service);
                 setServicePersonnelInfo(provider);
-
-                // TODO: 跳转到详情页面
             }}
         />
     );
@@ -180,10 +201,6 @@ function CategoryTab({
     isActive: boolean;
     onPress: (id: string) => void;
 }) {
-    const iconComponent = resolveLucideIcon(category.icon);
-    const isRemoteIcon = Boolean(
-        category.icon && /^https?:\/\//i.test(category.icon ?? ""),
-    );
     return (
         <Pressable
             accessibilityRole="button"
@@ -195,43 +212,13 @@ function CategoryTab({
             )}
             onPress={() => onPress(category.id)}
         >
-            <View className="flex-row items-center">
-                {isRemoteIcon ? (
-                    <Image
-                        source={{ uri: category.icon as string }}
-                        style={{
-                            width: 16,
-                            height: 16,
-                            borderRadius: 8,
-                        }}
-                    />
-                ) : iconComponent ? (
-                    <Icon
-                        as={iconComponent}
-                        size={16}
-                        className={isActive ? "text-primary" : "text-muted-foreground"}
-                    />
-                ) : (
-                    <View
-                        className="items-center justify-center rounded-full bg-primary/10 dark:bg-primary/20"
-                        style={{
-                            width: 16,
-                            height: 16,
-                        }}
-                    >
-                        <Text className="text-[10px] font-semibold text-primary">
-                            {category.label.slice(0, 1)}
-                        </Text>
-                    </View>
-                )}
-                <Text
-                    className={`ml-2 text-sm font-medium ${isActive ? "text-primary" : "text-muted-foreground"}`}
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                >
-                    {category.label}
-                </Text>
-            </View>
+            <Text
+                className={`text-sm font-medium ${isActive ? "text-primary" : "text-muted-foreground"}`}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+            >
+                {category.label}
+            </Text>
         </Pressable>
     );
 }
@@ -240,24 +227,35 @@ function ServiceIconBadge({
     icon,
     label,
     size = 26,
+    variant = "rounded",
 }: {
     icon?: string | null;
     label: string;
     size?: number;
+    variant?: "rounded" | "circle";
 }) {
     const iconComponent = resolveLucideIcon(icon);
     const isRemoteImage = Boolean(icon && /^https?:\/\//i.test(icon));
+    const { data: iconFile } = useFile(!isRemoteImage ? icon : null);
+    const resolvedImage = isRemoteImage ? icon : iconFile?.fileUrl ?? null;
+    const [imageError, setImageError] = useState(false);
+    const borderRadius = variant === "circle" ? size / 2 : Math.max(8, size / 4);
 
-    if (isRemoteImage) {
+    useEffect(() => {
+        setImageError(false);
+    }, [resolvedImage, icon]);
+
+    if (resolvedImage && !imageError) {
         return (
             <Image
-                source={{ uri: icon as string }}
+                source={{ uri: resolvedImage }}
                 style={{
                     width: size,
                     height: size,
-                    borderRadius: size / 2,
+                    borderRadius,
                 }}
                 resizeMode="cover"
+                onError={() => setImageError(true)}
             />
         );
     }
@@ -266,16 +264,19 @@ function ServiceIconBadge({
         return <Icon as={iconComponent} size={size} className="text-primary" />;
     }
 
+    const fallbackLetter = label?.trim().slice(0, 1) || "·";
+
     return (
         <View
             className="items-center justify-center rounded-full bg-primary/10 dark:bg-primary/20"
             style={{
                 width: size,
                 height: size,
+                borderRadius,
             }}
         >
             <Text className="text-xs font-semibold text-primary">
-                {label.slice(0, 1)}
+                {fallbackLetter}
             </Text>
         </View>
     );
@@ -312,8 +313,19 @@ function ServiceCard({
             onPress={() => onPress(item)}
         >
             <View className="flex-row items-start">
-                <View className="mr-3 h-12 w-12 items-center justify-center rounded-xl bg-primary/10 dark:bg-primary/20">
-                    <ServiceIconBadge icon={item.icon} label={item.label} size={26} />
+                <View
+                    className="mr-3 items-center justify-center rounded-xl border border-border bg-muted/40"
+                    style={{
+                        width: 52,
+                        height: 52,
+                    }}
+                >
+                    <ServiceIconBadge
+                        icon={item.icon}
+                        label={item.label}
+                        size={40}
+                        variant="rounded"
+                    />
                 </View>
                 <View className="flex-1">
                     <Text
@@ -416,6 +428,8 @@ export default function HomeScreen() {
         if (!keyword) {
             return items;
         }
+
+
 
         return items.filter((item: ServiceItem) => {
             const label = item.label.toLowerCase();

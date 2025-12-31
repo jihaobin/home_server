@@ -1,10 +1,13 @@
 {
-  "extends": "@repo/mobile-ui/tsconfig.json",
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts",
-    "nativewind-env.d.ts"
-  ]
+    "extends": "@repo/mobile-ui/tsconfig.json",
+    "compilerOptions": {
+        "jsxImportSource": "nativewind"
+    },
+    "include": [
+        "**/*.ts",
+        "**/*.tsx",
+        ".expo/types/**/*.ts",
+        "expo-env.d.ts",
+        "nativewind-env.d.ts"
+    ]
 }

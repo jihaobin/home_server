@@ -1,13 +1,3 @@
-/**
- * Profile 页面
- *
- * 性能优化说明：
- * 1. 使用 React.memo 包装所有子组件，防止不必要的重渲染
- * 2. 使用 useCallback 缓存回调函数，保持引用稳定
- * 3. 使用 useMemo 缓存计算结果
- * 4. 头像上传时只更新 UserInfoCard 组件，其他组件不会重渲染
- * 5. 避免不必要的 session refetch，防止触发全局 Suspense fallback
- */
 import { Suspense, useCallback, useEffect, useMemo, useState, memo } from "react";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
 import { Switch } from "@repo/mobile-ui/components/ui/switch";
@@ -23,7 +13,6 @@ import { useRouter } from "expo-router";
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import { LogoutButton } from "@repo/mobile-ui/components/LogoutButton";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
-import { useUserRealNameProfile } from "@repo/hooks/api/user";
 import { useOrdersList } from "@repo/hooks/api/order";
 import { useFile, useUploadFile, useUserFiles } from "@repo/hooks/api/files";
 import { authClient } from "@repo/lib/auth-client";
@@ -50,10 +39,6 @@ type MenuItem = {
 
 type UserProfileSummary = {
     displayName: string;
-    realName?: string;
-    phoneNumber?: string;
-    idCardNumber?: string;
-    verified: boolean;
 };
 
 const ORDER_QUICK_ACTION_CONFIG: ReadonlyArray<
@@ -69,18 +54,6 @@ const MENU_CONFIG: ReadonlyArray<Omit<MenuItem, "onPress">> = [
     { id: "address", label: "服务地址", icon: "MapPin" },
     { id: "customer-service", label: "官方客服", icon: "Headphones" },
 ];
-
-const maskIdCardNumber = (value?: string) => {
-    if (!value) {
-        return "未上传身份证";
-    }
-
-    if (value.length <= 8) {
-        return `${value.slice(0, 2)}****${value.slice(-2)}`;
-    }
-
-    return `${value.slice(0, 3)}********${value.slice(-4)}`;
-};
 
 type OrderQuickActionCounts = Record<OrderQuickActionId, number>;
 
@@ -153,26 +126,6 @@ const UserInfoCard = memo(function UserInfoCard({
     const indicatorColor = isDark ? "#94a3b8" : "#64748b";
 
     const uploadFile = useUploadFile();
-    const realNameRows = useMemo(
-        () => [
-            {
-                id: "realName",
-                label: "姓名",
-                value: info.realName ?? "未实名",
-            },
-            {
-                id: "phone",
-                label: "手机号",
-                value: info.phoneNumber ?? "未绑定手机号",
-            },
-            {
-                id: "idCardNumber",
-                label: "身份证",
-                value: maskIdCardNumber(info.idCardNumber),
-            },
-        ],
-        [info.idCardNumber, info.phoneNumber, info.realName]
-    );
 
     const handleAvatarUpload = useCallback(
         async (file: { uri: string; name: string; type: string }) => {
@@ -225,23 +178,7 @@ const UserInfoCard = memo(function UserInfoCard({
                         </Text>
                         {isLoading ? (
                             <ActivityIndicator size="small" color={indicatorColor} style={{ marginLeft: 8 }} />
-                        ) : (
-                            <View
-                                className={cn(
-                                    "ml-2 rounded-full px-2 py-0.5",
-                                    info.verified ? "bg-emerald-100" : "bg-amber-100",
-                                )}
-                            >
-                                <Text
-                                    className={cn(
-                                        "text-[11px] font-medium",
-                                        info.verified ? "text-emerald-700" : "text-amber-700",
-                                    )}
-                                >
-                                    {info.verified ? "已实名" : "未实名"}
-                                </Text>
-                            </View>
-                        )}
+                        ) : null}
                     </View>
                 </View>
                 {/*
@@ -274,43 +211,6 @@ const UserInfoCard = memo(function UserInfoCard({
                         setColorScheme(checked ? "dark" : "light");
                     }}
                 />
-            </View>
-
-            <View className="mt-4 rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-3 dark:bg-muted/40">
-                <View className="flex-row items-center justify-between">
-                    <Text className="text-sm font-semibold text-foreground">实名信息</Text>
-                    {isLoading ? (
-                        <Skeleton className="h-4 w-12" />
-                    ) : (
-                        <Text
-                            className={cn(
-                                "text-xs font-medium",
-                                info.verified ? "text-emerald-600" : "text-amber-600",
-                            )}
-                        >
-                            {info.verified ? "已认证" : "待完善"}
-                        </Text>
-                    )}
-                </View>
-
-                {realNameRows.map((row, index) => (
-                    <View
-                        key={row.id}
-                        className={cn(
-                            "flex-row items-center justify-between",
-                            index !== 0 ? "mt-3 border-t border-border/60 pt-3" : "mt-3",
-                        )}
-                    >
-                        <Text className="text-xs text-muted-foreground">{row.label}</Text>
-                        {isLoading ? (
-                            <Skeleton className="h-4 w-24" />
-                        ) : (
-                            <Text className="max-w-[60%] text-right text-sm text-foreground" numberOfLines={1}>
-                                {row.value}
-                            </Text>
-                        )}
-                    </View>
-                ))}
             </View>
         </View>
     );
@@ -502,24 +402,13 @@ export default function Profile() {
         }
     }, [user?.image]);
 
-    const {
-        data: userProfile,
-        isLoading: isProfileLoading,
-        isFetching: isProfileFetching,
-        refetch: refetchUserProfile,
-    } = useUserRealNameProfile(userId);
-
     // 通过 fileHash 获取实际的图片 URL
     const { data: avatarFileData } = useFile(avatarFileHash);
     const avatarUrl = avatarFileData?.fileUrl || null;
 
     const userInfo = useMemo<UserProfileSummary>(() => ({
         displayName: user?.name ?? "未命名用户",
-        realName: userProfile?.realName ?? user?.name ?? undefined,
-        phoneNumber: user?.phone ?? undefined,
-        idCardNumber: userProfile?.idCardNumber,
-        verified: Boolean(userProfile?.idCardNumber),
-    }), [user, userProfile]);
+    }), [user]);
 
     const navigateToOrderCenter = useCallback(
         (target?: OrderQuickActionId) => {
@@ -595,13 +484,13 @@ export default function Profile() {
     const handleRefresh = useCallback(async () => {
         setIsRefreshing(true);
         try {
-            await refetchUserProfile({ throwOnError: false });
+            await refetchSession();
         } finally {
             setIsRefreshing(false);
         }
-    }, [refetchUserProfile]);
+    }, [refetchSession]);
 
-    const isRefreshingState = isRefreshing || isProfileFetching;
+    const isRefreshingState = isRefreshing;
 
     return (
         <RequireAuth>
@@ -621,7 +510,7 @@ export default function Profile() {
                 >
                     <UserInfoCard
                         info={userInfo}
-                        isLoading={isProfileLoading || isProfileFetching}
+                        isLoading={isRefreshingState}
                         avatarUrl={avatarUrl}
                         onAvatarChange={handleAvatarChange}
                     />

@@ -65,7 +65,6 @@ export function useOrderActions() {
 				await cancelOrderMutation.mutateAsync({
 					orderId,
 					reason: reason ?? "用户主动取消订单",
-					cancelledBy: session.user.id,
 				});
 				toast.dismiss();
 				toast.success("订单已取消");

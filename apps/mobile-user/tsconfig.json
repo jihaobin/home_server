@@ -2,6 +2,7 @@
     "extends": "@repo/mobile-ui/tsconfig.json",
     "compilerOptions": {
         "strict": true,
+        "jsxImportSource": "nativewind",
         "paths": {
             "@/*": ["./*"],
             "@repo/mobile-ui/*": ["../../packages/mobile-ui/src/*"]

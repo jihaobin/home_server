@@ -21,9 +21,15 @@ import * as Clipboard from "expo-clipboard";
 import { toast } from "sonner-native";
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import { useOrderCheckin, useOrderDetail } from "@repo/hooks/api/order";
+import { useFile } from "@repo/hooks/api/files";
 import { useOrderActions } from "@/components/orders_screen/hooks/useOrderActions";
 import { cn } from "@repo/mobile-ui/lib/utils";
 import { usePaymentCountdown } from "@/hooks/usePaymentCountdown";
+import { useCreateReview, useOrderReview } from "@repo/hooks/api/review";
+import { OrderReviewModal } from "@/components/order-review";
+import type { CreateReviewBody } from "@repo/types";
+import { Icon } from "@repo/mobile-ui/components/ui/icon";
+import { Star } from "lucide-react-native";
 
 // 状态显示配置
 const STATUS_CONFIG: Record<
@@ -138,6 +144,7 @@ export default function OrderDetailScreen() {
 
 	// 获取订单详情
 	const { data: order, refetch: refetchOrder } = useOrderDetail(id || "");
+	const isAwaitingService = order?.status === "paid";
 	const {
 		payExistingOrder,
 		isPaying,
@@ -147,22 +154,49 @@ export default function OrderDetailScreen() {
 		isCompleting,
 		reorder,
 	} = useOrderActions();
+	const { mutateAsync: createReview, isPending: isCreatingReview } = useCreateReview();
+	const [isReviewModalVisible, setIsReviewModalVisible] = useState(false);
 
 	// 当订单状态为待服务时，获取核验二维码
 	const {
 		data: checkinData,
 		isLoading: isLoadingCheckin,
 		refetch: refetchCheckin,
-	} = useOrderCheckin(id || "");
+	} = useOrderCheckin(id || "", order?.status);
 	const [isRefreshing, setIsRefreshing] = useState(false);
+	const reviewTargetId =
+		order.assignment?.servicePersonnel?.userId ||
+		order.assignment?.servicePersonnelId ||
+		"";
+	const reviewTargetType = "personnel" as const;
+	const canCreateReview = order.status === "completed" && Boolean(reviewTargetId);
+	const {
+		data: existingReview,
+		isFetching: isFetchingReview,
+		refetch: refetchReview,
+	} = useOrderReview(canCreateReview ? order.id : undefined);
+	const hasReviewed = Boolean(existingReview);
 
 	if (!order) {
 		return null;
 	}
 
-	// 判断是否显示二维码（订单状态为待服务）
+	const rawServiceImageUrl = order.service?.imageFileUrl?.trim() || null;
+	const serviceImageId = order.service?.imageFileId?.trim() || null;
+	const isServiceImageDirectUrl =
+		Boolean(rawServiceImageUrl) && /^https?:\/\//i.test(rawServiceImageUrl || "");
+	const { data: serviceImageFile } = useFile(
+		serviceImageId || (!isServiceImageDirectUrl ? rawServiceImageUrl : null),
+	);
+	const serviceImage =
+		(isServiceImageDirectUrl && rawServiceImageUrl) ||
+		serviceImageFile?.fileUrl ||
+		null;
+
+	// 判断是否显示二维码（待服务，或服务中且已有二维码缓存）
 	const shouldShowQRCode =
-		order.status === "paid" || order.status === "in_progress";
+		isAwaitingService ||
+		(order.status === "in_progress" && Boolean(checkinData));
 	const { formatted: paymentCountdownText, isExpired: isPaymentCountdownExpired } =
 		usePaymentCountdown(order.paymentExpiresAt);
 	const countdownRefreshRef = useRef(false);
@@ -190,10 +224,27 @@ export default function OrderDetailScreen() {
 			description: "请联系客户支持确认订单状态",
 		};
 
+	const servicePersonnelName =
+		order.assignment?.servicePersonnel?.userName?.trim() || "";
 	const servicePersonnelLabel =
+		servicePersonnelName ||
 		order.assignment?.servicePersonnel?.userId ||
 		order.assignment?.servicePersonnelId ||
 		"服务人员";
+	const rawServicePersonnelAvatar =
+		order.assignment?.servicePersonnel?.avatarUrl?.trim() ||
+		order.assignment?.servicePersonnel?.image?.trim() ||
+		null;
+	const isDirectAvatarUrl =
+		Boolean(rawServicePersonnelAvatar) &&
+		/^https?:\/\//i.test(rawServicePersonnelAvatar as string);
+	const { data: servicePersonnelAvatarFile } = useFile(
+		!isDirectAvatarUrl ? rawServicePersonnelAvatar : null,
+	);
+	const servicePersonnelAvatar =
+		(isDirectAvatarUrl && rawServicePersonnelAvatar) ||
+		servicePersonnelAvatarFile?.fileUrl ||
+		null;
 	const assignmentStatusText =
 		order.assignment?.decisionStatus === "pending"
 			? "等待服务人员确认档期"
@@ -275,6 +326,18 @@ export default function OrderDetailScreen() {
 		toast.info("客服即将与您联系，稍后请保持电话畅通");
 	}, []);
 
+	const handleSubmitReview = useCallback(
+		async (reviewData: CreateReviewBody) => {
+			await createReview(reviewData);
+			await Promise.all([
+				refetchOrder({ throwOnError: false }),
+				refetchReview({ throwOnError: false }),
+			]);
+			setIsReviewModalVisible(false);
+		},
+		[createReview, refetchOrder, refetchReview],
+	);
+
 	const copyOrderNumber = useCallback(async () => {
 		if (!order.orderSerial) {
 			toast.info("暂无可复制的订单编号");
@@ -340,6 +403,15 @@ export default function OrderDetailScreen() {
 				});
 				break;
 			case "completed":
+				if (canCreateReview && !hasReviewed) {
+					actions.push({
+						key: "review",
+						label: "写评价",
+						variant: "primary",
+						onPress: () => setIsReviewModalVisible(true),
+						loading: isCreatingReview || isFetchingReview,
+					});
+				}
 				actions.push({
 					key: "reorder",
 					label: "再次预约",
@@ -392,14 +464,20 @@ export default function OrderDetailScreen() {
 	const handleRefresh = useCallback(async () => {
 		setIsRefreshing(true);
 		try {
-			await Promise.all([
+			const tasks: Array<Promise<unknown>> = [
 				refetchOrder({ throwOnError: false }),
-				refetchCheckin({ throwOnError: false }),
-			]);
+				refetchReview({ throwOnError: false }),
+			];
+
+			if (isAwaitingService) {
+				tasks.push(refetchCheckin({ throwOnError: false }));
+			}
+
+			await Promise.all(tasks);
 		} finally {
 			setIsRefreshing(false);
 		}
-	}, [refetchCheckin, refetchOrder]);
+	}, [isAwaitingService, refetchCheckin, refetchOrder, refetchReview]);
 
 	return (
 		<RequireAuth>
@@ -475,7 +553,7 @@ export default function OrderDetailScreen() {
                     {order.status === "staff_rejected" && (
                         <View className="mt-3 rounded-xl bg-slate-100 px-3 py-2">
                             <Text className="text-xs text-slate-700">
-                                很抱歉，本次服务人员无法接单。您可以重新预约或联系客服协助安排其他师傅。
+                                很抱歉，本次服务人员无法接单。您可以换个时间重新预约。
                             </Text>
                         </View>
                     )}
@@ -582,11 +660,19 @@ export default function OrderDetailScreen() {
 							</View>
 							<View className="flex-row items-center gap-3">
 								<View className="w-12 h-12 rounded-full overflow-hidden bg-muted">
-									<View className="w-full h-full items-center justify-center">
-										<Text className="text-xs text-muted-foreground">
-											暂无
-										</Text>
-									</View>
+									{servicePersonnelAvatar ? (
+										<Image
+											source={{ uri: servicePersonnelAvatar }}
+											className="w-full h-full"
+											resizeMode="cover"
+										/>
+									) : (
+										<View className="w-full h-full items-center justify-center">
+											<Text className="text-xs text-muted-foreground">
+												暂无
+											</Text>
+										</View>
+									)}
 								</View>
 								<View className="flex-1">
 									<Text className="text-base font-semibold">
@@ -610,6 +696,89 @@ export default function OrderDetailScreen() {
 						</View>
 					)}
 
+					{/* 用户评价 */}
+					{order.status === "completed" && (
+						<View className="mx-4 mt-3 bg-card rounded-2xl p-4 border border-border">
+							<View className="flex-row items-center justify-between mb-2">
+								<Text className="text-sm font-medium text-muted-foreground">
+									我的评价
+								</Text>
+								{existingReview?.createdAt ? (
+									<Text className="text-xs text-muted-foreground">
+										{formatDate(existingReview.createdAt)}
+									</Text>
+								) : null}
+							</View>
+							{existingReview ? (
+								<View>
+									<View className="flex-row items-center mb-2">
+										{Array.from({ length: 5 }).map((_, index) => {
+											const isActive = index < existingReview.rating;
+											return (
+												<Icon
+													key={`order-review-star-${index}`}
+													as={Star}
+													size={14}
+													className={
+														isActive ? "text-primary" : "text-muted-foreground/40"
+													}
+													fill={isActive ? "currentColor" : "none"}
+												/>
+											);
+										})}
+										<Text className="ml-2 text-sm text-foreground">
+											{existingReview.rating} / 5
+										</Text>
+									</View>
+									{existingReview.comment && (
+										<Text className="text-sm text-foreground leading-5">
+											{existingReview.comment}
+										</Text>
+									)}
+									{existingReview.images && existingReview.images.length > 0 && (
+										<ScrollView
+											horizontal
+											showsHorizontalScrollIndicator={false}
+											className="mt-3"
+											contentContainerStyle={{ gap: 10 }}
+										>
+											{existingReview.images.map((image, idx) => (
+												<View
+													key={`${existingReview.id}-img-${idx}`}
+													className="w-20 h-20 rounded-lg overflow-hidden bg-muted"
+												>
+													<Image
+														source={{ uri: image.url }}
+														className="w-full h-full"
+														resizeMode="cover"
+													/>
+												</View>
+											))}
+										</ScrollView>
+									)}
+								</View>
+							) : (
+								<View className="items-center justify-center py-4 gap-3">
+									<Text className="text-sm text-muted-foreground">
+										暂无评价
+									</Text>
+									{canCreateReview && !hasReviewed && (
+										<TouchableOpacity
+											activeOpacity={0.7}
+											onPress={() => setIsReviewModalVisible(true)}
+											className="px-4 py-2 rounded-full bg-muted border border-border"
+											disabled={isCreatingReview || isFetchingReview}
+										>
+											<Text className="text-xs font-medium text-primary">
+												去评价
+											</Text>
+										</TouchableOpacity>
+									)}
+								</View>
+							)}
+						</View>
+					)}
+
 					{/* 服务项目 */}
 					<View className="mx-4 mt-3 bg-card rounded-2xl border border-border">
 						<View className="px-4 py-3 border-b border-border">
@@ -621,11 +790,19 @@ export default function OrderDetailScreen() {
 							<View className="p-4">
 								<View className="flex-row items-center gap-3">
 									<View className="w-20 h-20 rounded-lg overflow-hidden bg-muted shrink-0">
-										<View className="w-full h-full items-center justify-center">
-											<Text className="text-xs text-muted-foreground">
-												暂无图片
-											</Text>
-										</View>
+										{serviceImage ? (
+											<Image
+												source={{ uri: serviceImage }}
+												className="w-full h-full"
+												resizeMode="cover"
+											/>
+										) : (
+											<View className="w-full h-full items-center justify-center">
+												<Text className="text-xs text-muted-foreground">
+													暂无图片
+												</Text>
+											</View>
+										)}
 									</View>
 									<View className="flex-1">
 										<Text className="text-base font-semibold text-foreground leading-5">
@@ -688,7 +865,7 @@ export default function OrderDetailScreen() {
 								订单备注：
 							</Text>
 							<Text className="text-sm text-foreground flex-1 text-right">
-								无
+								{order.remark?.trim() || "无"}
 							</Text>
 						</View>
 					</View>
@@ -711,6 +888,19 @@ export default function OrderDetailScreen() {
 						))}
 					</View>
 				</View>
+
+				<OrderReviewModal
+					visible={isReviewModalVisible}
+					onClose={() => setIsReviewModalVisible(false)}
+					orderId={order.id}
+					targetId={reviewTargetId}
+					targetType={reviewTargetType}
+					serviceName={order.service?.name || "商品信息"}
+					serviceDescription={order.service?.description || null}
+					serviceImageUrl={serviceImage}
+					orderSerial={order.orderSerial}
+					onSubmit={handleSubmitReview}
+				/>
 			</View>
 		</RequireAuth>
 	);

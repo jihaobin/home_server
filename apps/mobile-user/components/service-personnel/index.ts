@@ -3,6 +3,7 @@ export { ServiceSpecifications } from "./ServiceSpecifications";
 export { ServiceTimeSelector } from "./ServiceTimeSelector";
 export { SimilarServices } from "./SimilarServices";
 export { ReviewsList } from "./ReviewsList";
+export type { ReviewsListProps } from "./ReviewsList";
 export { BottomActionBar } from "./BottomActionBar";
 export { PersonnelIntro } from "./PersonnelIntro";
 export { ServiceDescription } from "./ServiceDescription";

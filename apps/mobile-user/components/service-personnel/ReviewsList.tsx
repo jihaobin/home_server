@@ -4,25 +4,52 @@ import { icons as lucideIconRegistry } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
 import { Image } from "expo-image";
-import { Galeria } from "@nandorojo/galeria";
 import type { Review } from "./types";
+import { useFile } from "@repo/hooks/api/files";
 
 const ICON_MAP = lucideIconRegistry;
 
 type TabType = "all" | "positive" | "neutral" | "negative";
 
-interface ReviewsListProps {
+export interface ReviewsListProps {
     reviews: Review[];
     onReviewPress?: (reviewId: string) => void;
+    onImagePress?: (images: string[], index: number) => void;
     totalReviewsCount?: number;
     positiveCount?: number;
     neutralCount?: number;
     negativeCount?: number;
 }
 
+const ReviewAvatar = ({ name, avatar, avatarFileId, placeholder }: { name: string; avatar?: string; avatarFileId?: string, placeholder?: string }) => {
+    const isHttp = avatar && /^https?:\/\//i.test(avatar);
+    const { data: avatarFile } = useFile(!isHttp ? avatarFileId : undefined);
+    const resolved = isHttp ? avatar : avatarFile?.fileUrl || null;
+
+    if (resolved) {
+        return (
+            <Image
+                source={{ uri: resolved }}
+                style={{ width: 40, height: 40, borderRadius: 999 }}
+                contentFit="cover"
+                placeholder={placeholder}
+            />
+        );
+    }
+
+    return (
+        <View className="h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-primary/10">
+            <Text className="text-base font-semibold text-primary">
+                {name.slice(0, 1)}
+            </Text>
+        </View>
+    );
+};
+
 export function ReviewsList({
     reviews,
     onReviewPress,
+    onImagePress,
     totalReviewsCount = 2000,
     positiveCount = 1800,
     neutralCount = 150,
@@ -101,12 +128,12 @@ export function ReviewsList({
                         >
                             <View className="flex-row items-start">
                                 {/* 头像 */}
-                                <View className="relative">
-                                    <View className="h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-primary/10">
-                                        <Text className="text-base font-semibold text-primary">
-                                            {review.userName.slice(0, 1)}
-                                        </Text>
-                                    </View>
+                                <View className="relative h-10 w-10 items-center justify-center rounded-full bg-muted overflow-hidden">
+                                    <ReviewAvatar
+                                        name={review.userName}
+                                        avatar={review.avatar}
+                                        avatarFileId={review.avatarFileId}
+                                    />
                                 </View>
 
                                 {/* 右侧内容 */}
@@ -147,25 +174,28 @@ export function ReviewsList({
 
                                     {/* 评论图片(如果有,最多显示3张) */}
                                     {review.images && review.images.length > 0 && (
-                                        <Galeria urls={review.images.map(img => img.url)}>
-                                            <View className="mb-2 flex-row -mx-0.5">
-                                                {review.images.slice(0, 3).map((image, imgIndex) => (
-                                                    <Galeria.Image index={imgIndex} key={`${review.id}-img-${imgIndex}`}>
-                                                        <Pressable
-                                                            className="px-0.5"
-                                                        >
-                                                            <Image
-                                                                source={{ uri: image.url }}
-                                                                className="rounded"
-                                                                contentFit="cover"
-                                                                style={{ width: 80, height: 80 }}
-                                                                placeholder={image.blurhash}
-                                                            />
-                                                        </Pressable>
-                                                    </Galeria.Image>
-                                                ))}
-                                            </View>
-                                        </Galeria>
+                                        <View className="mb-2 flex-row -mx-0.5">
+                                            {(review.images ?? []).slice(0, 3).map((image, imgIndex) => (
+                                                <Pressable
+                                                    key={`${review.id}-img-${imgIndex}`}
+                                                    className="px-0.5"
+                                                    onPress={() =>
+                                                        onImagePress?.(
+                                                            (review.images ?? []).map((img) => img.url),
+                                                            imgIndex,
+                                                        )
+                                                    }
+                                                >
+                                                    <Image
+                                                        source={{ uri: image.url }}
+                                                        className="rounded"
+                                                        contentFit="cover"
+                                                        style={{ width: 80, height: 80 }}
+                                                        placeholder={image.blurhash}
+                                                    />
+                                                </Pressable>
+                                            ))}
+                                        </View>
                                     )}
 
                                     {/* 服务标签和地区 */}

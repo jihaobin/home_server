@@ -356,6 +356,13 @@ function EarningsContent() {
                     <Text style={styles.title}>我的收益</Text>
                 </View>
 
+                <View style={styles.infoBanner}>
+                    <Text style={styles.infoTitle}>收益分成说明</Text>
+                    <Text style={styles.infoText}>
+                        平台抽取 30%，服务人员实际到账 70%（按订单实付金额计算）。
+                    </Text>
+                </View>
+
                 <View style={styles.accountCard}>
                     <View style={styles.balanceSection}>
                         <Text style={styles.balanceLabel}>账户余额（含审核中）</Text>
@@ -505,6 +512,26 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: "bold",
         color: "#333",
+    },
+    infoBanner: {
+        marginHorizontal: 16,
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 8,
+        backgroundColor: "#f0f7ff",
+        borderWidth: 1,
+        borderColor: "#c8ddff",
+        gap: 6,
+    },
+    infoTitle: {
+        fontSize: 13,
+        fontWeight: "bold",
+        color: "#1f5fb8",
+    },
+    infoText: {
+        fontSize: 13,
+        color: "#3b4d65",
+        lineHeight: 18,
     },
     accountCard: {
         backgroundColor: "white",

@@ -10,6 +10,7 @@ export interface Review {
     userId: string;
     userName: string;
     avatar?: string;
+    avatarFileId?: string;
     rating: number;
     date: string;
     content?: string; // 评论内容

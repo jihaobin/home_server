@@ -12,6 +12,7 @@ import {
 } from "@/components/orders_screen/utils";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { useOrdersListInfinite } from "@repo/hooks/api/order";
+import { useReviewerTargetsInfinite } from "@repo/hooks/api/review";
 import { TabItem } from "@/components/orders_screen/components/TabItem";
 import { SectionHeader } from "@/components/orders_screen/components/SectionHeader";
 import { OrderCard } from "@/components/orders_screen/components/OrderCard";
@@ -79,16 +80,26 @@ export default function OrdersScreen() {
 
 	// 获取订单列表数据
 	const {
-		data,
-		fetchNextPage,
-		hasNextPage,
-		isFetchingNextPage,
-		isLoading,
-		refetch,
+		data: orderPages,
+		fetchNextPage: fetchNextOrdersPage,
+		hasNextPage: hasNextOrdersPage,
+		isFetchingNextPage: isFetchingNextOrdersPage,
+		isLoading: isLoadingOrders,
+		refetch: refetchOrders,
 	} = useOrdersListInfinite({
 		customerId: session?.user?.id || "",
 		status: statusFilter,
 		sortOrder: "desc",
+	});
+	const {
+		data: reviewerTargetsPages,
+		fetchNextPage: fetchNextReviewerTargetsPage,
+		hasNextPage: hasNextReviewerTargetsPage,
+		isFetchingNextPage: isFetchingNextReviewerTargetsPage,
+		isLoading: isLoadingReviewerTargets,
+		refetch: refetchReviewerTargets,
+	} = useReviewerTargetsInfinite({
+		limit: 10,
 	});
 	const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -97,7 +108,7 @@ export default function OrdersScreen() {
 		if (!session?.user?.id) {
 			return [];
 		}
-		let orders = data?.pages.flatMap((page) => page.data) ?? [];
+		let orders = orderPages?.pages.flatMap((page) => page.data) ?? [];
 
 		// 如果该tab对应多个状态，需要在前端过滤
 		if (activeTab.id !== "all") {
@@ -114,7 +125,12 @@ export default function OrdersScreen() {
 		}
 
 		return orders;
-	}, [data, session?.user?.id, activeTab.id, quickFilterStatus]);
+	}, [orderPages, session?.user?.id, activeTab.id, quickFilterStatus]);
+
+	const reviewerTargets = useMemo(
+		() => reviewerTargetsPages?.pages.flatMap((page) => page.data) ?? [],
+		[reviewerTargetsPages],
+	);
 
 	const sections = useMemo(
 		() => buildSections(allOrders, activeTab.id),
@@ -122,12 +138,23 @@ export default function OrdersScreen() {
 	);
 
 	const { rows: listRows, stickyHeaderIndices } = useMemo(() => {
+		if (activeTab.id === "reviews") {
+			return {
+				rows: reviewerTargets.map((review) => ({
+					key: `review-${review.orderId}-${review.targetId}`,
+					type: "review" as const,
+					review,
+				})),
+				stickyHeaderIndices: [] as number[],
+			};
+		}
+
 		const flattened = flattenSectionsToRows(sections);
 		return {
 			rows: flattened.rows,
 			stickyHeaderIndices: flattened.stickyHeaderIndices,
 		};
-	}, [sections]);
+	}, [activeTab.id, reviewerTargets, sections]);
 
 	const renderTab = useCallback(
 		({ item }: ListRenderItemInfo<OrderTab>) => (
@@ -175,21 +202,38 @@ export default function OrdersScreen() {
 
 	// 加载更多
 	const handleLoadMore = useCallback(() => {
-		if (hasNextPage && !isFetchingNextPage) {
-			fetchNextPage();
+		if (activeTab.id === "reviews") {
+			if (hasNextReviewerTargetsPage && !isFetchingNextReviewerTargetsPage) {
+				fetchNextReviewerTargetsPage();
+			}
+			return;
 		}
-	}, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+		if (hasNextOrdersPage && !isFetchingNextOrdersPage) {
+			fetchNextOrdersPage();
+		}
+	}, [
+		activeTab.id,
+		hasNextOrdersPage,
+		hasNextReviewerTargetsPage,
+		isFetchingNextOrdersPage,
+		isFetchingNextReviewerTargetsPage,
+		fetchNextOrdersPage,
+		fetchNextReviewerTargetsPage,
+	]);
 
 	const handleRefresh = useCallback(async () => {
 		setIsRefreshing(true);
 		try {
-			await refetch({
-				throwOnError: false,
-			});
+			const tasks =
+				activeTab.id === "reviews"
+					? [refetchReviewerTargets({ throwOnError: false })]
+					: [refetchOrders({ throwOnError: false })];
+			await Promise.all(tasks);
 		} finally {
 			setIsRefreshing(false);
 		}
-	}, [refetch]);
+	}, [activeTab.id, refetchOrders, refetchReviewerTargets]);
 
 	const listHeaderComponent = useCallback(() => {
 		return (
@@ -243,37 +287,68 @@ export default function OrdersScreen() {
 						paddingBottom: 24,
 					}}
 					ListEmptyComponent={
-						isLoading ? (
-							<View className="flex-1 items-center justify-center px-8 py-24">
-								<Text className="text-center text-sm text-muted-foreground">
-									加载中...
-								</Text>
-							</View>
-						) : (
-							<View className="flex-1 items-center justify-center px-8 py-24">
-								<Text
-									className="text-sm font-medium text-muted-foreground"
-									numberOfLines={1}
-								>
-									暂无此分类的订单
-								</Text>
-								<Text
-									className="mt-1 text-xs text-muted-foreground"
-									numberOfLines={2}
-								>
-									可以尝试切换分类或返回首页挑选新的服务项目。
-								</Text>
-							</View>
-						)
+						activeTab.id === "reviews"
+							? isLoadingReviewerTargets ? (
+									<View className="flex-1 items-center justify-center px-8 py-24">
+										<Text className="text-center text-sm text-muted-foreground">
+											加载中...
+										</Text>
+									</View>
+								) : (
+									<View className="flex-1 items-center justify-center px-8 py-24">
+										<Text
+											className="text-sm font-medium text-muted-foreground"
+											numberOfLines={1}
+										>
+											暂无评价记录
+										</Text>
+										<Text
+											className="mt-1 text-xs text-muted-foreground"
+											numberOfLines={2}
+										>
+											完成服务后可在此查看您的历史评价。
+										</Text>
+									</View>
+								)
+							: isLoadingOrders ? (
+									<View className="flex-1 items-center justify-center px-8 py-24">
+										<Text className="text-center text-sm text-muted-foreground">
+											加载中...
+										</Text>
+									</View>
+								) : (
+									<View className="flex-1 items-center justify-center px-8 py-24">
+										<Text
+											className="text-sm font-medium text-muted-foreground"
+											numberOfLines={1}
+										>
+											暂无此分类的订单
+										</Text>
+										<Text
+											className="mt-1 text-xs text-muted-foreground"
+											numberOfLines={2}
+										>
+											可以尝试切换分类或返回首页挑选新的服务项目。
+										</Text>
+									</View>
+								)
 					}
 					ListFooterComponent={
-						isFetchingNextPage ? (
-							<View className="py-4">
-								<Text className="text-center text-sm text-muted-foreground">
-									加载中...
-								</Text>
-							</View>
-						) : null
+						activeTab.id === "reviews"
+							? isFetchingNextReviewerTargetsPage ? (
+									<View className="py-4">
+										<Text className="text-center text-sm text-muted-foreground">
+											加载中...
+										</Text>
+									</View>
+								) : null
+							: isFetchingNextOrdersPage ? (
+									<View className="py-4">
+										<Text className="text-center text-sm text-muted-foreground">
+											加载中...
+										</Text>
+									</View>
+								) : null
 					}
 				/>
 			</View>

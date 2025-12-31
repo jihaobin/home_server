@@ -176,6 +176,7 @@ function OrdersList({
         const price = formatCurrency(item.totalAmount);
         const decisionMeta =
             DECISION_STATUS_DISPLAY[item.decisionStatus ?? "pending"];
+        const remark = item.remark?.trim();
 
         return (
             <TouchableOpacity
@@ -213,6 +214,18 @@ function OrdersList({
                     <Ionicons name="location-outline" size={16} color="#666" />
                     <Text style={styles.infoText}>{item.address || "未提供服务地址"}</Text>
                 </View>
+                {remark ? (
+                    <View style={styles.orderInfo}>
+                        <Ionicons name="document-text-outline" size={16} color="#666" />
+                        <Text
+                            style={styles.remarkText}
+                            numberOfLines={2}
+                            ellipsizeMode="tail"
+                        >
+                            {remark}
+                        </Text>
+                    </View>
+                ) : null}
                 <View style={styles.orderFooter}>
                     <Text style={styles.orderPrice}>{price}</Text>
                     <TouchableOpacity
@@ -404,6 +417,12 @@ const styles = StyleSheet.create({
     infoText: {
         fontSize: 14,
         color: "#666",
+        marginLeft: 8,
+        flex: 1,
+    },
+    remarkText: {
+        fontSize: 14,
+        color: "#444",
         marginLeft: 8,
         flex: 1,
     },

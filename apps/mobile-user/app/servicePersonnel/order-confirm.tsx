@@ -11,6 +11,7 @@ import {
 	Pressable,
 	RefreshControl,
 	ScrollView,
+	TextInput,
 	View,
 } from "react-native";
 import { toast } from "sonner-native";
@@ -20,6 +21,7 @@ import { useAddressEditStore } from "@/stores/address-store";
 import useServiceStore from "@/stores/service";
 
 const ICON_MAP = lucideIconRegistry;
+const MAX_REMARK_LENGTH = 200;
 
 export default function OrderConfirmScreen() {
 	const router = useRouter();
@@ -37,6 +39,7 @@ export default function OrderConfirmScreen() {
 
 	const [showPaymentModal, setShowPaymentModal] = useState(false);
 	const [isRefreshing, setIsRefreshing] = useState(false);
+	const [orderRemark, setOrderRemark] = useState("");
 	const [missingFields, setMissingFields] = useState<{
 		address?: boolean;
 		serviceTime?: boolean;
@@ -191,6 +194,7 @@ export default function OrderConfirmScreen() {
 			await refetchSession();
 			setMissingFields({});
 			setShowPaymentModal(false);
+			setOrderRemark("");
 		} finally {
 			setIsRefreshing(false);
 		}
@@ -382,25 +386,28 @@ export default function OrderConfirmScreen() {
 
 				{/* 订单备注 */}
 				<View className="mx-4 mt-3 rounded-2xl border border-border bg-card p-4">
-					<View className="flex-row items-center justify-between">
-						<Text className="text-base font-semibold text-foreground">
-							订单备注
-						</Text>
-						<Pressable
-							className="flex-row items-center active:opacity-60"
-							hitSlop={8}
-						>
-							<Text className="text-sm text-muted-foreground">
-								添加备注信息
-							</Text>
-							<Icon
-								as={ICON_MAP.ChevronRight}
-								size={16}
-								className="ml-1 text-muted-foreground"
-							/>
-						</Pressable>
-					</View>
+				<View className="flex-row items-center justify-between">
+					<Text className="text-base font-semibold text-foreground">
+						订单备注
+					</Text>
 				</View>
+				<TextInput
+					value={orderRemark}
+					onChangeText={(text) =>
+						setOrderRemark(text.slice(0, MAX_REMARK_LENGTH))
+					}
+					placeholder="选填：门禁信息、到场要求等，最多200字"
+					multiline
+					maxLength={MAX_REMARK_LENGTH}
+					className="mt-3 rounded-xl border border-border bg-background px-3 py-2 text-base text-foreground"
+					placeholderTextColor="#9CA3AF"
+				/>
+				<View className="mt-2 flex-row justify-end">
+					<Text className="text-xs text-muted-foreground">
+						{orderRemark.length}/{MAX_REMARK_LENGTH}
+					</Text>
+				</View>
+			</View>
 
 				{/* 费用明细 */}
 				<View className="mx-4 mt-3 rounded-2xl border border-border bg-card p-4">
@@ -498,6 +505,7 @@ export default function OrderConfirmScreen() {
 						designatedPersonnelId: selectServicePersonnelInfo?.userId || "",
 						specificationId: selectedSpecification?.id || "",
 						displayPrice: servicePrice,
+						remark: orderRemark.trim(),
 					}}
 					totalAmount={totalAmount}
 					onPaymentSuccess={(orderId) => {

@@ -7,8 +7,8 @@ import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { icons as lucideIconRegistry } from "lucide-react-native";
 import { useColorScheme } from "nativewind";
-import { useCallback, useEffect, useState } from "react";
-import { Dimensions, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { ActivityIndicator, Dimensions, Modal, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import Animated, {
     Extrapolation,
     interpolate,
@@ -17,115 +17,30 @@ import Animated, {
     useAnimatedStyle,
     useSharedValue,
 } from "react-native-reanimated";
+import ReanimatedCarousel from "react-native-reanimated-carousel";
 import { useServicePersonnelDetails } from "@repo/hooks/api/service-personnel";
 import { hslToRgba } from "@repo/lib/utils";
 import useServiceStore from "@/stores/service";
+import { ReviewsList } from "@/components/service-personnel/ReviewsList";
+import type { Review } from "@/components/service-personnel/types";
+import { useReviewStats, useTargetReviewsInfinite } from "@repo/hooks/api/review";
 
 const ICON_MAP = lucideIconRegistry;
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
-// 评论类型(保留用于未来功能)
-interface Review {
-    id: string;
-    userId: string;
-    userName: string;
-    avatar?: string;
-    rating: number;
-    date: string;
-    content: string;
-    images?: string[];
+function TabPanel({
+    visible,
+    children,
+}: {
+    visible: boolean;
+    children: ReactNode;
+}) {
+    return (
+        <View style={{ display: visible ? "flex" : "none" }}>
+            {children}
+        </View>
+    );
 }
-
-// 相似服务类型(保留用于未来功能)
-interface SimilarService {
-    id: string;
-    name: string;
-    price: number;
-    unit: string;
-    image?: string;
-    tag?: string;
-}
-
-// Mock 数据 - 评论(待后端API完成)
-const mockReviews: Review[] = [
-    {
-        id: "1",
-        userId: "u50351303",
-        userName: "u50351303",
-        rating: 5,
-        date: "2023-09-24",
-        content: "师傅准时上门，维修快服务好",
-        images: [
-            "https://via.placeholder.com/150",
-            "https://via.placeholder.com/150",
-        ],
-    },
-    {
-        id: "2",
-        userId: "u50351304",
-        userName: "用户12345",
-        rating: 5,
-        date: "2023-09-23",
-        content: "非常专业,解决了困扰我很久的问题，态度也很好！",
-    },
-    {
-        id: "3",
-        userId: "u50351305",
-        userName: "满意客户",
-        rating: 4,
-        date: "2023-09-22",
-        content: "服务不错，价格合理",
-    },
-];
-
-// Mock 数据 - 相似服务(待后端API完成)
-const mockSimilarServices: SimilarService[] = [
-    {
-        id: "1",
-        name: "跑腿线维修/安装",
-        price: 22,
-        unit: "米",
-        tag: "到位包退",
-        image: "https://via.placeholder.com/120",
-    },
-    {
-        id: "2",
-        name: "水路维修",
-        price: 129,
-        unit: "次",
-        tag: "到位包退",
-        image: "https://via.placeholder.com/120",
-    },
-    {
-        id: "3",
-        name: "中式推拿",
-        price: 168,
-        unit: "次",
-        tag: "60分钟",
-        image: "https://via.placeholder.com/120",
-    },
-    {
-        id: "4",
-        name: "川派采耳",
-        price: 88,
-        unit: "次",
-        image: "https://via.placeholder.com/120",
-    },
-    {
-        id: "5",
-        name: "地热暖气维修",
-        price: 199,
-        unit: "次",
-        image: "https://via.placeholder.com/120",
-    },
-    {
-        id: "6",
-        name: "灯具维修",
-        price: 79,
-        unit: "次",
-        image: "https://via.placeholder.com/120",
-    },
-];
 
 export default function ServiceDetailScreen() {
     const router = useRouter();
@@ -133,9 +48,27 @@ export default function ServiceDetailScreen() {
     const { selectedServiceTime, selectService: selectServiceId, selectServicePersonnelInfo, setSelectedSpecification, setServiceDetails } = useServiceStore();
 
 
-    const { data: servicePersonnelDetails, refetch } = useServicePersonnelDetails({
+    const { data: servicePersonnelDetails, refetch: refetchServicePersonnel } = useServicePersonnelDetails({
         serviceId: selectServiceId!.id,
         personnelId: selectServicePersonnelInfo?.userId!,
+    });
+    const personnelId = selectServicePersonnelInfo?.userId || servicePersonnelDetails?.userId;
+    const serviceId = selectServiceId?.id;
+    const { data: reviewStats, refetch: refetchReviewStats } = useReviewStats(
+        "personnel",
+        personnelId || "",
+        serviceId,
+    );
+    const {
+        data: reviewPages,
+        fetchNextPage: fetchNextReviewsPage,
+        hasNextPage: hasNextReviewsPage,
+        isFetchingNextPage: isFetchingNextReviewsPage,
+        isLoading: isLoadingReviews,
+        refetch: refetchReviews,
+    } = useTargetReviewsInfinite("personnel", personnelId || "", {
+        serviceId,
+        limit: 10,
     });
 
     const { colorScheme } = useColorScheme();
@@ -147,6 +80,14 @@ export default function ServiceDetailScreen() {
     const [selectedOption, setSelectedOption] = useState("");
     const [selectedTab, setSelectedTab] = useState("service");
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [carouselIndex, setCarouselIndex] = useState(0);
+    const [isPreviewVisible, setIsPreviewVisible] = useState(false);
+    const [previewIndex, setPreviewIndex] = useState(0);
+    const [previewImages, setPreviewImages] = useState<string[]>([]);
+    const [scrollContainerHeight, setScrollContainerHeight] = useState(
+        Math.max(SCREEN_HEIGHT, 1),
+    );
+    const [canScroll, setCanScroll] = useState(true);
 
     const scrollY = useSharedValue(0);
     const isScrollIng = useSharedValue(false);
@@ -199,10 +140,47 @@ export default function ServiceDetailScreen() {
         workStartTime: servicePersonnelDetails?.workStartTime || "08:00:00",
         workEndTime: servicePersonnelDetails?.workEndTime || "19:00:00",
     };
+    const gallery = useMemo(
+        () => servicePersonnelDetails?.gallery ?? [],
+        [servicePersonnelDetails?.gallery],
+    );
+    const carouselHeight = SCREEN_WIDTH * 0.75;
 
     // 服务说明 - 使用后端返回的description
     const serviceDescription =
         servicePersonnelDetails?.description || "暂无服务说明";
+    const reviewItems = useMemo((): Review[] => {
+        const items = reviewPages?.pages.flatMap((page) => page.data) ?? [];
+        return items.map((item) => {
+            const rawAvatar =
+                (item as any).reviewerAvatarUrl ||
+                (item as any).reviewerAvatar ||
+                (item as any).avatar ||
+                "";
+            const isHttp = rawAvatar && /^https?:\/\//i.test(rawAvatar);
+            return {
+                id: item.id,
+                userId: item.reviewerId,
+                userName: item.isAnonymous
+                    ? "匿名用户"
+                    : item.reviewerName || item.reviewerId.slice(0, 6),
+                avatar: isHttp ? rawAvatar : undefined,
+                avatarFileId: !isHttp && rawAvatar ? rawAvatar : undefined,
+                rating: item.rating,
+                date: new Date(item.createdAt).toLocaleDateString("zh-CN"),
+                content: item.comment || "",
+                images: item.images?.map((image) => ({
+                    url: image.url,
+                    blurhash: image.blurhash,
+                })),
+                serviceTag: item.serviceId ? selectServiceId?.label : undefined,
+            };
+        });
+    }, [reviewPages, selectServiceId?.label]);
+    const totalReviewsCount = reviewStats?.totalCount ?? 0;
+    const positiveCount = reviewStats?.goodCount ?? 0;
+    const neutralCount = reviewStats?.neutralCount ?? 0;
+    const negativeCount = reviewStats?.badCount ?? 0;
 
     const handleScroll = useAnimatedScrollHandler({
         onScroll: (event) => {
@@ -245,19 +223,25 @@ export default function ServiceDetailScreen() {
         };
     });
 
-    const handleRefresh = useCallback(async () => {
+    const forceShowHeader = !canScroll;
+
+    const handleRefresh = async () => {
         setIsRefreshing(true);
         try {
-            const result = await refetch({
-                throwOnError: false,
-            });
-            if (result?.data) {
-                setServiceDetails(result.data);
+            const [detailResult] = await Promise.all([
+                refetchServicePersonnel({
+                    throwOnError: false,
+                }),
+                refetchReviews({ throwOnError: false }),
+                refetchReviewStats({ throwOnError: false }),
+            ]);
+            if (detailResult?.data) {
+                setServiceDetails(detailResult.data);
             }
         } finally {
             setIsRefreshing(false);
         }
-    }, [refetch, setServiceDetails]);
+    };
 
     // 第一个图标的透明度动画 (popover 颜色)
     const backIcon1AnimatedStyle = useAnimatedStyle(() => {
@@ -288,7 +272,12 @@ export default function ServiceDetailScreen() {
                 {/* 单行导航栏：返回 + Tab + 功能按钮 */}
                 <Animated.View
                     className="flex-row items-center px-3 pt-12 pb-0"
-                    style={[backgroundAnimatedStyle]}
+                    style={[
+                        backgroundAnimatedStyle,
+                        forceShowHeader && {
+                            backgroundColor: NAV_THEME[colorScheme ?? "light"].colors.background,
+                        },
+                    ]}
                 >
                     {/* 左侧返回按钮 */}
                     <Animated.View
@@ -323,7 +312,7 @@ export default function ServiceDetailScreen() {
                     {/* 中间Tab切换 */}
                     <Animated.View
                         className="flex-1 flex-row items-center justify-center mx-2"
-                        style={opacity}
+                        style={[opacity, forceShowHeader && { opacity: 1 }]}
                     >
                         <Pressable
                             onPress={() => setSelectedTab("service")}
@@ -343,26 +332,6 @@ export default function ServiceDetailScreen() {
                                 )}
                             >
                                 服务
-                            </Text>
-                        </Pressable>
-                        <Pressable
-                            onPress={() => setSelectedTab("details")}
-                            className={cn(
-                                "items-center px-4 py-3 border-b-2",
-                                selectedTab === "details"
-                                    ? "border-primary"
-                                    : "border-transparent",
-                            )}
-                        >
-                            <Text
-                                className={cn(
-                                    "text-base font-medium",
-                                    selectedTab === "details"
-                                        ? "text-foreground"
-                                        : "text-muted-foreground",
-                                )}
-                            >
-                                详情
                             </Text>
                         </Pressable>
                         <Pressable
@@ -412,21 +381,78 @@ export default function ServiceDetailScreen() {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: 100 }}
                 onScroll={handleScroll}
+                scrollEventThrottle={16}
+                onLayout={(e) =>
+                    setScrollContainerHeight(e.nativeEvent.layout.height || SCREEN_HEIGHT)
+                }
+                onContentSizeChange={(_w, h) => {
+                    setCanScroll(h > scrollContainerHeight + 8);
+                }}
                 refreshControl={
                     <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
                 }
             >
-                {/* 服务头部图片 */}
+                {/* 服务头部图片/轮播 */}
                 <View className="relative">
-                    <Image
-                        source={{
-                            uri: `https://picsum.photos/${SCREEN_WIDTH}/${Math.floor(SCREEN_WIDTH * 0.75)}`,
-                        }}
-                        style={{
-                            width: SCREEN_WIDTH,
-                            height: SCREEN_WIDTH * 0.75,
-                        }}
-                    />
+                    {gallery.length > 0 ? (
+                        <View>
+                            <ReanimatedCarousel
+                                width={SCREEN_WIDTH}
+                                height={carouselHeight}
+                                data={gallery}
+                                loop
+                                pagingEnabled
+                                onSnapToItem={setCarouselIndex}
+                                renderItem={({ item }) => (
+                                    <Pressable
+                                        onPress={() => {
+                                            setPreviewImages(gallery.map((g) => g.url));
+                                            setPreviewIndex(
+                                                Math.max(
+                                                    0,
+                                                    gallery.findIndex((g) => g.url === item.url),
+                                                ),
+                                            );
+                                            setIsPreviewVisible(true);
+                                        }}
+                                    >
+                                        <Image
+                                            source={{ uri: item.url }}
+                                            style={{ width: SCREEN_WIDTH, height: carouselHeight }}
+                                            contentFit="cover"
+                                        />
+                                    </Pressable>
+                                )}
+                            />
+                            {gallery.length > 1 && (
+                                <View className="absolute bottom-3 left-0 right-0 flex-row justify-center gap-2">
+                                    {gallery.map((_, idx) => (
+                                        <View
+                                            key={`dot-${idx}`}
+                                            style={{
+                                                width: idx === carouselIndex ? 20 : 8,
+                                                height: 8,
+                                                borderRadius: 999,
+                                                backgroundColor:
+                                                    idx === carouselIndex ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.5)",
+                                            }}
+                                        />
+                                    ))}
+                                </View>
+                            )}
+                        </View>
+                    ) : (
+                        <Image
+                            source={{
+                                uri: `https://picsum.photos/${SCREEN_WIDTH}/${Math.floor(carouselHeight)}`,
+                            }}
+                            style={{
+                                width: SCREEN_WIDTH,
+                                height: carouselHeight,
+                            }}
+                            contentFit="cover"
+                        />
+                    )}
                 </View>
                 {/* 服务选项卡片 */}
                 {specifications.length > 0 ? (
@@ -520,7 +546,7 @@ export default function ServiceDetailScreen() {
                 </Pressable>
 
                 <View className="px-4">
-                    {selectedTab === "service" && (
+                    <TabPanel visible={selectedTab === "service"}>
                         <View>
                             {/* 服务说明 */}
                             <View className="mb-4">
@@ -529,8 +555,8 @@ export default function ServiceDetailScreen() {
                                 </Text>
                             </View>
 
-                            {/* 配件费表格 */}
-                            {/* <View className="mb-4">
+                        {/* 配件费表格 */}
+                        {/* <View className="mb-4">
 								<View className="mb-3 flex-row items-center justify-between">
 									<Text className="text-base font-semibold text-foreground">
 										配件费
@@ -564,7 +590,7 @@ export default function ServiceDetailScreen() {
 										className="mt-3 flex-row items-center justify-center"
 									>
 										<Text className="text-sm font-medium text-primary">
-											{showAllParts ? "收起全部" : "查看全部"}
+											{showAllParts ? \"收起全部\" : \"查看全部\"}
 										</Text>
 										<Icon
 											as={showAllParts ? ICON_MAP.ChevronUp : ICON_MAP.ChevronDown}
@@ -575,107 +601,76 @@ export default function ServiceDetailScreen() {
 								)}
 							</View> */}
                         </View>
-                    )}
+                    </TabPanel>
 
-                    {selectedTab === "details" && (
-                        <View>
-                            <Text className="text-sm leading-6 text-foreground mb-4">
-                                {serviceDescription}
-                            </Text>
-                            <Text className="text-sm text-muted-foreground">
-                                更多详情内容...
-                            </Text>
-                        </View>
-                    )}
-
-                    {selectedTab === "reviews" && (
-                        <View>
-                            {/* 用户评价 */}
-                            <View className="mb-4">
-                                <View className="mb-3 flex-row items-center justify-between">
+                    <TabPanel visible={selectedTab === "reviews"}>
+                        <View className="mb-6">
+                            <View className="mb-3 flex-row items-center justify-between">
+                                <View>
                                     <Text className="text-lg font-bold text-foreground">
                                         用户评论
                                     </Text>
-                                    <Pressable className="flex-row items-center">
-                                        <Text className="text-sm text-primary">1000+ 条评论</Text>
-                                        <Icon
-                                            as={ICON_MAP.ChevronRight}
-                                            size={16}
-                                            className="ml-1 text-primary"
-                                        />
-                                    </Pressable>
+                                    <Text className="text-xs text-muted-foreground mt-1">
+                                        {totalReviewsCount > 0
+                                            ? `共 ${totalReviewsCount} 条评价`
+                                            : "暂无评价"}
+                                    </Text>
                                 </View>
-
-                                {mockReviews.map((review) => (
-                                    <View
-                                        key={review.id}
-                                        className="mb-4 rounded-xl border border-border bg-card p-4"
-                                    >
-                                        <View className="flex-row items-start">
-                                            <View className="h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                                                <Text className="font-semibold text-primary">
-                                                    {review.userName.slice(0, 1)}
-                                                </Text>
-                                            </View>
-
-                                            <View className="ml-3 flex-1">
-                                                <View className="flex-row items-center justify-between">
-                                                    <Text className="font-semibold text-foreground">
-                                                        {review.userName}
-                                                    </Text>
-                                                    <Text className="text-xs text-muted-foreground">
-                                                        {review.date}
-                                                    </Text>
-                                                </View>
-
-                                                <View className="mt-1 flex-row items-center">
-                                                    {Array.from({ length: 5 }).map((_, i) => (
-                                                        <Icon
-                                                            key={`star-${review.id}-${i}`}
-                                                            as={ICON_MAP.Star}
-                                                            size={12}
-                                                            className={
-                                                                i < review.rating
-                                                                    ? "text-primary"
-                                                                    : "text-muted-foreground/30"
-                                                            }
-                                                            fill={i < review.rating ? "currentColor" : "none"}
-                                                        />
-                                                    ))}
-                                                </View>
-
-                                                <Text className="mt-2 text-sm leading-5 text-foreground">
-                                                    {review.content}
-                                                </Text>
-
-                                                {review.images && review.images.length > 0 && (
-                                                    <ScrollView
-                                                        horizontal
-                                                        showsHorizontalScrollIndicator={false}
-                                                        className="mt-3"
-                                                        contentContainerStyle={{ gap: 8 }}
-                                                    >
-                                                        {review.images.map((img, idx) => (
-                                                            <Image
-                                                                key={`${review.id}-img-${idx}`}
-                                                                source={{ uri: img }}
-                                                                style={{
-                                                                    width: 80,
-                                                                    height: 80,
-                                                                    borderRadius: 8,
-                                                                }}
-                                                                contentFit="cover"
-                                                            />
-                                                        ))}
-                                                    </ScrollView>
-                                                )}
-                                            </View>
-                                        </View>
+                                {reviewStats && (
+                                    <View className="items-end">
+                                        <Text className="text-3xl font-semibold text-primary">
+                                            {reviewStats.averageRatingDisplay}
+                                        </Text>
+                                        <Text className="text-xs text-muted-foreground">
+                                            综合评分
+                                        </Text>
                                     </View>
-                                ))}
+                                )}
                             </View>
+
+                            {isLoadingReviews ? (
+                                <View className="py-8 items-center justify-center">
+                                    <ActivityIndicator size="small" className="text-primary" />
+                                    <Text className="mt-2 text-sm text-muted-foreground">
+                                        加载评价中...
+                                    </Text>
+                                </View>
+                            ) : reviewItems.length > 0 ? (
+                                <ReviewsList
+                                    reviews={reviewItems}
+                                    totalReviewsCount={totalReviewsCount}
+                                    positiveCount={positiveCount}
+                                    neutralCount={neutralCount}
+                                    negativeCount={negativeCount}
+                                    onImagePress={(images: string[], index: number) => {
+                                        setPreviewImages(images);
+                                        setPreviewIndex(index);
+                                        setIsPreviewVisible(true);
+                                    }}
+                                />
+                            ) : (
+                                <View className="py-8 items-center justify-center">
+                                    <Text className="text-sm text-muted-foreground">
+                                        暂无评价
+                                    </Text>
+                                </View>
+                            )}
+
+                            {hasNextReviewsPage && (
+                                <Pressable
+                                    className="mt-3 items-center justify-center rounded-full border border-border py-2 active:opacity-80"
+                                    onPress={() => fetchNextReviewsPage()}
+                                    disabled={isFetchingNextReviewsPage}
+                                >
+                                    {isFetchingNextReviewsPage ? (
+                                        <ActivityIndicator size="small" className="text-primary" />
+                                    ) : (
+                                        <Text className="text-sm text-primary">加载更多</Text>
+                                    )}
+                                </Pressable>
+                            )}
                         </View>
-                    )}
+                    </TabPanel>
 
                     {/* 相似服务推荐
                     <View className="mb-6">
@@ -738,6 +733,47 @@ export default function ServiceDetailScreen() {
                     </View> */}
                 </View>
             </Animated.ScrollView>
+
+            {/* 全屏预览 */}
+            <Modal
+                visible={isPreviewVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setIsPreviewVisible(false)}
+            >
+                <View className="flex-1 bg-black/90">
+                    <View className="absolute right-4 top-10 z-10">
+                        <Pressable
+                            onPress={() => setIsPreviewVisible(false)}
+                            className="h-10 w-10 items-center justify-center rounded-full bg-black/60"
+                            hitSlop={12}
+                        >
+                            <Icon as={ICON_MAP.X} size={22} className="text-white" />
+                        </Pressable>
+                    </View>
+
+                    {previewImages.length > 0 && (
+                        <ReanimatedCarousel
+                            width={SCREEN_WIDTH}
+                            height={SCREEN_HEIGHT}
+                            data={previewImages}
+                            defaultIndex={previewIndex}
+                            loop={previewImages.length > 1}
+                            pagingEnabled
+                            onSnapToItem={setPreviewIndex}
+                            renderItem={({ item }) => (
+                                <View className="w-full h-full items-center justify-center">
+                                    <Image
+                                        source={{ uri: item }}
+                                        style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
+                                        contentFit="contain"
+                                    />
+                                </View>
+                            )}
+                        />
+                    )}
+                </View>
+            </Modal>
 
             {/* 底部操作栏 */}
             <View
