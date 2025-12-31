@@ -14,6 +14,7 @@ import type {
 import {
 	useMutation,
 	useQueryClient,
+	useQuery,
 	useSuspenseInfiniteQuery,
 	useSuspenseQuery,
 } from "@tanstack/react-query";
@@ -184,6 +185,58 @@ export const useServiceList = (params: Omit<ServiceListRequest, "page">) =>
 		},
 	});
 
+type ServiceListSinglePageParams = Partial<ServiceListRequest> & {
+	page?: number;
+	enabled?: boolean;
+};
+
+/**
+ * 获取服务项目列表（单页版，便于管理端等一次性取完整列表）
+ */
+export const useServiceListSinglePage = (params: ServiceListSinglePageParams) => {
+	const { enabled = true, page = 1, ...restParams } = params;
+
+	return useQuery({
+		queryKey: ["service-list-single", { ...restParams, page }],
+		queryFn: async () => {
+			const response = await apiClient.get<ServiceListResponse>(
+				"/service/services",
+				{
+					query: {
+						page: page.toString(),
+						...(restParams.limit
+							? { limit: restParams.limit.toString() }
+							: {}),
+						...(restParams.categoryId
+							? { categoryId: restParams.categoryId }
+							: {}),
+						...(restParams.keyword ? { keyword: restParams.keyword } : {}),
+						...(restParams.minPrice !== undefined
+							? { minPrice: restParams.minPrice.toString() }
+							: {}),
+						...(restParams.maxPrice !== undefined
+							? { maxPrice: restParams.maxPrice.toString() }
+							: {}),
+						...(restParams.isActive !== undefined
+							? { isActive: restParams.isActive.toString() }
+							: {}),
+						...(restParams.search ? { search: restParams.search } : {}),
+						...(restParams.sortBy ? { sortBy: restParams.sortBy } : {}),
+						...(restParams.sortOrder
+							? { sortOrder: restParams.sortOrder }
+							: {}),
+					},
+				},
+			);
+			return response.data;
+		},
+		enabled,
+		meta: {
+			errorMessage: "服务项目列表获取失败",
+		},
+	});
+};
+
 /**
  * 获取服务项目详情
  */
@@ -233,6 +286,9 @@ export const useCreateService = () => {
 				queryKey: ["service-list"],
 			});
 			queryClient.invalidateQueries({
+				queryKey: ["service-list-single"],
+			});
+			queryClient.invalidateQueries({
 				queryKey: ["service-stats"],
 			});
 		},
@@ -263,6 +319,9 @@ export const useUpdateService = () => {
 				queryKey: ["service-list"],
 			});
 			queryClient.invalidateQueries({
+				queryKey: ["service-list-single"],
+			});
+			queryClient.invalidateQueries({
 				queryKey: ["service-detail", variables.id],
 			});
 			queryClient.invalidateQueries({
@@ -288,6 +347,9 @@ export const useDeleteService = () => {
 		onSuccess: (_result, id) => {
 			queryClient.invalidateQueries({
 				queryKey: ["service-list"],
+			});
+			queryClient.invalidateQueries({
+				queryKey: ["service-list-single"],
 			});
 			queryClient.invalidateQueries({
 				queryKey: ["service-detail", id],

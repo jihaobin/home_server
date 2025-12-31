@@ -4,6 +4,7 @@ import type {
     OrderDetail,
     OrderListRequest,
     OrderListResponse,
+    OrderStatus,
     StaffOrderListRequest,
     StaffOrderListResponse,
     VerifyOrderCheckinDto,
@@ -94,7 +95,7 @@ export const useOrderDetail = (orderId: string) =>
 /**
  * 获取订单核验二维码
  */
-export const useOrderCheckin = (orderId: string) =>
+export const useOrderCheckin = (orderId: string, orderStatus?: OrderStatus) =>
     useQuery({
         queryKey: ['order-checkin', orderId],
         queryFn: async () => {
@@ -103,6 +104,7 @@ export const useOrderCheckin = (orderId: string) =>
             );
             return response.data;
         },
+        enabled: Boolean(orderId) && orderStatus === 'paid',
         meta: {
             errorMessage: '订单核验码获取失败',
         },

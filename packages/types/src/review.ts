@@ -35,6 +35,27 @@ const imageIdSchema = z
         description: "上传文件在文件服务中的唯一ID",
     });
 
+export const ReviewImageSchema = z
+    .object({
+        url: z
+            .string()
+            .meta({
+                title: "图片URL",
+                description: "图片的访问URL（预签名URL）",
+            }),
+        blurhash: z
+            .string()
+            .optional()
+            .meta({
+                title: "BlurHash",
+                description: "图片的BlurHash，用于占位符显示",
+            }),
+    })
+    .meta({
+        title: "评价图片信息",
+        description: "评价图片的访问信息",
+    });
+
 export const CreateReviewBodySchema = z
     .object({
         orderId: z
@@ -92,7 +113,15 @@ export const CreateReviewBodySchema = z
 
 export type CreateReviewBody = z.infer<typeof CreateReviewBodySchema>;
 
-export const CreateReviewResponseSchema = ReviewsSchema;
+export const CreateReviewResponseSchema = z
+    .object({
+        ...ReviewsSchema.shape,
+        images: z.array(ReviewImageSchema).default([]),
+    })
+    .meta({
+        title: "创建评价响应",
+        description: "创建或查询单条评价时的响应结构，附带图片访问信息",
+    });
 export type CreateReviewResponse = z.infer<typeof CreateReviewResponseSchema>;
 
 const { page: basePageSchema, limit: baseLimitSchema } =
@@ -113,27 +142,6 @@ export const ReviewerTargetsQuerySchema = z
 });
 
 export type ReviewerTargetsQuery = z.infer<typeof ReviewerTargetsQuerySchema>;
-
-const ReviewImageSchema = z
-    .object({
-        url: z
-            .string()
-            .meta({
-                title: "图片URL",
-                description: "图片的访问URL（预签名URL）",
-            }),
-        blurhash: z
-            .string()
-            .optional()
-            .meta({
-                title: "BlurHash",
-                description: "图片的BlurHash，用于占位符显示",
-            }),
-    })
-    .meta({
-        title: "评价图片信息",
-        description: "评价图片的访问信息",
-    });
 
 export const ReviewerTargetItemSchema = z
     .object({
@@ -242,12 +250,20 @@ export type TargetReviewsQuery = z.infer<typeof TargetReviewsQuerySchema>;
 
 export const TargetReviewsResponseSchema = z
     .object({
-        items: z.array(z.object({ ...ReviewsSchema.shape, images:z
-            .array(ReviewImageSchema)
-            .meta({
-                title: "评价图片列表",
-                description: "该评价的所有图片信息",
-            }), })),
+        items: z.array(
+            z.object({
+                ...ReviewsSchema.shape,
+                images: z
+                    .array(ReviewImageSchema)
+                    .meta({
+                        title: "评价图片列表",
+                        description: "该评价的所有图片信息",
+                    }),
+                reviewerAvatar: z.string().nullable().optional(),
+                reviewerAvatarUrl: z.string().nullable().optional(),
+                reviewerName: z.string().nullable().optional(),
+            }),
+        ),
         total: z.number().int().min(0),
         page: z.number().int().min(1),
         limit: z.number().int().min(1),

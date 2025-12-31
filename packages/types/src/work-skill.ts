@@ -94,6 +94,18 @@ export const PersonnelSkillSchema = z
 			description: "服务类别",
 			title: "服务类别",
 		}),
+		basePrice: z.string().optional().meta({
+			description: "个人定价（来自服务人员定价表）",
+			title: "个人定价",
+		}),
+		currency: z.string().optional().meta({
+			description: "定价币种",
+			title: "定价币种",
+		}),
+		estimatedDurationMinutes: z.number().int().nullable().optional().meta({
+			description: "预计服务时长（分钟，来自定价配置）",
+			title: "预计服务时长（分钟）",
+		}),
 	})
 	.meta({
 		title: "工作人员技能信息",
@@ -341,21 +353,10 @@ export const OccupiedTimeSlotSchema = z.object({
     }),
 });
 
-export const ServiceDetailsSchema = z.object({
-    ...ServicePersonnelSchema.omit({ geom: true }).shape,
-    specifications: z.array(specificationSchema),
-    description: z.string().nullable(),
-    servicedCount: z.number().int().nonnegative(),
-    occupiedTimeSlots: z.array(OccupiedTimeSlotSchema).meta({
-        description: "服务人员已占用的时间段列表",
-        title: "已占用时间段",
-    }),
-});
-
 export const FileAccessInfoSchema = z
     .object({
         fileId: z.string().min(1, "文件ID不能为空"),
-        url: z.string().url(),
+        url: z.url(),
         fileName: z.string().min(1, "文件名不能为空"),
         mimeType: z.string().min(1, "MIME类型不能为空"),
         fileSize: z.number().int().nonnegative(),
@@ -366,6 +367,21 @@ export const FileAccessInfoSchema = z
         title: "文件访问信息",
         description: "通过 files 模块生成的预签名 URL 及其元数据",
     });
+
+export const ServiceDetailsSchema = z.object({
+    ...ServicePersonnelSchema.omit({ geom: true }).shape,
+    galleryFileIds: z.array(z.string()).default([]),
+    gallery: z.array(FileAccessInfoSchema).default([]),
+    specifications: z.array(specificationSchema),
+    description: z.string().nullable(),
+    servicedCount: z.number().int().nonnegative(),
+    occupiedTimeSlots: z.array(OccupiedTimeSlotSchema).meta({
+        description: "服务人员已占用的时间段列表",
+        title: "已占用时间段",
+    }),
+});
+
+
 
 export const ServiceOfferingSpecificationInputSchema = z
 	.object({
@@ -413,6 +429,16 @@ export const UpdateServiceOfferingsRequestSchema = z
                         .max(2000, "描述过长")
                         .optional()
                         .nullable(),
+                    galleryFileIds: z
+                        .array(
+                            z
+                                .string()
+                                .min(1, "文件ID不能为空")
+                                .trim(),
+                        )
+                        .max(5, "宣传图片最多 5 张")
+                        .default([])
+                        .transform((ids) => Array.from(new Set(ids))),
                     specifications: z
                         .array(ServiceOfferingSpecificationInputSchema)
                         .min(1, "至少需要保留一条服务规格"),
@@ -433,6 +459,8 @@ export const ServicePersonnelOfferingSchema = z
         personnelDescription: z.string().nullable(),
         currency: z.string().min(1, "币种不能为空"),
         isActive: z.boolean(),
+        galleryFileIds: z.array(z.string()).default([]),
+        gallery: z.array(FileAccessInfoSchema).default([]),
         specifications: z.array(specificationSchema).default([]),
         pricing: PersonnelPricingInfoSchema.nullable().optional(),
 	})

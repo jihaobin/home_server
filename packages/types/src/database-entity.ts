@@ -797,6 +797,14 @@ export const ServiceCategoriesSchema = z
                 description: "分类图标文件ID",
                 title: "分类图标文件ID",
             }),
+        iconFileUrl: z
+            .string()
+            .nullable()
+            .optional()
+            .meta({
+                description: "分类图标访问地址（派生字段）",
+                title: "分类图标访问地址",
+            }),
     })
     .meta({
         title: "服务分类表",
@@ -822,24 +830,23 @@ export const ServicesSchema = z
             description: "服务描述",
             title: "服务描述",
         }),
-        basePrice: z
+        imageFileId: z
             .string()
-            .regex(/^\d+(\.\d{1,2})?$/, "价格格式不正确")
+            .max(255)
+            .nullable()
+            .optional()
+            .default(null)
             .meta({
-                description: "服务基础价格（字符串格式）",
-                title: "服务基础价格",
+                description: "服务图片文件ID",
+                title: "服务图片文件ID",
             }),
-        currency: z.string().max(3).meta({
-            description: "币种代码",
-            title: "币种代码",
-        }),
-        estimatedDurationMinutes: z
-            .number()
-            .int()
-            .min(1, "预估时长必须大于0分钟")
+        imageFileUrl: z
+            .string()
+            .nullable()
+            .optional()
             .meta({
-                description: "预估服务时长（分钟）",
-                title: "预估服务时长（分钟）",
+                description: "服务图片访问地址（派生字段）",
+                title: "服务图片访问地址",
             }),
         isActive: z.boolean().meta({
             description: "服务是否可用",
@@ -1410,6 +1417,10 @@ export const OrdersSchema = z
         couponCode: z.string().max(50).optional().meta({
             description: "使用的优惠券代码",
             title: "使用的优惠券代码",
+        }),
+        remark: z.string().max(500).nullable().optional().meta({
+            description: "订单备注",
+            title: "订单备注",
         }),
         appointmentTime: z.date().meta({
             description: "服务预约时间",

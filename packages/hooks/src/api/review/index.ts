@@ -1,19 +1,22 @@
-import type {
-	CreateReviewBody,
-	CreateReviewResponse,
-	ReviewerTargetsQuery,
-	ReviewerTargetsResponse,
-	ReviewStats,
-	TargetReviewsQuery,
-	TargetReviewsResponse,
+import {
+	ErrorCode,
+	type CreateReviewBody,
+	type CreateReviewResponse,
+	type ReviewerTargetsQuery,
+	type ReviewerTargetsResponse,
+	type ReviewStats,
+	type TargetReviewsQuery,
+	type TargetReviewsResponse,
 } from "@repo/types";
 import {
 	useMutation,
+	useQuery,
 	useQueryClient,
 	useSuspenseInfiniteQuery,
 	useSuspenseQuery,
 } from "@tanstack/react-query";
 import { apiClient } from "@repo/lib/http-client";
+import { isApiClientError } from "@repo/utils/api-client";
 
 /**
  * 创建订单评价 - Mutation
@@ -99,6 +102,39 @@ export const useReviewerTargetsInfinite = (
 		initialPageParam: 1,
 		meta: {
 			errorMessage: "已评价对象列表获取失败",
+		},
+	});
+
+/**
+ * 获取用户针对某个订单的评价 - 非 Suspense版本（包含图片信息）
+ */
+export const useOrderReview = (orderId?: string) =>
+	useQuery({
+		enabled: Boolean(orderId),
+		queryKey: ["review-by-order", orderId],
+		queryFn: async () => {
+			if (!orderId) {
+				return null;
+			}
+			try {
+				const response = await apiClient.get<CreateReviewResponse>(
+					`/review/order/${orderId}`,
+				);
+				return response.data;
+			} catch (error) {
+				if (
+					isApiClientError(error) &&
+					(error.code === ErrorCode.NOT_FOUND ||
+						error.code === ErrorCode.RESOURCE_NOT_FOUND)
+				) {
+					return null;
+				}
+
+				throw error;
+			}
+		},
+		meta: {
+			errorMessage: "订单评价获取失败",
 		},
 	});
 

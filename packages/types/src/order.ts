@@ -97,8 +97,11 @@ export const UpdateOrderSchema = OrdersSchema.partial()
 export type UpdateOrder = z.infer<typeof UpdateOrderSchema>;
 
 const OrderDetailServicePersonnelSchema = z.object({
-    ...ServicePersonnelSchema.shape,
+	...ServicePersonnelSchema.shape,
 	lastActiveAt: z.coerce.date(),
+	avatarUrl: z.string().url().optional().nullable(),
+	userName: z.string().optional().nullable(),
+	image: z.string().optional().nullable(),
 });
 
 const OrderDetailAssignmentSchema = z
@@ -138,13 +141,15 @@ export const OrderDetailSchema = z
 	serviceStartedAt: z.coerce.date().nullable().optional(),
 		serviceCompletedAt: z.coerce.date().nullable().optional(),
 		cancelledAt: z.coerce.date().nullable().optional(),
-		createdAt: z.coerce.date(),
-		updatedAt: z.coerce.date(),
-		service: z
+	createdAt: z.coerce.date(),
+	updatedAt: z.coerce.date(),
+	service: z
 			.object({
 				id: z.string(),
 				name: z.string(),
 				description: z.string().nullable(),
+				imageFileId: z.string().nullable().optional(),
+				imageFileUrl: z.string().nullable().optional(),
 			})
 			.nullable()
 			.meta({
@@ -254,6 +259,7 @@ export const StaffOrderListItemSchema = z.object({
 	customerPhone: z.string().nullable(),
 	customerAvatar: z.string().nullable(),
 	address: z.string().nullable(),
+	remark: z.string().nullable(),
 	acceptedAt: z.date().nullable(),
 	decisionStatus: AssignmentDecisionStatusEnum,
 	rejectReason: z.string().nullable(),
@@ -336,7 +342,6 @@ export const OrderListResponseItemSchema = z.object({
 	}),
 	service: ServicesSchema.omit({
 		categoryId: true,
-		basePrice: true,
 	}),
 	address: UserAddressesSchema.omit({
 		geom: true,
@@ -410,6 +415,14 @@ export const CreateDesignatedOrderSchema = z
 			description: "用户在应用中看到的价格",
 			title: "展示价格",
 		}),
+		remark: z
+			.string()
+			.max(500, "备注不能超过500字符")
+			.optional()
+			.meta({
+				description: "订单备注信息",
+				title: "备注",
+			}),
 	})
 	.meta({
 		title: "创建指定服务人员订单",

@@ -80,13 +80,28 @@ function createServiceCategoriesSchema(
 }
 
 // ✅ 生成可递归的 schema（最多 3 层）
-export const serviceCategoriesSchema = createServiceCategoriesSchema(3);
+const globalServiceCategoriesSchema = (() => {
+    // 缓存到 globalThis，避免 HMR/多次导入时重复注册 ID
+    const globalObj = globalThis as { __serviceCategoriesSchema?: z.ZodTypeAny };
+    if (globalObj.__serviceCategoriesSchema) {
+        return globalObj.__serviceCategoriesSchema;
+    }
+
+    const schema = createServiceCategoriesSchema(3);
+    globalObj.__serviceCategoriesSchema = schema;
+    return schema;
+})();
+
+export const serviceCategoriesSchema = globalServiceCategoriesSchema;
 
 // ✅ 注册 ID 以支持 JSON Schema 引用（推荐）
-z.globalRegistry.add(serviceCategoriesSchema, { id: "ServiceCategory" });
+if (!z.globalRegistry.has(serviceCategoriesSchema)) {
+    z.globalRegistry.add(serviceCategoriesSchema, { id: "ServiceCategory" });
+}
 
 export type ServiceCategoryTree = ServiceCategories & {
     children: ServiceCategoryTree[];
+    iconFileUrl?: string | null;
 };
 
 export type ServiceCategory = Omit<ServiceCategoryTree, "children">;
@@ -124,7 +139,10 @@ export const ServiceListRequestSchema = z.object({
 export type ServiceListRequest = z.infer<typeof ServiceListRequestSchema>;
 
 // 创建服务项目Schema
-export const CreateServiceSchema = ServicesSchema.omit({ id: true }).meta({
+export const CreateServiceSchema = ServicesSchema.omit({
+    id: true,
+    imageFileUrl: true,
+}).meta({
     title: '创建服务项目',
     description: '创建服务项目的请求参数'
 });
@@ -132,10 +150,13 @@ export const CreateServiceSchema = ServicesSchema.omit({ id: true }).meta({
 export type CreateService = z.infer<typeof CreateServiceSchema>;
 
 // 更新服务项目Schema
-export const UpdateServiceSchema = ServicesSchema.partial().required({ id: true }).meta({
-    title: '更新服务项目',
-    description: '更新服务项目的请求参数'
-});
+export const UpdateServiceSchema = ServicesSchema.partial()
+    .omit({ imageFileUrl: true })
+    .required({ id: true })
+    .meta({
+        title: '更新服务项目',
+        description: '更新服务项目的请求参数'
+    });
 
 export type UpdateService = z.infer<typeof UpdateServiceSchema>;
 

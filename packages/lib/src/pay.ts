@@ -3,7 +3,7 @@ import { alipay, type OrderResult, setAlipaySandbox, authInfo as auth } from "na
 export type { OrderResult };
 
 export async function aliPay(payInfo: string) {
-	setAlipaySandbox(true);
+	setAlipaySandbox(false);
 	return await alipay(payInfo);
 }
 
