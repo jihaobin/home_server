@@ -16,7 +16,10 @@ const envTrustedOrigins = process.env.TRUSTED_ORIGINS
 const trustedOrigins = Array.from(
     new Set([...envTrustedOrigins, 'home-server-user://', 'mobileworker://']),
 );
-const isProd = process.env.NODE_ENV === 'production';
+
+const isHttps =
+    (process.env.BETTER_AUTH_URL ?? '').startsWith('https://') ||
+    (process.env.TRUSTED_ORIGINS ?? '').includes('https://');
 
 /**
  * 创建 Better Auth 实例的工厂函数
@@ -50,10 +53,10 @@ export function createAuth(
             //     domain: process.env.CROSS_DOMAIN_ORIGIN, // Domain with a leading period
             // },
             defaultCookieAttributes: {
-                secure: isProd,
-                sameSite: isProd ? 'none' : 'lax', // Allows CORS-based cookie sharing across subdomains
-                partitioned: isProd, // New browser standards will mandate this for foreign cookies
-                path: '/', // Ensure admin APIs outside /auth can读取会话
+                secure: isHttps, // 仅 https 时才加 Secure
+                sameSite: isHttps ? 'none' : 'lax', // HTTP 时用 lax，便于同站端口写 cookie
+                partitioned: isHttps, // HTTP 暂时关掉 partitioned
+                path: '/',
             },
         },
         emailAndPassword: {
