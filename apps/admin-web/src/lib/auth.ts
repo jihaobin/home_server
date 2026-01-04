@@ -10,6 +10,8 @@ import { authClient } from "./auth-cient";
 
 export type AdminLoginInput = AdminLoginRequest;
 
+const webHost = (process.env.NEXT_PUBLIC_WEB_HOST ?? "http://localhost:3000").replace(/\/$/, "");
+
 export async function adminLogin(values: AdminLoginInput) {
     const payload = AdminLoginRequestSchema.parse({
         ...values,
@@ -51,7 +53,7 @@ export async function register({
         name,
         email,
         password,
-        callbackURL: "http://localhost:3000/auth/verify-email",
+        callbackURL: `${webHost}/auth/verify-email`,
         surname: name,
         role: "customer",
     });
@@ -60,13 +62,13 @@ export async function register({
 export async function socialLogin({ provider }: { provider: string }) {
     return await authClient.signIn.social({
         provider,
-        callbackURL: `http://localhost:3000/`,
+        callbackURL: `${webHost}/`,
     });
 }
 
 export async function wechatLogin() {
     return await authClient.signIn.oauth2({
         providerId: "wechat",
-        callbackURL: `http://localhost:3000/`,
+        callbackURL: `${webHost}/`,
     });
 }
