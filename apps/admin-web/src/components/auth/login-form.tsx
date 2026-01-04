@@ -153,25 +153,6 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
                 )}
             </form.Field>
 
-            <form.Field name="rememberMe">
-                {(field) => (
-                    <div className="flex items-center justify-between text-sm">
-                        <label className="flex items-center gap-2 text-muted-foreground">
-                            <Checkbox
-                                checked={field.state.value}
-                                onCheckedChange={(checked) =>
-                                    field.handleChange(Boolean(checked))
-                                }
-                                onBlur={field.handleBlur}
-                                id="remember"
-                            />
-                            <span>记住登录状态</span>
-                        </label>
-                        
-                    </div>
-                )}
-            </form.Field>
-
             {formError ? (
                 <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300">
                     {formError}
