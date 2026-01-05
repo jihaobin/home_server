@@ -53,12 +53,14 @@ type EntityDrawerBodyProps = HTMLAttributes<HTMLDivElement>
 
 export function EntityDrawerBody({ className, ...props }: EntityDrawerBodyProps) {
     return (
-        <ScrollArea className="h-full">
-            <div
-                className={cn("flex flex-col gap-4 px-5 py-5 text-sm", className)}
-                {...props}
-            />
-        </ScrollArea>
+        <div className="flex-1 min-h-0">
+            <ScrollArea className="h-full">
+                <div
+                    className={cn("flex flex-col gap-4 px-5 py-5 text-sm", className)}
+                    {...props}
+                />
+            </ScrollArea>
+        </div>
     )
 }
 
@@ -106,13 +108,15 @@ export function EntityDrawerProperty({
     return (
         <div
             className={cn(
-                "grid grid-cols-[120px_1fr] gap-3 text-sm text-foreground",
+                "grid min-w-0 grid-cols-[120px_1fr] gap-3 text-sm text-foreground",
                 className,
             )}
             {...props}
         >
             <span className="text-muted-foreground">{label}</span>
-            <div className="font-medium text-sm leading-relaxed">{value ?? children}</div>
+            <div className="font-medium text-sm leading-relaxed break-all">
+                {value ?? children}
+            </div>
         </div>
     )
 }

@@ -228,7 +228,7 @@ function UserDetailContent({
             ) : null}
 
             <EntityDrawerSection title="订单概览">
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">
                     <StatCard
                         title="累计订单"
                         value={`${data.stats.totalOrders} 单`}

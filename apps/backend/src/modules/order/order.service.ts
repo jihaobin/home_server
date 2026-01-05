@@ -830,11 +830,7 @@ export class OrderService {
             throw new BadRequestException('取消操作的用户ID不能为空');
         }
 
-        const roleLabel =
-            actorRole === 'service_personnel'
-                ? 'service_personnel'
-                : 'customer';
-        const finalReason = `[${roleLabel}] ${reason}`;
+        const finalReason = `${reason}`;
 
         try {
             const order = await this.orderRepository.getOrderById(id);
