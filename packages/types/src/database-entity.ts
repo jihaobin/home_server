@@ -199,6 +199,29 @@ export const OrderCheckinStatusEnum = z.enum([
 ]);
 export type OrderCheckinStatus = z.infer<typeof OrderCheckinStatusEnum>;
 
+// 应用发布枚举
+export const AppReleaseAppEnum = z.enum([
+    "mobile-user",
+    "mobile-worker",
+]);
+export type AppReleaseApp = z.infer<typeof AppReleaseAppEnum>;
+
+export const AppReleasePlatformEnum = z.enum(["android", "ios"]);
+export type AppReleasePlatform = z.infer<typeof AppReleasePlatformEnum>;
+
+export const AppReleaseStatusEnum = z.enum([
+    "draft",
+    "published",
+    "rollbacked",
+]);
+export type AppReleaseStatus = z.infer<typeof AppReleaseStatusEnum>;
+
+export const AppReleaseChannelEnum = z.enum(["production", "staging"]);
+export type AppReleaseChannel = z.infer<typeof AppReleaseChannelEnum>;
+
+const semverRegex =
+    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
+
 // 交易类型枚举
 export const TransactionTypeEnum = z.enum([
     "service_earning", // 服务收入
@@ -522,6 +545,123 @@ export const OrderCheckinsSchema = z
     .meta({
         title: "订单到场核验记录表",
         description: "记录订单到场核验信息的表",
+    });
+
+// 应用发布表
+export const AppReleasesSchema = z
+    .object({
+        id: z.string().max(255).meta({
+            description: "发布记录 ID",
+            title: "发布记录 ID",
+        }),
+        app: AppReleaseAppEnum.meta({
+            description: "应用标识（mobile-user/mobile-worker）",
+            title: "应用标识",
+        }),
+        platform: AppReleasePlatformEnum.meta({
+            description: "平台",
+            title: "平台",
+        }),
+        version: z
+            .string()
+            .regex(semverRegex, "版本号需符合 semver 规范")
+            .meta({
+                description: "语义化版本号",
+                title: "版本号",
+            }),
+        buildNumber: z.number().int().nonnegative().optional().nullable().meta({
+            description: "构建号，可选",
+            title: "构建号",
+        }),
+        releaseStatus: AppReleaseStatusEnum.default("draft").meta({
+            description: "发布状态",
+            title: "发布状态",
+        }),
+        isActive: z.boolean().default(false).meta({
+            description: "是否为当前生效版本",
+            title: "是否生效",
+        }),
+        forceUpdate: z.boolean().default(false).meta({
+            description: "是否强制更新",
+            title: "强制更新",
+        }),
+        minSupportedVersion: z
+            .string()
+            .regex(semverRegex, "最小兼容版本需符合 semver 规范")
+            .optional()
+            .nullable()
+            .meta({
+                description: "最低兼容版本",
+                title: "最低兼容版本",
+            }),
+        changelog: z.string().optional().nullable().meta({
+            description: "更新日志",
+            title: "更新日志",
+        }),
+        downloadUrlOverride: z.string().max(1024).optional().nullable().meta({
+            description: "下载地址覆盖（TestFlight/App Store 等）",
+            title: "下载地址覆盖",
+        }),
+        releaseChannel: AppReleaseChannelEnum.default("production").meta({
+            description: "发布渠道/环境",
+            title: "发布渠道",
+        }),
+        rolloutPercent: z
+            .number()
+            .int()
+            .min(0)
+            .max(100)
+            .default(100)
+            .meta({
+                description: "灰度比例 0-100",
+                title: "灰度比例",
+            }),
+        fileId: z.string().max(255).optional().nullable().meta({
+            description: "关联文件 ID",
+            title: "文件 ID",
+        }),
+        createdBy: z.string().max(255).meta({
+            description: "创建人用户 ID",
+            title: "创建人",
+        }),
+        publishedBy: z.string().max(255).optional().nullable().meta({
+            description: "发布人用户 ID",
+            title: "发布人",
+        }),
+        publishedAt: z.date().optional().nullable().meta({
+            description: "发布时间",
+            title: "发布时间",
+        }),
+        rollbackFromId: z.string().max(255).optional().nullable().meta({
+            description: "回滚来源版本 ID",
+            title: "回滚来源版本",
+        }),
+        downloadCount: z.number().int().nonnegative().default(0).meta({
+            description: "下载次数",
+            title: "下载次数",
+        }),
+        forceUpdateCount: z.number().int().nonnegative().default(0).meta({
+            description: "强更拦截次数",
+            title: "强更拦截次数",
+        }),
+        createdAt: z
+            .date()
+            .default(() => new Date())
+            .meta({
+                description: "创建时间",
+                title: "创建时间",
+            }),
+        updatedAt: z
+            .date()
+            .default(() => new Date())
+            .meta({
+                description: "更新时间",
+                title: "更新时间",
+            }),
+    })
+    .meta({
+        title: "应用发布表",
+        description: "记录移动端应用的发布版本信息",
     });
 
 // ==================== 有外键关系的表 Schema ====================
@@ -2366,3 +2506,4 @@ export type ChinaCity = z.infer<typeof ChinaCitySchema>;
 export type FinancialTransactions = z.infer<typeof FinancialTransactionsSchema>;
 export type UserBalances = z.infer<typeof UserBalancesSchema>;
 export type OrderCheckins = z.infer<typeof OrderCheckinsSchema>;
+export type AppReleases = z.infer<typeof AppReleasesSchema>;

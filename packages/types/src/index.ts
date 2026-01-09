@@ -13,3 +13,4 @@ export * from "./file";
 export * from "./admin";
 export * from "./notification";
 export * from "./pay";
+export * from "./app-release";
