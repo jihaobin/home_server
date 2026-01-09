@@ -4,6 +4,7 @@ import {
     LayoutDashboard,
     Layers3,
     LineChart,
+    Smartphone,
     Users2,
     WalletMinimal,
 } from "lucide-react"
@@ -53,6 +54,12 @@ const managementNav: NavItem[] = [
         href: "/revenue-logs",
         icon: LineChart,
         description: "平台收益流水与结算",
+    },
+    {
+        label: "应用版本管理",
+        href: "/app-releases",
+        icon: Smartphone,
+        description: "APK 上传、发布与回滚",
     },
     {
         label: "提现审核",
