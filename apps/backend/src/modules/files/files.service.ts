@@ -72,6 +72,101 @@ export class FilesService {
     }
 
     /**
+     * 按自定义 objectPath + bucket 上传文件，适用于需要固定路径的场景（如 app 发布包）
+     */
+    async uploadFileWithObjectPath(params: {
+        file: Express.Multer.File;
+        uploadedBy: string;
+        bucketName: string;
+        objectPath: string;
+        fileType?: string;
+    }): Promise<typeof files.$inferSelect> {
+        const { file, uploadedBy, bucketName, objectPath } = params;
+        const fileType = params.fileType ?? 'document';
+        const startTime = Date.now();
+
+        const validation = await this.fileValidator.validateFile(file);
+        if (!validation.isValid) {
+            throw new BadRequestException(validation.error);
+        }
+
+        const fileHash = this.calculateFileHash(file.buffer);
+        const sanitizedFileName =
+            validation.sanitizedFileName ||
+            path.basename(objectPath) ||
+            'file.bin';
+        const normalizedObjectPath =
+            objectPath.startsWith('/') && objectPath.length > 1
+                ? objectPath.slice(1)
+                : objectPath;
+
+        return await this.db.transaction(async (tx) => {
+            const existingFiles = await tx
+                .select()
+                .from(files)
+                .where(
+                    sql`${files.fileHash} = ${fileHash} AND ${files.deletedAt} IS NULL`,
+                )
+                .limit(1)
+                .for('update');
+
+            if (existingFiles[0]) {
+                const [updated] = await tx
+                    .update(files)
+                    .set({
+                        referenceCount: sql`${files.referenceCount} + 1`,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(files.id, existingFiles[0].id))
+                    .returning();
+
+                return updated;
+            }
+
+            const inserted = await tx
+                .insert(files)
+                .values({
+                    originalName: sanitizedFileName,
+                    fileName: path.basename(normalizedObjectPath),
+                    fileSize: file.size,
+                    mimeType: file.mimetype,
+                    fileHash,
+                    bucketName,
+                    objectPath: normalizedObjectPath,
+                    fileType,
+                    uploadedBy,
+                    uploadedAt: new Date(),
+                    isPublic: false,
+                    accessCount: 0,
+                    referenceCount: 1,
+                })
+                .returning();
+
+            const fileRecord = inserted[0];
+
+            await this.minioService.uploadBufferPromisify(
+                file.buffer,
+                normalizedObjectPath,
+                bucketName,
+                file.mimetype,
+                {
+                    'original-name': encodeURIComponent(sanitizedFileName),
+                    'file-size': file.size.toString(),
+                    'file-type': fileType,
+                },
+            );
+
+            this.logger.log(
+                `文件上传成功: ${sanitizedFileName}, objectPath: ${normalizedObjectPath}, 耗时: ${
+                    Date.now() - startTime
+                }ms`,
+            );
+
+            return fileRecord;
+        });
+    }
+
+    /**
      * 检查文件是否已存在（去重）
      * 只返回未软删除的文件
      */
@@ -344,6 +439,21 @@ export class FilesService {
         ]);
 
         return fileRecords[0];
+    }
+
+    /**
+     * 生成预签名下载链接
+     */
+    async getPresignedDownloadUrl(
+        fileId: string,
+        ttlSeconds: number = 600,
+    ): Promise<string> {
+        const fileRecord = await this.getFileById(fileId);
+        return this.minioService.getPresignedDownloadUrl(
+            fileRecord.bucketName,
+            fileRecord.objectPath,
+            ttlSeconds,
+        );
     }
 
     /**

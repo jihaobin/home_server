@@ -67,6 +67,23 @@ export class FileValidatorService {
                 'video/x-matroska',
             ],
         },
+        app: {
+            extensions: ['.apk', '.aab', '.ipa'],
+            maxSize: 200 * 1024 * 1024, // 200MB，适配移动端安装包
+            mimeTypes: [
+                'application/vnd.android.package-archive',
+                'application/zip',
+                'application/x-zip-compressed',
+                'application/x-itunes-ipa',
+                'application/octet-stream',
+            ],
+            realMimeTypes: [
+                'application/vnd.android.package-archive',
+                'application/zip',
+                'application/x-zip-compressed',
+                'application/x-itunes-ipa',
+            ],
+        },
         document: {
             extensions: [
                 '.pdf',
@@ -220,6 +237,26 @@ export class FileValidatorService {
         if (
             officeDocTypes.includes(declared) &&
             officeDocTypes.includes(detected)
+        ) {
+            return true;
+        }
+
+        // 移动端安装包（部分环境会标记为 zip 或 octet-stream）
+        const appPackageTypes = [
+            'application/vnd.android.package-archive',
+            'application/zip',
+            'application/x-zip-compressed',
+            'application/x-itunes-ipa',
+        ];
+        if (
+            appPackageTypes.includes(declared) &&
+            appPackageTypes.includes(detected)
+        ) {
+            return true;
+        }
+        if (
+            declared === 'application/octet-stream' &&
+            appPackageTypes.includes(detected)
         ) {
             return true;
         }

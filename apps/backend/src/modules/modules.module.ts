@@ -10,6 +10,7 @@ import { FilesModule } from './files/files.module';
 import { ReviewModule } from './review/review.module';
 import { AdminModule } from './admin/admin.module';
 import { NotificationModule } from './notification/notification.module';
+import { AppReleaseModule } from './app-release/app-release.module';
 
 @Module({
     imports: [
@@ -23,6 +24,7 @@ import { NotificationModule } from './notification/notification.module';
         FilesModule,
         ReviewModule,
         NotificationModule,
+        AppReleaseModule,
         AdminModule,
     ],
 })

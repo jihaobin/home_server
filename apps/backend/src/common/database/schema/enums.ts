@@ -167,3 +167,27 @@ export const orderCheckinStatusEnum = pgEnum('order_checkin_status', [
     'revoked', // 主动作废
     'expired', // 已过期
 ]);
+
+/**
+ * 应用发布相关枚举
+ */
+export const appReleaseAppEnum = pgEnum('app_release_app', [
+    'mobile-user', // 用户端
+    'mobile-worker', // 服务人员端
+]);
+
+export const appReleasePlatformEnum = pgEnum('app_release_platform', [
+    'android',
+    'ios',
+]);
+
+export const appReleaseStatusEnum = pgEnum('app_release_status', [
+    'draft', // 草稿
+    'published', // 已发布
+    'rollbacked', // 已回滚
+]);
+
+export const appReleaseChannelEnum = pgEnum('app_release_channel', [
+    'production', // 正式环境
+    'staging', // 预发布/灰度
+]);

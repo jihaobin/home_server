@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { RequestMethod } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/exceptions';
 import { AppLoggerService } from './common/logger';
@@ -24,7 +25,12 @@ async function bootstrap() {
 
     setupScalarSwagger(app);
 
-    app.setGlobalPrefix('api', { exclude: ['/api/auth/{*path}'] });
+    app.setGlobalPrefix('api', {
+        exclude: [
+            '/api/auth/{*path}',
+            { path: 'file/apk/:app', method: RequestMethod.GET },
+        ],
+    });
     await app.listen(process.env.PORT ?? 5050);
 }
 void bootstrap();
