@@ -18,6 +18,7 @@ import {
     type NotificationSocketNotification,
 } from "../hooks/use-notification-socket";
 import { authClient } from "../lib/auth";
+import { AppUpdateProvider } from "@repo/mobile-ui/app-update/AppUpdateProvider";
 
 import Push from '@tencentcloud/react-native-push';
 
@@ -129,11 +130,13 @@ export default function RootLayout() {
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <Provider authClient={authClient}>
-                <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
-                    <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-                    <RootNavigation />
-                    <PortalHost />
-                </ThemeProvider>
+                <AppUpdateProvider app="mobile-worker">
+                    <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
+                        <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+                        <RootNavigation />
+                        <PortalHost />
+                    </ThemeProvider>
+                </AppUpdateProvider>
             </Provider>
         </GestureHandlerRootView>
     );

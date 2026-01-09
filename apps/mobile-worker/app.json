@@ -1,103 +1,104 @@
 {
-  "expo": {
-    "name": "mobile-worker",
-    "slug": "mobile-worker",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "mobileworker",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true,
-      "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "允许 $(PRODUCT_NAME) 在核验服务时使用您的位置信息"
-      }
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "edgeToEdgeEnabled": true,
-      "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION"
-      ],
-      "package": "com.yixin.dingdong.services"
-    },
-    "web": {
-      "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
-    },
-    "plugins": [
-      "./plugins/withAndroidSignature",
-      [
-        "./plugins/withPushVendors",
-        {
-          "timpushSource": "./plugins/timpush-configs.json",
-          "agconnectSource": "./plugins/agconnect-services.json"
+    "expo": {
+        "name": "mobile-worker",
+        "slug": "mobile-worker",
+        "version": "1.0.0",
+        "orientation": "portrait",
+        "icon": "./assets/images/icon.png",
+        "scheme": "mobileworker",
+        "userInterfaceStyle": "automatic",
+        "newArchEnabled": true,
+        "ios": {
+            "supportsTablet": true,
+            "infoPlist": {
+                "NSLocationWhenInUseUsageDescription": "允许 $(PRODUCT_NAME) 在核验服务时使用您的位置信息"
+            }
+        },
+        "android": {
+            "adaptiveIcon": {
+                "foregroundImage": "./assets/images/adaptive-icon.png",
+                "backgroundColor": "#ffffff"
+            },
+            "edgeToEdgeEnabled": true,
+            "permissions": [
+                "android.permission.CAMERA",
+                "android.permission.RECORD_AUDIO",
+                "android.permission.CAMERA",
+                "android.permission.RECORD_AUDIO",
+                "android.permission.ACCESS_FINE_LOCATION",
+                "android.permission.ACCESS_COARSE_LOCATION",
+                "android.permission.REQUEST_INSTALL_PACKAGES"
+            ],
+            "package": "com.yixin.dingdong.services"
+        },
+        "web": {
+            "bundler": "metro",
+            "output": "static",
+            "favicon": "./assets/images/favicon.png"
+        },
+        "plugins": [
+            "./plugins/withAndroidSignature",
+            [
+                "./plugins/withPushVendors",
+                {
+                    "timpushSource": "./plugins/timpush-configs.json",
+                    "agconnectSource": "./plugins/agconnect-services.json"
+                }
+            ],
+            "expo-router",
+            [
+                "./plugins/withCleartextTraffic",
+                {
+                    "allowInsecureHttp": true
+                }
+            ],
+            [
+                "expo-splash-screen",
+                {
+                    "image": "./assets/images/splash-icon.png",
+                    "imageWidth": 200,
+                    "resizeMode": "contain",
+                    "backgroundColor": "#ffffff"
+                }
+            ],
+            [
+                "expo-camera",
+                {
+                    "cameraPermission": "允许 $(PRODUCT_NAME) 访问您的相机",
+                    "microphonePermission": "允许 $(PRODUCT_NAME) 访问您的麦克风",
+                    "recordAudioAndroid": true
+                }
+            ],
+            [
+                "expo-location",
+                {
+                    "locationAlwaysAndWhenInUsePermission": "当前应用需要访问您的位置，已获取你的服务地址"
+                }
+            ],
+            [
+                "expo-qq-location",
+                {
+                    "apiKey": "WLEBZ-HCTC3-JMN3L-OLTJV-R2AJE-WCB7J"
+                }
+            ],
+            [
+                "native-expo-alipay",
+                {
+                    "appId": "2021006119612034"
+                }
+            ],
+            [
+                "expo-image-picker",
+                {
+                    "photosPermission": "允许 $(PRODUCT_NAME) 访问您的相册以选择照片"
+                }
+            ],
+            "expo-notifications",
+            "expo-secure-store",
+            "expo-web-browser"
+        ],
+        "experiments": {
+            "typedRoutes": true
         }
-      ],
-      "expo-router",
-      [
-        "./plugins/withCleartextTraffic",
-        {
-          "allowInsecureHttp": true
-        }
-      ],
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 200,
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
-        }
-      ],
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "允许 $(PRODUCT_NAME) 访问您的相机",
-          "microphonePermission": "允许 $(PRODUCT_NAME) 访问您的麦克风",
-          "recordAudioAndroid": true
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "当前应用需要访问您的位置，已获取你的服务地址"
-        }
-      ],
-      [
-        "expo-qq-location",
-        {
-          "apiKey": "WLEBZ-HCTC3-JMN3L-OLTJV-R2AJE-WCB7J"
-        }
-      ],
-      [
-        "native-expo-alipay",
-        {
-          "appId": "2021006119612034"
-        }
-      ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "允许 $(PRODUCT_NAME) 访问您的相册以选择照片"
-        }
-      ],
-      "expo-notifications",
-      "expo-secure-store",
-      "expo-web-browser"
-    ],
-    "experiments": {
-      "typedRoutes": true
     }
-  }
 }

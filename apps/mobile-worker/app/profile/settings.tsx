@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Directory, Paths } from "expo-file-system";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
     Alert,
     ScrollView,
@@ -10,13 +10,20 @@ import {
     Text,
     TouchableOpacity,
     View,
+    ActivityIndicator,
 } from "react-native";
+import Constants from "expo-constants";
+import { useAppUpdate } from "@repo/mobile-ui/app-update/AppUpdateProvider";
 
 export default function SettingsScreen() {
     const router = useRouter();
+    const { checkForUpdate, status: updateStatus } = useAppUpdate();
     const [pushEnabled, setPushEnabled] = useState(true);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [vibrationEnabled, setVibrationEnabled] = useState(true);
+    const versionLabel = Constants.expoConfig?.version
+        ? `v${Constants.expoConfig.version}`
+        : "未设置";
 
     const clearCache = () => {
         try {
@@ -57,6 +64,10 @@ export default function SettingsScreen() {
     const handleTerms = () => {
         Alert.alert("服务条款", "服务条款详情...");
     };
+
+    const handleCheckUpdate = useCallback(() => {
+        void checkForUpdate({ manual: true, force: true });
+    }, [checkForUpdate]);
 
     return (
         <View style={styles.container}>
@@ -152,6 +163,24 @@ export default function SettingsScreen() {
                             </View>
                             <View style={styles.settingRight}>
                                 <Text style={styles.cacheSize}>12.5 MB</Text>
+                                <Ionicons name="chevron-forward" size={20} color="#999" />
+                            </View>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.settingItem}
+                            onPress={handleCheckUpdate}
+                        >
+                            <View style={styles.settingLeft}>
+                                <Ionicons name="cloud-download-outline" size={20} color="#666" />
+                                <Text style={styles.settingText}>检查更新</Text>
+                            </View>
+                            <View style={styles.settingRight}>
+                                {updateStatus === "checking" ? (
+                                    <ActivityIndicator size="small" color="#666" />
+                                ) : (
+                                    <Text style={styles.version}>{versionLabel}</Text>
+                                )}
                                 <Ionicons name="chevron-forward" size={20} color="#999" />
                             </View>
                         </TouchableOpacity>

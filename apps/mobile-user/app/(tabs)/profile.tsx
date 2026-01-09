@@ -14,10 +14,12 @@ import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import { LogoutButton } from "@repo/mobile-ui/components/LogoutButton";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { useOrdersList } from "@repo/hooks/api/order";
-import { useFile, useUploadFile, useUserFiles } from "@repo/hooks/api/files";
+import { useFile, useUploadFile } from "@repo/hooks/api/files";
 import { authClient } from "@repo/lib/auth-client";
 import type { OrderStatus } from "@repo/types";
 import type { OrderTabId } from "@/components/orders_screen/types";
+import Constants from "expo-constants";
+import { useAppUpdate } from "@repo/mobile-ui/app-update/AppUpdateProvider";
 
 type OrderQuickActionId = "unpaid" | "pending" | "verifying";
 
@@ -305,7 +307,7 @@ const MenuList = memo(function MenuList({ items }: { items: MenuItem[] }) {
                         color: "rgba(148, 163, 184, 0.16)",
                         borderless: false,
                     }}
-                >
+                    >
                     <View className="flex-row items-center">
                         <View className="h-9 w-9 items-center justify-center rounded-full bg-primary/10 dark:bg-primary/20">
                             <Icon as={lucideIconRegistry[item.icon]} size={20} className="text-primary" />
@@ -314,7 +316,12 @@ const MenuList = memo(function MenuList({ items }: { items: MenuItem[] }) {
                             {item.label}
                         </Text>
                     </View>
-                    <Icon as={lucideIconRegistry.ChevronRight} size={20} className="text-muted-foreground" />
+                    <View className="flex-row items-center">
+                        {item.badge ? (
+                            <Text className="text-xs text-muted-foreground">{item.badge}</Text>
+                        ) : null}
+                        <Icon as={lucideIconRegistry.ChevronRight} size={20} className="ml-1 text-muted-foreground" />
+                    </View>
                 </Pressable>
             ))}
 
@@ -384,6 +391,7 @@ const OrderQuickActionsCardSkeleton = memo(function OrderQuickActionsCardSkeleto
 
 export default function Profile() {
     const { session, refetch: refetchSession } = useSession();
+    const { checkForUpdate, status: updateStatus } = useAppUpdate();
 
     const user = session?.user;
     const userId = user?.id;
@@ -475,11 +483,24 @@ export default function Profile() {
     );
 
     const menuItems = useMemo<MenuItem[]>(() => {
-        return MENU_CONFIG.map((item) => ({
+        const items: MenuItem[] = MENU_CONFIG.map((item) => ({
             ...item,
             onPress: () => handleFeaturePlaceholder(item.label),
         }));
-    }, [handleFeaturePlaceholder]);
+        const versionLabel = Constants.expoConfig?.version
+            ? `v${Constants.expoConfig.version}`
+            : undefined;
+        items.push({
+            id: "check-update",
+            label: "检查更新",
+            icon: "Download",
+            badge: updateStatus === "checking" ? "检查中..." : versionLabel,
+            onPress: () => {
+                void checkForUpdate({ manual: true, force: true });
+            },
+        });
+        return items;
+    }, [checkForUpdate, handleFeaturePlaceholder, updateStatus]);
 
     const handleRefresh = useCallback(async () => {
         setIsRefreshing(true);

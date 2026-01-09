@@ -12,6 +12,7 @@ import { Provider } from "@repo/mobile-ui/components/provider";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { Toaster } from "sonner-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { AppUpdateProvider } from "@repo/mobile-ui/app-update/AppUpdateProvider";
 
 export default function RootLayout() {
     const hasMounted = React.useRef(false);
@@ -41,12 +42,14 @@ export default function RootLayout() {
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <Provider>
-                <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
-                    <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
-                    <RootNavigation />
-                    <PortalHost />
-                    <Toaster />
-                </ThemeProvider>
+                <AppUpdateProvider app="mobile-user">
+                    <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
+                        <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+                        <RootNavigation />
+                        <PortalHost />
+                        <Toaster />
+                    </ThemeProvider>
+                </AppUpdateProvider>
             </Provider>
         </GestureHandlerRootView>
     );

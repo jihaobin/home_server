@@ -2,7 +2,7 @@
     "expo": {
         "name": "mobile-user",
         "slug": "mobile-user",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "orientation": "portrait",
         "icon": "./assets/images/icon.png",
         "scheme": "home-server-user",
@@ -20,7 +20,8 @@
             "edgeToEdgeEnabled": true,
             "permissions": [
                 "android.permission.ACCESS_COARSE_LOCATION",
-                "android.permission.ACCESS_FINE_LOCATION"
+                "android.permission.ACCESS_FINE_LOCATION",
+                "android.permission.REQUEST_INSTALL_PACKAGES"
             ],
             "package": "com.yixin.dingdong",
             "intentFilters": [
