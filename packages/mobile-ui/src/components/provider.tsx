@@ -99,7 +99,7 @@ export function Provider({ children, authClient }: { children: React.ReactNode; 
                                     {children}
                                 </Suspense>
                             </SessionProvider>
-                            <DevToolsBubble onCopy={onCopy} queryClient={queryClient} />
+                            {/* <DevToolsBubble onCopy={onCopy} queryClient={queryClient} /> */}
                             <Toaster
                                 position="top-center"
                                 duration={3000}
