@@ -378,12 +378,9 @@ function resolveEndpoint(): string | null {
 }
 
 function buildNotificationAckUrl(): string | null {
-    if (!API_BASE_URL) {
+    const endpoint = resolveEndpoint()
+    if (!endpoint) {
         return null
     }
-    try {
-        return new URL("/notifications/ack", API_BASE_URL).toString()
-    } catch {
-        return null
-    }
+    return `${endpoint}/ack`
 }
