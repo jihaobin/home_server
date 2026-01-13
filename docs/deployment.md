@@ -10,74 +10,150 @@
 - 迁移与回滚：Drizzle 迁移文件已确认；有数据库备份/快照；明确回滚流程（代码回滚 + DB 备份恢复）。
 - 移动端依赖：推送、OAuth、地图、支付等移动端密钥已配置在 `.env.production`，并与对应包名/签名一致；如需发布原生安装包，预留 EAS/签名证书。
 
-## 单机部署方案示例（后台 + Admin + 移动端 Web 版）
+## 单机部署方案示例（systemd + Nginx，dingsm.com）
+
+约定：
+
+- 代码目录：`/home/admin/home_server`（保持仓库结构不变）
+- 端口：后端 `5050`，管理端 `3000`（仅监听本机 `127.0.0.1`，由 Nginx 对外提供 `80/443`）
+- 域名：`dingsm.com` / `www.dingsm.com`
+- 第三方依赖（PostgreSQL/Redis/对象存储等）在同一台机器上
 
 1. 准备运行环境
     - 安装 Node.js ≥18、pnpm ≥10。
     - 安装 Docker 与 Docker Compose，使用仓库根目录的 `docker-compose.yaml` 启动数据库/Redis/对象存储：
 
     ```bash
+    cd /home/admin/home_server
     docker compose up -d
     ```
 
-    - 挂载路径和密码根据云主机目录及安全要求调整。
 2. 获取代码与依赖
 
     ```bash
-    git clone <repo-url> && cd home_server
-    pnpm install
+    cd /home/admin/home_server
+    pnpm install --frozen-lockfile
     ```
 
 3. 配置生产环境变量
     - 填写 `env/production/.env.api`、`.env.admin`、`.env.mobile`、`.env.common` 等文件。
     - 生成软链到各项目：`pnpm env:setup`。
-    - 校验关键值：`DATABASE_URI`、`REDIS_CLIENT_HOST/PORT/DB`、`BETTER_AUTH_SECRET`、`TRUSTED_ORIGINS`、`NEXT_PUBLIC_API_URL`、对象存储/支付/推送密钥等。
-4. 构建
+    - 后端关键值（必须确认无误）：`NODE_ENV`、`PORT`、`TRUSTED_ORIGINS`、数据库/Redis/对象存储/支付等密钥。
+        - 说明：后端启动时会读取 `TRUSTED_ORIGINS`，未设置会导致启动失败。
+    - 管理端关键值（建议明确配置）：`NEXT_PUBLIC_BASE_PATH=/admin`（用于在 `https://dingsm.com/admin` 下部署管理端）。
+
+4. 构建（发布时建议只构建需要的应用）
 
     ```bash
-    pnpm build
+    pnpm --filter backend build
+    pnpm --filter admin-web build
     ```
 
-    仅构建单个应用可用 `pnpm backend:build`、`pnpm admin:build`、`pnpm --filter mobile-user build`、`pnpm --filter mobile-worker build`。
 5. 数据库迁移
 
     ```bash
     dotenvx run -f apps/backend/.env.production -- pnpm --filter backend db:migration
     ```
 
-6. 以 PM2 常驻进程方式启动（示例端口：API 5050，Admin 3000）
+6. systemd 服务单元（后端 + 管理端）
 
-    ```bash
-    pnpm dlx pm2 start "pnpm backend:start" --name backend --time
-    pnpm dlx pm2 start "pnpm admin:start" --name admin-web --time --env PORT=3000
+    - 后端服务：`/etc/systemd/system/home-server-backend.service`
+    - 注意：`ExecStart=/usr/bin/node ...` 仅适用于系统包安装的 Node.js；如果你用 nvm 安装，请将 `ExecStart` 改为 `command -v node` 查到的绝对路径。
+
+    ```ini
+    [Unit]
+    Description=home-server backend
+    After=network-online.target
+    Wants=network-online.target
+
+    [Service]
+    Type=simple
+    User=admin
+    WorkingDirectory=/home/admin/home_server/apps/backend
+    EnvironmentFile=/home/admin/home_server/apps/backend/.env.production
+    ExecStart=/usr/bin/node dist/main.js
+    Restart=on-failure
+    RestartSec=3
+
+    [Install]
+    WantedBy=multi-user.target
     ```
 
-    - 查看：`pnpm dlx pm2 ls`，日志：`pnpm dlx pm2 logs backend`。
-    - 如使用 systemd，可将上述命令替换为相应服务单元。
-7. 部署移动端 Web 版本（静态托管）
+    - 管理端服务：`/etc/systemd/system/home-server-admin-web.service`
+    - 注意：同上，若 Node.js 不在 `/usr/bin/node`，需要调整 `ExecStart` 为实际 node 路径。
+    - 注意：本仓库使用 pnpm `node-linker=hoisted`，依赖安装在仓库根目录的 `node_modules`，因此不要写 `apps/admin-web/node_modules/...`。
 
-    ```bash
-    pnpm --filter mobile-user build
-    pnpm --filter mobile-worker build
-    pnpm dlx serve -s apps/mobile-user/dist -l 8081
-    pnpm dlx serve -s apps/mobile-worker/dist -l 8082
+    ```ini
+    [Unit]
+    Description=home-server admin web
+    After=network-online.target
+    Wants=network-online.target
+
+    [Service]
+    Type=simple
+    User=admin
+    WorkingDirectory=/home/admin/home_server/apps/admin-web
+    EnvironmentFile=/home/admin/home_server/apps/admin-web/.env.production
+    Environment=NODE_ENV=production
+    Environment=PORT=3000
+    ExecStart=/usr/bin/node /home/admin/home_server/node_modules/next/dist/bin/next start -p 3000
+    Restart=on-failure
+    RestartSec=3
+
+    [Install]
+    WantedBy=multi-user.target
     ```
 
-    - 若需原生包，请用 EAS/CI 生成 APK/IPA 并按渠道分发；上述为 Web 导出方案，便于统一在服务器托管。
-8. 反向代理与 HTTPS（Nginx 示意）
-    - `api.example.com` 反代 `http://127.0.0.1:5050`，开启 WebSocket；
-    - `admin.example.com` 反代 `http://127.0.0.1:3000`；
-    - `user.example.com` / `worker.example.com` 指向静态目录或 8081/8082。
-    - 使用 certbot/ACME 自动续期证书。
+    - 启用并启动：
+
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now home-server-backend home-server-admin-web
+    ```
+
+    - 查看状态/日志：
+        - `sudo systemctl status home-server-backend -l`
+        - `sudo systemctl status home-server-admin-web -l`
+        - `sudo journalctl -u home-server-backend -f`
+        - `sudo journalctl -u home-server-admin-web -f`
+
+7. Nginx 反向代理与 HTTPS（待配置）
+
+    - 目标：外网只暴露 `80/443`，内部端口为本机 `127.0.0.1:5050` 与 `127.0.0.1:3000`。
+    - 路由约定（后续按实际需要落地 Nginx 配置）：
+        - `https://dingsm.com/api/*` → `http://127.0.0.1:5050`
+        - `https://dingsm.com/*` → `http://127.0.0.1:3000`
+        - WebSocket：`/socket.io/*` 需要开启 upgrade
+    - TLS 证书：建议使用 certbot/ACME 自动签发与续期。
+
+8. 代码更新后的发布流程（建议）
+
+    ```bash
+    cd /home/admin/home_server
+    git pull
+    pnpm install --frozen-lockfile
+    pnpm --filter backend build
+    pnpm --filter admin-web build
+    pnpm systemd:restart
+    ```
+
+    - 若只更新后端/管理端，也可用：
+        - `pnpm systemd:restart:backend`
+        - `pnpm systemd:restart:admin`
+    - 快速看状态（已封装脚本）：`pnpm systemd:status`
+
 9. 运维与备份
-    - 启用 PM2 开机自启：`pnpm dlx pm2 startup && pnpm dlx pm2 save`。
-    - 设定数据库与对象存储的每日/每周备份；定期清理日志与镜像；上线前后观测 5xx、延迟和资源占用。
+    - systemd 开机自启：通过 `systemctl enable --now ...` 已开启。
+    - 设定数据库与对象存储的每日/每周备份；定期清理日志；上线前后观测 5xx、延迟和资源占用。
 
 ## 快速验证
 
-- API 健康检查：`curl https://api.example.com/health` 返回 200。
-- Admin 页面可正常登录，静态站点可加载并能调用生产接口。
-- 移动端推送/支付/地图等关键链路在生产配置下可打通。
+- 本机检查（确认进程起来）：
+  - 后端：`curl -i http://127.0.0.1:5050/api`（通常会返回 404，但能证明服务已监听并可响应）
+  - 管理端：`curl -I http://127.0.0.1:3000`
+- 域名检查（确认 Nginx 反代与证书）：
+  - `curl -I https://dingsm.com/`
+  - `curl -i https://dingsm.com/api`
 
 ## App 端部署方案
 

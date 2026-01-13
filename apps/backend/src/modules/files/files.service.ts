@@ -190,7 +190,7 @@ export class FilesService {
     async uploadFile(
         file: Express.Multer.File,
         uploadedBy: string,
-        bucketName: string = 'chat-files',
+        bucketName: string = 'files',
     ): Promise<typeof files.$inferSelect> {
         const startTime = Date.now();
         this.logger.log(
