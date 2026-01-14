@@ -16,6 +16,7 @@ import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { toast } from "sonner-native";
 import { authClient } from "../../lib/auth";
 import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
+import { Image } from "expo-image"
 
 export default function WorkerLoginScreen() {
     const navigation = useNavigation();
@@ -126,9 +127,12 @@ export default function WorkerLoginScreen() {
                     <View className="flex-1 px-6 pb-10">
                         <View className="items-center gap-3 pt-10">
                             <View className="w-16 h-16 rounded-2xl bg-primary/10 items-center justify-center">
-                                <Text className="text-primary text-2xl font-bold">HW</Text>
+                                <Image source={require("@/assets/images/icon-round.png")}
+                                    contentFit="contain"
+                                    style={{ width: 80, height: 80 }}
+                                />
                             </View>
-                            <Text className="text-3xl font-semibold text-foreground">服务人员登录</Text>
+                            <Text className="text-3xl font-semibold text-foreground mt-5">服务人员登录</Text>
                             <Text className="text-base text-muted-foreground text-center">
                                 使用手机号登录，实时跟进指派、收益与待办
                             </Text>

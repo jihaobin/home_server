@@ -22,6 +22,7 @@ import { authClient } from "@repo/lib/auth-client";
 import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
 import { toast } from "sonner-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Image } from "expo-image";
 
 export default function RegisterScreen() {
     const [phone, setPhone] = useState("");
@@ -125,10 +126,11 @@ export default function RegisterScreen() {
                     <View className="flex-1 justify-center px-6 py-12 bg-background">
                         {/* Header */}
                         <View className="items-center mb-8">
-                            <View className="w-20 h-20 rounded-full bg-primary items-center justify-center mb-4">
-                                <Text className="text-primary-foreground text-2xl font-bold">
-                                    H
-                                </Text>
+                            <View className="w-20 h-20 items-center justify-center mb-4">
+                                <Image source={require("@/assets/images/icon-round.png")}
+                                    contentFit="contain"
+                                    style={{ width: 80, height: 80 }}
+                                />
                             </View>
                             <Text className="text-2xl font-bold text-foreground">创建账户</Text>
                             <Text className="text-sm text-muted-foreground mt-1">
@@ -143,8 +145,8 @@ export default function RegisterScreen() {
                                     验证手机号后自动完成注册并登录
                                 </CardDescription>
                             </CardHeader>
-                            <CardContent className="space-y-4">
-                                <View className="space-y-2">
+                            <CardContent className="gap-4">
+                                <View className="gap-2">
                                     <Label>手机号</Label>
                                     <Input
                                         placeholder="请输入手机号"
@@ -156,7 +158,7 @@ export default function RegisterScreen() {
                                     />
                                 </View>
 
-                                <View className="space-y-2">
+                                <View className="gap-2">
                                     <View className="flex-row justify-between items-center">
                                         <Label>验证码</Label>
                                         <Button
@@ -182,7 +184,7 @@ export default function RegisterScreen() {
                                     />
                                 </View>
 
-                                <View className="space-y-2">
+                                <View className="gap-2">
                                     <Label>昵称（可选）</Label>
                                     <Input
                                         placeholder="输入昵称，方便好友识别"

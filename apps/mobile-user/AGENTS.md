@@ -132,7 +132,7 @@
 
 ## UI 与样式
 
-- 全局样式在 `app/_layout.tsx` 首行引入 `@repo/mobile-ui/styles/global.css`，`nativewind` 将 tailwind 类转换为 RN 样式。
+- 全局样式在 `app/_layout.tsx` 首行引入 `@repo/mobile-ui/styles/mobile-user.css`，`nativewind` 将 tailwind 类转换为 RN 样式。
 - UI 组件来自 `@repo/mobile-ui` 遵循 PascalCase 组件命名与 camelCase props，复杂区域可酌情添加注释。
 - 主题与字体由 `ThemeProvider`、`StatusBar` 控制，`useColorScheme` 自动切换深浅色，Web 端额外在 `document.documentElement` 上设置背景。
 - `PortalHost` 支持抽屉、对话框等 Portal 组件，避免多重 Provider 导致 Portal 重复。

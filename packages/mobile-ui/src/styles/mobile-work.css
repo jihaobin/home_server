@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+	:root {
+		--background: 210 20% 97%;
+		--foreground: 222 20% 18%;
+		--card: 0 0% 100%;
+		--card-foreground: 222 20% 18%;
+		--popover: 0 0% 100%;
+		--popover-foreground: 222 20% 18%;
+		--primary: 206.571 90% 54%;
+		--primary-foreground: 222 20% 18%;
+		--secondary: 210 60% 92%;
+		--secondary-foreground: 222 30% 24%;
+		--muted: 210 25% 92%;
+		--muted-foreground: 215 15% 45%;
+		--accent: 200 85% 88%;
+		--accent-foreground: 222 20% 18%;
+		--destructive: 0 70% 50%;
+		--destructive-foreground: 0 0% 98%;
+		--border: 210 15% 84%;
+		--input: 210 20% 93%;
+		--ring: 206.571 90% 54%;
+		--chart-1: 206.571 90% 54%;
+		--chart-2: 175 60% 40%;
+		--chart-3: 262 70% 65%;
+		--chart-4: 33.094 94% 54%;
+		--chart-5: 120 45% 45%;
+		--sidebar: 210 35% 96%;
+		--sidebar-foreground: 222 20% 18%;
+		--sidebar-primary: 206.571 90% 54%;
+		--sidebar-primary-foreground: 222 20% 18%;
+		--sidebar-accent: 210 70% 90%;
+		--sidebar-accent-foreground: 222 20% 18%;
+		--sidebar-border: 210 15% 86%;
+		--sidebar-ring: 206.571 90% 54%;
+		--font-sans: AR One Sans, ui-sans-serif, sans-serif, system-ui;
+		--font-serif: "Lora", serif;
+		--font-mono: "JetBrains Mono", monospace;
+		--radius: 0.75rem;
+		--shadow-x: 0rem;
+		--shadow-y: 0.2rem;
+		--shadow-blur: 0.4rem;
+		--shadow-spread: -0.1rem;
+		--shadow-opacity: 0.08;
+		--shadow-color: hsl(222, 20%, 18%);
+		--shadow-2xs: 0rem 0.2rem 0.4rem -0.1rem hsl(222 20% 18% / 0.04);
+		--shadow-xs: 0rem 0.2rem 0.4rem -0.1rem hsl(222 20% 18% / 0.04);
+		--shadow-sm:
+			0rem 0.2rem 0.4rem -0.1rem hsl(222 20% 18% / 0.08), 0rem 1px 2px
+			-1.1px hsl(222 20% 18% / 0.08);
+		--shadow:
+			0rem 0.2rem 0.4rem -0.1rem hsl(222 20% 18% / 0.08), 0rem 1px 2px
+			-1.1px hsl(222 20% 18% / 0.08);
+		--shadow-md:
+			0rem 0.2rem 0.4rem -0.1rem hsl(222 20% 18% / 0.08), 0rem 2px 4px
+			-1.1px hsl(222 20% 18% / 0.08);
+		--shadow-lg:
+			0rem 0.2rem 0.4rem -0.1rem hsl(222 20% 18% / 0.08), 0rem 4px 6px
+			-1.1px hsl(222 20% 18% / 0.08);
+		--shadow-xl:
+			0rem 0.2rem 0.4rem -0.1rem hsl(222 20% 18% / 0.08), 0rem 8px 10px
+			-1.1px hsl(222 20% 18% / 0.08);
+		--shadow-2xl: 0rem 0.2rem 0.4rem -0.1rem hsl(222 20% 18% / 0.2);
+		--tracking-normal: 0em;
+		--spacing: 0.25rem;
+	}
+
+	.dark:root {
+		--background: 222 20% 10%;
+		--foreground: 210 20% 90%;
+		--card: 222 20% 13%;
+		--card-foreground: 210 20% 90%;
+		--popover: 222 20% 13%;
+		--popover-foreground: 210 20% 90%;
+		--primary: 206.571 90% 54%;
+		--primary-foreground: 222 20% 18%;
+		--secondary: 210 25% 22%;
+		--secondary-foreground: 210 20% 90%;
+		--muted: 222 15% 16%;
+		--muted-foreground: 210 15% 70%;
+		--accent: 206 35% 20%;
+		--accent-foreground: 210 60% 85%;
+		--destructive: 0 60% 40%;
+		--destructive-foreground: 0 0% 98%;
+		--border: 222 15% 22%;
+		--input: 222 15% 16%;
+		--ring: 206.571 90% 54%;
+		--chart-1: 206.571 90% 54%;
+		--chart-2: 175 60% 40%;
+		--chart-3: 262 70% 65%;
+		--chart-4: 33.094 94% 54%;
+		--chart-5: 120 45% 45%;
+		--sidebar: 222 20% 8%;
+		--sidebar-foreground: 210 20% 90%;
+		--sidebar-primary: 206.571 90% 54%;
+		--sidebar-primary-foreground: 222 20% 18%;
+		--sidebar-accent: 220 15% 14%;
+		--sidebar-accent-foreground: 210 60% 85%;
+		--sidebar-border: 222 15% 18%;
+		--sidebar-ring: 206.571 90% 54%;
+		--font-sans: AR One Sans, ui-sans-serif, sans-serif, system-ui;
+		--font-serif: "Lora", serif;
+		--font-mono: "JetBrains Mono", monospace;
+		--radius: 0.75rem;
+		--shadow-x: 0rem;
+		--shadow-y: 0.3rem;
+		--shadow-blur: 0.6rem;
+		--shadow-spread: -0.2rem;
+		--shadow-opacity: 0.2;
+		--shadow-color: hsl(0, 0%, 0%);
+		--shadow-2xs: 0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.1);
+		--shadow-xs: 0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.1);
+		--shadow-sm:
+			0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2), 0rem 1px 2px -1.2px
+			hsl(0 0% 0% / 0.2);
+		--shadow:
+			0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2), 0rem 1px 2px -1.2px
+			hsl(0 0% 0% / 0.2);
+		--shadow-md:
+			0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2), 0rem 2px 4px -1.2px
+			hsl(0 0% 0% / 0.2);
+		--shadow-lg:
+			0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2), 0rem 4px 6px -1.2px
+			hsl(0 0% 0% / 0.2);
+		--shadow-xl:
+			0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2), 0rem 8px 10px -1.2px
+			hsl(0 0% 0% / 0.2);
+		--shadow-2xl: 0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.5);
+	}
+}

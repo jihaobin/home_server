@@ -1,4 +1,4 @@
-import "@repo/mobile-ui/styles/global.css";
+import "@repo/mobile-ui/styles/mobile-user.css";
 import { ThemeProvider } from "@react-navigation/native";
 import { NAV_THEME } from "@repo/mobile-ui/lib/constants";
 import { PortalHost } from "@rn-primitives/portal";

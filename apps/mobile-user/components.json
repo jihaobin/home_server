@@ -1,17 +1,17 @@
 {
-"$schema": "https://ui.shadcn.com/schema.json",
-"style": "new-york",
-  "rsc": false,
-  "tsx": true,
+    "$schema": "https://ui.shadcn.com/schema.json",
+    "style": "new-york",
+    "rsc": false,
+    "tsx": true,
     "tailwind": {
-    "config": "tailwind.config.js",
-    "css": "../../packages/mobile-ui/src/styles/global.css",
-    "baseColor": "neutral",
-    "cssVariables": true
-  },
-  "aliases": {
-    "utils": "@repo/mobile-ui/components/lib/utils",
-    "components": "@repo/mobile-ui/components",
-    "lib": "@repo/mobile-ui/lib"
-  }
+        "config": "tailwind.config.js",
+        "css": "../../packages/mobile-ui/src/styles/mobile-user.css",
+        "baseColor": "neutral",
+        "cssVariables": true
+    },
+    "aliases": {
+        "utils": "@repo/mobile-ui/components/lib/utils",
+        "components": "@repo/mobile-ui/components",
+        "lib": "@repo/mobile-ui/lib"
+    }
 }

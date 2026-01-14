@@ -23,6 +23,7 @@ import { authClient } from "@repo/lib/auth-client";
 import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
 import { toast } from "sonner-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Image } from "expo-image";
 
 export default function ForgotPasswordScreen() {
     const [formData, setFormData] = useState({
@@ -155,10 +156,11 @@ export default function ForgotPasswordScreen() {
                     <View className="flex-1 justify-center px-6 py-12 bg-background">
                         {/* Logo/Brand Section */}
                         <View className="items-center mb-8">
-                            <View className="w-20 h-20 rounded-full bg-primary items-center justify-center mb-4">
-                                <Text className="text-primary-foreground text-2xl font-bold">
-                                    🔑
-                                </Text>
+                            <View className="w-20 h-20 items-center justify-center mb-4">
+                                <Image source={require("@/assets/images/icon-round.png")}
+                                    contentFit="contain"
+                                    style={{ width: 80, height: 80 }}
+                                />
                             </View>
                             <Text className="text-2xl font-bold text-foreground">忘记密码</Text>
                             <Text className="text-sm text-muted-foreground mt-1 text-center">
@@ -168,14 +170,14 @@ export default function ForgotPasswordScreen() {
 
                         {/* Reset Password Form */}
                         <Card className="w-full max-w-sm mx-auto">
-                            <CardHeader className="space-y-1">
+                            <CardHeader className="gap-1">
                                 <CardTitle className="text-xl text-center">重置密码</CardTitle>
                                 <CardDescription className="text-center">
                                     输入您的手机号，我们将发送验证码
                                 </CardDescription>
                             </CardHeader>
-                            <CardContent className="space-y-4">
-                                <View className="space-y-2">
+                            <CardContent className="gap-4">
+                                <View className="gap-2">
                                     <Label>手机号</Label>
                                     <Input
                                         placeholder="输入您的手机号"
@@ -187,7 +189,7 @@ export default function ForgotPasswordScreen() {
                                     />
                                 </View>
 
-                                <View className="space-y-2">
+                                <View className="gap-2">
                                     <Label>验证码</Label>
                                     <View className="flex-row gap-2">
                                         <Input
@@ -215,7 +217,7 @@ export default function ForgotPasswordScreen() {
                                     </View>
                                 </View>
 
-                                <View className="space-y-2">
+                                <View className="gap-2">
                                     <Label>新密码</Label>
                                     <Input
                                         placeholder="输入新密码（至少6位）"
@@ -229,7 +231,7 @@ export default function ForgotPasswordScreen() {
                                     />
                                 </View>
 
-                                <View className="space-y-2">
+                                <View className="gap-2">
                                     <Label>确认新密码</Label>
                                     <Input
                                         placeholder="再次输入新密码"

@@ -26,7 +26,7 @@ config.resolver.nodeModulesPaths = [
 config.resolver.disableHierarchicalLookup = true;
 
 module.exports = withNativeWind(config, {
-    input: "../../packages/mobile-ui/src/styles/global.css",
+    input: "../../packages/mobile-ui/src/styles/mobile-work.css",
 });
 
 /**

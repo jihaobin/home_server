@@ -1,4 +1,4 @@
-import "@repo/mobile-ui/styles/global.css";
+import "@repo/mobile-ui/styles/mobile-work.css";
 import { ThemeProvider } from "@react-navigation/native";
 import { useQueryClient } from "@tanstack/react-query";
 import { NAV_THEME } from "@repo/mobile-ui/lib/constants";
