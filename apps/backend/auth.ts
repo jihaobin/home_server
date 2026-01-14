@@ -172,9 +172,7 @@ export function createAuth(
                     await smsService.sendTemplateSms({
                         phone: phoneNumber,
                         templateCode:
-                            process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION ||
-                            process.env.ALIYUN_SMS_TEMPLATE_CODE ||
-                            '',
+                            process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION || '',
                         templateParams: { code },
                     });
                 },
@@ -188,9 +186,7 @@ export function createAuth(
                     await smsService.sendTemplateSms({
                         phone: phoneNumber,
                         templateCode:
-                            process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION ||
-                            process.env.ALIYUN_SMS_TEMPLATE_CODE ||
-                            '',
+                            process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION || '',
                         templateParams: { code },
                     });
                 },

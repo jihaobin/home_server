@@ -223,10 +223,7 @@ export class SmsService {
         phone: string,
         code: string | number,
     ): Promise<SmsSendResult> {
-        const templateCode =
-            process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION ||
-            process.env.ALIYUN_SMS_TEMPLATE_CODE ||
-            '';
+        const templateCode = process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION || '';
         return this.sendTemplateSms({
             phone,
             templateCode,
