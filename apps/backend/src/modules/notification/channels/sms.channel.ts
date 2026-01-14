@@ -81,7 +81,11 @@ export class SmsChannel implements NotificationChannel {
         } catch (error) {
             const messageText =
                 error instanceof Error ? error.message : String(error);
-            this.logger.error('短信渠道发送失败', messageText);
+            const stack = error instanceof Error ? error.stack : undefined;
+            this.logger.error(
+                `短信渠道发送失败 event=${event ?? 'unknown'} template=${templateCode} phone=${phoneNumber} deliveryId=${ctx.deliveryId ?? 'none'} 错误=${messageText}`,
+                stack,
+            );
             return {
                 channel: this.type,
                 status: 'failed',

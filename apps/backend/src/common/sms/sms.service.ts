@@ -79,9 +79,15 @@ export class SmsService {
             this.client = new Dysmsapi.default(config);
             return this.client;
         } catch (error) {
-            this.logger.error('初始化短信客户端失败', error);
+            const messageText =
+                error instanceof Error ? error.message : String(error);
+            const stack = error instanceof Error ? error.stack : undefined;
+            this.logger.error(
+                `初始化短信客户端失败: ${messageText}`,
+                stack,
+            );
             throw new BadRequestException(
-                `短信服务初始化失败: ${error.message}`,
+                `短信服务初始化失败: ${messageText}`,
             );
         }
     }
@@ -250,7 +256,9 @@ export class SmsService {
         const { phone, templateCode, templateParams, signName, outId } = params;
         if (!templateCode) {
             const error = '短信模板未配置';
-            this.logger.error(error);
+            this.logger.error(
+                `${error} phone=${phone} outId=${outId ?? 'none'} envKeys=ALIYUN_SMS_TEMPLATE_VERIFICATION|ALIYUN_SMS_TEMPLATE_CODE`,
+            );
             return {
                 success: false,
                 error,
@@ -282,7 +290,7 @@ export class SmsService {
                 const errorMsg = response?.body?.message || '未知错误';
                 const errorCode = response?.body?.code || 'UNKNOWN';
                 this.logger.error(
-                    `短信发送失败，错误码: ${errorCode}, 消息: ${errorMsg}`,
+                    `短信发送失败 phone=${phone} template=${templateCode} outId=${outId ?? 'none'} 错误码=${errorCode} 消息=${errorMsg}`,
                 );
                 return {
                     success: false,
@@ -300,10 +308,16 @@ export class SmsService {
             };
         } catch (error) {
             // 处理错误
-            this.logger.error('发送短信失败', error);
+            const messageText =
+                error instanceof Error ? error.message : String(error);
+            const stack = error instanceof Error ? error.stack : undefined;
+            this.logger.error(
+                `发送短信异常 phone=${phone} template=${templateCode} outId=${outId ?? 'none'} 错误=${messageText}`,
+                stack,
+            );
             return {
                 success: false,
-                error: error.message,
+                error: messageText,
             };
         }
     }
