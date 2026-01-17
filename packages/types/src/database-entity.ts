@@ -277,7 +277,7 @@ export const UsersSchema = z
                 description: "用户的手机号码",
                 title: "手机号码",
             }),
-        role: UserRoleEnum.default("customer").meta({
+        role: z.array(UserRoleEnum).default(["customer"]).meta({
             description: "用户角色",
             examples: [
                 "customer (客户)",

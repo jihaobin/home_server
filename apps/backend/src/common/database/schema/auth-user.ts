@@ -40,7 +40,9 @@ export const users = pgTable(
         name: varchar('name', { length: 50 }).default(''),
         sex: boolean('sex').default(true).notNull(), // true-男，false-女
         phoneNumber: varchar('phone_number', { length: 20 }).unique(), // 手机号码
-        role: roleEnum('role').default('customer'),
+        role: roleEnum('role')
+            .array()
+            .default(sql`ARRAY['customer']::user_role[]`),
         isActive: boolean('is_active').default(true), // 账户是否激活
         image: varchar('image', { length: 255 }).notNull().default(''),
         devices: jsonb('devices')

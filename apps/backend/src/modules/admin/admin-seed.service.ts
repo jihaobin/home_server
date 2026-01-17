@@ -4,6 +4,7 @@ import type { Auth } from 'better-auth/auth';
 import { AUTH_INSTANCE_KEY } from '../auth/symbols';
 import db from 'src/common/database/db';
 import { users } from 'src/common/database/schema/auth-user';
+import { normalizeUserRoles } from '../auth/rbac.utils';
 
 @Injectable()
 export class AdminSeedService implements OnModuleInit {
@@ -47,7 +48,7 @@ export class AdminSeedService implements OnModuleInit {
                 await db
                     .update(users)
                     .set({
-                        role: 'super_admin',
+                        role: ['super_admin'],
                         emailVerified: true,
                     })
                     .where(eq(users.id, userId));
@@ -63,14 +64,18 @@ export class AdminSeedService implements OnModuleInit {
             return;
         }
 
-        if (existing.role === 'admin' || existing.role === 'super_admin') {
+        const existingRoles = normalizeUserRoles(existing.role ?? undefined);
+        if (
+            existingRoles.includes('admin') ||
+            existingRoles.includes('super_admin')
+        ) {
             this.logger.log(`管理员账号 ${email} 已存在，跳过初始化`);
             return;
         }
 
         await db
             .update(users)
-            .set({ role: 'super_admin' })
+            .set({ role: ['super_admin'] })
             .where(eq(users.id, existing.id));
         this.logger.log(`已将现有账号 ${email} 提升为 super_admin`);
     }

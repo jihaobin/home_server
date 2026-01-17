@@ -88,7 +88,7 @@
 
 - `app/_layout.tsx`：挂载 `Provider`、导航 `Stack`、`StatusBar` 与主题；Stack 层定义 `auth`、`(tabs)`、`address/edit-address`。
 - `app/(tabs)/`：三个主 Tab（`index`、`orders`、`profile`）及其 `_layout`，整合底部导航与登录后入口。
-- `app/auth/`：`login.tsx`、`register.tsx` 通过 `authClient` 调用 better-auth API，实现邮箱登录注册与 Expo Router 跳转。
+- `app/auth/`：`login.tsx`、`verify.tsx` 通过 `authClient` 调用 better-auth API，手机号验证码登录并自动创建账户。
 - `app/address/`：`select-address`、`select-city`、`edit-address`、`service-address` 组成地址生命周期，联动 `TencentMap` 与 `zustand`。
 - `components/`：`provider.tsx`、`SessionProvider.tsx`、`TencentMap.tsx`、`error-boundaries.tsx`、`LogoutButton.tsx` 等跨页面组件。
 - `hooks/` 与 `stores/`：业务 Hook（含 `hooks/api/*` 地址、订单、支付）和 `useAddressEditStore`；`lib/` 集中 `http-client`、`auth-client`、`location-utils`、`query-client`。

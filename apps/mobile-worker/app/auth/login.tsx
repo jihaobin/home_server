@@ -1,38 +1,30 @@
-import { useCallback, useEffect, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { router, useFocusEffect, useNavigation } from "expo-router";
+import { useCallback, useState } from "react";
 import {
     BackHandler,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
+    TextInput,
+    TouchableOpacity,
     View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router, useFocusEffect, useNavigation } from "expo-router";
 import { Button } from "@repo/mobile-ui/components/ui/button";
-import { Input } from "@repo/mobile-ui/components/ui/input";
-import { Label } from "@repo/mobile-ui/components/ui/label";
 import { Text } from "@repo/mobile-ui/components/ui/text";
-import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { toast } from "sonner-native";
 import { authClient } from "../../lib/auth";
 import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
-import { Image } from "expo-image"
+import { Image } from "expo-image";
+
+const phoneRegex = /^1[3-9]\d{9}$/;
 
 export default function WorkerLoginScreen() {
     const navigation = useNavigation();
-    const { refetch } = useSession();
-
     const [phone, setPhone] = useState("");
-    const [otp, setOtp] = useState("");
-    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [agreeToTerms, setAgreeToTerms] = useState(false);
     const [isSendingOtp, setIsSendingOtp] = useState(false);
-    const [countdown, setCountdown] = useState(0);
-
-    useEffect(() => {
-        if (countdown <= 0) return;
-        const timer = setInterval(() => setCountdown((prev) => (prev > 0 ? prev - 1 : 0)), 1000);
-        return () => clearInterval(timer);
-    }, [countdown]);
 
     useFocusEffect(
         useCallback(() => {
@@ -41,27 +33,40 @@ export default function WorkerLoginScreen() {
                 return true;
             };
 
-            const hardwareBackSub = BackHandler.addEventListener("hardwareBackPress", redirectToTabs);
+            const hardwareBackSub = BackHandler.addEventListener(
+                "hardwareBackPress",
+                redirectToTabs,
+            );
 
-            const removeBeforeRemove = navigation.addListener("beforeRemove", (event) => {
-                if (event.data.action?.type !== "GO_BACK") {
-                    return;
-                }
-                event.preventDefault();
-                redirectToTabs();
-            });
+            const removeBeforeRemove = navigation.addListener(
+                "beforeRemove",
+                (event) => {
+                    if (event.data.action?.type !== "GO_BACK") {
+                        return;
+                    }
+                    event.preventDefault();
+                    redirectToTabs();
+                },
+            );
 
             return () => {
                 hardwareBackSub.remove();
                 removeBeforeRemove();
             };
-        }, [navigation])
+        }, [navigation]),
     );
 
+    const normalizedPhone = phone.trim();
+    const canSendOtp =
+        phoneRegex.test(normalizedPhone) && agreeToTerms && !isSendingOtp;
+
     const handleSendOtp = async () => {
-        const normalizedPhone = phone.trim();
-        if (!/^1\d{10}$/.test(normalizedPhone)) {
+        if (!phoneRegex.test(normalizedPhone)) {
             toast.error("请输入 11 位大陆手机号");
+            return;
+        }
+        if (!agreeToTerms) {
+            toast.error("请先阅读并同意协议");
             return;
         }
         setIsSendingOtp(true);
@@ -74,7 +79,9 @@ export default function WorkerLoginScreen() {
                 return;
             }
             toast.success("验证码已发送，请注意查收");
-            setCountdown(60);
+            router.push(
+                `/auth/verify?phone=${encodeURIComponent(normalizedPhone)}` as never,
+            );
         } catch (err) {
             toast.error(translateAuthErrorMessage(err));
         } finally {
@@ -82,41 +89,11 @@ export default function WorkerLoginScreen() {
         }
     };
 
-    const handleLogin = async () => {
-        const normalizedPhone = phone.trim();
-        if (!/^1\d{10}$/.test(normalizedPhone)) {
-            toast.error("请输入 11 位大陆手机号");
-            return;
-        }
-        if (!otp.trim()) {
-            toast.error("请输入短信验证码");
-            return;
-        }
-
-        setIsSubmitting(true);
-        try {
-            const { error } = await authClient.phoneNumber.verify({
-                phoneNumber: normalizedPhone,
-                code: otp.trim(),
-            });
-
-            if (error) {
-                toast.error(translateAuthErrorMessage(error));
-                return;
-            }
-
-            toast.success("欢迎回来，已为您同步最新任务");
-            refetch();
-            router.replace("/(tabs)");
-        } catch (err) {
-            toast.error(translateAuthErrorMessage(err));
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
     return (
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} className="flex-1 bg-background">
+        <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            className="flex-1 bg-background"
+        >
             <SafeAreaView className="flex-1">
                 <ScrollView
                     className="flex-1"
@@ -124,90 +101,82 @@ export default function WorkerLoginScreen() {
                     keyboardShouldPersistTaps="handled"
                     bounces={false}
                 >
-                    <View className="flex-1 px-6 pb-10">
-                        <View className="items-center gap-3 pt-10">
-                            <View className="w-16 h-16 rounded-2xl bg-primary/10 items-center justify-center">
-                                <Image source={require("@/assets/images/icon-round.png")}
+                    <View className="flex-1 px-6 pt-4 pb-10">
+                        <View className="mt-8 items-center">
+                            <View className="h-16 w-16 rounded-2xl bg-muted items-center justify-center">
+                                <Image
+                                    source={require("@/assets/images/icon-round.png")}
                                     contentFit="contain"
-                                    style={{ width: 80, height: 80 }}
+                                    style={{ width: 64, height: 64 }}
                                 />
                             </View>
-                            <Text className="text-3xl font-semibold text-foreground mt-5">服务人员登录</Text>
-                            <Text className="text-base text-muted-foreground text-center">
-                                使用手机号登录，实时跟进指派、收益与待办
+                        </View>
+
+                        <View className="mt-6 gap-3">
+                            <Text className="text-2xl font-semibold text-foreground">
+                                欢迎登录叮咚上单
                             </Text>
                         </View>
 
-                        <View className="mt-10 gap-5">
-                            <View className="gap-2">
-                                <Label className="text-xs text-muted-foreground">手机号</Label>
-                                <Input
-                                    autoCapitalize="none"
-                                    keyboardType="phone-pad"
-                                    autoComplete="tel"
-                                    placeholder="请输入 11 位手机号"
-                                    value={phone}
-                                    onChangeText={setPhone}
+                        <View className="mt-6 rounded-full bg-muted px-4 py-3 flex-row items-center">
+                            <View className="flex-row items-center">
+                                <Text className="text-sm text-foreground">
+                                    +86
+                                </Text>
+                                <Ionicons
+                                    name="chevron-down"
+                                    size={14}
+                                    color="#9ca3af"
                                 />
                             </View>
-
-                            <View className="gap-2">
-                                <View className="flex-row items-center justify-between">
-                                    <Label className="text-xs text-muted-foreground">短信验证码</Label>
-                                    <Button
-                                        variant="link"
-                                        className="h-auto p-0"
-                                        disabled={isSendingOtp || countdown > 0}
-                                        onPress={handleSendOtp}
-                                    >
-                                        <Text className="text-xs text-primary">
-                                            {countdown > 0 ? `${countdown}s 后重发` : "获取验证码"}
-                                        </Text>
-                                    </Button>
-                                </View>
-                                <Input
-                                    keyboardType="number-pad"
-                                    autoComplete="one-time-code"
-                                    placeholder="请输入验证码"
-                                    value={otp}
-                                    onChangeText={setOtp}
-                                />
-                            </View>
-
-                            <View className="rounded-2xl border border-border/60 bg-muted/30 p-4">
-                                <Text className="text-sm font-medium text-foreground">安全提醒</Text>
-                                <Text className="text-xs text-muted-foreground mt-2">
-                                    同一账户仅供本人使用，为避免账号被锁定，请勿将验证码与密码告知他人。
-                                </Text>
-                            </View>
-
-                            <Button className="mt-2" disabled={isSubmitting} onPress={handleLogin}>
-                                <Text className={isSubmitting ? "opacity-60" : ""}>
-                                    {isSubmitting ? "登录中..." : "进入工作台"}
-                                </Text>
-                            </Button>
-
-                            <View className="flex-row items-center justify-center gap-2">
-                                <Text className="text-sm text-muted-foreground">首次加入？</Text>
-                                <Button
-                                    variant="link"
-                                    className="p-0"
-                                    onPress={() => router.push("/auth/register" as never)}
-                                >
-                                    <Text className="text-primary">申请服务账号</Text>
-                                </Button>
-                            </View>
-
-                            <View className="flex-row items-center justify-center gap-2">
-                                <Button
-                                    variant="link"
-                                    className="p-0"
-                                    onPress={() => router.push("/auth/forgot-password" as never)}
-                                >
-                                    <Text className="text-xs text-muted-foreground">忘记密码？</Text>
-                                </Button>
-                            </View>
+                            <View className="mx-3 h-4 w-px bg-border/60" />
+                            <TextInput
+                                className="flex-1 text-base text-foreground"
+                                placeholder="请输入手机号"
+                                placeholderTextColor="#9ca3af"
+                                keyboardType="phone-pad"
+                                autoComplete="tel"
+                                value={phone}
+                                onChangeText={(value) =>
+                                    setPhone(value.replace(/\D/g, "").slice(0, 11))
+                                }
+                            />
                         </View>
+
+                        <Text className="mt-3 text-xs text-muted-foreground">
+                            未注册手机号验证后自动创建服务账号
+                        </Text>
+
+                        <TouchableOpacity
+                            className="mt-6 flex-row items-center"
+                            onPress={() => setAgreeToTerms((prev) => !prev)}
+                        >
+                            <View className="h-4 w-4 rounded-full border border-border items-center justify-center">
+                                {agreeToTerms ? (
+                                    <View className="h-2.5 w-2.5 rounded-full bg-primary" />
+                                ) : null}
+                            </View>
+                            <Text className="ml-2 text-xs text-muted-foreground">
+                                我已阅读并同意
+                                <Text className="text-primary">
+                                    《用户协议》
+                                </Text>
+                                和
+                                <Text className="text-primary">
+                                    《隐私政策》
+                                </Text>
+                            </Text>
+                        </TouchableOpacity>
+
+                        <Button
+                            className="mt-6"
+                            onPress={handleSendOtp}
+                            disabled={!canSendOtp}
+                        >
+                            <Text className={isSendingOtp ? "opacity-60" : ""}>
+                                {isSendingOtp ? "发送中..." : "获取短信验证码"}
+                            </Text>
+                        </Button>
                     </View>
                 </ScrollView>
             </SafeAreaView>

@@ -223,7 +223,7 @@ const AdminUserBaseSchema = z
         name: z.string().nullable().describe('用户名'),
         email: z.email().describe('邮箱'),
         phoneNumber: z.string().nullable().describe('手机号'),
-        role: UserRoleEnum.describe('角色'),
+        role: z.array(UserRoleEnum).describe('角色'),
         isActive: z.boolean().describe('是否启用'),
         createdAt: IsoDateTimeStringSchema.describe('创建时间'),
         updatedAt: IsoDateTimeStringSchema.describe('更新时间'),

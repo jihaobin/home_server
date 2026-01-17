@@ -12,7 +12,7 @@ export const authClient = createAuthClient({
     inferAdditionalFields({
       user: {
         surname: { type: 'string' },
-        role: { type: 'string', nullable: true },
+        role: { type: 'string[]', nullable: true },
       },
     }),
     genericOAuthClient(),

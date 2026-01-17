@@ -393,6 +393,13 @@
       "when": 1767767568353,
       "tag": "0055_perfect_bruce_banner",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1768534249865,
+      "tag": "0056_chubby_rage",
+      "breakpoints": true
     }
   ]
 }

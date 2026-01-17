@@ -155,7 +155,7 @@ export function UsersPageContent({ initialQuery }: UsersPageContentProps) {
         })
     }, [queryState, pathname, router])
 
-    const currentItems = tableSnapshot?.items ?? []
+    const currentItems = useMemo(() => tableSnapshot?.items ?? [], [tableSnapshot])
 
     const handleViewDetail = useCallback((userId: string) => {
         setSelectedUserId(userId)
@@ -469,21 +469,26 @@ function triggerDownload(blob: Blob, filename: string) {
     URL.revokeObjectURL(url)
 }
 
-function roleLabel(role: UserRole) {
-    switch (role) {
-        case "customer":
-            return "普通用户"
-        case "service_personnel":
-            return "服务人员"
-        case "shop_admin":
-            return "店铺管理员"
-        case "admin":
-            return "管理员"
-        case "super_admin":
-            return "超级管理员"
-        default:
-            return role
-    }
+function roleLabel(role: UserRole | UserRole[]) {
+    const roles = Array.isArray(role) ? role : [role]
+    return roles
+        .map((item) => {
+            switch (item) {
+                case "customer":
+                    return "普通用户"
+                case "service_personnel":
+                    return "服务人员"
+                case "shop_admin":
+                    return "店铺管理员"
+                case "admin":
+                    return "管理员"
+                case "super_admin":
+                    return "超级管理员"
+                default:
+                    return item
+            }
+        })
+        .join("、")
 }
 
 function escapeCsvCell(value: string) {

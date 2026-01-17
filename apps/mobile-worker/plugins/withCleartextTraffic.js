@@ -25,12 +25,42 @@ function resolveBooleanInput(value, defaultValue = false) {
     return defaultValue
 }
 
+function ensureToolsNamespace(androidManifest) {
+    const manifestAttributes = androidManifest.manifest?.$
+    if (!manifestAttributes) {
+        return
+    }
+    if (!manifestAttributes["xmlns:tools"]) {
+        manifestAttributes["xmlns:tools"] = "http://schemas.android.com/tools"
+    }
+}
+
+function addToolsReplace(applicationAttributes, replaceItem) {
+    const raw = applicationAttributes["tools:replace"]
+    if (!raw) {
+        applicationAttributes["tools:replace"] = replaceItem
+        return
+    }
+
+    const parts = String(raw)
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+
+    if (!parts.includes(replaceItem)) {
+        parts.push(replaceItem)
+        applicationAttributes["tools:replace"] = parts.join(",")
+    }
+}
+
 function applyCleartextFlag(androidManifest, enabled) {
+    ensureToolsNamespace(androidManifest)
     const application = androidManifest.manifest?.application?.[0]
     if (!application || !application.$) {
         throw new Error("未找到 <application> 节点，无法设置 android:usesCleartextTraffic")
     }
     application.$["android:usesCleartextTraffic"] = enabled ? "true" : "false"
+    addToolsReplace(application.$, "android:usesCleartextTraffic")
     return androidManifest
 }
 

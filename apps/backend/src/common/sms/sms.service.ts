@@ -82,13 +82,8 @@ export class SmsService {
             const messageText =
                 error instanceof Error ? error.message : String(error);
             const stack = error instanceof Error ? error.stack : undefined;
-            this.logger.error(
-                `初始化短信客户端失败: ${messageText}`,
-                stack,
-            );
-            throw new BadRequestException(
-                `短信服务初始化失败: ${messageText}`,
-            );
+            this.logger.error(`初始化短信客户端失败: ${messageText}`, stack);
+            throw new BadRequestException(`短信服务初始化失败: ${messageText}`);
         }
     }
 
@@ -219,23 +214,23 @@ export class SmsService {
         return 'getClient' in cache;
     }
 
-    /**
-     * 发送短信
-     * @param phone 手机号
-     * @param code 验证码
-     * @returns 发送结果和阿里云消息ID
-     */
-    async sendSms(
-        phone: string,
-        code: string | number,
-    ): Promise<SmsSendResult> {
-        const templateCode = process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION || '';
-        return this.sendTemplateSms({
-            phone,
-            templateCode,
-            templateParams: { code: code.toString() },
-        });
-    }
+    // /**
+    //  * 发送短信
+    //  * @param phone 手机号
+    //  * @param code 验证码
+    //  * @returns 发送结果和阿里云消息ID
+    //  */
+    // async sendSms(
+    //     phone: string,
+    //     code: string | number,
+    // ): Promise<SmsSendResult> {
+    //     const templateCode = process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION || '';
+    //     return this.sendTemplateSms({
+    //         phone,
+    //         templateCode,
+    //         templateParams: { code: code.toString() },
+    //     });
+    // }
 
     /**
      * 使用指定模板发送短信
@@ -254,6 +249,9 @@ export class SmsService {
         outId?: string;
     }): Promise<SmsSendResult> {
         const { phone, templateCode, templateParams, signName, outId } = params;
+        await this.checkPhoneLimit(phone);
+        await this.checkSystemLimit();
+
         if (!templateCode) {
             const error = '短信模板未配置';
             this.logger.error(
@@ -322,39 +320,39 @@ export class SmsService {
         }
     }
 
-    /**
-     * 发送验证码
-     * @param params 参数
-     * @param params.phone 手机号
-     * @param params.codeLength 验证码长度
-     * @param params.expires 验证码有效期(分钟)
-     * @param params.biz 业务类型
-     * @returns
-     */
-    async sendVerifyCode(params: {
-        phone: string;
-        codeLength?: number;
-        expires?: number;
-        biz: string;
-    }) {
-        const { phone, codeLength = 6, expires = 10, biz } = params;
-        // 检查发送限制(发送验证码时，检查发送限制)
-        await this.checkPhoneLimit(phone);
-        await this.checkSystemLimit();
+    // /**
+    //  * 发送验证码
+    //  * @param params 参数
+    //  * @param params.phone 手机号
+    //  * @param params.codeLength 验证码长度
+    //  * @param params.expires 验证码有效期(分钟)
+    //  * @param params.biz 业务类型
+    //  * @returns
+    //  */
+    // async sendVerifyCode(params: {
+    //     phone: string;
+    //     codeLength?: number;
+    //     expires?: number;
+    //     biz: string;
+    // }) {
+    //     const { phone, codeLength = 6, expires = 10, biz } = params;
+    //     // 检查发送限制(发送验证码时，检查发送限制)
+    //     await this.checkPhoneLimit(phone);
+    //     await this.checkSystemLimit();
 
-        const code = Math.floor(
-            10 ** (codeLength - 1) +
-                Math.random() * (10 ** codeLength - 10 ** (codeLength - 1)),
-        ).toString();
+    //     const code = Math.floor(
+    //         10 ** (codeLength - 1) +
+    //             Math.random() * (10 ** codeLength - 10 ** (codeLength - 1)),
+    //     ).toString();
 
-        await this.sendSms(phone, code);
+    //     await this.sendSms(phone, code);
 
-        // 存储验证码在缓存中
-        const verificationCodeKey = this.getVerificationCodeKey(phone, biz);
-        await this.cacheService.set(verificationCodeKey, code, expires * 60);
+    //     // 存储验证码在缓存中
+    //     const verificationCodeKey = this.getVerificationCodeKey(phone, biz);
+    //     await this.cacheService.set(verificationCodeKey, code, expires * 60);
 
-        return code;
-    }
+    //     return code;
+    // }
 
     /**
      * 验证验证码
@@ -364,16 +362,16 @@ export class SmsService {
      * @param params.biz 业务类型
      * @returns
      */
-    async verifyCode(params: { phone: string; code: string; biz: string }) {
-        const { phone, code, biz } = params;
-        const cacheCode = await this.cacheService.get<string>(
-            this.getVerificationCodeKey(phone, biz),
-        );
-        if (cacheCode !== code) {
-            throw new ValidationException('验证码错误');
-        }
-        return true;
-    }
+    // async verifyCode(params: { phone: string; code: string; biz: string }) {
+    //     const { phone, code, biz } = params;
+    //     const cacheCode = await this.cacheService.get<string>(
+    //         this.getVerificationCodeKey(phone, biz),
+    //     );
+    //     if (cacheCode !== code) {
+    //         throw new ValidationException('验证码错误');
+    //     }
+    //     return true;
+    // }
 
     /**
      * 查询短信发送状态

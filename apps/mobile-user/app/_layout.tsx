@@ -1,6 +1,6 @@
 import "@repo/mobile-ui/styles/mobile-user.css";
 import { ThemeProvider } from "@react-navigation/native";
-import { NAV_THEME } from "@repo/mobile-ui/lib/constants";
+import { NAV_THEME } from "@repo/mobile-ui/lib/mobile-user-constants";
 import { PortalHost } from "@rn-primitives/portal";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -120,6 +120,12 @@ function RootNavigation() {
             <Stack.Protected guard={!session?.user.id}>
                 <Stack.Screen
                     name="auth/login"
+                    options={{
+                        headerShown: false,
+                    }}
+                />
+                <Stack.Screen
+                    name="auth/verify"
                     options={{
                         headerShown: false,
                     }}

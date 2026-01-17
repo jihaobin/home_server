@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
+import { and, arrayContains, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import type { UserRole } from '@repo/types';
 import { DB } from 'src/common/database/database.provider';
@@ -20,7 +20,7 @@ type UserRow = {
     name: string | null;
     email: string;
     phoneNumber: string | null;
-    role: UserRole;
+    role: UserRole[];
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date | null;
@@ -95,7 +95,7 @@ export class AdminUsersRepository {
         return {
             items: rows.map((row) => ({
                 ...row,
-                role: row.role ?? 'customer',
+                role: row.role?.length ? row.role : ['customer'],
                 isActive: row.isActive ?? false,
                 emailVerified: row.emailVerified ?? false,
                 phoneNumberVerified: row.phoneNumberVerified ?? false,
@@ -138,7 +138,7 @@ export class AdminUsersRepository {
         const statsMap = await this.buildOrderStatsMap([row.id]);
         return {
             ...row,
-            role: row.role ?? 'customer',
+            role: row.role?.length ? row.role : ['customer'],
             isActive: row.isActive ?? false,
             emailVerified: row.emailVerified ?? false,
             phoneNumberVerified: row.phoneNumberVerified ?? false,
@@ -169,7 +169,7 @@ export class AdminUsersRepository {
     ): Promise<AdminUserRecord | null> {
         const result = await this.db
             .update(users)
-            .set({ role })
+            .set({ role: [role] })
             .where(eq(users.id, userId))
             .returning({ id: users.id });
 
@@ -192,7 +192,7 @@ export class AdminUsersRepository {
         }
 
         if (filters.role) {
-            conditions.push(eq(users.role, filters.role));
+            conditions.push(arrayContains(users.role, [filters.role]));
         }
 
         if (filters.status === 'active') {

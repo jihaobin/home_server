@@ -7,7 +7,7 @@ import {
     OnModuleInit,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, arrayOverlaps, eq } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import {
     CACHE_SERVICE,
@@ -296,7 +296,10 @@ export class OrderExpireConsumerService
             .select({ id: users.id })
             .from(users)
             .where(
-                and(inArray(users.role, ADMIN_ROLES), eq(users.isActive, true)),
+                and(
+                    arrayOverlaps(users.role, ADMIN_ROLES),
+                    eq(users.isActive, true),
+                ),
             );
         return rows.map((row) => row.id);
     }

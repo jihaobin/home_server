@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { UploadCloud, ImageIcon, X } from 'lucide-react';
 import { Button } from '../components/button';
 import { cn } from '../lib/utils';
+import Image from "next/image"
 
 export type UploadValue = {
     id: string;
@@ -41,16 +42,15 @@ export function UploadField({
 }: UploadFieldProps) {
     const inputRef = useRef<HTMLInputElement | null>(null);
     const [isUploading, setIsUploading] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
+    const dragCounter = useRef(0);
 
     const handleTriggerFile = () => {
         inputRef.current?.click();
     };
 
-    const handleFileChange = async (
-        event: React.ChangeEvent<HTMLInputElement>,
-    ) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
+    const handleUploadFile = async (file: File) => {
+        if (disabled || isUploading) return;
 
         setIsUploading(true);
         try {
@@ -60,8 +60,59 @@ export function UploadField({
             onError?.(error as Error);
         } finally {
             setIsUploading(false);
-            event.target.value = '';
         }
+    };
+
+    const handleFileChange = async (
+        event: React.ChangeEvent<HTMLInputElement>,
+    ) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        await handleUploadFile(file);
+        event.target.value = '';
+    };
+
+    const handleDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+        if (disabled || isUploading) return;
+        event.preventDefault();
+        event.stopPropagation();
+        dragCounter.current += 1;
+        setIsDragging(true);
+    };
+
+    const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+        if (disabled || isUploading) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.dataTransfer) {
+            event.dataTransfer.dropEffect = 'copy';
+        }
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+        if (disabled || isUploading) return;
+        event.preventDefault();
+        event.stopPropagation();
+        dragCounter.current -= 1;
+        if (dragCounter.current <= 0) {
+            dragCounter.current = 0;
+            setIsDragging(false);
+        }
+    };
+
+    const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+        if (disabled || isUploading) return;
+        event.preventDefault();
+        event.stopPropagation();
+        dragCounter.current = 0;
+        setIsDragging(false);
+
+        const file = event.dataTransfer?.files?.[0];
+        if (!file) return;
+
+        await handleUploadFile(file);
     };
 
     return (
@@ -78,8 +129,15 @@ export function UploadField({
                 className={cn(
                     'rounded-lg border border-dashed',
                     'transition-colors',
+                    isDragging && !disabled
+                        ? 'border-primary bg-primary/5'
+                        : null,
                     disabled ? 'opacity-60' : 'hover:border-foreground/30',
                 )}
+                onDragEnter={handleDragEnter}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
             >
                 {value ? (
                     <div className="flex items-center gap-3 p-4">
@@ -155,11 +213,12 @@ function PreviewBadge({ value }: { value: UploadValue }) {
 
     return (
         <div className="relative size-12 overflow-hidden rounded-md border border-border bg-muted">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
+            <Image
                 src={value.url}
                 alt={value.name ?? '上传文件'}
                 className="size-full object-cover"
+                width={48}
+                height={48}
             />
         </div>
     );

@@ -2,7 +2,6 @@
 
 import { useCallback, useMemo } from "react"
 import {
-    flexRender,
     getCoreRowModel,
     type PaginationState,
     type Updater,
@@ -34,6 +33,13 @@ const roleLabels: Record<UserRole, string> = {
     super_admin: "超级管理员",
 }
 
+const formatRoles = (roles: UserRole[]) => {
+    if (!roles.length) {
+        return "—"
+    }
+    return roles.map((role) => roleLabels[role] ?? role).join("、")
+}
+
 export function UsersTable({
     data,
     total,
@@ -42,7 +48,6 @@ export function UsersTable({
     onPaginationChange,
     onViewDetail,
     onToggleStatus,
-    isRefreshing,
 }: UsersTableProps) {
     const columns = useMemo<ColumnDef<AdminUserListItem>[]>(
         () => [
@@ -65,7 +70,7 @@ export function UsersTable({
                     const user = row.original
                     return (
                         <Badge variant="outline" className="capitalize">
-                            {roleLabels[user.role] ?? user.role}
+                            {formatRoles(user.role)}
                         </Badge>
                     )
                 },

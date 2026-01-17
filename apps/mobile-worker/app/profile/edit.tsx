@@ -82,20 +82,30 @@ export default function EditProfileScreen() {
             return;
         }
 
+        const locationData = profile
+            ? ((profile as any).location as { lng: number; lat: number } | null)
+            : null;
+        if (!locationData) {
+            Alert.alert("提示", "请先在服务区域中设置地址信息");
+            return;
+        }
+
         setSaving(true);
         try {
             const updates: Array<Promise<unknown>> = [];
             if (displayName.trim() !== session?.user?.name) {
                 updates.push(
-                    authClient.updateUser({ name: displayName.trim() }),
+                    authClient
+                        .updateUser({ name: displayName.trim() })
+                        .then((result) => {
+                            if (result.error) {
+                                throw new Error(result.error.message ?? "用户名更新失败");
+                            }
+                        }),
                 );
             }
 
             const years = Number.parseInt(workYears, 10) || 0;
-            const locationData = profile
-                ? ((profile as any).location as { lng: number; lat: number } | null)
-                : null;
-
             const payload = {
                 bio: bio.trim() || undefined,
                 yearsOfExperience: years,
@@ -108,12 +118,7 @@ export default function EditProfileScreen() {
                 workDays: profile.workDays ?? "1234567",
                 isAvailable: profile.isAvailable,
                 currentStatus: profile.currentStatus,
-                location:
-                    locationData ??
-                    ({
-                        lng: 0,
-                        lat: 0,
-                    } as const),
+                location: locationData,
             };
 
             updates.push(upsertWorkInfo.mutateAsync(payload));

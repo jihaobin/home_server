@@ -1,13 +1,16 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { genericOAuth, phoneNumber, openAPI } from 'better-auth/plugins';
-import db from './src/common/database/db';
+import { APIError } from 'better-call';
+import db, { type DbType } from './src/common/database/db';
 
 import * as schema from 'src/common/database/schema';
 import { MailService } from 'src/common/mail/mail.service';
 import { expo } from '@better-auth/expo';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { SmsService } from 'src/common/sms/sms.service';
+import { normalizeUserRoles } from 'src/modules/auth/rbac.utils';
+import type { UserRole } from '@repo/types';
 
 const envTrustedOrigins = process.env.TRUSTED_ORIGINS
     ? process.env.TRUSTED_ORIGINS.split(',').map((origin) => origin.trim())
@@ -20,6 +23,178 @@ const trustedOrigins = Array.from(
 const isHttps =
     (process.env.BETTER_AUTH_URL ?? '').startsWith('https://') ||
     (process.env.TRUSTED_ORIGINS ?? '').includes('https://');
+
+const DEFAULT_WORK_DAYS = '1234567';
+const WORKER_ORIGIN_PREFIX = 'mobileworker://';
+
+function isWorkerOrigin(origin?: string | null) {
+    if (!origin) {
+        return false;
+    }
+    return origin.startsWith(WORKER_ORIGIN_PREFIX);
+}
+
+function getTimestamp(value: unknown): number | null {
+    if (!value) {
+        return null;
+    }
+    const date = value instanceof Date ? value : new Date(value as string);
+    const time = date.getTime();
+    if (Number.isNaN(time)) {
+        return null;
+    }
+    return time;
+}
+
+function isNewlyCreatedUser(user: { createdAt?: unknown; updatedAt?: unknown }) {
+    const createdAt = getTimestamp(user.createdAt);
+    const updatedAt = getTimestamp(user.updatedAt);
+    if (createdAt === null || updatedAt === null) {
+        return false;
+    }
+    return Math.abs(updatedAt - createdAt) <= 1000;
+}
+
+function getSmsErrorMessage(error: unknown, fallback: string): string {
+    if (!error) {
+        return fallback;
+    }
+    if (typeof error === 'string') {
+        return error;
+    }
+    if (typeof error === 'object') {
+        const response = (
+            error as { getResponse?: () => unknown }
+        ).getResponse?.();
+        const responseMessage = extractResponseMessage(response);
+        if (responseMessage) {
+            return responseMessage;
+        }
+        const rawResponse = (error as { response?: unknown }).response;
+        const rawMessage = extractResponseMessage(rawResponse);
+        if (rawMessage) {
+            return rawMessage;
+        }
+        const message = (error as { message?: unknown }).message;
+        if (typeof message === 'string' && message) {
+            return message;
+        }
+    }
+    return fallback;
+}
+
+function extractResponseMessage(response: unknown): string | null {
+    if (!response) {
+        return null;
+    }
+    if (typeof response === 'string') {
+        return response;
+    }
+    if (typeof response === 'object') {
+        const message = (response as { message?: unknown }).message;
+        if (typeof message === 'string' && message) {
+            return message;
+        }
+        if (Array.isArray(message) && message.length > 0) {
+            return message
+                .filter((item): item is string => typeof item === 'string')
+                .join('; ');
+        }
+    }
+    return null;
+}
+
+type DbExecutor = {
+    select: DbType['select'];
+    insert: DbType['insert'];
+    update: DbType['update'];
+};
+
+async function ensureServicePersonnelRecord(
+    userId: string,
+    executor?: DbExecutor,
+) {
+    const run = async (tx: DbExecutor) => {
+        const existing = await tx
+            .select({
+                userId: schema.servicePersonnel.userId,
+            })
+            .from(schema.servicePersonnel)
+            .where(eq(schema.servicePersonnel.userId, userId))
+            .limit(1);
+
+        if (existing.length > 0) {
+            return;
+        }
+
+        await tx.insert(schema.servicePersonnel).values({
+            userId,
+            bio: null,
+            province: '未设置',
+            district: null,
+            county: null,
+            detailedAddress: null,
+            geom: [0, 0] as [number, number],
+            yearsOfExperience: 0,
+            workStartTime: '08:00:00',
+            workEndTime: '18:00:00',
+            isAvailable: true,
+            workDays: DEFAULT_WORK_DAYS,
+            currentStatus: 'available',
+        });
+    };
+
+    if (executor) {
+        await run(executor);
+        return;
+    }
+
+    await db.transaction(async (tx) => {
+        await run(tx);
+    });
+}
+
+async function updateUserRoles(
+    userId: string,
+    roles: UserRole[],
+    executor: DbExecutor = db,
+) {
+    const normalizedRoles = roles.length ? roles : ['customer'];
+    const roleValues = normalizedRoles.map((role) => sql`${role}`);
+
+    await executor
+        .update(schema.users)
+        .set({
+            role: sql`ARRAY[${sql.join(roleValues, sql`, `)}]::user_role[]`,
+            updatedAt: new Date(),
+        })
+        .where(eq(schema.users.id, userId));
+}
+
+export async function upgradeToServicePersonnel(
+    userId: string,
+    rawRoles?: string | string[],
+) {
+    const currentRoles = normalizeUserRoles(rawRoles);
+    const hasServicePersonnel = currentRoles.includes('service_personnel');
+    const nextRoles = hasServicePersonnel
+        ? currentRoles
+        : Array.from(
+              new Set([...currentRoles, 'customer', 'service_personnel']),
+          );
+
+    if (hasServicePersonnel) {
+        await ensureServicePersonnelRecord(userId);
+        return nextRoles;
+    }
+
+    await db.transaction(async (tx) => {
+        await updateUserRoles(userId, nextRoles as UserRole[], tx);
+        await ensureServicePersonnelRecord(userId, tx);
+    });
+
+    return nextRoles;
+}
 
 /**
  * 创建 Better Auth 实例的工厂函数
@@ -136,11 +311,22 @@ export function createAuth(
             // Additional custom fields that will be available in session
             additionalFields: {
                 role: {
-                    type: 'string',
+                    type: 'string[]',
                     required: true,
-                    defaultValue: 'customer',
+                    defaultValue: ['customer'],
                     fieldName: 'role',
                     input: true,
+                    transform: {
+                        input: (value) => {
+                            if (Array.isArray(value)) {
+                                return value;
+                            }
+                            if (typeof value === 'string') {
+                                return normalizeUserRoles(value);
+                            }
+                            return ['customer'];
+                        },
+                    },
                 },
                 // isActive: {
                 //     type: 'boolean',
@@ -167,32 +353,86 @@ export function createAuth(
                 async sendOTP({ phoneNumber, code }) {
                     if (!smsService) {
                         console.error('SmsService未配置，无法发送短信验证码');
-                        throw new Error('短信服务未配置');
+                        throw new APIError('BAD_REQUEST', {
+                            message: '短信服务未配置',
+                        });
                     }
-                    await smsService.sendTemplateSms({
-                        phone: phoneNumber,
-                        templateCode:
-                            process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION || '',
-                        templateParams: { code },
-                    });
+                    let result: { success: boolean; error?: string };
+                    try {
+                        result = await smsService.sendTemplateSms({
+                            phone: phoneNumber,
+                            templateCode:
+                                process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION ||
+                                '',
+                            templateParams: { code },
+                        });
+                    } catch (error) {
+                        throw new APIError('BAD_REQUEST', {
+                            message: getSmsErrorMessage(error, '短信发送失败'),
+                        });
+                    }
+                    if (!result.success) {
+                        throw new APIError('BAD_REQUEST', {
+                            message: result.error || '短信发送失败',
+                        });
+                    }
                 },
                 async sendPasswordResetOTP({ phoneNumber, code }) {
                     if (!smsService) {
                         console.error(
                             'SmsService未配置，无法发送找回密码短信验证码',
                         );
-                        throw new Error('短信服务未配置');
+                        throw new APIError('BAD_REQUEST', {
+                            message: '短信服务未配置',
+                        });
                     }
-                    await smsService.sendTemplateSms({
-                        phone: phoneNumber,
-                        templateCode:
-                            process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION || '',
-                        templateParams: { code },
-                    });
+                    let result: { success: boolean; error?: string };
+                    try {
+                        result = await smsService.sendTemplateSms({
+                            phone: phoneNumber,
+                            templateCode:
+                                process.env.ALIYUN_SMS_TEMPLATE_VERIFICATION ||
+                                '',
+
+                            templateParams: { code },
+                        });
+                    } catch (error) {
+                        throw new APIError('BAD_REQUEST', {
+                            message: getSmsErrorMessage(error, '短信发送失败'),
+                        });
+                    }
+                    if (!result.success) {
+                        throw new APIError('BAD_REQUEST', {
+                            message: result.error || '短信发送失败',
+                        });
+                    }
                 },
                 signUpOnVerification: {
                     getTempEmail: (phone) => `${phone}@phone.local`,
                     getTempName: (phone) => `用户${phone.slice(-4)}`,
+                },
+                async callbackOnVerification({ user }, ctx) {
+                    const origin = ctx?.getHeader?.('expo-origin');
+                    if (!isWorkerOrigin(origin)) {
+                        return;
+                    }
+                    const roles = normalizeUserRoles((user as any).role);
+                    try {
+                        if (isNewlyCreatedUser(user)) {
+                            await upgradeToServicePersonnel(user.id, roles);
+                            return;
+                        }
+                        if (!roles.includes('service_personnel')) {
+                            return;
+                        }
+                        await ensureServicePersonnelRecord(user.id);
+                    } catch (error) {
+                        console.error(
+                            `[better-auth] Failed to apply service_personnel for ${user.id}`,
+                            error,
+                        );
+                        throw error;
+                    }
                 },
             }),
             genericOAuth({
@@ -307,52 +547,52 @@ export function createAuth(
         ],
         databaseHooks: {
             user: {
-                create: {
+                update: {
+                    before: async (data) => {
+                        if (!data || !('role' in data)) {
+                            return;
+                        }
+                        const rawRole = (
+                            data as {
+                                role?: string | string[] | null;
+                            }
+                        ).role;
+                        if (rawRole === undefined || rawRole === null) {
+                            return;
+                        }
+                        const nextRoles = normalizeUserRoles(rawRole);
+                        return {
+                            data: {
+                                role: nextRoles,
+                            },
+                        };
+                    },
                     after: async (user) => {
-                        if ((user as any).role !== 'service_personnel') {
+                        const roles = normalizeUserRoles((user as any).role);
+                        if (!roles.includes('service_personnel')) {
                             return;
                         }
 
                         try {
-                            await db.transaction(async (tx) => {
-                                const existing = await tx
-                                    .select({
-                                        userId: schema.servicePersonnel.userId,
-                                    })
-                                    .from(schema.servicePersonnel)
-                                    .where(
-                                        eq(
-                                            schema.servicePersonnel.userId,
-                                            user.id,
-                                        ),
-                                    )
-                                    .limit(1);
+                            await ensureServicePersonnelRecord(user.id);
+                        } catch (error) {
+                            console.error(
+                                `[better-auth] auto insert service_personnel failed for user ${user.id}`,
+                                error,
+                            );
+                            throw error;
+                        }
+                    },
+                },
+                create: {
+                    after: async (user) => {
+                        const roles = normalizeUserRoles((user as any).role);
+                        if (!roles.includes('service_personnel')) {
+                            return;
+                        }
 
-                                if (existing.length > 0) {
-                                    console.warn(
-                                        `[better-auth] service_personnel exists for user ${user.id}, skip auto insert`,
-                                    );
-                                    return;
-                                }
-
-                                await tx
-                                    .insert(schema.servicePersonnel)
-                                    .values({
-                                        userId: user.id,
-                                        bio: null,
-                                        province: '未设置',
-                                        district: null,
-                                        county: null,
-                                        detailedAddress: '',
-                                        geom: [0, 0] as [number, number],
-                                        yearsOfExperience: 0,
-                                        workStartTime: '08:00:00',
-                                        workEndTime: '18:00:00',
-                                        isAvailable: true,
-                                        workDays: '12345',
-                                        currentStatus: 'available',
-                                    });
-                            });
+                        try {
+                            await ensureServicePersonnelRecord(user.id);
                         } catch (error) {
                             await db
                                 .delete(schema.users)
@@ -363,21 +603,5 @@ export function createAuth(
                 },
             },
         },
-        // ...(isProd
-        //     ? {
-        //           advanced: {
-        //               crossSubDomainCookies: {
-        //                   enabled: true,
-        //                   domain: process.env.CROSS_DOMAIN_ORIGIN, // Domain with a leading period
-        //               },
-        //               defaultCookieAttributes: {
-        //                   secure: true,
-        //                   httpOnly: true,
-        //                   sameSite: 'none', // Allows CORS-based cookie sharing across subdomains
-        //                   partitioned: true, // New browser standards will mandate this for foreign cookies
-        //               },
-        //           },
-        //       }
-        //     : {}),
     });
 }

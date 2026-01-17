@@ -73,6 +73,8 @@ const PLATFORM_OPTIONS = [
     { label: "iOS", value: AppReleasePlatformEnum.enum.ios },
 ]
 
+const APP_FILE_EXTENSIONS = [".apk", ".ipa"]
+
 export function AppReleaseFormDialog({
     open,
     onOpenChange,
@@ -171,6 +173,9 @@ export function AppReleaseFormDialog({
 
     const handleUpload = useCallback(
         async (file: File) => {
+            if (!isAppPackageFile(file)) {
+                throw new Error("仅允许上传 APK 或 IPA 文件")
+            }
             const result = await uploadFile.mutateAsync({ file, fileType: file.type })
             const value: UploadValue = {
                 id: result.id,
@@ -459,7 +464,7 @@ export function AppReleaseFormDialog({
                                                 onUpload={handleUpload}
                                                 accept=".apk,.ipa,application/vnd.android.package-archive"
                                                 disabled={isSubmitting}
-                                                helperText="至少上传 APK 或填写外链，其余字段将复用已有文件。"
+                                                helperText="至少上传 APK 或填写外链。"
                                                 onError={(error) => toast.error(error.message)}
                                             />
                                             <FieldError field={field} />
@@ -490,7 +495,7 @@ export function AppReleaseFormDialog({
 
                     <DialogFooter className={cn(
                         "mt-auto gap-2 border-t px-6 py-4",
-                        "bg-background/60 backdrop-blur supports-[backdrop-filter]:bg-background/80",
+                        "bg-background/60 backdrop-blur supports-backdrop-filter:bg-background/80",
                     )}>
                         <form.Subscribe
                             selector={(state) => [state.canSubmit, state.isSubmitting]}
@@ -523,6 +528,11 @@ export function AppReleaseFormDialog({
             </DialogContent>
         </Dialog>
     )
+}
+
+function isAppPackageFile(file: File) {
+    const name = file.name.toLowerCase()
+    return APP_FILE_EXTENSIONS.some((ext) => name.endsWith(ext))
 }
 
 function mapReleaseToUploadValue(

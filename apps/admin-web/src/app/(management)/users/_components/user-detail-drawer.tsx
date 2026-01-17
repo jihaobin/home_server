@@ -41,6 +41,22 @@ const ROLE_LABELS: Record<UserRole, string> = {
     super_admin: "超级管理员",
 }
 
+const formatRoleLabel = (role: UserRole) => ROLE_LABELS[role] ?? role
+
+const formatRoles = (roles: UserRole[]) => {
+    if (!roles.length) {
+        return "未设置"
+    }
+    return roles.map((role) => formatRoleLabel(role)).join("、")
+}
+
+const resolvePrimaryRole = (roles: UserRole[]) => {
+    if (roles.includes("service_personnel")) {
+        return "service_personnel"
+    }
+    return roles[0] ?? "customer"
+}
+
 type UserDetailDrawerProps = {
     userId: string | null
     open: boolean
@@ -118,8 +134,15 @@ function UserDetailContent({
         }
     }
 
+    const roles = useMemo<UserRole[]>(
+        () => (data.role?.length ? (data.role as UserRole[]) : ["customer"]),
+        [data.role],
+    )
+    const primaryRole = useMemo<UserRole>(() => resolvePrimaryRole(roles), [roles])
+    const roleSummary = useMemo(() => formatRoles(roles), [roles])
+
     const handleRoleChange = async (role: UserRole) => {
-        if (role === data.role) return
+        if (role === primaryRole) return
         setRoleUpdating(true)
         try {
             await onRoleChange(userId, role)
@@ -151,7 +174,7 @@ function UserDetailContent({
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                     <Select
-                        value={data.role}
+                        value={primaryRole}
                         onValueChange={(value) => handleRoleChange(value as UserRole)}
                         disabled={isRoleUpdating}
                     >
@@ -190,7 +213,7 @@ function UserDetailContent({
                     />
                     <EntityDrawerProperty
                         label="角色"
-                        value={ROLE_LABELS[data.role] ?? data.role}
+                        value={roleSummary}
                     />
                     <EntityDrawerProperty
                         label="邮箱验证"

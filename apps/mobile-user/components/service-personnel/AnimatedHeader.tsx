@@ -1,6 +1,6 @@
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
 import { Text } from "@repo/mobile-ui/components/ui/text";
-import { NAV_THEME } from "@repo/mobile-ui/lib/constants";
+import { NAV_THEME } from "@repo/mobile-ui/lib/mobile-user-constants";
 import { cn } from "@repo/mobile-ui/lib/utils";
 import { useRouter } from "expo-router";
 import { icons as lucideIconRegistry } from "lucide-react-native";

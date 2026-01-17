@@ -1,49 +1,30 @@
-import { Button } from "@repo/mobile-ui/components/ui/button";
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from "@repo/mobile-ui/components/ui/card";
-import { Input } from "@repo/mobile-ui/components/ui/input";
-import { Label } from "@repo/mobile-ui/components/ui/label";
-import { Text } from "@repo/mobile-ui/components/ui/text";
+import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useNavigation } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
     BackHandler,
     KeyboardAvoidingView,
     Platform,
-    RefreshControl,
     ScrollView,
+    TextInput,
+    TouchableOpacity,
     View,
 } from "react-native";
-import { useSession } from "@repo/mobile-ui/components/SessionProvider";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Button } from "@repo/mobile-ui/components/ui/button";
+import { Text } from "@repo/mobile-ui/components/ui/text";
+import { toast } from "sonner-native";
 import { authClient } from "@repo/lib/auth-client";
 import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
-import { toast } from "sonner-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 
-export default function LoginScreen() {
-    const [phone, setPhone] = useState("");
-    const [otp, setOtp] = useState("");
-    const [isLoading, setIsLoading] = useState(false);
-    const [isSendingOtp, setIsSendingOtp] = useState(false);
-    const [countdown, setCountdown] = useState(0);
-    const [isRefreshing, setIsRefreshing] = useState(false);
-    const { refetch } = useSession();
-    const navigation = useNavigation();
+const phoneRegex = /^1[3-9]\d{9}$/;
 
-    // 倒计时
-    useEffect(() => {
-        if (countdown <= 0) return;
-        const timer = setInterval(() => {
-            setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
-        }, 1000);
-        return () => clearInterval(timer);
-    }, [countdown]);
+export default function LoginScreen() {
+    const navigation = useNavigation();
+    const [phone, setPhone] = useState("");
+    const [agreeToTerms, setAgreeToTerms] = useState(false);
+    const [isSendingOtp, setIsSendingOtp] = useState(false);
 
     useFocusEffect(
         useCallback(() => {
@@ -57,14 +38,16 @@ export default function LoginScreen() {
                 redirectToHome,
             );
 
-            const removeBeforeRemove = navigation.addListener("beforeRemove", (event) => {
-                if (event.data.action?.type !== "GO_BACK") {
-                    return;
-                }
-
-                event.preventDefault();
-                redirectToHome();
-            });
+            const removeBeforeRemove = navigation.addListener(
+                "beforeRemove",
+                (event) => {
+                    if (event.data.action?.type !== "GO_BACK") {
+                        return;
+                    }
+                    event.preventDefault();
+                    redirectToHome();
+                },
+            );
 
             return () => {
                 hardwareBackSub.remove();
@@ -73,10 +56,17 @@ export default function LoginScreen() {
         }, [navigation]),
     );
 
+    const normalizedPhone = phone.trim();
+    const canSendOtp =
+        phoneRegex.test(normalizedPhone) && agreeToTerms && !isSendingOtp;
+
     const handleSendOtp = async () => {
-        const normalizedPhone = phone.trim();
-        if (!/^1\d{10}$/.test(normalizedPhone)) {
-            toast.error("请输入有效的手机号");
+        if (!phoneRegex.test(normalizedPhone)) {
+            toast.error("请输入 11 位大陆手机号");
+            return;
+        }
+        if (!agreeToTerms) {
+            toast.error("请先阅读并同意协议");
             return;
         }
         setIsSendingOtp(true);
@@ -89,7 +79,9 @@ export default function LoginScreen() {
                 return;
             }
             toast.success("验证码已发送，请注意查收");
-            setCountdown(60);
+            router.push(
+                `/auth/verify?phone=${encodeURIComponent(normalizedPhone)}` as any,
+            );
         } catch (error) {
             toast.error(translateAuthErrorMessage(error));
         } finally {
@@ -97,173 +89,93 @@ export default function LoginScreen() {
         }
     };
 
-    const handleLogin = async () => {
-        const normalizedPhone = phone.trim();
-        if (!/^1\d{10}$/.test(normalizedPhone)) {
-            toast.error("请输入有效的手机号");
-            return;
-        }
-        if (!otp.trim()) {
-            toast.error("请输入短信验证码");
-            return;
-        }
-
-        setIsLoading(true);
-        try {
-            const { error } = await authClient.phoneNumber.verify({
-                phoneNumber: normalizedPhone,
-                code: otp.trim(),
-            });
-            if (error) {
-                toast.error(translateAuthErrorMessage(error));
-                return;
-            }
-            refetch();
-            router.replace("/(tabs)");
-        } catch (error) {
-            toast.error(translateAuthErrorMessage(error));
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleRefresh = useCallback(async () => {
-        setIsRefreshing(true);
-        try {
-            setPhone("");
-            setOtp("");
-            setCountdown(0);
-        } finally {
-            setIsRefreshing(false);
-        }
-    }, []);
-
     return (
         <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
-            className="flex-1"
+            className="flex-1 bg-background"
         >
-            <SafeAreaView>
+            <SafeAreaView className="flex-1">
                 <ScrollView
+                    className="flex-1"
                     contentContainerStyle={{ flexGrow: 1 }}
-                    refreshControl={
-                        <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
-                    }
+                    keyboardShouldPersistTaps="handled"
                 >
-                    <View className="flex-1 justify-center px-6 py-12 bg-background">
-                        {/* Logo/Brand Section */}
-                        <View className="items-center mb-8">
-                            <View className="w-20 h-20 rounded-full border-primary  items-center justify-center mb-4">
-                                <Image source={require("@/assets/images/icon-round.png")}
+                    <View className="flex-1 px-6 pt-4 pb-10">
+                        <View className="mt-8 items-center">
+                            <View className="h-16 w-16 rounded-2xl bg-muted items-center justify-center">
+                                <Image
+                                    source={require("@/assets/images/icon-round.png")}
                                     contentFit="contain"
-                                    style={{ width: 80, height: 80 }}
+                                    style={{ width: 64, height: 64 }}
                                 />
                             </View>
-                            <Text className="text-2xl font-bold text-foreground">叮咚上门</Text>
-                            <Text className="text-sm text-muted-foreground mt-1">
-                                专业便民，服务到家
+                        </View>
+
+                        <View className="mt-6 gap-3">
+                            <Text className="text-2xl font-semibold text-foreground">
+                                欢迎登录叮咚上门
                             </Text>
                         </View>
 
-                        {/* Login Form */}
-                        <Card className="w-full max-w-sm mx-auto">
-                            <CardHeader className="space-y-1">
-                                <CardTitle className="text-2xl text-center">登录</CardTitle>
-                                <CardDescription className="text-center">
-                                    使用手机号和验证码登录
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent className="gap-4">
-                                <View className="gap-2">
-                                    <Label>手机号</Label>
-                                    <Input
-                                        placeholder="请输入手机号"
-                                        value={phone}
-                                        onChangeText={setPhone}
-                                        keyboardType="phone-pad"
-                                        autoComplete="tel"
-                                        className="w-full"
-                                    />
-                                </View>
-
-                                <View className="gap-2">
-                                    <View className="flex-row justify-between items-center">
-                                        <Label>验证码</Label>
-                                        <Button
-                                            variant="ghost"
-                                            className="p-0 h-auto"
-                                            disabled={isSendingOtp || countdown > 0}
-                                            onPress={handleSendOtp}
-                                        >
-                                            <Text className="text-xs text-primary">
-                                                {countdown > 0
-                                                    ? `${countdown}s 后重发`
-                                                    : "发送验证码"}
-                                            </Text>
-                                        </Button>
-                                    </View>
-                                    <Input
-                                        placeholder="请输入短信验证码"
-                                        value={otp}
-                                        onChangeText={setOtp}
-                                        keyboardType="number-pad"
-                                        autoComplete="one-time-code"
-                                        className="w-full"
-                                    />
-                                </View>
-
-                                <Button
-                                    className="w-full mt-6"
-                                    onPress={handleLogin}
-                                    disabled={isLoading}
-                                >
-                                    <Text className={isLoading ? "opacity-50" : ""}>
-                                        {isLoading ? "登录中..." : "登录"}
-                                    </Text>
-                                </Button>
-
-                                {/* Divider */}
-                                <View className="flex-row items-center my-4">
-                                    <View className="flex-1 h-px bg-border" />
-                                    <Text className="px-3 text-muted-foreground text-sm">或</Text>
-                                    <View className="flex-1 h-px bg-border" />
-                                </View>
-
-                                {/* Register Link */}
-                                <View className="flex-row justify-center items-center space-x-1">
-                                    <Text className="text-muted-foreground">还没有账户？</Text>
-                                    <Button
-                                        variant="link"
-                                        className="p-0"
-                                        onPress={() => router.push("/auth/register" as any)}
-                                    >
-                                        <Text className="text-primary">立即注册</Text>
-                                    </Button>
-                                </View>
-
-                                {/* Forgot Password */}
-                                <View className="flex-row justify-center items-center space-x-1 mt-2">
-                                    <Button
-                                        variant="link"
-                                        className="p-0"
-                                        onPress={() => router.push("/auth/forgot-password" as any)}
-                                    >
-                                        <Text className="text-xs text-muted-foreground">
-                                            忘记密码？
-                                        </Text>
-                                    </Button>
-                                </View>
-                            </CardContent>
-                        </Card>
-
-                        {/* Footer */}
-                        <View className="mt-8 items-center">
-                            <Text className="text-xs text-muted-foreground text-center">
-                                登录即表示您同意我们的
-                                <Text className="text-primary text-xs">服务条款</Text>和
-                                <Text className="text-primary text-xs">隐私政策</Text>
-                            </Text>
+                        <View className="mt-6 rounded-full bg-muted px-4 py-3 flex-row items-center">
+                            <View className="flex-row items-center">
+                                <Text className="text-sm text-foreground">
+                                    +86
+                                </Text>
+                                <Ionicons
+                                    name="chevron-down"
+                                    size={14}
+                                    color="#9ca3af"
+                                />
+                            </View>
+                            <View className="mx-3 h-4 w-px bg-border/60" />
+                            <TextInput
+                                className="flex-1 text-base text-foreground"
+                                placeholder="请输入手机号"
+                                placeholderTextColor="#9ca3af"
+                                keyboardType="phone-pad"
+                                autoComplete="tel"
+                                value={phone}
+                                onChangeText={(value) =>
+                                    setPhone(value.replace(/\D/g, "").slice(0, 11))
+                                }
+                            />
                         </View>
+
+                        <Text className="mt-3 text-xs text-muted-foreground">
+                            未注册手机号验证后将自动创建账户
+                        </Text>
+
+                        <TouchableOpacity
+                            className="mt-6 flex-row items-center"
+                            onPress={() => setAgreeToTerms((prev) => !prev)}
+                        >
+                            <View className="h-4 w-4 rounded-full border border-border items-center justify-center">
+                                {agreeToTerms ? (
+                                    <View className="h-2.5 w-2.5 rounded-full bg-primary" />
+                                ) : null}
+                            </View>
+                            <Text className="ml-2 text-xs text-muted-foreground">
+                                我已阅读并同意
+                                <Text className="text-primary">
+                                    《用户协议》
+                                </Text>
+                                和
+                                <Text className="text-primary">
+                                    《隐私政策》
+                                </Text>
+                            </Text>
+                        </TouchableOpacity>
+
+                        <Button
+                            className="mt-6"
+                            onPress={handleSendOtp}
+                            disabled={!canSendOtp}
+                        >
+                            <Text className={isSendingOtp ? "opacity-60" : ""}>
+                                {isSendingOtp ? "发送中..." : "获取短信验证码"}
+                            </Text>
+                        </Button>
                     </View>
                 </ScrollView>
             </SafeAreaView>

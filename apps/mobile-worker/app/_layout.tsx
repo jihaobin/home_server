@@ -1,7 +1,7 @@
 import "@repo/mobile-ui/styles/mobile-work.css";
 import { ThemeProvider } from "@react-navigation/native";
 import { useQueryClient } from "@tanstack/react-query";
-import { NAV_THEME } from "@repo/mobile-ui/lib/constants";
+import { NAV_THEME } from "@repo/mobile-ui/lib/mobile-work-constants";
 import { PortalHost } from "@rn-primitives/portal";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -245,17 +245,9 @@ function RootNavigation() {
                         }}
                     />
                     <Stack.Screen
-                        name="auth/register"
+                        name="auth/verify"
                         options={{
-                            title: "注册服务账号",
-                            presentation: "modal",
-                        }}
-                    />
-                    <Stack.Screen
-                        name="auth/forgot-password"
-                        options={{
-                            title: "重置密码",
-                            presentation: "modal",
+                            headerShown: false,
                         }}
                     />
                 </Stack.Protected>

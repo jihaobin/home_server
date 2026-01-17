@@ -6,11 +6,11 @@ const roleFieldSchema = {
         user: {
             fields: {
                 role: {
-                    type: "string",
+                    type: "string[]",
                     required: true,
                     input: true,
                     returned: true,
-                    defaultValue: "customer",
+                    defaultValue: ["customer"],
                 },
             },
         },

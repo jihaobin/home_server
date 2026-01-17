@@ -22,7 +22,7 @@ import {
 } from '@repo/types';
 import { format } from 'date-fns';
 import Decimal from 'decimal.js';
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, arrayOverlaps, eq, gte, sql } from 'drizzle-orm';
 import { CACHE_SERVICE, type IAdvancedCacheService } from 'src/common/cache';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
@@ -470,7 +470,7 @@ export class PayService {
 
         const roles = Array.isArray(role) ? role : role ? [role] : [];
         const where = roles.length
-            ? and(eq(users.id, id), inArray(users.role, roles))
+            ? and(eq(users.id, id), arrayOverlaps(users.role, roles))
             : eq(users.id, id);
 
         const record = await this.db.query.users.findFirst({

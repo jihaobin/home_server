@@ -16,6 +16,19 @@ import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { isApiClientError } from "@repo/utils/api-client";
 import { useUserRealNameProfile, useVerifyAndSaveRealName } from "@repo/hooks/api/user";
 
+function maskIdCardNumber(value: string) {
+    const normalized = value.trim();
+    if (normalized.length <= 8) {
+        if (normalized.length <= 2) {
+            return `${normalized[0] ?? ""}${"*".repeat(Math.max(normalized.length - 1, 0))}`;
+        }
+        return `${normalized.slice(0, 1)}${"*".repeat(Math.max(normalized.length - 2, 0))}${normalized.slice(-1)}`;
+    }
+    const prefix = normalized.slice(0, 3);
+    const suffix = normalized.slice(-4);
+    return `${prefix}${"*".repeat(Math.max(normalized.length - 7, 0))}${suffix}`;
+}
+
 export default function IdCardVerificationScreen() {
     const router = useRouter();
     const { session } = useSession();
@@ -63,20 +76,7 @@ export default function IdCardVerificationScreen() {
                 name: normalizedName,
                 idCard: normalizedIdCard,
                 userId,
-});
-
-function maskIdCardNumber(value: string) {
-    const normalized = value.trim();
-    if (normalized.length <= 8) {
-        if (normalized.length <= 2) {
-            return `${normalized[0] ?? ""}${"*".repeat(Math.max(normalized.length - 1, 0))}`;
-        }
-        return `${normalized.slice(0, 1)}${"*".repeat(normalized.length - 2)}${normalized.slice(-1)}`;
-    }
-    const prefix = normalized.slice(0, 3);
-    const suffix = normalized.slice(-4);
-    return `${prefix}${"*".repeat(Math.max(normalized.length - 7, 0))}${suffix}`;
-}
+            });
 
             Alert.alert("认证成功", verificationResult.description ?? "您的实名认证已通过", [
                 {
@@ -365,16 +365,3 @@ const styles = StyleSheet.create({
     },
 
 });
-
-function maskIdCardNumber(value: string) {
-    const normalized = value.trim();
-    if (normalized.length <= 8) {
-        if (normalized.length <= 2) {
-            return `${normalized[0] ?? ""}${"*".repeat(Math.max(normalized.length - 1, 0))}`;
-        }
-        return `${normalized.slice(0, 1)}${"*".repeat(normalized.length - 2)}${normalized.slice(-1)}`;
-    }
-    const prefix = normalized.slice(0, 3);
-    const suffix = normalized.slice(-4);
-    return `${prefix}${"*".repeat(Math.max(normalized.length - 7, 0))}${suffix}`;
-}

@@ -1,6 +1,7 @@
 import {
     Controller,
     Get,
+    Post,
     Param,
     Query,
     Req,
@@ -16,6 +17,7 @@ import {
     ServicePersonnelFilterResponseSchema,
     ServicePersonnelProfileSchema,
     ServicePersonnelDashboardStatsSchema,
+    UserRoleEnum,
 } from '@repo/types';
 import { Request } from 'express';
 import {
@@ -24,9 +26,11 @@ import {
     ApiSuccessResponse,
 } from 'src/common/decorator';
 import { ZodValidationPipe } from 'src/common/pipes';
+import { z } from 'zod/v4';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthOptional, Roles } from '../auth/decorators';
 import { ServicePersonnelService } from './service-personnel.service';
+import { upgradeToServicePersonnel as applyServicePersonnelUpgrade } from 'auth';
 
 @ApiTags('服务人员管理')
 @Controller('service-personnel')
@@ -34,6 +38,32 @@ export class ServicePersonnelController {
     constructor(
         private readonly servicePersonnelService: ServicePersonnelService,
     ) {}
+
+    @Post('upgrade')
+    @UseGuards(AuthGuard)
+    @ApiOperation({
+        summary: '申请成为服务人员',
+        description:
+            '为当前已登录用户添加服务人员权限，并初始化服务人员档案（如未存在）',
+    })
+    @ApiSuccessResponse(
+        z.object({
+            roles: z.array(UserRoleEnum),
+        }),
+        {
+            description: '成功申请服务人员权限',
+        },
+    )
+    @ApiErrorResponses()
+    async upgradeToServicePersonnel(@Req() req: Request) {
+        const roles = await applyServicePersonnelUpgrade(
+            req.user.id,
+            req.user.role,
+        );
+        return {
+            roles,
+        };
+    }
 
     @Get('search')
     @UseGuards(AuthGuard)

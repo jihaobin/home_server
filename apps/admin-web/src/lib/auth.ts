@@ -55,7 +55,7 @@ export async function register({
         password,
         callbackURL: `${webHost}/auth/verify-email`,
         surname: name,
-        role: "customer",
+        role: ["customer"],
     });
 }
 
