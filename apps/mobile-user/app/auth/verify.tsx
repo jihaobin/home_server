@@ -149,7 +149,6 @@ export default function VerifyScreen() {
                     >
                         <Ionicons name="chevron-back" size={20} color="#111" />
                     </TouchableOpacity>
-                    <Text className="text-sm text-muted-foreground">帮助</Text>
                 </View>
 
                 <View className="mt-8 gap-2">
@@ -172,11 +171,10 @@ export default function VerifyScreen() {
                         return (
                             <View
                                 key={`code-${index}`}
-                                className={`h-12 w-12 rounded-xl border ${
-                                    isActive
-                                        ? "border-primary"
-                                        : "border-border/60"
-                                } items-center justify-center bg-muted/40`}
+                                className={`h-12 w-12 rounded-xl border ${isActive
+                                    ? "border-primary"
+                                    : "border-border/60"
+                                    } items-center justify-center bg-muted/40`}
                             >
                                 <Text className="text-lg text-foreground">
                                     {digit}
@@ -217,15 +215,6 @@ export default function VerifyScreen() {
                             {countdown > 0
                                 ? `重新获取(${countdown}s)`
                                 : "重新获取"}
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={() =>
-                            toast.error("请联系平台客服处理手机号停用问题")
-                        }
-                    >
-                        <Text className="text-xs text-muted-foreground">
-                            手机号已停用？
                         </Text>
                     </TouchableOpacity>
                 </View>

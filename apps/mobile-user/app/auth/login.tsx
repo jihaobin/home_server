@@ -118,17 +118,6 @@ export default function LoginScreen() {
                         </View>
 
                         <View className="mt-6 rounded-full bg-muted px-4 py-3 flex-row items-center">
-                            <View className="flex-row items-center">
-                                <Text className="text-sm text-foreground">
-                                    +86
-                                </Text>
-                                <Ionicons
-                                    name="chevron-down"
-                                    size={14}
-                                    color="#9ca3af"
-                                />
-                            </View>
-                            <View className="mx-3 h-4 w-px bg-border/60" />
                             <TextInput
                                 className="flex-1 text-base text-foreground"
                                 placeholder="请输入手机号"

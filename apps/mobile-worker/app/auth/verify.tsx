@@ -247,7 +247,6 @@ export default function WorkerVerifyScreen() {
                     >
                         <Ionicons name="chevron-back" size={20} color="#111" />
                     </TouchableOpacity>
-                    <Text className="text-sm text-muted-foreground">帮助</Text>
                 </View>
 
                 <View className="mt-8 gap-2">
@@ -316,22 +315,13 @@ export default function WorkerVerifyScreen() {
                                 : "重新获取"}
                         </Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={() =>
-                            toast.error("请联系平台客服处理手机号停用问题")
-                        }
-                    >
-                        <Text className="text-xs text-muted-foreground">
-                            手机号已停用？
-                        </Text>
-                    </TouchableOpacity>
                 </View>
             </SafeAreaView>
             <Modal
                 visible={isUpgradeModalVisible}
                 transparent
                 animationType="fade"
-                onRequestClose={() => {}}
+                onRequestClose={() => { }}
             >
                 <View className="flex-1 items-center justify-center bg-black/40 px-6">
                     <View className="w-full rounded-2xl bg-background p-6">
