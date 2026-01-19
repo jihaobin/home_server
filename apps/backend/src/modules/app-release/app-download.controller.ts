@@ -78,6 +78,7 @@ export class AppDownloadController {
                 release.file.mimeType ||
                 'application/vnd.android.package-archive',
             'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"`,
+            'Content-Length': String(release.file.fileSize),
             'Accept-Ranges': 'bytes',
         });
 

@@ -163,31 +163,29 @@ export class AppReleaseService {
 
         const rolloutPercent = 100;
 
-        const record = await this.repository.createRelease(
-            {
-                app: input.app,
-                platform: input.platform,
-                version: input.version,
-                buildNumber: input.buildNumber ?? null,
-                forceUpdate: input.forceUpdate ?? false,
-                minSupportedVersion: input.minSupportedVersion ?? null,
-                changelog: input.changelog ?? null,
-                releaseStatus,
-                isActive: input.isActive ?? true,
-                downloadUrlOverride: input.downloadUrlOverride ?? null,
-                fileId: input.fileId ?? null,
-                createdBy: input.createdBy,
-                publishedBy,
-                publishedAt,
-                rollbackFromId: input.rollbackFromId ?? null,
-                releaseChannel: 'production',
-                rolloutPercent,
-                downloadCount: 0,
-                forceUpdateCount: 0,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            },
-        );
+        const record = await this.repository.createRelease({
+            app: input.app,
+            platform: input.platform,
+            version: input.version,
+            buildNumber: input.buildNumber ?? null,
+            forceUpdate: input.forceUpdate ?? false,
+            minSupportedVersion: input.minSupportedVersion ?? null,
+            changelog: input.changelog ?? null,
+            releaseStatus,
+            isActive: input.isActive ?? true,
+            downloadUrlOverride: input.downloadUrlOverride ?? null,
+            fileId: input.fileId ?? null,
+            createdBy: input.createdBy,
+            publishedBy,
+            publishedAt,
+            rollbackFromId: input.rollbackFromId ?? null,
+            releaseChannel: 'production',
+            rolloutPercent,
+            downloadCount: 0,
+            forceUpdateCount: 0,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        });
 
         return record;
     }
@@ -220,7 +218,8 @@ export class AppReleaseService {
         }
 
         // 发布状态、渠道、灰度暂时固定，保持现有值或默认
-        const nextStatus: AppReleaseStatus = existing.releaseStatus ?? 'published';
+        const nextStatus: AppReleaseStatus =
+            existing.releaseStatus ?? 'published';
 
         const { rolloutPercent, ...restPayload } = input.payload;
         // 灰度比例暂固定为 100，不随表单更新
@@ -335,9 +334,7 @@ export class AppReleaseService {
     async getLatestDownloadableRelease(params: {
         app: AppReleaseApp;
         platform: AppReleasePlatform;
-    }): Promise<
-        { release: AppReleaseWithFile; downloadUrl: string } | null
-    > {
+    }): Promise<{ release: AppReleaseWithFile; downloadUrl: string } | null> {
         const release = await this.repository.getActiveRelease(
             params.app,
             params.platform,

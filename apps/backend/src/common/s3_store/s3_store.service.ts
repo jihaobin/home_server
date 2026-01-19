@@ -4,6 +4,8 @@ import {
     PutObjectCommand,
     GetObjectCommand,
     DeleteObjectsCommand,
+    CreateBucketCommand,
+    HeadBucketCommand,
     CreateMultipartUploadCommand,
     UploadPartCommand,
     CompleteMultipartUploadCommand,
@@ -22,6 +24,7 @@ import { readFileSync, statSync, openSync, readSync, closeSync } from 'fs';
 export class S3StoreServer implements OnModuleInit {
     // 改为 public 以便定时任务访问
     public s3Client!: S3Client;
+    private readonly ensuredBuckets = new Set<string>();
 
     /**
      * 构造函数注入 ConfigService，并初始化 S3 客户端
@@ -75,6 +78,7 @@ export class S3StoreServer implements OnModuleInit {
         metaData?: Record<string, string>,
     ): Promise<string> {
         try {
+            await this.ensureBucket(bucketName);
             const fileBuffer = readFileSync(path);
 
             const command = new PutObjectCommand({
@@ -110,6 +114,7 @@ export class S3StoreServer implements OnModuleInit {
         contentType?: string,
         metaData?: Record<string, string>,
     ): Promise<boolean> {
+        await this.ensureBucket(bucketName);
         const command = new PutObjectCommand({
             Bucket: bucketName,
             Key: objectName,
@@ -120,6 +125,36 @@ export class S3StoreServer implements OnModuleInit {
 
         await this.s3Client.send(command);
         return true;
+    }
+
+    private async ensureBucket(bucketName: string): Promise<void> {
+        if (!bucketName || this.ensuredBuckets.has(bucketName)) {
+            return;
+        }
+
+        try {
+            await this.s3Client.send(
+                new HeadBucketCommand({ Bucket: bucketName }),
+            );
+            this.ensuredBuckets.add(bucketName);
+        } catch (error) {
+            const statusCode = (error as any)?.$metadata?.httpStatusCode;
+            const errorCode =
+                (error as any)?.name ?? (error as any)?.Code ?? '';
+            const isNotFound =
+                statusCode === 404 ||
+                errorCode === 'NotFound' ||
+                errorCode === 'NoSuchBucket';
+
+            if (!isNotFound) {
+                throw error instanceof Error ? error : new Error(String(error));
+            }
+
+            await this.s3Client.send(
+                new CreateBucketCommand({ Bucket: bucketName }),
+            );
+            this.ensuredBuckets.add(bucketName);
+        }
     }
 
     /**

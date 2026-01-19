@@ -19,6 +19,10 @@ import {
     File,
     Paths,
 } from "expo-file-system";
+import {
+    createDownloadResumable,
+    type DownloadProgressData,
+} from "expo-file-system/legacy";
 import * as IntentLauncher from "expo-intent-launcher";
 import * as Linking from "expo-linking";
 import { MMKV } from "react-native-mmkv";
@@ -157,6 +161,7 @@ export function AppUpdateProvider({
     const androidPackage = useMemo(resolveAndroidPackage, []);
     const queryClient = useQueryClient();
     const lastAutoCheckRef = useRef<number>(0);
+    const lastProgressUpdateRef = useRef<number>(0);
 
     const [state, setState] = useState<AppUpdateState>({
         status: "idle",
@@ -241,7 +246,10 @@ export function AppUpdateProvider({
                 });
                 lastAutoCheckRef.current = Date.now();
 
-                const hasUpdate = data.requireUpdate || data.optionalUpdate;
+                const isSameVersion = data.latestVersion === currentVersion;
+                const hasUpdate =
+                    (data.requireUpdate || data.optionalUpdate) &&
+                    !isSameVersion;
 
                 if (!hasUpdate || !data.latestVersion) {
                     if (manual) {
@@ -320,6 +328,10 @@ export function AppUpdateProvider({
             throw new Error("当前平台暂不支持自动安装");
         }
 
+        const fallbackTotalBytes = state.info.size ?? 0;
+
+        lastProgressUpdateRef.current = 0;
+
         setState((prev) => ({
             ...prev,
             status: "downloading",
@@ -328,7 +340,8 @@ export function AppUpdateProvider({
                 ...prev.progress,
                 percent: 0,
                 downloadedBytes: 0,
-                totalBytes: 0,
+                totalBytes: fallbackTotalBytes,
+                localUri: null,
             },
         }));
 
@@ -338,13 +351,47 @@ export function AppUpdateProvider({
             const fileName = `${app}-${state.info.latestVersion ?? "latest"}.apk`;
             const targetFile = new File(targetDir, fileName);
 
-            const downloaded = await File.downloadFileAsync(
+            const downloadProgress = (data: DownloadProgressData) => {
+                const expected =
+                    data.totalBytesExpectedToWrite > 0
+                        ? data.totalBytesExpectedToWrite
+                        : fallbackTotalBytes;
+                const totalBytes = expected > 0 ? expected : 0;
+                const downloadedBytes = data.totalBytesWritten;
+                const percent = totalBytes
+                    ? Math.min(100, (downloadedBytes / totalBytes) * 100)
+                    : 0;
+
+                const now = Date.now();
+                if (
+                    now - lastProgressUpdateRef.current < 80 &&
+                    percent < 100
+                ) {
+                    return;
+                }
+                lastProgressUpdateRef.current = now;
+
+                setState((prev) => ({
+                    ...prev,
+                    progress: {
+                        ...prev.progress,
+                        percent,
+                        downloadedBytes,
+                        totalBytes,
+                    },
+                }));
+            };
+
+            const downloadTask = createDownloadResumable(
                 state.info.downloadUrl,
-                targetFile,
-                { idempotent: true },
+                targetFile.uri,
+                undefined,
+                downloadProgress,
             );
-            const fileInfo = downloaded.info()
-            const size = fileInfo?.size ?? 0;
+
+            const downloaded = await downloadTask.downloadAsync();
+            const fileInfo = targetFile.info();
+            const size = fileInfo?.size ?? fallbackTotalBytes;
             setState((prev) => ({
                 ...prev,
                 status: "downloaded",
@@ -353,11 +400,11 @@ export function AppUpdateProvider({
                     percent: 100,
                     downloadedBytes: size,
                     totalBytes: size,
-                    localUri: downloaded.uri,
+                    localUri: downloaded?.uri ?? targetFile.uri,
                 },
             }));
 
-            return downloaded.uri;
+            return downloaded?.uri ?? targetFile.uri;
         } catch (error) {
             const message = normalizeError(error);
             setState((prev) => ({
@@ -368,7 +415,13 @@ export function AppUpdateProvider({
             toast.error(`下载失败：${message}`);
             return null;
         }
-    }, [app, platform, state.info?.downloadUrl, state.info?.latestVersion]);
+    }, [
+        app,
+        platform,
+        state.info?.downloadUrl,
+        state.info?.latestVersion,
+        state.info?.size,
+    ]);
 
     const openUnknownSourcesSettings = useCallback(async () => {
         if (platform !== "android") {

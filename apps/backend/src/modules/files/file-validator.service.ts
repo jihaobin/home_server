@@ -125,8 +125,9 @@ export class FileValidatorService {
      * 清理文件名，移除不安全字符
      */
     sanitizeFileName(filename: string): string {
+        const normalizedName = this.normalizeFileNameEncoding(filename);
         // 移除路径遍历字符和特殊字符，保留中文、英文、数字、点、下划线、连字符
-        const sanitized = filename
+        const sanitized = normalizedName
             .replace(/\.\./g, '') // 移除 ..
             .replace(/[/\\]/g, '') // 移除路径分隔符
             .replace(/[^a-zA-Z0-9\u4e00-\u9fa5._\-\s]/g, '_') // 只保留安全字符
@@ -138,6 +139,25 @@ export class FileValidatorService {
         }
 
         return sanitized;
+    }
+
+    private normalizeFileNameEncoding(filename: string): string {
+        if (!filename) {
+            return filename;
+        }
+
+        const decoded = Buffer.from(filename, 'latin1').toString('utf8');
+        if (decoded === filename) {
+            return filename;
+        }
+
+        const hasCjk = /[\u4e00-\u9fa5]/.test(decoded);
+        const hasCjkOriginal = /[\u4e00-\u9fa5]/.test(filename);
+        if (hasCjk && !hasCjkOriginal) {
+            return decoded;
+        }
+
+        return filename;
     }
 
     /**
