@@ -2,7 +2,7 @@
     "expo": {
         "name": "叮咚上门",
         "slug": "mobile-user",
-        "version": "1.0.1",
+        "version": "1.0.2",
         "orientation": "portrait",
         "icon": "./assets/images/icon.png",
         "scheme": "home-server-user",

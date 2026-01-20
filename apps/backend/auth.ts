@@ -46,7 +46,10 @@ function getTimestamp(value: unknown): number | null {
     return time;
 }
 
-function isNewlyCreatedUser(user: { createdAt?: unknown; updatedAt?: unknown }) {
+function isNewlyCreatedUser(user: {
+    createdAt?: unknown;
+    updatedAt?: unknown;
+}) {
     const createdAt = getTimestamp(user.createdAt);
     const updatedAt = getTimestamp(user.updatedAt);
     if (createdAt === null || updatedAt === null) {
@@ -217,7 +220,7 @@ export function createAuth(
     return betterAuth({
         trustedOrigins,
         database: drizzleAdapter(db, {
-            provider: 'mysql', // 修复：使用正确的数据库类型
+            provider: 'pg', // 修复：使用正确的数据库类型
             usePlural: true,
             schema: schema,
         }),
