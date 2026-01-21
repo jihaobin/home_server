@@ -59,25 +59,35 @@ export class WorkSkillRepository {
             geom: [location.lng, location.lat], // geometry(point) tuple
         };
 
+        const updatePayload: Partial<typeof servicePersonnel.$inferInsert> = {
+            bio: rest.bio,
+            province: rest.province,
+            district: rest.district,
+            county: rest.county,
+            detailedAddress: rest.detailedAddress,
+            yearsOfExperience: rest.yearsOfExperience,
+            workStartTime: rest.workStartTime,
+            workEndTime: rest.workEndTime,
+            isAvailable: rest.isAvailable,
+            currentStatus: rest.currentStatus,
+            workDays: rest.workDays,
+            geom: [location.lng, location.lat],
+        };
+
+        if (rest.name !== undefined) {
+            updatePayload.name = rest.name;
+        }
+
+        if (rest.avatar !== undefined) {
+            updatePayload.avatar = rest.avatar;
+        }
+
         const result = await this.db
             .insert(servicePersonnel)
             .values(insertData)
             .onConflictDoUpdate({
                 target: servicePersonnel.userId,
-                set: {
-                    bio: rest.bio,
-                    province: rest.province,
-                    district: rest.district,
-                    county: rest.county,
-                    detailedAddress: rest.detailedAddress,
-                    yearsOfExperience: rest.yearsOfExperience,
-                    workStartTime: rest.workStartTime,
-                    workEndTime: rest.workEndTime,
-                    isAvailable: rest.isAvailable,
-                    currentStatus: rest.currentStatus,
-                    workDays: rest.workDays,
-                    geom: [location.lng, location.lat],
-                },
+                set: updatePayload,
             })
             .returning();
 

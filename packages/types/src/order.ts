@@ -99,7 +99,7 @@ export type UpdateOrder = z.infer<typeof UpdateOrderSchema>;
 const OrderDetailServicePersonnelSchema = z.object({
 	...ServicePersonnelSchema.shape,
 	lastActiveAt: z.coerce.date(),
-	avatarUrl: z.string().url().optional().nullable(),
+	avatarUrl: z.string().optional().nullable(),
 	userName: z.string().optional().nullable(),
 	image: z.string().optional().nullable(),
 });

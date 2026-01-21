@@ -90,7 +90,7 @@ export class AdminOrdersRepository {
                 },
                 staff: {
                     id: staffUsers.id,
-                    name: staffUsers.name,
+                    name: servicePersonnel.name,
                     phoneNumber: staffUsers.phoneNumber,
                 },
                 service: services,
@@ -158,16 +158,27 @@ export class AdminOrdersRepository {
             .offset(offset);
 
         return {
-            items: rows.map((row) => ({
-                order: row.order,
-                assignment: row.assignment,
-                customer: row.customer,
-                staff: row.staff ?? null,
-                service: row.service,
-                category: row.category,
-                paidAmount: row.paidAmount ?? '0',
-                latestPaymentStatus: row.latestPaymentStatus ?? null,
-            })),
+            items: rows.map((row) => {
+                const staffId = row.staff?.id ?? null;
+                const staff = staffId
+                    ? {
+                          id: staffId,
+                          name: row.staff?.name ?? null,
+                          phoneNumber: row.staff?.phoneNumber ?? null,
+                      }
+                    : null;
+
+                return {
+                    order: row.order,
+                    assignment: row.assignment,
+                    customer: row.customer,
+                    staff,
+                    service: row.service,
+                    category: row.category,
+                    paidAmount: row.paidAmount ?? '0',
+                    latestPaymentStatus: row.latestPaymentStatus ?? null,
+                };
+            }),
             total,
             page,
             limit,
@@ -202,14 +213,17 @@ export class AdminOrdersRepository {
 
         if (filters.servicePersonnelKeyword) {
             const staffUsers = alias(users, 'staff_filter');
+            const staffPersonnel = alias(servicePersonnel, 'staff_personnel');
             conditions.push(
                 sql`EXISTS (
                     SELECT 1 FROM ${orderAssignments}
+                    LEFT JOIN ${staffPersonnel}
+                        ON ${staffPersonnel.userId} = ${orderAssignments.servicePersonnelId}
                     LEFT JOIN ${staffUsers}
                         ON ${staffUsers.id} = ${orderAssignments.servicePersonnelId}
                     WHERE ${orderAssignments.orderId} = ${orders.id}
                         AND (
-                            ${staffUsers.name} ILIKE ${this.like(filters.servicePersonnelKeyword)}
+                            ${staffPersonnel.name} ILIKE ${this.like(filters.servicePersonnelKeyword)}
                             OR ${staffUsers.phoneNumber} ILIKE ${this.like(filters.servicePersonnelKeyword)}
                         )
                 )`,

@@ -1,28 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
-    PersonnelSkill,
     ServicePersonnelFilterRequest,
+    UpdateServicePersonnelProfileRequest,
 } from '@repo/types';
-import {
-    and,
-    asc,
-    desc,
-    eq,
-    gte,
-    inArray,
-    like,
-    type SQL,
-    sql,
-} from 'drizzle-orm';
+import { and, asc, desc, eq, gte, like, type SQL, sql } from 'drizzle-orm';
 import { DB } from 'src/common/database/database.provider';
 import { DbType } from 'src/common/database/db';
 import {
     reviewStats,
-    serviceCategories,
     servicePersonnel,
     servicePersonnelPricing,
     servicePersonnelSkills,
-    services,
     users,
 } from 'src/common/database/schema';
 import { GeoLocationService } from 'src/common/services/geo-location.service';
@@ -145,8 +133,8 @@ export class ServicePersonnelRepository {
                     county: servicePersonnel.county,
                     bio: servicePersonnel.bio,
                     detailedAddress: servicePersonnel.detailedAddress,
-                    name: users.name,
-                    avatarUrl: users.image,
+                    name: servicePersonnel.name,
+                    avatarUrl: servicePersonnel.avatar,
                     distance: exactDistance.as('distance'),
                     price: sql<string>`${optimalPricingCTE.price}`.as('price'),
                     currency: sql<string>`${optimalPricingCTE.currency}`.as(
@@ -176,7 +164,6 @@ export class ServicePersonnelRepository {
                     totalCount: sql<number>`COUNT(*) OVER()`.as('total_count'),
                 })
                 .from(servicePersonnel)
-                .innerJoin(users, eq(users.id, servicePersonnel.userId))
                 // 关联最优定价 CTE，只选择 row_num = 1 的记录
                 .innerJoin(
                     optimalPricingCTE,
@@ -241,7 +228,7 @@ export class ServicePersonnelRepository {
 
         // 组装最终结果
         const personnel = paginatedResults.map((result) => ({
-            name: result.name,
+            name: result.name || '服务人员',
             userId: result.userId,
             province: result.province,
             district: result.district,
@@ -347,12 +334,41 @@ export class ServicePersonnelRepository {
         return await this.db.query.users.findFirst({
             where: eq(users.id, personnelId),
             columns: {
-                id: true,
-                name: true,
                 phoneNumber: true,
-                image: true,
             },
         });
+    }
+
+    async updatePersonnelProfile(
+        personnelId: string,
+        payload: UpdateServicePersonnelProfileRequest,
+    ) {
+        const updates: Partial<typeof servicePersonnel.$inferInsert> = {};
+
+        if (payload.name !== undefined) {
+            const normalizedName = payload.name?.trim();
+            updates.name = normalizedName ? normalizedName : null;
+        }
+
+        if (payload.avatar !== undefined) {
+            const normalizedAvatar =
+                typeof payload.avatar === 'string'
+                    ? payload.avatar.trim()
+                    : payload.avatar;
+            updates.avatar = normalizedAvatar ? normalizedAvatar : null;
+        }
+
+        if (Object.keys(updates).length === 0) {
+            return null;
+        }
+
+        const result = await this.db
+            .update(servicePersonnel)
+            .set(updates)
+            .where(eq(servicePersonnel.userId, personnelId))
+            .returning();
+
+        return result[0] ?? null;
     }
 
     // /**

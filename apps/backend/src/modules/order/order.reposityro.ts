@@ -149,8 +149,8 @@ export class OrderRepository {
                     serviceName: services.name,
                     serviceDescription: services.description,
                     servicePersonnelUserId: orderAssignments.servicePersonnelId,
-                    userName: users.name,
-                    userImage: users.image,
+                    servicePersonnelName: servicePersonnel.name,
+                    servicePersonnelAvatar: servicePersonnel.avatar,
                     // 使用子查询获取服务规格（从 servicePersonnelPricing 表）
                     serviceSpecifications: sql<string>`(
 						SELECT COALESCE(spp.name, '')
@@ -168,8 +168,11 @@ export class OrderRepository {
                     eq(orders.id, orderAssignments.orderId),
                 )
                 .leftJoin(
-                    users,
-                    eq(orderAssignments.servicePersonnelId, users.id),
+                    servicePersonnel,
+                    eq(
+                        orderAssignments.servicePersonnelId,
+                        servicePersonnel.userId,
+                    ),
                 )
                 .where(and(...conditions))
                 .limit(limit)
@@ -186,10 +189,10 @@ export class OrderRepository {
             appointmentTime: row.appointmentTime,
             paymentExpiresAt: row.paymentExpiresAt,
             serviceName: row.serviceName || '',
-            servicePersonnelName: row.userName || '服务人员',
+            servicePersonnelName: row.servicePersonnelName || '服务人员',
             serviceSpecifications:
                 row.serviceSpecifications || row.serviceDescription || '',
-            servicePersonnelImage: row.userImage || '',
+            servicePersonnelImage: row.servicePersonnelAvatar || '',
         }));
 
         const meta = this.buildPaginationMeta(totalCount, page, limit);
@@ -372,8 +375,6 @@ export class OrderRepository {
                     ...servicePersonnelColumns,
                     geom: servicePersonnelGeom,
                 },
-                userName: users.name,
-                userImage: users.image,
                 paymentsJson: sql<any>`(
                         SELECT COALESCE(json_agg(row_to_json(p.*)), '[]'::json)
                         FROM ${payments} p
@@ -421,7 +422,6 @@ export class OrderRepository {
                     servicePersonnel.userId,
                 ),
             )
-            .leftJoin(users, eq(orderAssignments.servicePersonnelId, users.id))
             .where(eq(orders.id, id))
             .limit(1);
 
@@ -439,15 +439,18 @@ export class OrderRepository {
         // 	.from(couponUsageRecords)
         // 	.where(eq(couponUsageRecords.orderId, id));
 
+        const personnelName = orderRow.servicePersonnel?.name?.trim();
+        const personnelAvatar = orderRow.servicePersonnel?.avatar?.trim();
+
         const assignmentWithPersonnel = orderRow.assignment
             ? {
                   ...orderRow.assignment,
                   servicePersonnel: orderRow.servicePersonnel
                       ? {
                             ...orderRow.servicePersonnel,
-                            avatarUrl: orderRow.userImage || undefined,
-                            image: orderRow.userImage || undefined,
-                            userName: orderRow.userName || undefined,
+                            avatarUrl: personnelAvatar || undefined,
+                            image: personnelAvatar || undefined,
+                            userName: personnelName || undefined,
                         }
                       : null,
               }

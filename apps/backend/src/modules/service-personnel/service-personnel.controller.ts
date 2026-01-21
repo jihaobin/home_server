@@ -1,7 +1,9 @@
 import {
+    Body,
     Controller,
     Get,
     Post,
+    Put,
     Param,
     Query,
     Req,
@@ -17,6 +19,8 @@ import {
     ServicePersonnelFilterResponseSchema,
     ServicePersonnelProfileSchema,
     ServicePersonnelDashboardStatsSchema,
+    UpdateServicePersonnelProfileRequestSchema,
+    type UpdateServicePersonnelProfileRequest,
     UserRoleEnum,
 } from '@repo/types';
 import { Request } from 'express';
@@ -142,6 +146,29 @@ export class ServicePersonnelController {
         return await this.servicePersonnelService.getPersonnelProfile(
             personnelId,
         );
+    }
+
+    @Put('profile')
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @UsePipes(new ZodValidationPipe(UpdateServicePersonnelProfileRequestSchema))
+    @ApiOperation({
+        summary: '更新服务人员基础资料',
+        description: '更新当前服务人员的名称与头像（头像存文件 hash）',
+    })
+    @ApiSuccessResponse(z.object({ success: z.boolean() }), {
+        description: '更新成功',
+    })
+    @ApiErrorResponses()
+    async updateProfile(
+        @Body() payload: UpdateServicePersonnelProfileRequest,
+        @Req() req: Request,
+    ) {
+        await this.servicePersonnelService.updatePersonnelProfile(
+            req.user.id,
+            payload,
+        );
+        return { success: true };
     }
 
     @Get('getServiceDetails')

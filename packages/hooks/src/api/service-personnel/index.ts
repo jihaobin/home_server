@@ -6,9 +6,12 @@ import type {
 	ServicePersonnelDetailsQuery,
 	ServicePersonnelFilterRequest,
 	ServicePersonnelProfile,
+	UpdateServicePersonnelProfileRequest,
 } from "@repo/types";
 import {
+	useMutation,
 	useQuery,
+	useQueryClient,
 	useSuspenseInfiniteQuery,
 	useSuspenseQuery,
 } from "@tanstack/react-query";
@@ -215,3 +218,22 @@ export const useServicePersonnelDashboardStats = (personnelId?: string) =>
 			errorMessage: "个人统计获取失败",
 		},
 	});
+
+export const useUpdateServicePersonnelProfile = () => {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async (payload: UpdateServicePersonnelProfileRequest) => {
+			const response = await apiClient.put("/service-personnel/profile", payload);
+			return response.data;
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({
+				queryKey: ["service-personnel-profile"],
+			});
+		},
+		scope: {
+			id: "updateServicePersonnelProfile",
+		},
+	});
+};

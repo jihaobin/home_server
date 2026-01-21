@@ -1005,6 +1005,14 @@ export const ServicePersonnelSchema = z
             description: "服务人员用户ID",
             title: "服务人员用户ID",
         }),
+        name: z.string().max(50).optional().nullable().meta({
+            description: "服务人员名称（独立于用户资料）",
+            title: "服务人员名称",
+        }),
+        avatar: z.string().max(255).optional().nullable().meta({
+            description: "服务人员头像（文件 hash）",
+            title: "服务人员头像",
+        }),
         // MVP阶段注释店铺关联字段
         // shopId: z.string().max(255).optional().meta({
         //     description: "服务人员所属店铺ID",

@@ -118,6 +118,17 @@ async function ensureServicePersonnelRecord(
     executor?: DbExecutor,
 ) {
     const run = async (tx: DbExecutor) => {
+        const [user] = await tx
+            .select({
+                name: schema.users.name,
+                image: schema.users.image,
+            })
+            .from(schema.users)
+            .where(eq(schema.users.id, userId))
+            .limit(1);
+
+        const normalizedName = user?.name?.trim() || null;
+        const normalizedAvatar = user?.image?.trim() || null;
         const existing = await tx
             .select({
                 userId: schema.servicePersonnel.userId,
@@ -132,6 +143,8 @@ async function ensureServicePersonnelRecord(
 
         await tx.insert(schema.servicePersonnel).values({
             userId,
+            name: normalizedName,
+            avatar: normalizedAvatar,
             bio: null,
             province: '未设置',
             district: null,

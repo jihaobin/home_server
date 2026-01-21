@@ -94,6 +94,8 @@ export const servicePersonnel = pgTable(
             .primaryKey()
             .unique()
             .references(() => users.id, { onDelete: 'cascade' }), // 关联到 users 表的主键
+        name: varchar('name', { length: 50 }), // 服务人员名称（独立于用户资料）
+        avatar: varchar('avatar', { length: 255 }), // 服务人员头像（文件 hash）
         // MVP阶段注释店铺关联字段
         // shopId: varchar('shop_id', { length: 255 }).references(() => shops.id, {
         //     onDelete: 'set null',

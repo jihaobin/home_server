@@ -43,6 +43,30 @@ export const UpsertWorkInfoRequestSchema = z.object({
 	}),
 });
 
+export const UpdateServicePersonnelProfileRequestSchema = z
+	.object({
+		name: z
+			.string()
+			.trim()
+			.min(1, "服务人员名称不能为空")
+			.max(50, "服务人员名称最多 50 个字符")
+			.optional(),
+		avatar: z
+			.string()
+			.min(1, "头像文件标识不能为空")
+			.max(255, "头像文件标识过长")
+			.nullable()
+			.optional(),
+	})
+	.refine((data) => data.name !== undefined || data.avatar !== undefined, {
+		message: "至少需要更新名称或头像",
+		path: ["name"],
+	})
+	.meta({
+		title: "更新服务人员基础资料",
+		description: "更新服务人员的名称与头像（头像存 hash）",
+	});
+
 // 更新工作人员技能请求 Schema
 export const UpdatePersonnelSkillsRequestSchema = z
 	.object({
@@ -271,7 +295,7 @@ export const ServicePersonnelFilterRequestSchema = z
 // 匹配的服务人员信息 Schema
 export const MatchedPersonnelSchema = z
 	.object({
-        ...ServicePersonnelSchema.shape,
+        ...ServicePersonnelSchema.omit({ name: true, avatar: true }).shape,
 		price: z.string().meta({
 			description: "个人定价（字符串格式）",
 			title: "个人定价",
@@ -284,9 +308,9 @@ export const MatchedPersonnelSchema = z
 			description: "服务人员姓名",
 			title: "姓名",
 		}),
-		avatarUrl: z.url().optional().meta({
-			description: "服务人员头像URL",
-			title: "头像URL",
+		avatarUrl: z.string().optional().meta({
+			description: "服务人员头像文件标识（hash）或 URL",
+			title: "头像标识",
 		}),
         detailedAddress: z.string().optional().meta({
             description: "服务人员详细地址",
@@ -573,6 +597,9 @@ export const ServicePersonnelDashboardStatsSchema = z
 // ==================== TypeScript 类型定义 ====================
 
 export type UpsertWorkInfoRequest = z.infer<typeof UpsertWorkInfoRequestSchema>;
+export type UpdateServicePersonnelProfileRequest = z.infer<
+	typeof UpdateServicePersonnelProfileRequestSchema
+>;
 export type UpdatePersonnelSkillsRequest = z.infer<
 	typeof UpdatePersonnelSkillsRequestSchema
 >;

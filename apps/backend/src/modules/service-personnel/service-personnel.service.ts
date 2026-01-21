@@ -9,6 +9,7 @@ import type {
     ServicePersonnelFilterRequest,
     ServicePersonnelProfile,
     ServicePersonnelDashboardStats,
+    UpdateServicePersonnelProfileRequest,
 } from '@repo/types';
 import { ServicePersonnelRepository } from './service-personnel.repository';
 import { WorkSkillService } from '../work-skill/work-skill.service';
@@ -106,8 +107,9 @@ export class ServicePersonnelService {
             throw new NotFoundException('服务人员不存在');
         }
 
-        const avatar = userInfo.image
-            ? await this.getFileAccessInfoSafely(userInfo.image)
+        const avatarHash = personnel.avatar?.trim();
+        const avatar = avatarHash
+            ? await this.getFileAccessInfoSafely(avatarHash)
             : null;
         const services = await Promise.all(
             (personnel.skills ?? []).map(async (skill: RawPersonnelSkill) => {
@@ -165,7 +167,7 @@ export class ServicePersonnelService {
 
         return {
             userId: personnel.userId,
-            name: userInfo.name ?? null,
+            name: personnel.name?.trim() || null,
             bio: personnel.bio ?? null,
             province: personnel.province,
             district: personnel.district ?? null,
@@ -184,6 +186,30 @@ export class ServicePersonnelService {
             qualificationImages,
             location,
         };
+    }
+
+    async updatePersonnelProfile(
+        personnelId: string,
+        payload: UpdateServicePersonnelProfileRequest,
+    ) {
+        if (
+            !payload ||
+            (payload.name === undefined && payload.avatar === undefined)
+        ) {
+            throw new BadRequestException('请提供需要更新的字段');
+        }
+
+        const updated =
+            await this.servicePersonnelRepository.updatePersonnelProfile(
+                personnelId,
+                payload,
+            );
+
+        if (!updated) {
+            throw new NotFoundException('服务人员不存在');
+        }
+
+        return updated;
     }
 
     private maskPhoneNumber(phone?: string | null) {
