@@ -63,49 +63,82 @@ function useRegistrationIdValue() {
     return registrationId;
 }
 
-if (canInitPush) {
-    // 如果您需要与 Chat 的登录 userID 打通（即向此 userID 推送消息），请使用 setRegistrationID 接口
-    // Push.setRegistrationID(userID, () => {
-    // console.log('setRegistrationID ok', userID);
-    // });
-
-    Push.registerPush(SDKAppID, appKey, (data) => {
-        Push.getRegistrationID((registrationID) => {
-            console.log('getRegistrationID ok', registrationID);
-            emitRegistrationId(registrationID);
-        });
-    }, (errCode, errMsg) => {
-        console.error('registerPush failed', errCode, errMsg);
-    }
-    );
-
-
-    // 监听通知栏点击事件，获取推送扩展信息
-    Push.addPushListener(Push.EVENT.NOTIFICATION_CLICKED, (res) => {
-        // res 为推送扩展信息
-        console.log('notification clicked', res);
-    });
-
-    // 监听在线推送
-    Push.addPushListener(Push.EVENT.MESSAGE_RECEIVED, (res) => {
-        // res 为消息内容
-        console.log('message received', res);
-    });
-
-    // 监听在线推送被撤回
-    Push.addPushListener(Push.EVENT.MESSAGE_REVOKED, (res) => {
-        // res 为被撤回的消息 ID
-        console.log('message revoked', res);
-    });
-} else if (Push) {
-    console.warn(
-        "[push] 缺少 EXPO_PUBLIC_TENCENT_PUSH_SDK_APP_ID 或 EXPO_PUBLIC_TENCENT_PUSH_APP_KEY，已跳过推送初始化",
-    );
-}
 export default function RootLayout() {
     const hasMounted = React.useRef(false);
     const { colorScheme } = useColorScheme();
     const [isColorSchemeLoaded, setIsColorSchemeLoaded] = React.useState(false);
+
+    React.useEffect(() => {
+        if (!canInitPush) {
+            if (Push) {
+                console.warn(
+                    "[push] 缺少 EXPO_PUBLIC_TENCENT_PUSH_SDK_APP_ID 或 EXPO_PUBLIC_TENCENT_PUSH_APP_KEY，已跳过推送初始化",
+                );
+            }
+            return;
+        }
+
+        let active = true;
+        const handleNotificationClicked = (res: unknown) => {
+            console.log("notification clicked", res);
+        };
+        const handleMessageReceived = (res: unknown) => {
+            console.log("message received", res);
+        };
+        const handleMessageRevoked = (res: unknown) => {
+            console.log("message revoked", res);
+        };
+
+        // 如果您需要与 Chat 的登录 userID 打通（即向此 userID 推送消息），请使用 setRegistrationID 接口
+        // Push.setRegistrationID(userID, () => {
+        // console.log('setRegistrationID ok', userID);
+        // });
+
+        Push.registerPush(
+            SDKAppID,
+            appKey,
+            () => {
+                Push.getRegistrationID((registrationID) => {
+                    if (!active) {
+                        return;
+                    }
+                    console.log("getRegistrationID ok", registrationID);
+                    emitRegistrationId(registrationID);
+                });
+            },
+            (errCode, errMsg) => {
+                console.error("registerPush failed", errCode, errMsg);
+            },
+        );
+
+        // 监听通知栏点击事件，获取推送扩展信息
+        Push.addPushListener(
+            Push.EVENT.NOTIFICATION_CLICKED,
+            handleNotificationClicked,
+        );
+
+        // 监听在线推送
+        Push.addPushListener(Push.EVENT.MESSAGE_RECEIVED, handleMessageReceived);
+
+        // 监听在线推送被撤回
+        Push.addPushListener(Push.EVENT.MESSAGE_REVOKED, handleMessageRevoked);
+
+        return () => {
+            active = false;
+            Push.removePushListener(
+                Push.EVENT.NOTIFICATION_CLICKED,
+                handleNotificationClicked,
+            );
+            Push.removePushListener(
+                Push.EVENT.MESSAGE_RECEIVED,
+                handleMessageReceived,
+            );
+            Push.removePushListener(
+                Push.EVENT.MESSAGE_REVOKED,
+                handleMessageRevoked,
+            );
+        };
+    }, []);
 
     useIsomorphicLayoutEffect(() => {
         if (hasMounted.current) {
@@ -154,6 +187,7 @@ function RootNavigation() {
             ) : null}
             <Stack
                 screenOptions={{
+                    header: () => null,
                     headerShown: false,
                     headerBackTitle: "返回",
                     headerStyle: {
