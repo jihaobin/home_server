@@ -1,7 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { realNameAuthPost } from './api';
 import { UserAuthRealNameRepository } from './user-auth-real-name-repository';
-import { CreateUserAuthRealName, UpdateUserAuthRealName } from '@repo/types';
+import { BusinessException } from 'src/common/exceptions';
+import {
+    CreateUserAuthRealName,
+    ErrorCode,
+    UpdateUserAuthRealName,
+} from '@repo/types';
 
 @Injectable()
 export class UserAuthRealNameService {
@@ -11,7 +16,28 @@ export class UserAuthRealNameService {
     /**
      * 身份证实名认证
      */
-    async authRealName({ name, idcard }: { name: string; idcard: string }) {
+    async authRealName({
+        name,
+        idcard,
+        userId,
+    }: {
+        name: string;
+        idcard: string;
+        userId: string;
+    }) {
+        const hasConflict =
+            await this.userAuthRealNameRepository.isIdCardUsedByAnotherUser(
+                idcard,
+                userId,
+            );
+
+        if (hasConflict) {
+            throw new BusinessException(
+                '该身份证号已被占用，请更换后重试',
+                ErrorCode.RESOURCE_EXISTS,
+            );
+        }
+
         const response = await realNameAuthPost({ name, idCard: idcard });
         return response;
     }

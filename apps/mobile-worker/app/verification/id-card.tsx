@@ -87,9 +87,10 @@ export default function IdCardVerificationScreen() {
             setIdCard("");
 
         } catch (error: unknown) {
-            const message = isApiClientError(error)
-                ? error.message || "实名认证请求失败，请稍后重试"
-                : "实名认证请求失败，请稍后重试";
+            let message = "实名认证请求失败，请稍后重试";
+            if (isApiClientError(error) && error.message) {
+                message = error.message;
+            }
             Alert.alert("认证失败", message);
         }
     };

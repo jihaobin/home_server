@@ -111,8 +111,14 @@ export class UserAuthRealNameController {
     @ApiSuccessResponse(userAuthRealNameDataSchema, {
         description: '成功获取实名信息',
     })
-    async realNameAuth(@Query() query: { name: string; idcard: string }) {
-        const response = await this.userAuthRealNameService.authRealName(query);
+    async realNameAuth(
+        @Query() query: { name: string; idcard: string },
+        @Req() req: Request,
+    ) {
+        const response = await this.userAuthRealNameService.authRealName({
+            ...query,
+            userId: req.user.id,
+        });
         return {
             ...response,
             idcard: maskIdCardNumber(response?.idcard),

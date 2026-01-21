@@ -20,6 +20,20 @@ export class UserAuthRealNameRepository {
         return result.rows[0].has_user_profile_users;
     }
 
+    async isIdCardUsedByAnotherUser(idCardNumber: string, userId: string) {
+        const s = sql`SELECT EXISTS (
+            SELECT 1
+            FROM ${userProfiles}
+            WHERE ${userProfiles.idCardNumber} = ${idCardNumber}
+              AND ${userProfiles.userId} <> ${userId}
+        ) AS has_conflict`;
+        const result = await this.db.execute<{
+            has_conflict: boolean;
+        }>(s);
+
+        return result.rows[0].has_conflict;
+    }
+
     async createUserRealNameAuth(data: CreateUserAuthRealName) {
         if (await this.isExist(data.userId)) {
             throw new BadRequestException('当前已存在该用户的实名信息');
