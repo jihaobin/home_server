@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import {
     Alert,
     Image,
@@ -14,8 +14,9 @@ import {
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import { useUserRealNameProfile } from "@repo/hooks/api/user";
+import { useFile } from "@repo/hooks/api/files";
 import { useServicePersonnelProfile, useServicePersonnelDashboardStats } from "@repo/hooks/api/service-personnel";
-import { authClient, signOutWithCleanup } from "../../lib/auth";
+import { signOutWithCleanup } from "../../lib/auth";
 
 type MenuItem = {
     icon: keyof typeof Ionicons.glyphMap;
@@ -86,7 +87,7 @@ function ProfileContent() {
     const [refreshing, setRefreshing] = useState(false);
 
     const workerMeta = (session?.user?.metadata as Record<string, any> | undefined) ?? {};
-    const displayName = personnelProfile?.name ?? realNameProfile?.realName ?? session?.user?.name ?? "未命名服务者";
+    const displayName = personnelProfile?.name ?? "未命名服务者";
     const rawPhone = workerMeta.phone ?? session?.user?.phoneNumber ?? session?.user?.phone ?? "";
     const maskedPhone =
         personnelProfile?.maskedPhoneNumber ?? (rawPhone ? maskPhone(rawPhone) : "未绑定手机号");
@@ -159,13 +160,38 @@ function ProfileContent() {
     );
 
     const ratingLabel = stats.ratingDisplay ?? stats.ratingValue.toFixed(1);
-    const avatarUri =
+    const avatarIdentifier =
+        personnelProfile?.avatar?.fileId ??
         personnelProfile?.avatar?.url ??
-        workerMeta.avatarUrl ??
-        workerMeta.avatar ??
-        session?.user?.avatarUrl ??
+        null;
+    const trimmedAvatarIdentifier =
+        typeof avatarIdentifier === "string" ? avatarIdentifier.trim() : "";
+    const isDirectAvatarUrl = Boolean(
+        trimmedAvatarIdentifier && /^https?:\/\//i.test(trimmedAvatarIdentifier),
+    );
+    const { data: avatarFileData } = useFile(
+        !isDirectAvatarUrl && trimmedAvatarIdentifier
+            ? trimmedAvatarIdentifier
+            : null,
+    );
+    const avatarUri =
+        (isDirectAvatarUrl && trimmedAvatarIdentifier) ||
+        avatarFileData?.fileUrl ||
         null;
     const isVerified = Boolean(realNameProfile?.idCardNumber);
+
+    useFocusEffect(
+        useCallback(() => {
+            if (!userId) {
+                return;
+            }
+            void Promise.allSettled([
+                refetchProfile(),
+                refetchPersonnelProfile(),
+                refetchDashboardStats(),
+            ]);
+        }, [refetchProfile, refetchPersonnelProfile, refetchDashboardStats, userId]),
+    );
 
     const handleRefresh = useCallback(async () => {
         setRefreshing(true);

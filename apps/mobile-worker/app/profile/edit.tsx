@@ -17,7 +17,6 @@ import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { useServicePersonnelProfile } from "@repo/hooks/api/service-personnel";
 import { useUpsertWorkInfo } from "@repo/hooks/api/work-skill";
 import { useUploadFile } from "@repo/hooks/api/files";
-import { authClient } from "../../lib/auth";
 import { ImageUploader } from "../../components/ImageUploader";
 
 export default function EditProfileScreen() {
@@ -36,6 +35,7 @@ export default function EditProfileScreen() {
     const [displayName, setDisplayName] = useState("");
     const [bio, setBio] = useState("");
     const [workYears, setWorkYears] = useState("");
+    const [avatarHash, setAvatarHash] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
@@ -60,20 +60,19 @@ export default function EditProfileScreen() {
                 file,
                 fileType: "avatar",
             });
-            const updated = await authClient.updateUser({
-                image: response.fileUrl,
-            });
-            if (updated.error) {
-                throw new Error(updated.error.message ?? "头像更新失败");
-            }
-            await refetchProfile();
+            setAvatarHash(response.fileUrl);
             return {
                 fileIdentifier: response.id,
                 fileUrl: response.fileUrl,
             };
         },
-        [refetchProfile, uploadFile],
+        [uploadFile],
     );
+
+    const handleAvatarUploadError = useCallback((error: Error) => {
+        console.error("[EditProfile] 头像上传失败", error);
+        Alert.alert("上传失败", error.message || "请稍后重试");
+    }, []);
 
     const handleSave = useCallback(async () => {
         if (!profile) return;
@@ -92,21 +91,10 @@ export default function EditProfileScreen() {
 
         setSaving(true);
         try {
-            const updates: Array<Promise<unknown>> = [];
-            if (displayName.trim() !== session?.user?.name) {
-                updates.push(
-                    authClient
-                        .updateUser({ name: displayName.trim() })
-                        .then((result) => {
-                            if (result.error) {
-                                throw new Error(result.error.message ?? "用户名更新失败");
-                            }
-                        }),
-                );
-            }
-
             const years = Number.parseInt(workYears, 10) || 0;
             const payload = {
+                name: displayName.trim(),
+                avatar: avatarHash ?? undefined,
                 bio: bio.trim() || undefined,
                 yearsOfExperience: years,
                 province: profile.province || "未设置",
@@ -121,9 +109,7 @@ export default function EditProfileScreen() {
                 location: locationData,
             };
 
-            updates.push(upsertWorkInfo.mutateAsync(payload));
-
-            await Promise.all(updates);
+            await upsertWorkInfo.mutateAsync(payload);
             await refetchProfile();
             Alert.alert("保存成功", "个人资料已更新", [
                 { text: "好的", onPress: () => router.back() },
@@ -135,11 +121,11 @@ export default function EditProfileScreen() {
             setSaving(false);
         }
     }, [
+        avatarHash,
         bio,
         displayName,
         profile,
         router,
-        session?.user?.name,
         upsertWorkInfo,
         workYears,
         refetchProfile,
@@ -191,10 +177,11 @@ export default function EditProfileScreen() {
                                 size={100}
                                 circular
                                 onUpload={handleAvatarUpload}
+                                onUploadError={handleAvatarUploadError}
                                 disabled={!profile}
                             />
                             <Text style={styles.helperText}>
-                                支持 jpg/png，长按拍照，单击从相册选择
+                                支持常见图片格式，长按拍照，单击从相册选择
                             </Text>
                         </View>
 

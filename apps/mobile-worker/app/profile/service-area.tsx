@@ -30,13 +30,19 @@ const WEEKDAY_MAP: Record<string, string> = {
     "7": "日",
 };
 
+const normalizeAddressPart = (value: string | null | undefined) => {
+    const normalized = (value ?? "").trim();
+    return normalized === "未设置" ? "" : normalized;
+};
+
 const composeFullAddress = (
     province: string,
     cityOrDistrict: string,
     county: string,
     detail: string,
 ) =>
-    [province.trim(), cityOrDistrict.trim(), county.trim(), detail.trim()]
+    [province, cityOrDistrict, county, detail]
+        .map(normalizeAddressPart)
         .filter(Boolean)
         .join("");
 
@@ -104,13 +110,26 @@ export default function ServiceAreaScreen() {
         () => composeFullAddress(province, district, county, address),
         [province, district, county, address],
     );
+    const isGeocodeReady = useMemo(
+        () =>
+            Boolean(
+                normalizeAddressPart(province) &&
+                normalizeAddressPart(district) &&
+                normalizeAddressPart(address),
+            ),
+        [province, district, address],
+    );
 
     useEffect(() => {
         if (!profile) return;
-        setProvince(profile.province ?? "");
-        setDistrict(profile.district ?? "");
-        setCounty(profile.county ?? "");
-        setAddress(profile.detailedAddress ?? "");
+        const normalizedProvince = normalizeAddressPart(profile.province);
+        const normalizedDistrict = normalizeAddressPart(profile.district);
+        const normalizedCounty = normalizeAddressPart(profile.county);
+        const normalizedAddress = normalizeAddressPart(profile.detailedAddress);
+        setProvince(normalizedProvince);
+        setDistrict(normalizedDistrict);
+        setCounty(normalizedCounty);
+        setAddress(normalizedAddress);
         setWorkStartTime(profile.workStartTime ?? "08:00:00");
         setWorkEndTime(profile.workEndTime ?? "18:00:00");
         setSelectedDays(profile.workDays ? profile.workDays.split("") : ["1", "2", "3", "4", "5", "6", "7"]);
@@ -125,10 +144,10 @@ export default function ServiceAreaScreen() {
                 : "",
         );
         const normalized = composeFullAddress(
-            profile.province ?? "",
-            profile.district ?? "",
-            profile.county ?? "",
-            profile.detailedAddress ?? "",
+            normalizedProvince,
+            normalizedDistrict,
+            normalizedCounty,
+            normalizedAddress,
         );
         setLastGeocodedAddress(existingLocation ? normalized : "");
         setGeocodeError(null);
@@ -148,7 +167,7 @@ export default function ServiceAreaScreen() {
                 normalized.province,
                 normalized.cityOrDistrict,
                 normalized.countyOrTown,
-                address,
+                normalizeAddressPart(address),
             );
             setLastGeocodedAddress(normalizedFullAddress);
             setGeocodeError(null);
@@ -158,7 +177,7 @@ export default function ServiceAreaScreen() {
     );
 
     useEffect(() => {
-        if (!fullAddress) {
+        if (!isGeocodeReady) {
             setLastGeocodedAddress("");
             setLat("");
             setLng("");
@@ -188,11 +207,17 @@ export default function ServiceAreaScreen() {
             cancelled = true;
             clearTimeout(timer);
         };
-    }, [applyGeocodeResult, fullAddress, geocodeAddress, lastGeocodedAddress]);
+    }, [
+        applyGeocodeResult,
+        fullAddress,
+        geocodeAddress,
+        isGeocodeReady,
+        lastGeocodedAddress,
+    ]);
 
     const handleManualGeocode = useCallback(async () => {
-        if (!fullAddress) {
-            Alert.alert("提示", "请先按要求填写完整地址");
+        if (!isGeocodeReady) {
+            Alert.alert("提示", "请按要求填写省份、城市/城区和详细地址");
             return;
         }
 
@@ -203,10 +228,10 @@ export default function ServiceAreaScreen() {
             console.error("[ServiceArea] 手动解析失败", error);
             Alert.alert("提示", "地址解析失败，请稍后重试");
         }
-    }, [applyGeocodeResult, fullAddress, geocodeAddress]);
+    }, [applyGeocodeResult, fullAddress, geocodeAddress, isGeocodeReady]);
 
     const ensureCoordinates = useCallback(async () => {
-        if (!fullAddress) {
+        if (!isGeocodeReady) {
             throw new Error("请按“省份-城市/城区-县/乡-详细地址”填写完整地址");
         }
 
@@ -224,6 +249,7 @@ export default function ServiceAreaScreen() {
         applyGeocodeResult,
         fullAddress,
         geocodeAddress,
+        isGeocodeReady,
         lastGeocodedAddress,
         lat,
         lng,
@@ -240,7 +266,12 @@ export default function ServiceAreaScreen() {
     const handleSave = useCallback(async () => {
         if (!profile) return;
 
-        if (!province || !district || !address) {
+        const normalizedProvince = normalizeAddressPart(province);
+        const normalizedDistrict = normalizeAddressPart(district);
+        const normalizedCounty = normalizeAddressPart(county);
+        const normalizedAddress = normalizeAddressPart(address);
+
+        if (!normalizedProvince || !normalizedDistrict || !normalizedAddress) {
             Alert.alert("提示", "请按照要求填写省份、城市/城区和详细地址");
             return;
         }
@@ -257,10 +288,10 @@ export default function ServiceAreaScreen() {
             await upsertWorkInfo.mutateAsync({
                 bio: profile.bio ?? undefined,
                 yearsOfExperience: profile.yearsOfExperience ?? 0,
-                province: province || "未设置",
-                district,
-                county,
-                detailedAddress: address,
+                province: normalizedProvince,
+                district: normalizedDistrict,
+                county: normalizedCounty,
+                detailedAddress: normalizedAddress,
                 workStartTime,
                 workEndTime,
                 workDays: orderedWorkDays,
@@ -334,19 +365,19 @@ export default function ServiceAreaScreen() {
                             <InputRow
                                 label="省份"
                                 value={province}
-                                placeholder="如：北京市"
+                                placeholder="如: 北京市"
                                 onChangeText={setProvince}
                             />
                             <InputRow
                                 label="城市/城区"
                                 value={district}
-                                placeholder="如：杭州市 / 朝阳区"
+                                placeholder="如: 杭州市 / 朝阳区"
                                 onChangeText={setDistrict}
                             />
                             <InputRow
                                 label="县/乡"
                                 value={county}
-                                placeholder="如：顺德区 / 某乡镇 (省级市可不填)"
+                                placeholder="如: 顺德区(省级市可不填)"
                                 onChangeText={setCounty}
                             />
                             <View style={styles.formItemColumn}>
@@ -385,11 +416,11 @@ export default function ServiceAreaScreen() {
                                 <TouchableOpacity
                                     style={[
                                         styles.coordActionButton,
-                                        (!fullAddress || isGeocoding) &&
-                                            styles.coordActionButtonDisabled,
+                                        (!isGeocodeReady || isGeocoding) &&
+                                        styles.coordActionButtonDisabled,
                                     ]}
                                     onPress={handleManualGeocode}
-                                    disabled={isGeocoding || !fullAddress}
+                                    disabled={isGeocoding || !isGeocodeReady}
                                 >
                                     {isGeocoding ? (
                                         <ActivityIndicator size="small" color="#2196F3" />

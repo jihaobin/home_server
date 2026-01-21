@@ -98,8 +98,14 @@ export default function AccountBindingScreen() {
                 throw new Error("未能获取到支付宝授权码，请重新授权");
             }
 
-            refetchBindingStatus();
-            Alert.alert("授权成功", "系统将自动完成支付宝绑定，请耐心等待。");
+            await exchangeAlipayAuthCode({
+                authCode,
+                appId: data.params?.appId,
+                scope: data.params?.scope,
+                targetId: data.params?.targetId,
+            });
+            await refetchBindingStatus();
+            Alert.alert("绑定成功", "支付宝账号已绑定。");
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : "授权失败，请稍后再试";
@@ -273,7 +279,7 @@ export default function AccountBindingScreen() {
                     )}
                 </View>
 
-                <View style={styles.accountCard}>
+                {/* <View style={styles.accountCard}>
                     <View style={styles.accountHeader}>
                         <View style={styles.accountLeft}>
                             <View style={[styles.iconWrapper, { backgroundColor: "#07C160" }]}>
@@ -349,7 +355,7 @@ export default function AccountBindingScreen() {
                             </View>
                         </View>
                     )}
-                </View>
+                </View> */}
 
                 <View style={styles.securityCard}>
                     <View style={styles.securityItem}>
