@@ -17,6 +17,7 @@ export class FileValidatorService {
                 '.jpg',
                 '.jpeg',
                 '.png',
+                '.apng',
                 '.gif',
                 '.webp',
                 '.bmp',
@@ -25,7 +26,9 @@ export class FileValidatorService {
             maxSize: 50 * 1024 * 1024, // 50MB
             mimeTypes: [
                 'image/jpeg',
+                'image/jpg',
                 'image/png',
+                'image/apng',
                 'image/gif',
                 'image/webp',
                 'image/bmp',
@@ -35,6 +38,7 @@ export class FileValidatorService {
             realMimeTypes: [
                 'image/jpeg',
                 'image/png',
+                'image/apng',
                 'image/gif',
                 'image/webp',
                 'image/bmp',
@@ -172,6 +176,7 @@ export class FileValidatorService {
         error?: string;
     }> {
         try {
+            const isDeclaredImage = declaredMimeType.startsWith('image/');
             const detectedType = await fileTypeFromBuffer(buffer);
 
             // 某些文件类型（如 txt, csv）无法通过文件头检测
@@ -183,12 +188,22 @@ export class FileValidatorService {
 
             if (!detectedType) {
                 // 如果检测不到，检查是否是允许的不可检测类型
+                if (isDeclaredImage) {
+                    return { isValid: true, realMimeType: declaredMimeType };
+                }
                 if (undetectableTypes.includes(declaredMimeType)) {
                     return { isValid: true, realMimeType: declaredMimeType };
                 }
                 return {
                     isValid: false,
                     error: '无法检测文件类型，可能是不支持的格式',
+                };
+            }
+
+            if (detectedType.mime.startsWith('image/')) {
+                return {
+                    isValid: true,
+                    realMimeType: detectedType.mime,
                 };
             }
 
@@ -249,6 +264,12 @@ export class FileValidatorService {
             return true;
         }
 
+        // PNG/APNG 的多种表示
+        const pngTypes = ['image/png', 'image/apng'];
+        if (pngTypes.includes(declared) && pngTypes.includes(detected)) {
+            return true;
+        }
+
         // Microsoft Office 文档可能有多种 MIME 类型
         const officeDocTypes = [
             'application/msword',
@@ -299,20 +320,35 @@ export class FileValidatorService {
         // 2. 检查文件扩展名和声明的 MIME 类型
         const ext = path.extname(sanitizedFileName).toLowerCase();
         const declaredMimeType = file.mimetype.toLowerCase();
+        const isDeclaredImage = declaredMimeType.startsWith('image/');
+        const realTypeValidation = await this.validateRealFileType(
+            file.buffer,
+            declaredMimeType,
+        );
+        const isDetectedImage =
+            realTypeValidation.isValid &&
+            realTypeValidation.realMimeType?.startsWith('image/');
 
         let fileType = '';
         let config:
             | (typeof this.fileTypeConfig)[keyof typeof this.fileTypeConfig]
             | null = null;
 
-        for (const [type, typeConfig] of Object.entries(this.fileTypeConfig)) {
-            if (
-                typeConfig.extensions.includes(ext) &&
-                typeConfig.mimeTypes.includes(declaredMimeType)
-            ) {
-                fileType = type;
-                config = typeConfig;
-                break;
+        if (isDeclaredImage || isDetectedImage) {
+            fileType = 'image';
+            config = this.fileTypeConfig.image;
+        } else {
+            for (const [type, typeConfig] of Object.entries(
+                this.fileTypeConfig,
+            )) {
+                if (
+                    typeConfig.extensions.includes(ext) &&
+                    typeConfig.mimeTypes.includes(declaredMimeType)
+                ) {
+                    fileType = type;
+                    config = typeConfig;
+                    break;
+                }
             }
         }
 
@@ -335,12 +371,6 @@ export class FileValidatorService {
                 error: `文件大小超过限制，${fileType}类型文件最大支持${maxSizeMB}MB`,
             };
         }
-
-        // 4. 验证文件真实类型（通过文件头检测）
-        const realTypeValidation = await this.validateRealFileType(
-            file.buffer,
-            declaredMimeType,
-        );
 
         if (!realTypeValidation.isValid) {
             return {
