@@ -2,10 +2,8 @@
 
 ## 项目定位
 
-- `apps/mobile-user` 为面向终端用户的 Expo Router 客户端，依托 React Native 0.81 + React 19 同时支持原生与 Web。
-- 所有后端交互走 `/api/**` REST 接口，数据模型来自 `@repo/types`，工具函数沿用 `@repo/utils`，避免重复声明。
-- 关键业务聚焦登录注册、订单管理、服务地址维护和地图定位，与 `apps/mobile-worker` 在授权 Cookie、地址结构上保持一致。
-- 顶层 `Provider` 在 `app/_layout.tsx` 中装配主题、会话、缓存和错误组件，保证各屏共享统一体验。
+- `apps/mobile-user` 为面向终端用户的 Expo Router 客户端（React Native 0.81 + Expo 54）。
+- 数据模型来自 `@repo/types`，请求与缓存尽量复用 `@repo/hooks`/`@repo/lib`。
 
 ## ⚠️ NativeWind CSS Interop 已知问题
 
@@ -26,36 +24,36 @@
 **解决方案：**
 
 1. **对于动态切换的组件**（如按钮激活状态、开关切换）：
-   - 使用内联 `style` 替代动态 `className`
-   - 保留静态的 `className`（如布局、间距）
+    - 使用内联 `style` 替代动态 `className`
+    - 保留静态的 `className`（如布局、间距）
 
-   ```tsx
-   // ❌ 错误 - 动态切换 shadow 和 bg 会触发错误
-   <Pressable className={isSelected ? "bg-primary shadow-sm" : "bg-muted"}>
+    ```tsx
+    // ❌ 错误 - 动态切换 shadow 和 bg 会触发错误
+    <Pressable className={isSelected ? "bg-primary shadow-sm" : "bg-muted"}>
 
-   // ✅ 正确 - 使用内联样式
-   <Pressable
-     className="px-4 py-2 rounded-full"
-     style={isSelected ? {
-       backgroundColor: "hsl(var(--primary))",
-       shadowColor: "#000",
-       shadowOffset: { width: 0, height: 1 },
-       shadowOpacity: 0.05,
-       shadowRadius: 2,
-       elevation: 1,
-     } : {
-       backgroundColor: "hsl(var(--muted))"
-     }}
-   >
-   ```
+    // ✅ 正确 - 使用内联样式
+    <Pressable
+      className="px-4 py-2 rounded-full"
+      style={isSelected ? {
+        backgroundColor: "hsl(var(--primary))",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        elevation: 1,
+      } : {
+        backgroundColor: "hsl(var(--muted))"
+      }}
+    >
+    ```
 
 2. **对于静态组件**（不动态切换的）：
-   - 可以安全使用这些 className
-   - 问题主要出现在状态变化导致 className 重新计算时
+    - 可以安全使用这些 className
+    - 问题主要出现在状态变化导致 className 重新计算时
 
 3. **CSS 变量使用：**
-   - 使用 `hsl(var(--primary))` 等 CSS 变量保持主题一致性
-   - 主题颜色定义在 `packages/mobile-ui/src/theme.ts` 中
+    - 使用 `hsl(var(--primary))` 等 CSS 变量保持主题一致性
+    - 主题颜色定义在 `packages/mobile-ui/src/theme.ts` 中
 
 **相关 Issues：**
 
@@ -86,12 +84,12 @@
 
 ## 目录速览
 
-- `app/_layout.tsx`：挂载 `Provider`、导航 `Stack`、`StatusBar` 与主题；Stack 层定义 `auth`、`(tabs)`、`address/edit-address`。
+- `app/_layout.tsx`：Provider/导航入口。
 - `app/(tabs)/`：三个主 Tab（`index`、`orders`、`profile`）及其 `_layout`，整合底部导航与登录后入口。
 - `app/auth/`：`login.tsx`、`verify.tsx` 通过 `authClient` 调用 better-auth API，手机号验证码登录并自动创建账户。
 - `app/address/`：`select-address`、`select-city`、`edit-address`、`service-address` 组成地址生命周期，联动 `TencentMap` 与 `zustand`。
-- `components/`：`provider.tsx`、`SessionProvider.tsx`、`TencentMap.tsx`、`error-boundaries.tsx`、`LogoutButton.tsx` 等跨页面组件。
-- `hooks/` 与 `stores/`：业务 Hook（含 `hooks/api/*` 地址、订单、支付）和 `useAddressEditStore`；`lib/` 集中 `http-client`、`auth-client`、`location-utils`、`query-client`。
+- `components/`：跨页面组件（Provider/Session/Map/ErrorBoundary 等）。
+- `hooks/` 与 `stores/`：业务 Hook + Zustand 状态；`lib/` 放 http/auth/query 等封装。
 
 ## 会话与鉴权
 
@@ -150,7 +148,7 @@
 
 ## 测试与质量
 
-- 当前未内建移动端测试脚本，新增功能建议使用 React Native Testing Library / Expo E2E，并与源码同目录存放。
+- 当前移动端测试脚本较少；新增核心逻辑建议补齐 React Native Testing Library/Expo E2E。
 - 质量检查命令：`pnpm --filter mobile-user run lint`、`pnpm --filter mobile-user run type-check`，提交前务必通过。
 - 接口调试可在 `pnpm mobile-user:dev` 运行后借助 React Query DevTools 验证缓存与请求行为。
 - 遵循 `.editorconfig`（CRLF、4 空格缩进），Markdown/TS 文件提交前运行 `pnpm format:check`。

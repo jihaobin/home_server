@@ -22,8 +22,8 @@
 
 - 初始化：在仓库根目录执行 `pnpm install`
 - 本地开发：
-  - 全图监视：`pnpm dev`
-  - 仅后端：`pnpm backend:dev` 或在 `apps/backend` 内执行 `pnpm run dev`
+    - 全图监视：`pnpm dev`
+    - 仅后端：`pnpm backend:dev` 或在 `apps/backend` 内执行 `pnpm run dev`
 - 调试模式：`pnpm run start:debug`（自动加载 `.env.development`，启用 Nest inspector）
 - 生产预览：`pnpm run build && pnpm run start:prod`
 - 依赖环境：本地需提供 PostgreSQL、Redis、SMTP 以及第三方 OAuth/支付沙箱服务，可通过 `docker-compose up` 在仓库根目录拉起基础设施
@@ -39,9 +39,9 @@
 
 - Drizzle ORM 通过 `src/common/database/db.ts` 管理连接，`setLogWriter` 可将日志接入自定义通道
 - 迁移流程：
-  - 生成：`pnpm run db:generate`
-  - 执行：`pnpm run db:migration`
-  - 一次性生成并迁移：`pnpm run db:generate:migrate`
+    - 生成：`pnpm run db:generate`
+    - 执行：`pnpm run db:migration`
+    - 一次性生成并迁移：`pnpm run db:generate:migrate`
 - 迁移脚本输出至 `apps/backend/drizzle`，提交时请同时包含 SQL 文件
 - Schema 由 `src/common/database/schema/index.ts` 汇总，新增表/字段后记得导出，并保持 `snake_case` 命名以匹配 `casing: "snake_case"`
 
@@ -83,7 +83,7 @@
 
 ## 代码风格与静态检查
 
-- 代码格式：遵循 `.editorconfig`（CRLF、4 空格），但 Biome 配置了 `tab` 缩进与双引号，保存前请运行 `pnpm format:check`
+- 代码格式：遵循 `.editorconfig`（CRLF、4 空格）
 - Lint：使用仓库共享的 ESLint preset；`pnpm run lint` 默认带 `--fix`
 - 类型检查：`pnpm run type-check`
 - 提交前建议执行：`pnpm lint && pnpm type-check && pnpm test --filter=backend`
