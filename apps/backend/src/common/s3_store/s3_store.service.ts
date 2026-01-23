@@ -138,9 +138,8 @@ export class S3StoreServer implements OnModuleInit {
             );
             this.ensuredBuckets.add(bucketName);
         } catch (error) {
-            const statusCode = (error as any)?.$metadata?.httpStatusCode;
-            const errorCode =
-                (error as any)?.name ?? (error as any)?.Code ?? '';
+            const statusCode = error?.$metadata?.httpStatusCode;
+            const errorCode = error?.name ?? error?.Code ?? '';
             const isNotFound =
                 statusCode === 404 ||
                 errorCode === 'NotFound' ||

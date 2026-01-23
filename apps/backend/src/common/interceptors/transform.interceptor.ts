@@ -50,9 +50,10 @@ export interface TransformInterceptorOptions {
  * 用于统一API响应格式
  */
 @Injectable()
-export class TransformInterceptor<T>
-    implements NestInterceptor<T, ApiResponse<T> | T>
-{
+export class TransformInterceptor<T> implements NestInterceptor<
+    T,
+    ApiResponse<T> | T
+> {
     private readonly defaultOptions: TransformInterceptorOptions = {
         logResponse: true,
         includeTimestamp: true,

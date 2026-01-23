@@ -42,9 +42,10 @@ export interface PaginationInterceptorOptions {
  * 用于统一处理分页数据格式
  */
 @Injectable()
-export class PaginationInterceptor<T>
-    implements NestInterceptor<IPaginatedResult<T>, PaginatedData<T>>
-{
+export class PaginationInterceptor<T> implements NestInterceptor<
+    IPaginatedResult<T>,
+    PaginatedData<T>
+> {
     constructor(
         private readonly logger: AppLoggerService,
         private readonly options: PaginationInterceptorOptions = {

@@ -53,9 +53,9 @@ export class ServiceService {
         } as T & { iconFileUrl: string | null };
     }
 
-    private async attachServiceImage<
-        T extends { imageFileId?: string | null },
-    >(service: T) {
+    private async attachServiceImage<T extends { imageFileId?: string | null }>(
+        service: T,
+    ) {
         const imageFileUrl = await this.resolveFileUrl(service.imageFileId);
         return { ...service, imageFileUrl } as T & {
             imageFileUrl: string | null;

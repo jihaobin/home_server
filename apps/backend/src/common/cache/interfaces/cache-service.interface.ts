@@ -492,7 +492,8 @@ export interface IRedisNumericOperations {
  * 扩展基本缓存服务，添加Redis特有的数据结构操作
  */
 export interface IAdvancedCacheService
-    extends ICacheService,
+    extends
+        ICacheService,
         IRedisHashOperations,
         IRedisListOperations,
         IRedisSetOperations,
