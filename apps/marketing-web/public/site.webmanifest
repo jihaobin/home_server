@@ -1,0 +1,16 @@
+{
+    "name": "叮咚上门",
+    "short_name": "叮咚上门",
+    "description": "专业团队到家，30 分钟极速响应",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#ffb300",
+    "icons": [
+        {
+            "src": "/icon",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}
