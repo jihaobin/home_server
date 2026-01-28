@@ -9,4 +9,17 @@ export default {
         "./src/**/*.{ts,tsx}",
         "../../packages/mobile-ui/src/components/**/*.{ts,tsx}",
     ],
+    theme: {
+        ...(baseConfig.theme ?? {}),
+        extend: {
+            ...(baseConfig.theme?.extend ?? {}),
+            fontFamily: {
+                ...(baseConfig.theme?.extend?.fontFamily ?? {}),
+                "puhui-regular": ["AlibabaPuHuiTi-Regular"],
+                "puhui-medium": ["AlibabaPuHuiTi-Medium"],
+                "puhui-bold": ["AlibabaPuHuiTi-Bold"],
+                "din-alt-bold": ["DINAlternate-Bold"],
+            },
+        },
+    },
 };

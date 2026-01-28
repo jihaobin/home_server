@@ -137,6 +137,27 @@
 - `Button`、`Input` 等组件已封装主题态，页面只需追加 `className`；自定义颜色前先确认 `packages/mobile-ui` 是否有对应 token。
 - 表单场景 Prefer `Label` + `Input` + `Text` 组合，与现有登录/地址页面保持一致以继承样式。
 
+## 首页/像素稿落地规范（NativeWind）
+
+1. **颜色必须走主题 token**
+    - 不要在页面里写 `#fff/#000/#f7951b` 这类硬编码。
+    - 优先使用：`bg-background` / `bg-card` / `bg-primary` / `text-foreground` / `text-muted-foreground` / `border-border` / `text-destructive` 等。
+
+2. **样式统一使用 NativeWind `className`**
+    - 页面层禁止混用内联 `style` + `className` 来表达同一套视觉规则。
+    - 对于三方组件（如 `expo-image`）如需支持 `className`，用 `nativewind/cssInterop` 做一次性适配后再在页面里只写 class。
+
+3. **尽量避免 arbitrary 值（尤其字体尺寸）**
+    - 避免 `text-[14px]` / `text-[11px]` 这类；优先用 `text-xs`/`text-sm`/`text-base`/`text-lg`。
+    - 如确实需要特定字体族（例如阿里普惠体、DIN），在 `apps/mobile-user/tailwind.config.js` 里新增 `fontFamily` 语义 key（如 `font-puhui-regular`、`font-din-alt-bold`），页面只用 `font-*` class。
+
+4. **例外：NativeWind 动态 className 风险**
+    - `shadow-*`、`bg-*/opacity`、`text-*/opacity`、`opacity-*` 等类在“动态切换”场景可能触发 CSS interop 的导航上下文错误。
+    - 静态页面可以使用；若需要根据状态切换，请避免动态拼接这些 className（必要时退回用内联 `style` 仅用于动态部分）。
+
+5. **资源命名（Android/Expo）**
+    - 字体文件名不要包含空格（Android 侧 asset URL 解析会报 `Illegal character in query`），用 `-` 或 `_`。
+
 ## 调试与错误处理
 
 - `components/provider.tsx` 集成 `DevToolsBubble`，点击浮标即可查看 React Query 缓存并复制请求数据。

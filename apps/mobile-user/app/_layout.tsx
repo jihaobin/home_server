@@ -6,17 +6,19 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import * as React from "react";
-import { Platform } from "react-native";
+import { Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Provider } from "@repo/mobile-ui/components/provider";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { Toaster } from "sonner-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppUpdateProvider } from "@repo/mobile-ui/app-update/AppUpdateProvider";
 
 export default function RootLayout() {
     const hasMounted = React.useRef(false);
     const { colorScheme } = useColorScheme();
+    const navTheme = NAV_THEME[colorScheme ?? "light"];
+    const statusBarBackground = navTheme.colors.primary;
     const [isColorSchemeLoaded, setIsColorSchemeLoaded] = React.useState(false);
 
     useIsomorphicLayoutEffect(() => {
@@ -43,7 +45,7 @@ export default function RootLayout() {
         <GestureHandlerRootView style={{ flex: 1 }}>
             <Provider>
                 <AppUpdateProvider app="mobile-user">
-                    <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
+                    <ThemeProvider value={navTheme}>
                         <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
                         <RootNavigation />
                         <PortalHost />

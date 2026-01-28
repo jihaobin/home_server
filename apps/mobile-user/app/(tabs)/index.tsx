@@ -1,654 +1,353 @@
-import { useServiceList } from "@repo/hooks/api/service";
-import { useServicePersonnelSearch } from "@repo/hooks/api/service-personnel";
-import useLocation from "@repo/hooks/useLocation";
-import { useDebounce } from "@repo/hooks/useDebounceThrottle";
-import { Icon } from "@repo/mobile-ui/components/ui/icon";
-import { Input } from "@repo/mobile-ui/components/ui/input";
-import { BottomSheetModal } from "@repo/mobile-ui/components/ui/modal/BottomSheetModal";
+import type React from "react";
+import { Image as ExpoImage } from "expo-image";
+import { useFonts } from "expo-font";
+import { cssInterop, useColorScheme } from "nativewind";
+import { Platform, ScrollView, View } from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@repo/mobile-ui/components/ui/text";
-import { cn } from "@repo/mobile-ui/lib/utils";
-import type { CategoryWithServices } from "@repo/types";
-import { useFile } from "@repo/hooks/api/files";
-import { router } from "expo-router";
-import {
-    type LucideIcon,
-    icons as lucideIconRegistry,
-} from "lucide-react-native";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import {
-    ActivityIndicator,
-    FlatList,
-    Image,
-    type ListRenderItemInfo,
-    Pressable,
-    View,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { ServiceProviderSheet } from "@/components/index_screen/ServiceProviderSheet";
-import useServiceStore, { type ServiceItem } from "@/stores/service";
+import { Button } from "@repo/mobile-ui/components/ui/button";
+import { StatusBar } from "expo-status-bar";
+import { NAV_THEME } from "@repo/mobile-ui/lib/mobile-user-constants";
 
-type ServiceCategory = {
+// Enable NativeWind `className` on expo-image.
+cssInterop(ExpoImage, { className: { target: "style" } });
+const Image = ExpoImage as unknown as React.ComponentType<
+    React.ComponentProps<typeof ExpoImage> & { className?: string }
+>;
+
+type CategoryItem = {
     id: string;
     label: string;
-    description: string | null;
-    icon?: string | null;
-    items: ServiceItem[];
+    icon: number;
 };
 
-const ICON_MAP = lucideIconRegistry as Record<string, LucideIcon>;
+const CATEGORIES: readonly CategoryItem[] = [
+    { id: "home-clean", label: "家庭保洁", icon: require("@/assets/images/家庭保洁.png") },
+    { id: "appliance-clean", label: "家电清洗", icon: require("@/assets/images/家电清洗.png") },
+    { id: "health-care", label: "康养护理", icon: require("@/assets/images/康养护理.png") },
+    { id: "beauty", label: "上门美业", icon: require("@/assets/images/上门美业.png") },
+    { id: "storage", label: "整理收纳", icon: require("@/assets/images/整理收纳.png") },
+    { id: "deep-clean", label: "深度保洁", icon: require("@/assets/images/深度保洁.png") },
+    { id: "laundry", label: "衣物洗护", icon: require("@/assets/images/衣物洗护.png") },
+    { id: "massage", label: "推拿按摩", icon: require("@/assets/images/推拿按摩.png") },
+    { id: "furniture-care", label: "家具养护", icon: require("@/assets/images/家具养护.png") },
+    { id: "nanny", label: "保姆月嫂", icon: require("@/assets/images/保姆月嫂.png") },
+] as const;
 
-function toPascalCase(value: string) {
-    return value
-        .toLowerCase()
-        .split(/[\s-_]+/)
-        .filter(Boolean)
-        .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-        .join("");
+type GuaranteeItem = {
+    id: string;
+    label: string;
+    icon: number;
+};
+
+const GUARANTEES: readonly GuaranteeItem[] = [
+    { id: "late-comp", label: "迟到必赔", icon: require("@/assets/images/迟到必赔.png") },
+    { id: "redo", label: "不满意重做", icon: require("@/assets/images/不满意重做.png") },
+    { id: "24h", label: "7×24小时服务", icon: require("@/assets/images/7_24小时服务.png") },
+    { id: "all-guarantee", label: "全场保障", icon: require("@/assets/images/全场保障.png") },
+] as const;
+
+type PromoItem = {
+    id: string;
+    name: string;
+    tag: string;
+    price: number;
+    image: number;
+};
+
+const PROMOS: readonly PromoItem[] = [
+    { id: "promo-1", name: "丛师傅", tag: "家具养护", price: 100, image: require("@/assets/images/promo-1.png") },
+    { id: "promo-2", name: "魏师傅", tag: "家庭保洁", price: 100, image: require("@/assets/images/promo-2.png") },
+    { id: "promo-3", name: "安师傅", tag: "上门美业", price: 100, image: require("@/assets/images/promo-3.png") },
+] as const;
+
+type ProviderCardData = {
+    id: string;
+    name: string;
+    years: string;
+    tag: string;
+    price: number;
+    distance: string;
+    address: string;
+    scheduleLine1: string;
+    scheduleLine2: string;
+    image: number;
+};
+
+const PROVIDERS: readonly ProviderCardData[] = [
+    {
+        id: "p1",
+        name: "魏师傅·",
+        years: "2年经验",
+        tag: "家具养护",
+        price: 100,
+        distance: "24m",
+        address: "兴雨科技大楼210",
+        scheduleLine1: "周一、周二、周三、周四、周五、周六、周日",
+        scheduleLine2: "08:00-18:00",
+        image: require("@/assets/images/promo-2.png"),
+    },
+    {
+        id: "p2",
+        name: "魏师傅·",
+        years: "2年经验",
+        tag: "家具养护",
+        price: 100,
+        distance: "24m",
+        address: "兴雨科技大楼210",
+        scheduleLine1: "周一、周二、周三、周四、周五、周六、周日",
+        scheduleLine2: "08:00-18:00",
+        image: require("@/assets/images/promo-2.png"),
+    },
+    {
+        id: "p3",
+        name: "魏师傅·",
+        years: "2年经验",
+        tag: "家具养护",
+        price: 100,
+        distance: "24m",
+        address: "兴雨科技大楼210",
+        scheduleLine1: "周一、周二、周三、周四、周五、周六、周日",
+        scheduleLine2: "08:00-18:00",
+        image: require("@/assets/images/promo-2.png"),
+    },
+    {
+        id: "p4",
+        name: "魏师傅·",
+        years: "2年经验",
+        tag: "家具养护",
+        price: 100,
+        distance: "24m",
+        address: "兴雨科技大楼210",
+        scheduleLine1: "周一、周二、周三、周四、周五、周六、周日",
+        scheduleLine2: "08:00-18:00",
+        image: require("@/assets/images/promo-2.png"),
+    },
+] as const;
+
+function PriceTag({ price }: { price: number }) {
+    return (
+        <View className="flex-row items-center">
+            <Text className="text-xs text-destructive font-din-alt-bold">￥</Text>
+            <Text className="text-lg text-destructive font-din-alt-bold">{price}</Text>
+            <Text className="ml-0.5 text-xs text-foreground font-puhui-regular">起</Text>
+        </View>
+    );
 }
 
-function resolveLucideIcon(iconName?: string | null): LucideIcon | null {
-    if (!iconName) {
+function PromoCard({ item }: { item: PromoItem }) {
+    return (
+        <View className="h-[150px] w-[123px] overflow-hidden rounded-lg border border-border bg-card">
+            <Image
+                source={item.image}
+                contentFit="cover"
+                className="w-32 h-20"
+            />
+            <View className="px-2 pt-1.5">
+                <Text className="text-sm text-foreground font-puhui-regular">{item.name}</Text>
+                <View className="mt-2 flex-row items-center">
+                    <View className="p-[2px] items-center justify-center rounded border border-primary">
+                        <Text className="text-xs text-primary font-puhui-regular">{item.tag}</Text>
+                    </View>
+                </View>
+                <View className="mt-2">
+                    <PriceTag price={item.price} />
+                </View>
+            </View>
+        </View>
+    );
+}
+
+function ProviderCard({ item }: { item: ProviderCardData }) {
+    return (
+        <View className="h-[298px] w-[167px] overflow-hidden rounded-xl border border-border bg-card">
+            <Image
+                source={item.image}
+                contentFit="cover"
+                className="h-[170px] w-[167px]"
+            />
+            <View className="flex-1 px-2 pt-2">
+                <View className="flex-row items-center justify-between gap-1">
+                    <View className="flex-1">
+                        <View className="flex-row items-center">
+                            <Text className="text-sm text-foreground font-puhui-regular">{item.name}</Text>
+                            <Text className="ml-1 text-sm text-primary font-puhui-medium">{item.years}</Text>
+                        </View>
+                    </View>
+                    <View className="p-[2px]  items-center justify-center rounded border border-primary">
+                        <Text className="text-xs text-primary font-puhui-regular">{item.tag}</Text>
+                    </View>
+                </View>
+
+                <View className="mt-2 flex-row items-center gap-1">
+                    <Image
+                        source={require("@/assets/images/定位-小.png")}
+                        contentFit="contain"
+                        className="h-3 w-3"
+                    />
+                    <Text className=" text-xs text-primary font-puhui-medium">{item.distance}</Text>
+                    <Text className="text-xs text-muted-foreground font-puhui-regular"> · </Text>
+                    <Text
+                        className="flex-1 text-xs text-muted-foreground font-puhui-regular"
+                        numberOfLines={1}
+                    >
+                        {item.address}
+                    </Text>
+                </View>
+
+                <View className="mt-1.5 flex-row items-start">
+                    <Image
+                        source={require("@/assets/images/时间.png")}
+                        contentFit="contain"
+                        className="mt-0.5 h-3 w-3"
+                    />
+                    <View className="ml-1 flex-1">
+                        <Text className="text-xs text-muted-foreground font-puhui-regular">
+                            {item.scheduleLine1}
+                        </Text>
+                        <Text className="text-xs text-muted-foreground font-puhui-regular">
+                            {item.scheduleLine2}
+                        </Text>
+                    </View>
+                </View>
+
+                <View className="mt-auto flex-row items-end justify-between pb-1.5">
+                    <PriceTag price={item.price} />
+                    <View className="h-5 w-16 items-center justify-center rounded-full bg-primary">
+                        <Text className="text-xs text-primary-foreground font-puhui-medium">
+                            立即预约
+                        </Text>
+                    </View>
+                </View>
+            </View>
+        </View>
+    );
+}
+
+
+function StatusBarBackground({ color }: { color: string }) {
+    const insets = useSafeAreaInsets();
+
+    if (Platform.OS === "web" || insets.top === 0) {
         return null;
     }
-
-    const trimmed = iconName.trim();
-    if (!trimmed) {
-        return null;
-    }
-
-    const candidates = new Set<string>([
-        trimmed,
-        trimmed.replace(/^[a-z]/, (char) => char.toUpperCase()),
-        toPascalCase(trimmed),
-        trimmed.toLowerCase(),
-        trimmed
-            .split(/[\s-_]+/)
-            .map((segment, index) =>
-                index === 0
-                    ? segment.charAt(0).toUpperCase() + segment.slice(1)
-                    : segment.charAt(0).toUpperCase() + segment.slice(1),
-            )
-            .join(""),
-    ]);
-
-    for (const candidate of candidates) {
-        const keysToTry = [candidate, `${candidate}Icon`, `Lucide${candidate}`];
-        for (const key of keysToTry) {
-            const maybeIcon = ICON_MAP[key];
-            if (maybeIcon) {
-                return maybeIcon;
-            }
-        }
-    }
-
-    return null;
-}
-
-function mapServiceListToCategories(
-    categories: CategoryWithServices[],
-): ServiceCategory[] {
-    return categories
-        .filter((category) => category.isActive)
-        .map<ServiceCategory>((category) => ({
-            id: category.id,
-            label: category.name,
-            description: category.description,
-            // 分类标签不展示图片
-            icon: null,
-            items: category.children
-                .filter((service) => service.isActive)
-                .map<ServiceItem>((service) => {
-                    const galleryCover =
-                        Array.isArray((service as any)?.gallery) &&
-                        (service as any).gallery.length > 0
-                            ? (service as any).gallery[0]
-                            : null;
-                    const iconCandidate =
-                        (service as any).imageFileUrl ||
-                        (service as any).imageFileId ||
-                        galleryCover?.url ||
-                        galleryCover?.fileUrl ||
-                        galleryCover?.fileId ||
-                        (service as any).iconFileUrl ||
-                        (service as any).icon ||
-                        null;
-
-                    return {
-                        id: service.id,
-                        label: service.name,
-                        description:
-                            service.description ??
-                            (service as any)?.personnelDescription ??
-                            category.description ??
-                            "暂无描述",
-                        icon: iconCandidate,
-                    };
-                }),
-        }))
-        .filter((category) => category.items.length > 0);
-}
-
-/**
- * 服务人员列表加载组件
- * 使用 Suspense 边界处理加载状态
- */
-function ServiceProvidersList({
-    serviceId,
-    userLat,
-    userLng,
-}: {
-    serviceId: string;
-    userLat: number;
-    userLng: number;
-}) {
-    const { data } = useServicePersonnelSearch({
-        serviceId,
-        userLat,
-        userLng,
-        maxDistance: 50, // 最大距离 50km
-        sortBy: "distance", // 按距离排序
-        sortOrder: "asc", // 升序
-    });
-
-    return data.items;
-}
-
-/**
- * 带数据加载的服务人员 Sheet 组件
- */
-function ServiceProviderSheetWithData({
-    service,
-    userLat,
-    userLng,
-    onClose,
-}: {
-    service: ServiceItem;
-    userLat: number;
-    userLng: number;
-    onClose: () => void;
-}) {
-    const providers = ServiceProvidersList({
-        serviceId: service.id,
-        userLat,
-        userLng,
-    });
-
-    const { setService: setServiceId, setServicePersonnelInfo } =
-        useServiceStore();
 
     return (
-        <ServiceProviderSheet
-            service={service}
-            providers={providers}
-            onClose={onClose}
-            onProviderDetail={(provider) => {
-                router.push({
-                    pathname: "/servicePersonnel",
-                });
-                setServiceId(service);
-                setServicePersonnelInfo(provider);
+        <View
+            pointerEvents="none"
+            style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                height: insets.top,
+                backgroundColor: color,
+                zIndex: 1,
             }}
         />
     );
 }
 
-function CategoryTab({
-    category,
-    isActive,
-    onPress,
-}: {
-    category: ServiceCategory;
-    isActive: boolean;
-    onPress: (id: string) => void;
-}) {
-    return (
-        <Pressable
-            accessibilityRole="button"
-            className={cn(
-                "mr-2 rounded-full border px-4 py-2",
-                isActive
-                    ? "border-primary bg-primary/10 dark:bg-primary/20"
-                    : "border-border bg-muted/60 dark:bg-muted/40",
-            )}
-            onPress={() => onPress(category.id)}
-        >
-            <Text
-                className={`text-sm font-medium ${isActive ? "text-primary" : "text-muted-foreground"}`}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-            >
-                {category.label}
-            </Text>
-        </Pressable>
-    );
-}
-
-function ServiceIconBadge({
-    icon,
-    label,
-    size = 26,
-    variant = "rounded",
-}: {
-    icon?: string | null;
-    label: string;
-    size?: number;
-    variant?: "rounded" | "circle";
-}) {
-    const iconComponent = resolveLucideIcon(icon);
-    const isRemoteImage = Boolean(icon && /^https?:\/\//i.test(icon));
-    const { data: iconFile } = useFile(!isRemoteImage ? icon : null);
-    const resolvedImage = isRemoteImage ? icon : iconFile?.fileUrl ?? null;
-    const [imageError, setImageError] = useState(false);
-    const borderRadius = variant === "circle" ? size / 2 : Math.max(8, size / 4);
-
-    useEffect(() => {
-        setImageError(false);
-    }, [resolvedImage, icon]);
-
-    if (resolvedImage && !imageError) {
-        return (
-            <Image
-                source={{ uri: resolvedImage }}
-                style={{
-                    width: size,
-                    height: size,
-                    borderRadius,
-                }}
-                resizeMode="cover"
-                onError={() => setImageError(true)}
-            />
-        );
-    }
-
-    if (iconComponent) {
-        return <Icon as={iconComponent} size={size} className="text-primary" />;
-    }
-
-    const fallbackLetter = label?.trim().slice(0, 1) || "·";
-
-    return (
-        <View
-            className="items-center justify-center rounded-full bg-primary/10 dark:bg-primary/20"
-            style={{
-                width: size,
-                height: size,
-                borderRadius,
-            }}
-        >
-            <Text className="text-xs font-semibold text-primary">
-                {fallbackLetter}
-            </Text>
-        </View>
-    );
-}
-
-function ServiceCard({
-    item,
-    index,
-    onPress,
-}: {
-    item: ServiceItem;
-    index: number;
-    onPress: (item: ServiceItem) => void;
-}) {
-    const isLeftColumn = index % 2 === 0;
-
-    return (
-        <Pressable
-            className="flex-1 rounded-2xl border border-border bg-card px-4 py-3"
-            style={{
-                marginRight: isLeftColumn ? 8 : 0,
-                marginLeft: isLeftColumn ? 0 : 8,
-                marginBottom: 16,
-                shadowColor: "rgba(15, 23, 42, 0.08)",
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.12,
-                shadowRadius: 10,
-                elevation: 3,
-            }}
-            android_ripple={{
-                color: "rgba(148, 163, 184, 0.16)",
-                borderless: false,
-            }}
-            onPress={() => onPress(item)}
-        >
-            <View className="flex-row items-start">
-                <View
-                    className="mr-3 items-center justify-center rounded-xl border border-border bg-muted/40"
-                    style={{
-                        width: 52,
-                        height: 52,
-                    }}
-                >
-                    <ServiceIconBadge
-                        icon={item.icon}
-                        label={item.label}
-                        size={40}
-                        variant="rounded"
-                    />
-                </View>
-                <View className="flex-1">
-                    <Text
-                        className="text-base font-semibold text-foreground"
-                        numberOfLines={2}
-                        ellipsizeMode="tail"
-                    >
-                        {item.label}
-                    </Text>
-                    <Text
-                        className="mt-1 text-xs text-muted-foreground"
-                        numberOfLines={2}
-                        ellipsizeMode="tail"
-                    >
-                        {item.description ?? "专业团队 · 快速响应"}
-                    </Text>
-                </View>
-            </View>
-            <View className="mt-3 flex-row items-center justify-between">
-                <Text className="text-xs font-medium text-primary">立即预约</Text>
-                <Icon as={ICON_MAP.ChevronRight} size={16} className="text-primary" />
-            </View>
-        </Pressable>
-    );
-}
-
 export default function HomeScreen() {
-    const [activeCategoryId, setActiveCategoryId] = useState<string>("");
-    const [searchValue, setSearchValue] = useState("");
-    const [selectedService, setSelectedService] = useState<ServiceItem | null>(
-        null,
-    );
-    const [isModalVisible, setIsModalVisible] = useState(false);
-    const [isRefreshing, setIsRefreshing] = useState(false);
+    const { colorScheme } = useColorScheme();
 
-    // 使用封装的防抖 hook - 用户停止输入500ms后才更新
-    const debouncedSearchValue = useDebounce(searchValue, 500);
-
-    // 使用无限滚动的服务列表 - 使用防抖后的搜索值
-    const {
-        data: serviceListData,
-        fetchNextPage,
-        hasNextPage,
-        isFetchingNextPage,
-        refetch: refetchServices,
-    } = useServiceList({
-        limit: 10,
-        sortOrder: "asc",
-        isActive: true,
-        ...(debouncedSearchValue ? { keyword: debouncedSearchValue } : {}),
-        ...(activeCategoryId ? { categoryId: activeCategoryId } : {}),
-    });
-
-    // 合并所有页面的服务分类数据
-    const allCategories = useMemo(() => {
-        const pages = serviceListData?.pages ?? [];
-        const allItems: CategoryWithServices[] = [];
-
-        for (const page of pages) {
-            allItems.push(...page.items);
-        }
-
-        return allItems;
-    }, [serviceListData]);
-
-    // 将服务分类映射为展示格式
-    const serviceCategories = useMemo(
-        () => mapServiceListToCategories(allCategories),
-        [allCategories],
-    );
-
-    // 初始化第一个分类为激活状态
-    useEffect(() => {
-        if (!activeCategoryId && serviceCategories.length > 0) {
-            setActiveCategoryId(serviceCategories[0].id);
-        }
-    }, [serviceCategories, activeCategoryId]);
-
-    const emptyStateIcon = useMemo(
-        () =>
-            resolveLucideIcon("file-question-mark") ??
-            resolveLucideIcon("circle-help") ??
-            resolveLucideIcon("search-x"),
-        [],
-    );
-
-    const { location } = useLocation();
-
-    const activeCategory = useMemo(
-        () =>
-            serviceCategories.find(
-                (category: ServiceCategory) => category.id === activeCategoryId,
-            ) ?? serviceCategories[0],
-        [activeCategoryId, serviceCategories],
-    );
-
-    const displayedItems = useMemo(() => {
-        const items = activeCategory?.items ?? [];
-        const keyword = searchValue.trim().toLowerCase();
-        if (!keyword) {
-            return items;
-        }
-
-
-
-        return items.filter((item: ServiceItem) => {
-            const label = item.label.toLowerCase();
-            const description = item.description?.toLowerCase() ?? "";
-            return label.includes(keyword) || description.includes(keyword);
-        });
-    }, [activeCategory?.items, searchValue]);
-
-    const handleCategoryPress = useCallback((categoryId: string) => {
-        setActiveCategoryId(categoryId);
-    }, []);
-
-    const handleServicePress = useCallback((item: ServiceItem) => {
-        setSelectedService(item);
-        setIsModalVisible(true);
-    }, []);
-
-    const handleCloseModal = useCallback(() => {
-        setIsModalVisible(false);
-        setTimeout(() => {
-            setSelectedService(null);
-        }, 300);
-    }, []);
-
-    const renderCategoryTab = useCallback(
-        ({ item }: ListRenderItemInfo<ServiceCategory>) => (
-            <CategoryTab
-                category={item}
-                isActive={item.id === activeCategory?.id}
-                onPress={handleCategoryPress}
-            />
-        ),
-        [activeCategory?.id, handleCategoryPress],
-    );
-
-    const renderServiceCard = useCallback(
-        ({ item, index }: ListRenderItemInfo<ServiceItem>) => (
-            <ServiceCard item={item} index={index} onPress={handleServicePress} />
-        ),
-        [handleServicePress],
-    );
-
-    const categoryKeyExtractor = useCallback(
-        (item: ServiceCategory) => item.id,
-        [],
-    );
-    const serviceKeyExtractor = useCallback((item: ServiceItem) => item.id, []);
-
-    // 加载更多数据的处理函数
-    const handleLoadMore = useCallback(() => {
-        if (hasNextPage && !isFetchingNextPage) {
-            fetchNextPage();
-        }
-    }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
-
-    // 渲染加载更多的底部组件
-    const renderListFooter = useCallback(() => {
-        if (!isFetchingNextPage) return null;
-
-        return (
-            <View className="py-4 items-center">
-                <ActivityIndicator size="small" />
-                <Text className="mt-2 text-xs text-muted-foreground">加载更多...</Text>
-            </View>
-        );
-    }, [isFetchingNextPage]);
-
-    const handleRefresh = useCallback(async () => {
-        setIsRefreshing(true);
-        try {
-            await refetchServices({
-                throwOnError: false,
-            });
-        } finally {
-            setIsRefreshing(false);
-        }
-    }, [refetchServices]);
-
-    const renderListHeader = useCallback(() => {
-        return (
-            <View>
-                <View className="px-4 pb-3">
-                    <View className="flex-row items-center justify-between">
-                        <View>
-                            <Text className="mt-4 text-3xl font-semibold text-foreground">
-                                叮咚上门
-                            </Text>
-                            <Text className="mt-1 text-sm text-muted-foreground">
-                                专业团队到家，30 分钟极速响应
-                            </Text>
-                        </View>
-                        <View className="flex-row items-center rounded-full bg-primary/10 dark:bg-primary/20 px-3 py-1.5">
-                            <Icon as={ICON_MAP.MapPin} size={16} className="text-primary" />
-                            <Text className="ml-1 text-xs font-medium text-primary">
-                                {location?.district ?? location?.city ?? location?.province}
-                            </Text>
-                        </View>
-                    </View>
-
-                    <View className="mt-4 flex-row items-center rounded-full border border-border px-4">
-                        <Icon
-                            as={ICON_MAP.Search}
-                            size={18}
-                            className="text-muted-foreground"
-                        />
-                        <Input
-                            value={searchValue}
-                            onChangeText={(value) => {
-                                setSearchValue(value);
-                            }}
-                            placeholder="搜索你想要的服务"
-                            placeholderTextColor="rgba(148, 163, 184, 0.9)"
-                            className="ml-2 flex-1 text-sm text-foreground border-transparent outline-none"
-                            returnKeyType="search"
-                        />
-                        {searchValue ? (
-                            <Pressable onPress={() => setSearchValue("")} hitSlop={8}>
-                                <Icon
-                                    as={ICON_MAP.X}
-                                    size={16}
-                                    className="text-muted-foreground"
-                                />
-                            </Pressable>
-                        ) : null}
-                    </View>
-                </View>
-
-                <View className="border-b border-border px-4 pb-3 pt-2">
-                    <Text
-                        className="text-base font-semibold text-foreground"
-                        numberOfLines={1}
-                        ellipsizeMode="tail"
-                    >
-                        选择需要的服务
-                    </Text>
-                    <FlatList
-                        className="mt-3"
-                        data={serviceCategories}
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        renderItem={renderCategoryTab}
-                        keyExtractor={categoryKeyExtractor}
-                        contentContainerStyle={{
-                            paddingRight: 16,
-                        }}
-                    />
-                </View>
-            </View>
-        );
-    }, [
-        categoryKeyExtractor,
-        location?.city,
-        location?.district,
-        location?.province,
-        renderCategoryTab,
-        searchValue,
-        serviceCategories,
-    ]);
+    const navTheme = NAV_THEME[colorScheme ?? "light"];
+    const statusBarBackground = navTheme.colors.primary;
 
     return (
-        <SafeAreaView className="flex-1">
-            <FlatList
-                data={displayedItems}
-                keyExtractor={serviceKeyExtractor}
-                numColumns={2}
-                renderItem={renderServiceCard}
-                onEndReached={handleLoadMore}
-                onEndReachedThreshold={0.5}
-                ListFooterComponent={renderListFooter}
-                ListHeaderComponent={renderListHeader}
-                contentContainerStyle={{
-                    paddingHorizontal: 16,
-                    paddingTop: 16,
-                    paddingBottom: 32,
-                }}
-                refreshing={isRefreshing}
-                onRefresh={handleRefresh}
-                ListEmptyComponent={
-                    <View className="flex-1 items-center justify-center px-6 py-24">
-                        {emptyStateIcon ? (
-                            <Icon
-                                as={emptyStateIcon}
-                                size={28}
-                                className="text-muted-foreground"
-                            />
-                        ) : null}
-                        <Text className="mt-3 text-sm font-medium text-muted-foreground">
-                            未找到匹配的子服务
-                        </Text>
-                        <Text className="mt-1 text-xs text-muted-foreground">
-                            请尝试调整关键词或切换其他服务分类
-                        </Text>
-                    </View>
-                }
-                showsVerticalScrollIndicator={false}
-                removeClippedSubviews
-            />
+        <View className="flex-1 bg-background">
+            <StatusBar style={colorScheme === "dark" ? "light" : "dark"} backgroundColor={statusBarBackground} />
+            <StatusBarBackground color={statusBarBackground} />
+            <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+                <View className="pb-6">
+                    <View className="bg-primary">
+                        <SafeAreaView edges={["top"]}>
+                            <View className="bg-primary pb-2">
+                                <View className="h-11 flex-row items-center">
+                                    <Image
+                                        source={require("@/assets/images/定位.png")}
+                                        contentFit="contain"
+                                        className="ml-4 h-4 w-4"
+                                    />
+                                    <View className="ml-1 flex-row items-center">
+                                        <Text className="text-sm text-foreground font-puhui-medium">
+                                            兴雨科技大楼
+                                        </Text>
+                                        <Image
+                                            source={require("@/assets/images/箭头.png")}
+                                            contentFit="contain"
+                                            className="h-5 w-5"
+                                        />
+                                    </View>
+                                </View>
 
-            {selectedService && location && (
-                <BottomSheetModal visible={isModalVisible} onClose={handleCloseModal}>
-                    <Suspense
-                        fallback={
-                            <View className="flex-1 items-center justify-center py-12">
-                                <ActivityIndicator size="large" />
-                                <Text className="mt-4 text-sm text-muted-foreground">
-                                    正在加载服务人员...
+                                <View className="mx-4 mt-3 h-10 w-[343px] flex-row items-center rounded-full bg-card">
+                                    <Text className="ml-3 flex-1 text-sm text-muted-foreground font-puhui-regular">
+                                        搜索你想要的服务
+                                    </Text>
+                                    <Button className="mr-0.5 h-9 w-[60px] items-center justify-center rounded-full bg-primary">
+                                        <Text className="text-sm text-foreground font-puhui-regular">
+                                            搜索
+                                        </Text>
+                                    </Button>
+                                </View>
+                            </View>
+                        </SafeAreaView>
+                    </View>
+
+                    <View className="mx-4 mt-2 h-[81px] w-[343px] overflow-hidden rounded-xl shadow-lg">
+                        <Image
+                            source={require("@/assets/images/home-banner.png")}
+                            contentFit="cover"
+                            className="h-full w-full"
+                        />
+                    </View>
+
+                    <View className="mx-4 mt-3 w-[343px] flex-row items-center justify-between">
+                        {GUARANTEES.map((item) => (
+                            <View key={item.id} className="flex-row items-center">
+                                <Image source={item.icon} contentFit="contain" className="h-3 w-3" />
+                                <Text className="ml-1 text-xs text-muted-foreground font-puhui-regular">
+                                    {item.label}
                                 </Text>
                             </View>
-                        }
-                    >
-                        <ServiceProviderSheetWithData
-                            service={selectedService}
-                            userLat={location.latitude}
-                            userLng={location.longitude}
-                            onClose={handleCloseModal}
-                        />
-                    </Suspense>
-                </BottomSheetModal>
-            )}
-        </SafeAreaView>
+                        ))}
+                    </View>
+
+                    <View className="mx-[17px] mt-4 w-[341px] flex-row flex-wrap gap-6">
+                        {CATEGORIES.map((item) => (
+                            <View key={item.id} className="w-[49px] items-center">
+                                <Image source={item.icon} contentFit="contain" className="h-[49px] w-[49px]" />
+                                <Text className="mt-1 text-xs text-foreground font-puhui-regular" numberOfLines={1}>
+                                    {item.label}
+                                </Text>
+                            </View>
+                        ))}
+                    </View>
+
+                    <View className="mx-4 mt-5 h-[205px] rounded-xl bg-card shadow-lg">
+                        <Text className="ml-3 mt-3 text-lg text-foreground font-puhui-medium">
+                            特惠服务
+                        </Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-2">
+                            <View className="flex-row gap-3 px-3">
+                                {PROMOS.map((item) => (
+                                    <PromoCard key={item.id} item={item} />
+                                ))}
+                            </View>
+                        </ScrollView>
+                    </View>
+
+                    <Text className="mx-4 mt-3 text-base text-foreground font-puhui-medium">
+                        推荐
+                    </Text>
+                    <View className="mx-4 mt-2 w-[343px] flex-row flex-wrap gap-[9px]">
+                        {PROVIDERS.map((item) => (
+                            <ProviderCard key={item.id} item={item} />
+                        ))}
+                    </View>
+                </View>
+            </ScrollView>
+        </View>
     );
 }
