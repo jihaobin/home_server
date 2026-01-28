@@ -3,131 +3,124 @@
 @tailwind utilities;
 
 @layer base {
-	:root {
-		--background: 20 14.0000% 96%;
-		--foreground: 20 14.0000% 20%;
-		--card: 0 0% 100%;
-		--card-foreground: 20 14.0000% 20%;
-		--popover: 0 0% 100%;
-		--popover-foreground: 20 14.0000% 20%;
-		--primary: 33.094 94% 54%;
-		--primary-foreground: 20 14.0000% 20%;
-		--secondary: 33 55% 92%;
-		--secondary-foreground: 33 30% 28%;
-		--muted: 30 25% 90%;
-		--muted-foreground: 30 15% 45%;
-		--accent: 33 80% 88%;
-		--accent-foreground: 20 14.0000% 20%;
-		--destructive: 0 70% 50%;
-		--destructive-foreground: 0 0% 98%;
-		--border: 25 10% 80%;
-		--input: 20 14.0000% 92%;
-		--ring: 33.094 94% 54%;
-		--chart-1: 33.094 94% 54%;
-		--chart-2: 190 60% 45%;
-		--chart-3: 220 70% 60%;
-		--chart-4: 340 55% 65%;
-		--chart-5: 120 45% 45%;
-		--sidebar: 33 35% 95%;
-		--sidebar-foreground: 20 14.0000% 20%;
-		--sidebar-primary: 33.094 94% 54%;
-		--sidebar-primary-foreground: 20 14.0000% 20%;
-		--sidebar-accent: 33 70% 90%;
-		--sidebar-accent-foreground: 20 14.0000% 20%;
-		--sidebar-border: 25 10% 85%;
-		--sidebar-ring: 33.094 94% 54%;
-		--font-sans: AR One Sans, ui-sans-serif, sans-serif, system-ui;
-		--font-serif: "Lora", serif;
-		--font-mono: "JetBrains Mono", monospace;
-		--radius: 0.75rem;
-		--shadow-x: 0rem;
-		--shadow-y: 0.2rem;
-		--shadow-blur: 0.4rem;
-		--shadow-spread: -0.1rem;
-		--shadow-opacity: 0.08;
-		--shadow-color: hsl(20, 14%, 20%);
-		--shadow-2xs: 0rem 0.2rem 0.4rem -0.1rem hsl(20 14.0000% 20% / 0.04);
-		--shadow-xs: 0rem 0.2rem 0.4rem -0.1rem hsl(20 14.0000% 20% / 0.04);
-		--shadow-sm:
-			0rem 0.2rem 0.4rem -0.1rem hsl(20 14.0000% 20% / 0.08), 0rem 1px 2px
-			-1.1px hsl(20 14.0000% 20% / 0.08);
-		--shadow:
-			0rem 0.2rem 0.4rem -0.1rem hsl(20 14.0000% 20% / 0.08), 0rem 1px 2px
-			-1.1px hsl(20 14.0000% 20% / 0.08);
-		--shadow-md:
-			0rem 0.2rem 0.4rem -0.1rem hsl(20 14.0000% 20% / 0.08), 0rem 2px 4px
-			-1.1px hsl(20 14.0000% 20% / 0.08);
-		--shadow-lg:
-			0rem 0.2rem 0.4rem -0.1rem hsl(20 14.0000% 20% / 0.08), 0rem 4px 6px
-			-1.1px hsl(20 14.0000% 20% / 0.08);
-		--shadow-xl:
-			0rem 0.2rem 0.4rem -0.1rem hsl(20 14.0000% 20% / 0.08), 0rem 8px 10px
-			-1.1px hsl(20 14.0000% 20% / 0.08);
-		--shadow-2xl: 0rem 0.2rem 0.4rem -0.1rem hsl(20 14.0000% 20% / 0.2);
-		--tracking-normal: 0em;
-		--spacing: 0.25rem;
-	}
+    :root {
+        /* Figma (node 1:390 / 1:848) light tokens */
+        --background: 0 0% 95.686%; /* #f4f4f4 */
+        --foreground: 36 8.197% 11.961%; /* #211f1c */
+        --card: 0 0% 100%;
+        --card-foreground: 36 8.197% 11.961%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 36 8.197% 11.961%;
+        --primary: 33.273 93.22% 53.725%; /* #f7951b */
+        --primary-foreground: 0 0% 100%; /* #211f1c */
+        --secondary: 33 55% 92%;
+        --secondary-foreground: 36.154 100% 30.588%; /* #9c5e00 */
+        --muted: 0 0% 95.686%;
+        --muted-foreground: 0 0% 60%; /* #999999 */
+        --accent: 33 80% 88%;
+        --accent-foreground: 36 8.197% 11.961%;
+        --destructive: 353.534 100% 45.49%; /* #e80019 */
+        --destructive-foreground: 0 0% 98%;
+        --border: 210 22.2222% 96.4706%; /* #f4f6f8 */
+        --input: 210 22.2222% 96.4706%;
+        --ring: 33.273 93.22% 53.725%;
+        --chart-1: 33.273 93.22% 53.725%;
+        --chart-2: 190 60% 45%;
+        --chart-3: 220 70% 60%;
+        --chart-4: 340 55% 65%;
+        --chart-5: 120 45% 45%;
+        --sidebar: 33 35% 95%;
+        --sidebar-foreground: 36 8.197% 11.961%;
+        --sidebar-primary: 33.273 93.22% 53.725%;
+        --sidebar-primary-foreground: 0 0% 100%;
+        --sidebar-accent: 33 70% 90%;
+        --sidebar-accent-foreground: 36 8.197% 11.961%;
+        --sidebar-border: 210 22.2222% 96.4706%;
+        --sidebar-ring: 33.273 93.22% 53.725%;
+        --font-sans: AR One Sans, ui-sans-serif, sans-serif, system-ui;
+        --font-serif: "Lora", serif;
+        --font-mono: "JetBrains Mono", monospace;
+        --radius: 0.75rem;
+        --shadow-x: 0rem;
+        /* Figma card shadow: 0px 1px 12px rgba(0,0,0,0.1) */
+        --shadow-y: 0.0625rem;
+        --shadow-blur: 0.75rem;
+        --shadow-spread: 0rem;
+        --shadow-opacity: 0.1;
+        --shadow-color: hsl(0 0% 0%);
+        --shadow-2xs: 0rem 0.0625rem 0.75rem 0rem hsl(0 0% 0% / 0.1);
+        --shadow-xs: 0rem 0.0625rem 0.75rem 0rem hsl(0 0% 0% / 0.1);
+        --shadow-sm: 0rem 0.0625rem 0.75rem 0rem hsl(0 0% 0% / 0.1);
+        --shadow: 0rem 0.0625rem 0.75rem 0rem hsl(0 0% 0% / 0.1);
+        --shadow-md: 0rem 0.125rem 0.75rem 0rem hsl(0 0% 0% / 0.12);
+        --shadow-lg: 0rem 0.25rem 1rem 0rem hsl(0 0% 0% / 0.14);
+        --shadow-xl: 0rem 0.5rem 1.5rem 0rem hsl(0 0% 0% / 0.16);
+        --shadow-2xl: 0rem 0.75rem 2rem 0rem hsl(0 0% 0% / 0.2);
+        --tracking-normal: 0em;
+        --spacing: 0.25rem;
+    }
 
-	.dark:root {
-		--background: 24 12% 12%;
-		--foreground: 30 20% 88%;
-		--card: 24 12% 15%;
-		--card-foreground: 30 20% 88%;
-		--popover: 24 12% 15%;
-		--popover-foreground: 30 20% 88%;
-		--primary: 33.094 94% 54%;
-		--primary-foreground: 20 14.0000% 20%;
-		--secondary: 33 30% 22%;
-		--secondary-foreground: 30 20% 88%;
-		--muted: 24 10% 18%;
-		--muted-foreground: 30 15% 70%;
-		--accent: 33 30% 20%;
-		--accent-foreground: 33 70% 85%;
-		--destructive: 0 60% 40%;
-		--destructive-foreground: 0 0% 98%;
-		--border: 24 10% 25%;
-		--input: 24 10% 18%;
-		--ring: 33.094 94% 54%;
-		--chart-1: 33.094 94% 54%;
-		--chart-2: 190 60% 45%;
-		--chart-3: 220 70% 60%;
-		--chart-4: 340 55% 65%;
-		--chart-5: 120 45% 45%;
-		--sidebar: 24 12% 10%;
-		--sidebar-foreground: 30 20% 88%;
-		--sidebar-primary: 33.094 94% 54%;
-		--sidebar-primary-foreground: 20 14.0000% 20%;
-		--sidebar-accent: 33 20% 16%;
-		--sidebar-accent-foreground: 33 70% 85%;
-		--sidebar-border: 24 10% 20%;
-		--sidebar-ring: 33.094 94% 54%;
-		--font-sans: AR One Sans, ui-sans-serif, sans-serif, system-ui;
-		--font-serif: "Lora", serif;
-		--font-mono: "JetBrains Mono", monospace;
-		--radius: 0.75rem;
-		--shadow-x: 0rem;
-		--shadow-y: 0.3rem;
-		--shadow-blur: 0.6rem;
-		--shadow-spread: -0.2rem;
-		--shadow-opacity: 0.2;
-		--shadow-color: hsl(0, 0%, 0%);
-		--shadow-2xs: 0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.1);
-		--shadow-xs: 0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.1);
-		--shadow-sm:
-			0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2), 0rem 1px 2px -1.2px
-			hsl(0 0% 0% / 0.2);
-		--shadow:
-			0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2), 0rem 1px 2px -1.2px
-			hsl(0 0% 0% / 0.2);
-		--shadow-md:
-			0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2), 0rem 2px 4px -1.2px
-			hsl(0 0% 0% / 0.2);
-		--shadow-lg:
-			0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2), 0rem 4px 6px -1.2px
-			hsl(0 0% 0% / 0.2);
-		--shadow-xl:
-			0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2), 0rem 8px 10px -1.2px
-			hsl(0 0% 0% / 0.2);
-		--shadow-2xl: 0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.5);
-	}
+    .dark:root {
+        /* Derived from light tokens (no dark figma provided) */
+        --background: 0 0% 7.059%; /* #121212 */
+        --foreground: 0 0% 96.078%; /* #f5f5f5 */
+        --card: 0 0% 10.196%; /* #1a1a1a */
+        --card-foreground: 0 0% 96.078%;
+        --popover: 0 0% 10.196%;
+        --popover-foreground: 0 0% 96.078%;
+        --primary: 33.09, 94.1%, 53.7%; /* #f7951b */
+        --primary-foreground: 0 0% 100%; /* #211f1c */
+        --secondary: 0 0% 16.863%; /* #2b2b2b */
+        --secondary-foreground: 0 0% 96.078%;
+        --muted: 0 0% 12.157%; /* #1f1f1f */
+        --muted-foreground: 0 0% 63.922%; /* #a3a3a3 */
+        --accent: 0 0% 16.863%;
+        --accent-foreground: 0 0% 96.078%;
+        --destructive: 353.534 100% 45.49%; /* #e80019 */
+        --destructive-foreground: 0 0% 98%;
+        --border: 0 0% 16.471%; /* #2a2a2a */
+        --input: 0 0% 16.471%;
+        --ring: 33.273 93.22% 53.725%;
+        --chart-1: 33.273 93.22% 53.725%;
+        --chart-2: 190 60% 45%;
+        --chart-3: 220 70% 60%;
+        --chart-4: 340 55% 65%;
+        --chart-5: 120 45% 45%;
+        --sidebar: 0 0% 5.882%; /* #0f0f0f */
+        --sidebar-foreground: 0 0% 96.078%;
+        --sidebar-primary: 33.273 93.22% 53.725%;
+        --sidebar-primary-foreground: 0 0% 100%%;
+        --sidebar-accent: 0 0% 16.863%;
+        --sidebar-accent-foreground: 0 0% 96.078%;
+        --sidebar-border: 0 0% 16.471%;
+        --sidebar-ring: 33.273 93.22% 53.725%;
+        --font-sans: AR One Sans, ui-sans-serif, sans-serif, system-ui;
+        --font-serif: "Lora", serif;
+        --font-mono: "JetBrains Mono", monospace;
+        --radius: 0.75rem;
+        --shadow-x: 0rem;
+        --shadow-y: 0.3rem;
+        --shadow-blur: 0.6rem;
+        --shadow-spread: -0.2rem;
+        --shadow-opacity: 0.2;
+        --shadow-color: hsl(0, 0%, 0%);
+        --shadow-2xs: 0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.1);
+        --shadow-xs: 0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.1);
+        --shadow-sm:
+            0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2),
+            0rem 1px 2px -1.2px hsl(0 0% 0% / 0.2);
+        --shadow:
+            0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2),
+            0rem 1px 2px -1.2px hsl(0 0% 0% / 0.2);
+        --shadow-md:
+            0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2),
+            0rem 2px 4px -1.2px hsl(0 0% 0% / 0.2);
+        --shadow-lg:
+            0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2),
+            0rem 4px 6px -1.2px hsl(0 0% 0% / 0.2);
+        --shadow-xl:
+            0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.2),
+            0rem 8px 10px -1.2px hsl(0 0% 0% / 0.2);
+        --shadow-2xl: 0rem 0.3rem 0.6rem -0.2rem hsl(0 0% 0% / 0.5);
+    }
 }

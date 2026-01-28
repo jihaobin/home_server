@@ -20,7 +20,10 @@ import {
 } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { Toaster, toast } from "sonner-native";
-import { queryClient, setQueryClientErrorNotifier } from "@repo/lib/query-client";
+import {
+    queryClient,
+    setQueryClientErrorNotifier,
+} from "@repo/lib/query-client";
 import { authClient as defaultAuthClient } from "@repo/lib/auth-client";
 import { setApiClientAuthClient } from "@repo/lib/http-client";
 import { SessionProvider } from "./SessionProvider";
@@ -52,12 +55,21 @@ function onAppStateChange(status: AppStateStatus) {
 
 setQueryClientErrorNotifier((message) => toast.error(message));
 
-export function Provider({ children, authClient }: { children: React.ReactNode; authClient?: typeof defaultAuthClient }) {
+export function Provider({
+    children,
+    authClient,
+}: {
+    children: React.ReactNode;
+    authClient?: typeof defaultAuthClient;
+}) {
     const resolvedAuthClient = authClient ?? defaultAuthClient;
     setApiClientAuthClient(resolvedAuthClient);
     // react native 应用获取焦点时重新获取数据配置
     useEffect(() => {
-        const subscription = AppState.addEventListener("change", onAppStateChange);
+        const subscription = AppState.addEventListener(
+            "change",
+            onAppStateChange,
+        );
 
         return () => subscription.remove();
     }, []);
@@ -68,18 +80,21 @@ export function Provider({ children, authClient }: { children: React.ReactNode; 
                 {({ reset }) => (
                     <ErrorBoundary
                         fallbackRender={({ error, resetErrorBoundary }) => (
-                            <View className="flex-1 items-center justify-center px-5 bg-white">
-                                <Text className="text-xl font-semibold text-red-500 mb-4 text-center">
+                            <View className="flex-1 items-center justify-center bg-background px-5">
+                                <Text className="mb-4 text-center text-xl font-semibold text-destructive">
                                     应用遇到了问题
                                 </Text>
-                                <Text className="text-gray-600 mb-4 text-center">
-                                    {error.message || "发生了未知错误，请稍后重试"}
+                                <Text className="mb-4 text-center text-muted-foreground">
+                                    {error.message ||
+                                        "发生了未知错误，请稍后重试"}
                                 </Text>
                                 <Pressable
                                     onPress={() => resetErrorBoundary()}
-                                    className="bg-primary px-4 py-2 rounded"
+                                    className="rounded-lg bg-primary px-4 py-2"
                                 >
-                                    <Text className="text-primary-foreground">重新尝试</Text>
+                                    <Text className="text-primary-foreground">
+                                        重新尝试
+                                    </Text>
                                 </Pressable>
                             </View>
                         )}
@@ -89,9 +104,11 @@ export function Provider({ children, authClient }: { children: React.ReactNode; 
                             <SessionProvider authClient={resolvedAuthClient}>
                                 <Suspense
                                     fallback={
-                                        <View className="flex-1 items-center justify-center bg-white">
+                                        <View className="flex-1 items-center justify-center bg-background">
                                             <ActivityIndicator size="large" />
-                                            <Text className="mt-4 text-gray-600">加载中...</Text>
+                                            <Text className="mt-4 text-muted-foreground">
+                                                加载中...
+                                            </Text>
                                         </View>
                                     }
                                 >
