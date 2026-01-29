@@ -1,357 +1,265 @@
 import { Text } from "@repo/mobile-ui/components/ui/text";
-import type { OrderStatus } from "@repo/types";
-import { FlashList, type RenderTarget } from "@shopify/flash-list";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { FlatList, type ListRenderItemInfo, View } from "react-native";
-import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
-import { ORDER_TABS, TAB_STATUS_MAP } from "@/components/orders_screen/mock";
-import type { OrdersListRow, OrderTab, OrderTabId } from "@/components/orders_screen/types";
-import {
-	buildSections,
-	flattenSectionsToRows,
-} from "@/components/orders_screen/utils";
-import { useSession } from "@repo/mobile-ui/components/SessionProvider";
-import { useOrdersListInfinite } from "@repo/hooks/api/order";
-import { useReviewerTargetsInfinite } from "@repo/hooks/api/review";
-import { TabItem } from "@/components/orders_screen/components/TabItem";
-import { SectionHeader } from "@/components/orders_screen/components/SectionHeader";
-import { OrderCard } from "@/components/orders_screen/components/OrderCard";
-import { ReviewCard } from "@/components/orders_screen/components/ReviewCard";
-import { useLocalSearchParams } from "expo-router";
+import { useMemo, useState } from "react";
+import { Image, Pressable, ScrollView, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-const ORDER_STATUS_WHITELIST = new Set<OrderStatus>(
-	Object.values(TAB_STATUS_MAP).flat() as OrderStatus[],
-);
+type OrdersTabId = "all" | "pending_payment" | "paid" | "in_progress" | "needs_review";
 
-export default function OrdersScreen() {
-	const params = useLocalSearchParams<{
-		tab?: OrderTabId;
-		status?: OrderStatus;
-		requestId?: string;
-	}>();
-	const paramTab = Array.isArray(params.tab) ? params.tab[0] : params.tab;
-	const paramStatus = Array.isArray(params.status)
-		? params.status[0]
-		: params.status;
-	const paramRequestId = Array.isArray(params.requestId)
-		? params.requestId[0]
-		: params.requestId;
-	const [activeTab, setActiveTab] = useState<OrderTab>(ORDER_TABS[0]);
-	const [quickFilterStatus, setQuickFilterStatus] = useState<OrderStatus>();
-	const { session } = useSession();
+type OrdersTab = {
+    id: OrdersTabId;
+    label: string;
+};
 
-	useEffect(() => {
-		if (!paramTab && !paramStatus) {
-			setQuickFilterStatus(undefined);
-			return;
-		}
+const TABS: readonly OrdersTab[] = [
+    { id: "all", label: "全部" },
+    { id: "pending_payment", label: "待付款" },
+    { id: "paid", label: "待服务" },
+    { id: "in_progress", label: "待验收" },
+    { id: "needs_review", label: "待评价" },
+];
 
-		if (paramTab) {
-			const targetTab = ORDER_TABS.find((tab) => tab.id === paramTab);
-			if (targetTab) {
-				setActiveTab(targetTab);
-			}
-		}
+type OrderCardStatus = "pending_payment" | "cancelled" | "completed" | "paid";
 
-		if (paramStatus && ORDER_STATUS_WHITELIST.has(paramStatus)) {
-			setQuickFilterStatus(paramStatus);
-		}
-	}, [paramTab, paramStatus, paramRequestId]);
+type OrderCardActionVariant = "primary" | "outline" | "outlineMuted" | "outlinePrimary";
 
-	const handleTabPress = useCallback((tab: OrderTab) => {
-		setQuickFilterStatus(undefined);
-		setActiveTab(tab);
-	}, []);
+type OrderCardAction = {
+    label: string;
+    variant: OrderCardActionVariant;
+};
 
-	// 根据tab获取对应的状态筛选
-	const tabStatusFilter = useMemo<OrderStatus | undefined>(() => {
-		if (activeTab.id === "all") {
-			return undefined; // 不传状态则获取所有
-		}
-		const statuses = TAB_STATUS_MAP[activeTab.id];
-		// 如果该tab只对应一个状态，则传该状态
-		// 如果对应多个状态（如"paid"包括"paid"和"in_progress"），则不传status参数，在前端过滤
-		if (statuses && statuses.length === 1) {
-			return statuses[0] as OrderStatus;
-		}
-		return undefined;
-	}, [activeTab.id]);
-	const statusFilter = quickFilterStatus ?? tabStatusFilter;
+type MockOrderCard = {
+    id: string;
+    title: string;
+    status: OrderCardStatus;
+    statusText: string;
+    workerName: string;
+    serviceName: string;
+    itemCountText: string;
+    appointmentText: string;
+    totalAmountText: string;
+    needsReview?: boolean;
+    actions: readonly OrderCardAction[];
+};
 
-	// 获取订单列表数据
-	const {
-		data: orderPages,
-		fetchNextPage: fetchNextOrdersPage,
-		hasNextPage: hasNextOrdersPage,
-		isFetchingNextPage: isFetchingNextOrdersPage,
-		isLoading: isLoadingOrders,
-		refetch: refetchOrders,
-	} = useOrdersListInfinite({
-		customerId: session?.user?.id || "",
-		status: statusFilter,
-		sortOrder: "desc",
-	});
-	const {
-		data: reviewerTargetsPages,
-		fetchNextPage: fetchNextReviewerTargetsPage,
-		hasNextPage: hasNextReviewerTargetsPage,
-		isFetchingNextPage: isFetchingNextReviewerTargetsPage,
-		isLoading: isLoadingReviewerTargets,
-		refetch: refetchReviewerTargets,
-	} = useReviewerTargetsInfinite({
-		limit: 10,
-	});
-	const [isRefreshing, setIsRefreshing] = useState(false);
+const MOCK_ORDERS: readonly MockOrderCard[] = [
+    {
+        id: "o-1",
+        title: "叮咚上门直选",
+        status: "pending_payment",
+        statusText: "订单待付款",
+        workerName: "吴师傅",
+        serviceName: "家庭保洁3小时",
+        itemCountText: "共1件",
+        appointmentText: "2026-01-23 16:30",
+        totalAmountText: "¥180.00",
+        actions: [
+            { label: "取消订单", variant: "outlineMuted" },
+            { label: "立即支付", variant: "primary" },
+        ],
+    },
+    {
+        id: "o-2",
+        title: "叮咚上门直选",
+        status: "cancelled",
+        statusText: "未支付取消",
+        workerName: "吴师傅",
+        serviceName: "家庭保洁3小时",
+        itemCountText: "共1件",
+        appointmentText: "2026-01-23 16:30",
+        totalAmountText: "¥180.00",
+        actions: [{ label: "再来一单", variant: "outline" }],
+    },
+    {
+        id: "o-3",
+        title: "叮咚上门直选",
+        status: "completed",
+        statusText: "已完成",
+        workerName: "吴师傅",
+        serviceName: "家庭保洁3小时",
+        itemCountText: "共1件",
+        appointmentText: "2026-01-23 16:30",
+        totalAmountText: "¥180.00",
+        needsReview: true,
+        actions: [{ label: "评价", variant: "primary" }],
+    },
+    {
+        id: "o-4",
+        title: "叮咚上门直选",
+        status: "paid",
+        statusText: "待服务",
+        workerName: "吴师傅",
+        serviceName: "家庭保洁3小时",
+        itemCountText: "共1件",
+        appointmentText: "2026-01-23 16:30",
+        totalAmountText: "¥180.00",
+        actions: [
+            { label: "查看进度", variant: "outlinePrimary" },
+            { label: "确认收货", variant: "primary" },
+        ],
+    },
+] as const;
 
-	// 将所有页的数据合并，并根据tab筛选
-	const allOrders = useMemo(() => {
-		if (!session?.user?.id) {
-			return [];
-		}
-		let orders = orderPages?.pages.flatMap((page) => page.data) ?? [];
+function OrderActionButton({ action }: { action: OrderCardAction }) {
+    const base = "h-7 w-20 items-center justify-center rounded-full";
 
-		// 如果该tab对应多个状态，需要在前端过滤
-		if (activeTab.id !== "all") {
-			const targetStatuses = TAB_STATUS_MAP[activeTab.id];
-			if (targetStatuses && targetStatuses.length > 1 && !quickFilterStatus) {
-				orders = orders.filter((order) =>
-					targetStatuses.includes(order.status as OrderStatus),
-				);
-			}
-		}
+    const className =
+        action.variant === "primary"
+            ? `${base} bg-primary`
+            : action.variant === "outlinePrimary"
+                ? `${base} border border-primary bg-transparent`
+                : `${base} border border-border bg-transparent`;
 
-		if (quickFilterStatus) {
-			orders = orders.filter((order) => order.status === quickFilterStatus);
-		}
+    const textClassName =
+        action.variant === "primary"
+            ? "text-sm font-puhui-regular text-primary-foreground"
+            : action.variant === "outlinePrimary"
+                ? "text-sm font-puhui-regular text-primary"
+                : action.variant === "outlineMuted"
+                    ? "text-sm font-puhui-regular text-muted-foreground"
+                    : "text-sm font-puhui-regular text-foreground";
 
-		return orders;
-	}, [orderPages, session?.user?.id, activeTab.id, quickFilterStatus]);
+    return (
+        <Pressable className={className}>
+            <Text className={textClassName}>{action.label}</Text>
+        </Pressable>
+    );
+}
 
-	const reviewerTargets = useMemo(
-		() => reviewerTargetsPages?.pages.flatMap((page) => page.data) ?? [],
-		[reviewerTargetsPages],
-	);
+function OrderCard({ order }: { order: MockOrderCard }) {
+    const statusTextClassName =
+        order.status === "pending_payment"
+            ? "text-destructive"
+            : order.status === "paid"
+                ? "text-primary"
+                : order.status === "cancelled"
+                    ? "text-muted-foreground"
+                    : "text-foreground";
 
-	const sections = useMemo(
-		() => buildSections(allOrders, activeTab.id),
-		[allOrders, activeTab.id],
-	);
+    const workerAvatar = require("@/assets/images/promo-2.png");
 
-	const { rows: listRows, stickyHeaderIndices } = useMemo(() => {
-		if (activeTab.id === "reviews") {
-			return {
-				rows: reviewerTargets.map((review) => ({
-					key: `review-${review.orderId}-${review.targetId}`,
-					type: "review" as const,
-					review,
-				})),
-				stickyHeaderIndices: [] as number[],
-			};
-		}
+    return (
+        <View className="mx-4 mt-3 rounded-lg bg-card shadow-sm">
+            <View className="px-3 pt-3 pb-3">
+                <View className="flex-row items-center justify-between">
+                    <Text className="text-sm font-puhui-regular text-foreground">{order.title}</Text>
+                    <Text className={`text-sm font-puhui-regular ${statusTextClassName}`}>{order.statusText}</Text>
+                </View>
+            </View>
 
-		const flattened = flattenSectionsToRows(sections);
-		return {
-			rows: flattened.rows,
-			stickyHeaderIndices: flattened.stickyHeaderIndices,
-		};
-	}, [activeTab.id, reviewerTargets, sections]);
+            <View className="h-px bg-border" />
 
-	const renderTab = useCallback(
-		({ item }: ListRenderItemInfo<OrderTab>) => (
-			<TabItem
-				item={item}
-				isActive={item.id === activeTab.id}
-				onPress={handleTabPress}
-			/>
-		),
-		[activeTab.id, handleTabPress],
-	);
+            <View className="px-3 py-2">
+                <View className="flex-row items-start">
+                    <Image source={workerAvatar} className="h-[68px] w-[68px] rounded-sm" resizeMode="cover" />
+                    <View className="ml-2 flex-1">
+                        <View className="flex-row items-start justify-between">
+                            <View className="flex-1 pr-2">
+                                <Text className="text-sm font-puhui-regular text-foreground">{order.workerName}</Text>
+                                <Text className="mt-2 text-xs font-puhui-regular text-muted-foreground">
+                                    {order.serviceName}
+                                </Text>
+                            </View>
+                            <View className="w-12 items-end">
+                                <Text className="mt-7 text-xs font-puhui-regular text-muted-foreground">
+                                    {order.itemCountText}
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
+                </View>
+            </View>
 
-	const tabKeyExtractor = useCallback((item: OrderTab) => item.id, []);
+            <View className="h-px bg-border" />
 
-	const renderRow = useCallback(
-		({
-			item,
-			index,
-			target,
-		}: {
-			item: OrdersListRow;
-			index: number;
-			target: RenderTarget;
-		}) => {
-			if (item.type === "header") {
-				return (
-					<SectionHeader
-						section={item.section}
-						isFirst={index === 0}
-						isSticky={target === "StickyHeader"}
-					/>
-				);
-			}
+            <View className="px-3 pt-3 pb-3">
+                <View className="flex-row items-center justify-between">
+                    <Text className="text-xs font-puhui-regular">
+                        <Text className="text-xs text-foreground">预约时间：</Text>
+                        <Text className="text-xs text-muted-foreground">{order.appointmentText}</Text>
+                    </Text>
 
-			if (item.type === "order") {
-				return <OrderCard order={item.order} section={item.section} />;
-			}
+                    <View className="flex-row items-end">
+                        <Text className="font-puhui-regular text-foreground">应付总额：</Text>
+                        <Text className="ml-1 font-din-alt-bold text-foreground">
+                            {order.totalAmountText}
+                        </Text>
+                    </View>
+                </View>
 
-			return <ReviewCard review={item.review} />;
-		},
-		[],
-	);
+                <View className="mt-3 flex-row justify-end gap-4">
+                    {order.actions.map((action) => (
+                        <OrderActionButton key={action.label} action={action} />
+                    ))}
+                </View>
+            </View>
+        </View>
+    );
+}
 
-	const rowKeyExtractor = useCallback((item: OrdersListRow) => item.key, []);
+export default function OrdersIndex() {
+    const [activeTabId, setActiveTabId] = useState<OrdersTabId>("all");
 
-	// 加载更多
-	const handleLoadMore = useCallback(() => {
-		if (activeTab.id === "reviews") {
-			if (hasNextReviewerTargetsPage && !isFetchingNextReviewerTargetsPage) {
-				fetchNextReviewerTargetsPage();
-			}
-			return;
-		}
+    const visibleOrders = useMemo(() => {
+        if (activeTabId === "all") {
+            return MOCK_ORDERS;
+        }
+        if (activeTabId === "needs_review") {
+            return MOCK_ORDERS.filter((order) => Boolean(order.needsReview));
+        }
+        if (activeTabId === "in_progress") {
+            // 设计稿里“待验收”卡片视觉同“待服务”区块，这里仅做 mock 过滤。
+            return MOCK_ORDERS.filter((order) => order.status === "paid");
+        }
+        return MOCK_ORDERS.filter((order) => order.status === activeTabId);
+    }, [activeTabId]);
 
-		if (hasNextOrdersPage && !isFetchingNextOrdersPage) {
-			fetchNextOrdersPage();
-		}
-	}, [
-		activeTab.id,
-		hasNextOrdersPage,
-		hasNextReviewerTargetsPage,
-		isFetchingNextOrdersPage,
-		isFetchingNextReviewerTargetsPage,
-		fetchNextOrdersPage,
-		fetchNextReviewerTargetsPage,
-	]);
+    return (
+        <View className="flex-1 bg-background">
+            <SafeAreaView edges={["top"]} className="bg-card">
+                <View className="h-11 items-center justify-center">
+                    <Text className="text-base font-puhui-medium text-foreground">订单</Text>
+                </View>
 
-	const handleRefresh = useCallback(async () => {
-		setIsRefreshing(true);
-		try {
-			const tasks =
-				activeTab.id === "reviews"
-					? [refetchReviewerTargets({ throwOnError: false })]
-					: [refetchOrders({ throwOnError: false })];
-			await Promise.all(tasks);
-		} finally {
-			setIsRefreshing(false);
-		}
-	}, [activeTab.id, refetchOrders, refetchReviewerTargets]);
+                <View className="pb-2">
+                    <View className="mx-4 h-[30px] flex-row items-start justify-between">
+                        {TABS.map((tab) => {
+                            const isActive = tab.id === activeTabId;
+                            return (
+                                <Pressable
+                                    key={tab.id}
+                                    className="items-center"
+                                    onPress={() => setActiveTabId(tab.id)}
+                                >
+                                    <Text
+                                        className={
+                                            isActive
+                                                ? "text-sm font-puhui-regular text-primary"
+                                                : "text-sm font-puhui-regular text-muted-foreground"
+                                        }
+                                    >
+                                        {tab.label}
+                                    </Text>
+                                    <View className="mt-2 h-[3px] w-11 rounded-full bg-transparent">
+                                        {isActive ? (
+                                            <View className="h-[3px] w-11 rounded-full bg-primary" />
+                                        ) : null}
+                                    </View>
+                                </Pressable>
+                            );
+                        })}
+                    </View>
+                </View>
+            </SafeAreaView>
 
-	const listHeaderComponent = useCallback(() => {
-		return (
-			<View>
-				<View className="px-4 pb-4 pt-10">
-					<Text
-						className="text-2xl font-semibold text-foreground"
-						numberOfLines={1}
-					>
-						订单中心
-					</Text>
-					<Text
-						className="mt-1 text-sm text-muted-foreground"
-						numberOfLines={2}
-					>
-						随时掌握服务进度，查看支付、门禁、售后等信息，安心等待上门。
-					</Text>
-				</View>
-
-				<View className="border-b border-border px-4 pb-3">
-					<FlatList
-						data={ORDER_TABS}
-						horizontal
-						showsHorizontalScrollIndicator={false}
-						renderItem={renderTab}
-						keyExtractor={tabKeyExtractor}
-						contentContainerStyle={{ paddingRight: 16 }}
-					/>
-				</View>
-			</View>
-		);
-	}, [renderTab, tabKeyExtractor]);
-
-	return (
-		<RequireAuth>
-			<View className="flex-1 bg-bakcground">
-				<FlashList
-					data={listRows}
-					renderItem={renderRow}
-					keyExtractor={rowKeyExtractor}
-					stickyHeaderIndices={stickyHeaderIndices}
-					getItemType={(item) => item.type}
-					showsVerticalScrollIndicator={false}
-					onEndReached={handleLoadMore}
-					onEndReachedThreshold={0.5}
-					ListHeaderComponent={listHeaderComponent}
-					refreshing={isRefreshing}
-					onRefresh={handleRefresh}
-					contentContainerStyle={{
-						paddingHorizontal: 16,
-						paddingBottom: 24,
-					}}
-					ListEmptyComponent={
-						activeTab.id === "reviews"
-							? isLoadingReviewerTargets ? (
-									<View className="flex-1 items-center justify-center px-8 py-24">
-										<Text className="text-center text-sm text-muted-foreground">
-											加载中...
-										</Text>
-									</View>
-								) : (
-									<View className="flex-1 items-center justify-center px-8 py-24">
-										<Text
-											className="text-sm font-medium text-muted-foreground"
-											numberOfLines={1}
-										>
-											暂无评价记录
-										</Text>
-										<Text
-											className="mt-1 text-xs text-muted-foreground"
-											numberOfLines={2}
-										>
-											完成服务后可在此查看您的历史评价。
-										</Text>
-									</View>
-								)
-							: isLoadingOrders ? (
-									<View className="flex-1 items-center justify-center px-8 py-24">
-										<Text className="text-center text-sm text-muted-foreground">
-											加载中...
-										</Text>
-									</View>
-								) : (
-									<View className="flex-1 items-center justify-center px-8 py-24">
-										<Text
-											className="text-sm font-medium text-muted-foreground"
-											numberOfLines={1}
-										>
-											暂无此分类的订单
-										</Text>
-										<Text
-											className="mt-1 text-xs text-muted-foreground"
-											numberOfLines={2}
-										>
-											可以尝试切换分类或返回首页挑选新的服务项目。
-										</Text>
-									</View>
-								)
-					}
-					ListFooterComponent={
-						activeTab.id === "reviews"
-							? isFetchingNextReviewerTargetsPage ? (
-									<View className="py-4">
-										<Text className="text-center text-sm text-muted-foreground">
-											加载中...
-										</Text>
-									</View>
-								) : null
-							: isFetchingNextOrdersPage ? (
-									<View className="py-4">
-										<Text className="text-center text-sm text-muted-foreground">
-											加载中...
-										</Text>
-									</View>
-								) : null
-					}
-				/>
-			</View>
-		</RequireAuth>
-	);
+            <ScrollView
+                className="flex-1"
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingTop: 12, paddingBottom: 24 }}
+            >
+                {visibleOrders.map((order) => (
+                    <OrderCard key={order.id} order={order} />
+                ))}
+            </ScrollView>
+        </View>
+    );
 }
