@@ -23,17 +23,19 @@ const defaultClient = createApiClient({
     debug: false,
     // React Native 通过 better-auth expo 插件写入的 SecureStore，不使用原生 Cookie Jar，避免同机多 App 会话串号
     credentials: "omit",
-    onRequest({ options, context }) {
-        const extra = (context ?? {}) as ExtraRequestOptions;
+    onRequest({ options }) {
+        // ofetch 的 hook ctx 上没有直接暴露 `context` 字段；自定义透传时放在 options.context 里。
+        const extra =
+            (options as unknown as { context?: ExtraRequestOptions }).context ??
+            {};
         if (extra.skipAuthCookie) {
             return;
         }
         const cookies = currentAuthClient?.getCookie?.();
         if (cookies) {
-            options.headers = {
-                ...options.headers,
-                Cookie: cookies,
-            };
+            const headers = new Headers(options.headers);
+            headers.set("Cookie", cookies);
+            options.headers = headers;
         }
     },
 });
