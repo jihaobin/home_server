@@ -1,13 +1,23 @@
 {
     "extends": "@repo/mobile-ui/tsconfig.json",
     "compilerOptions": {
-        "jsxImportSource": "nativewind"
+        "strict": true,
+        "jsxImportSource": "nativewind",
+        "paths": {
+            "@/*": [
+                "./*"
+            ],
+            "@repo/mobile-ui/*": [
+                "../../packages/mobile-ui/src/*"
+            ]
+        }
     },
     "include": [
         "**/*.ts",
         "**/*.tsx",
         ".expo/types/**/*.ts",
         "expo-env.d.ts",
-        "nativewind-env.d.ts"
+        "nativewind-env.d.ts",
+        "postcss.config.mjs"
     ]
 }
