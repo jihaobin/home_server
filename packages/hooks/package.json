@@ -11,6 +11,7 @@
     "exports": {
         "./*": "./src/*.ts",
         "./api/address": "./src/api/address/index.ts",
+        "./api/home": "./src/api/home/index.ts",
         "./api/order": "./src/api/order/index.ts",
         "./api/pay": "./src/api/pay/index.ts",
         "./api/review": "./src/api/review/index.ts",

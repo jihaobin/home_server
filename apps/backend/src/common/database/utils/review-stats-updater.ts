@@ -18,7 +18,18 @@ export async function updateReviewStats(
     db: NodePgDatabase<any>,
     targetId: string,
     targetType: ReviewTargetType,
+    serviceId: string = '__all__',
 ) {
+    const globalServiceId = '__all__';
+
+    const conditions = [
+        eq(reviews.targetId, targetId),
+        eq(reviews.targetType, targetType),
+    ];
+    if (serviceId !== globalServiceId) {
+        conditions.push(eq(reviews.serviceId, serviceId));
+    }
+
     // 聚合查询该目标的所有评价数据
     const stats = await db
         .select({
@@ -33,12 +44,7 @@ export async function updateReviewStats(
             lastReviewAt: sql<Date>`MAX(${reviews.createdAt})`,
         })
         .from(reviews)
-        .where(
-            and(
-                eq(reviews.targetId, targetId),
-                eq(reviews.targetType, targetType),
-            ),
-        );
+        .where(and(...conditions));
 
     const stat = stats[0];
 
@@ -50,6 +56,7 @@ export async function updateReviewStats(
                 and(
                     eq(reviewStats.targetId, targetId),
                     eq(reviewStats.targetType, targetType),
+                    eq(reviewStats.serviceId, serviceId),
                 ),
             );
         return;
@@ -61,6 +68,7 @@ export async function updateReviewStats(
         .values({
             targetId,
             targetType,
+            serviceId,
             totalCount: stat.totalCount,
             goodCount: stat.goodCount,
             neutralCount: stat.neutralCount,
@@ -73,7 +81,11 @@ export async function updateReviewStats(
             updatedAt: new Date(),
         })
         .onConflictDoUpdate({
-            target: [reviewStats.targetId, reviewStats.targetType],
+            target: [
+                reviewStats.targetId,
+                reviewStats.targetType,
+                reviewStats.serviceId,
+            ],
             set: {
                 totalCount: stat.totalCount,
                 goodCount: stat.goodCount,
@@ -97,9 +109,15 @@ export async function updateReviewStats(
 export async function batchUpdateReviewStats(
     db: NodePgDatabase<any>,
     targets: Array<{ targetId: string; targetType: ReviewTargetType }>,
+    serviceId: string = '__all__',
 ) {
     for (const target of targets) {
-        await updateReviewStats(db, target.targetId, target.targetType);
+        await updateReviewStats(
+            db,
+            target.targetId,
+            target.targetType,
+            serviceId,
+        );
     }
 }
 

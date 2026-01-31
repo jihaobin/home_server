@@ -407,6 +407,20 @@
       "when": 1768963783324,
       "tag": "0057_complex_wild_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1769656852339,
+      "tag": "0058_lumpy_bruce_banner",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1769657065128,
+      "tag": "0059_fresh_phil_sheldon",
+      "breakpoints": true
     }
   ]
 }

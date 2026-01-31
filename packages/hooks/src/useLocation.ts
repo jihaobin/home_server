@@ -379,6 +379,29 @@ export default function useLocation(
 		}
 	}, []);
 
+	const handleRestartLocation = useCallback(async () => {
+		try {
+			dispatch({ type: "SET_ERROR", payload: null });
+			dispatch({ type: "SET_LOCATION_STATUS", payload: "重新定位中..." });
+
+			if (isInitializedRef.current) {
+				stopLocationUpdates();
+				isInitializedRef.current = false;
+			}
+
+			await handleStartContinuousLocation();
+		} catch (error) {
+			const errorMsg = `重新定位失败: ${error instanceof Error ? error.message : "未知错误"}`;
+
+			if (isMountedRef.current) {
+				dispatch({ type: "SET_ERROR", payload: errorMsg });
+				dispatch({ type: "SET_LOCATION_STATUS", payload: "重新定位失败" });
+			}
+
+			toast.error("重新定位失败");
+		}
+	}, [handleStartContinuousLocation]);
+
 	return {
 		location: state.location || cacheLocation,
 		isLocating: state.isLocating,
@@ -386,5 +409,6 @@ export default function useLocation(
 		error: state.error,
 		apiKey: state.apiKey,
 		handleStopLocation,
+		handleRestartLocation,
 	};
 }

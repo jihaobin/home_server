@@ -5,7 +5,7 @@ import {
     UpdateUserAddress,
     UserAddresses,
 } from '@repo/types';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { DB } from 'src/common/database/database.provider';
 import { DbType } from 'src/common/database/db';
 import { userAddresses } from 'src/common/database/schema';
@@ -84,13 +84,57 @@ export class AddressRespository {
             throw new BadRequestException('当前该手机用户的地址不存在');
         }
 
+        const hasCoordinates =
+            typeof data.lat === 'number' && typeof data.lng === 'number';
+
+        // 仅更新表字段，避免把请求层的 lat/lng/id 等无关字段写进 SQL。
+        const updatePayload: Partial<typeof userAddresses.$inferInsert> = {};
+
+        if (data.detailedAddress !== undefined) {
+            updatePayload.detailedAddress = data.detailedAddress;
+        }
+        if (data.addressName !== undefined) {
+            updatePayload.addressName = data.addressName;
+        }
+        if (data.homeNumber !== undefined) {
+            updatePayload.homeNumber = data.homeNumber;
+        }
+        if (data.province !== undefined) {
+            updatePayload.province = data.province;
+        }
+        if (data.city !== undefined) {
+            updatePayload.city = data.city;
+        }
+        if (data.district !== undefined) {
+            updatePayload.district = data.district;
+        }
+        if (data.recipientName !== undefined) {
+            updatePayload.recipientName = data.recipientName;
+        }
+        if (data.sex !== undefined) {
+            updatePayload.sex = data.sex;
+        }
+        if (data.recipientPhone !== undefined) {
+            updatePayload.recipientPhone = data.recipientPhone;
+        }
+        if (data.isDefault !== undefined) {
+            updatePayload.isDefault = data.isDefault;
+        }
+        if (typeof data.lat === 'number' && typeof data.lng === 'number') {
+            updatePayload.geom = [data.lng, data.lat];
+        }
+
         return this.db
             .update(userAddresses)
-            .set({
-                ...data,
-                ...(data.lat && data.lng ? { geom: [data.lat, data.lng] } : {}),
-            })
-            .where(eq(userAddresses.userId, id));
+            .set(updatePayload)
+            .where(
+                data.userId
+                    ? and(
+                          eq(userAddresses.id, id),
+                          eq(userAddresses.userId, data.userId),
+                      )
+                    : eq(userAddresses.id, id),
+            );
     }
 
     async deleteAddress(id: string) {

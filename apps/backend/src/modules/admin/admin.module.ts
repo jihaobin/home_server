@@ -22,6 +22,9 @@ import { FilesModule } from '../files/files.module';
 import { AdminServiceCategoriesController } from './admin-service-categories.controller';
 import { AdminServiceCategoriesService } from './admin-service-categories.service';
 import { AdminServiceCategoriesRepository } from './admin-service-categories.repository';
+import { AdminHomeConfigController } from './admin-home-config.controller';
+import { AdminHomeConfigService } from './admin-home-config.service';
+import { AdminHomeConfigRepository } from './admin-home-config.repository';
 
 @Module({
     imports: [OrderModule, FilesModule],
@@ -31,6 +34,7 @@ import { AdminServiceCategoriesRepository } from './admin-service-categories.rep
         AdminUsersController,
         AdminOrdersController,
         AdminServiceCategoriesController,
+        AdminHomeConfigController,
     ],
     providers: [
         AdminAuthService,
@@ -43,6 +47,8 @@ import { AdminServiceCategoriesRepository } from './admin-service-categories.rep
         AdminOrdersRepository,
         AdminServiceCategoriesService,
         AdminServiceCategoriesRepository,
+        AdminHomeConfigService,
+        AdminHomeConfigRepository,
     ],
 })
 export class AdminModule implements NestModule {

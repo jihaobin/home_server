@@ -107,7 +107,7 @@ export class ReviewRepository {
 
     /**
      * 在事务中更新评分统计信息
-     * 同时更新全局统计（serviceId=null）和按服务统计
+     * 同时更新全局统计（serviceId='__all__'）和按服务统计
      * @param tx 事务实例
      * @param targetId 被评价对象 ID
      * @param targetType 被评价对象类型
@@ -118,29 +118,18 @@ export class ReviewRepository {
         targetType: ReviewTargetType,
         serviceId: string,
     ) {
+        const globalServiceId = '__all__';
+
         // 1. 更新全局统计（所有服务的总和）
+        await this.upsertStatsForService(
+            tx,
+            targetId,
+            targetType,
+            globalServiceId,
+        );
+
+        // 2. 更新本次订单对应服务的统计
         await this.upsertStatsForService(tx, targetId, targetType, serviceId);
-
-        // 2. 获取该对象所有涉及的服务ID
-        const serviceIds = await tx
-            .selectDistinct({ serviceId: reviews.serviceId })
-            .from(reviews)
-            .where(
-                and(
-                    eq(reviews.targetId, targetId),
-                    eq(reviews.targetType, targetType),
-                ),
-            );
-
-        // 3. 为每个服务更新统计
-        for (const { serviceId } of serviceIds) {
-            await this.upsertStatsForService(
-                tx,
-                targetId,
-                targetType,
-                serviceId,
-            );
-        }
     }
 
     /**
@@ -154,15 +143,18 @@ export class ReviewRepository {
         tx: DbType,
         targetId: string,
         targetType: ReviewTargetType,
-        serviceId: string | null,
+        serviceId: string,
     ) {
+        const globalServiceId = '__all__';
+
         // 构建查询条件
         const conditions = [
             eq(reviews.targetId, targetId),
             eq(reviews.targetType, targetType),
         ];
 
-        if (serviceId) {
+        // '__all__' 表示全局汇总，不筛 serviceId；否则按服务聚合。
+        if (serviceId !== globalServiceId) {
             conditions.push(eq(reviews.serviceId, serviceId));
         }
 
@@ -191,11 +183,7 @@ export class ReviewRepository {
                 eq(reviewStats.targetType, targetType),
             ];
 
-            if (serviceId) {
-                deleteConditions.push(eq(reviewStats.serviceId, serviceId));
-            } else {
-                deleteConditions.push(sql`${reviewStats.serviceId} IS NULL`);
-            }
+            deleteConditions.push(eq(reviewStats.serviceId, serviceId));
 
             await tx.delete(reviewStats).where(and(...deleteConditions));
             return;

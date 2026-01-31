@@ -13,10 +13,6 @@
             "bundleIdentifier": "com.yixin.dingdong"
         },
         "android": {
-            // "adaptiveIcon": {
-            //     "foregroundImage": "./assets/images/icon.png",
-            //     "backgroundColor": "#fd992c"
-            // },
             "edgeToEdgeEnabled": true,
             "permissions": [
                 "android.permission.ACCESS_COARSE_LOCATION",

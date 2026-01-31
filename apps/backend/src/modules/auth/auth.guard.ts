@@ -3,6 +3,7 @@ import {
     Inject,
     Injectable,
     UnauthorizedException,
+    ForbiddenException,
     Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -110,7 +111,7 @@ export class AuthGuard implements CanActivate {
 
         if (requiredRoles && requiredRoles.length > 0) {
             if (!hasRequiredRole(session.user.role, requiredRoles)) {
-                throw new UnauthorizedException({
+                throw new ForbiddenException({
                     code: 'FORBIDDEN',
                     message: '当前用户没有权限访问该资源',
                 });

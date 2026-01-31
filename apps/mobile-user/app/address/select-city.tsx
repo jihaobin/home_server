@@ -1,7 +1,7 @@
 import { Input } from "@repo/mobile-ui/components/ui/input";
 import type { ChinaCity, DistrictData } from "@repo/types";
 import { FlashList } from "@shopify/flash-list";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { MapPin, Search } from "lucide-react-native";
 import type React from "react";
 import {
@@ -26,7 +26,8 @@ import {
     useCitySearchSuspense,
 } from "@repo/hooks/api/address";
 import { useDebounce } from "@repo/hooks/useDebounceThrottle";
-import { useAddressEditStore } from "@/stores/address-store";
+import { useAddressEditStore, type SelectLocation } from "@/stores/address-store";
+import { useHomeLocationStore } from "@/stores/home-location-store";
 
 // 字母索引
 const ALPHABET = [
@@ -174,15 +175,55 @@ const CitySelectionContent = memo(() => {
     const flashListRef = useRef<any>(null);
     const [selectCity, setSelectCity] = useState<ChinaCity | null>(null);
     const [hasNavigated, setHasNavigated] = useState(false); // 防止重复导航
+    const params = useLocalSearchParams<{ scene?: string }>();
+    const isHomeMode = params.scene === "home";
 
     // 使用防抖处理搜索文本，300ms延迟
     const debouncedSearchText = useDebounce(searchText, 300);
 
-    const updateSelectedAddress = useAddressEditStore(
+    const updateAddressStore = useAddressEditStore(
         useShallow((state) => state.updateAddress),
     );
-    const selectedAddress = useAddressEditStore(
+    const addressStoreSelectedAddress = useAddressEditStore(
         useShallow((state) => state.selectedAddress),
+    );
+    const selectedHomeLocation = useHomeLocationStore(
+        (state) => state.selectedLocation,
+    );
+    const setHomeSelectedLocation = useHomeLocationStore(
+        (state) => state.setSelectedLocation,
+    );
+
+    const selectedAddress = isHomeMode
+        ? selectedHomeLocation
+        : addressStoreSelectedAddress;
+
+    const updateSelectedAddress = useCallback(
+        (data: Partial<SelectLocation>) => {
+            if (isHomeMode) {
+                const baseLocation: SelectLocation = selectedHomeLocation ?? {
+                    province: "",
+                    city: "",
+                    district: "",
+                    detailedAddress: "",
+                    lng: 0,
+                    lat: 0,
+                };
+                setHomeSelectedLocation({
+                    ...baseLocation,
+                    ...data,
+                });
+                return;
+            }
+
+            updateAddressStore(data);
+        },
+        [
+            isHomeMode,
+            selectedHomeLocation,
+            setHomeSelectedLocation,
+            updateAddressStore,
+        ],
     );
 
     // 使用 TanStack Query 获取城市数据
@@ -272,7 +313,7 @@ const CitySelectionContent = memo(() => {
             // 导航回上一页
             router.back();
         }
-    }, [selectCity, cityParendInfo, hasNavigated]); // 移除 updateSelectedAddress，因为它来自 Zustand store，是稳定的
+    }, [selectCity, cityParendInfo, hasNavigated, updateSelectedAddress]);
 
     // 处理城市选择
     const handleCitySelect = (city: ChinaCity) => {

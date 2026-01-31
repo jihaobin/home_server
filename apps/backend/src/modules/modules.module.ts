@@ -11,6 +11,7 @@ import { ReviewModule } from './review/review.module';
 import { AdminModule } from './admin/admin.module';
 import { NotificationModule } from './notification/notification.module';
 import { AppReleaseModule } from './app-release/app-release.module';
+import { HomeModule } from './home/home.module';
 
 @Module({
     imports: [
@@ -25,6 +26,7 @@ import { AppReleaseModule } from './app-release/app-release.module';
         ReviewModule,
         NotificationModule,
         AppReleaseModule,
+        HomeModule,
         AdminModule,
     ],
 })

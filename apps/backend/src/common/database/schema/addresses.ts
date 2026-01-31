@@ -5,6 +5,7 @@ import {
     boolean,
     geometry,
     index,
+    uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
 import { createId } from '.';
@@ -50,6 +51,10 @@ export const userAddresses = pgTable(
             table.userId,
             table.isDefault,
         ),
+        // 每个用户最多一个默认地址（并发安全）
+        uniqueIndex('uq_user_addresses_default_per_user')
+            .on(table.userId)
+            .where(sql`${table.isDefault} = true`),
         // 省份索引 - 用于按省份筛选地址
         index('idx_user_addresses_province').on(table.province),
         // 市区索引 - 用于按市区筛选地址

@@ -1,13 +1,7 @@
 import z from "zod/v4";
 
-import {
-    PaginationMetaSchema,
-    PaginationQuerySchema,
-} from "./common";
-import {
-    ReviewTargetTypeEnum,
-    ReviewsSchema,
-} from "./database-entity";
+import { PaginationMetaSchema, PaginationQuerySchema } from "./common";
+import { ReviewTargetTypeEnum, ReviewsSchema } from "./database-entity";
 
 const ratingSchema = z
     .number()
@@ -37,19 +31,14 @@ const imageIdSchema = z
 
 export const ReviewImageSchema = z
     .object({
-        url: z
-            .string()
-            .meta({
-                title: "图片URL",
-                description: "图片的访问URL（预签名URL）",
-            }),
-        blurhash: z
-            .string()
-            .optional()
-            .meta({
-                title: "BlurHash",
-                description: "图片的BlurHash，用于占位符显示",
-            }),
+        url: z.string().meta({
+            title: "图片URL",
+            description: "图片的访问URL（预签名URL）",
+        }),
+        blurhash: z.string().optional().meta({
+            title: "BlurHash",
+            description: "图片的BlurHash，用于占位符显示",
+        }),
     })
     .meta({
         title: "评价图片信息",
@@ -88,14 +77,10 @@ export const CreateReviewBodySchema = z
                 title: "评价内容",
                 description: "评价文字内容",
             }),
-        isAnonymous: z
-            .boolean()
-            .optional()
-            .default(false)
-            .meta({
-                title: "是否匿名",
-                description: "是否匿名展示评价者信息",
-            }),
+        isAnonymous: z.boolean().optional().default(false).meta({
+            title: "是否匿名",
+            description: "是否匿名展示评价者信息",
+        }),
         imageIds: z
             .array(imageIdSchema)
             .max(6, "最多支持上传6张评价图片")
@@ -137,61 +122,43 @@ export const ReviewerTargetsQuerySchema = z
         }),
     })
     .meta({
-    title: "用户已评价对象查询参数",
-    description: "查询当前用户已评价的对象列表请求参数",
-});
+        title: "用户已评价对象查询参数",
+        description: "查询当前用户已评价的对象列表请求参数",
+    });
 
 export type ReviewerTargetsQuery = z.infer<typeof ReviewerTargetsQuerySchema>;
 
 export const ReviewerTargetItemSchema = z
     .object({
-        targetId: z
-            .string()
-            .max(255)
-            .meta({
-                title: "被评价对象ID",
-                description: "服务人员或店铺的唯一标识",
-            }),
+        targetId: z.string().max(255).meta({
+            title: "被评价对象ID",
+            description: "服务人员或店铺的唯一标识",
+        }),
         targetType: ReviewTargetTypeEnum,
-        orderId: z
-            .string()
-            .max(255)
-            .meta({
-                title: "订单ID",
-                description: "关联的订单ID",
-            }),
-        latestReviewAt: z
-            .date()
-            .meta({
-                title: "最近评价时间",
-                description: "最近一次评价时间",
-            }),
-        reviewCount: z
-            .number()
-            .int()
-            .min(1)
-            .meta({
-                title: "评价次数",
-                description: "针对该对象的评价次数",
-            }),
-        averageRating: z
-            .number()
-            .meta({
-                title: "平均评分",
-                description: "该对象的平均评分",
-            }),
-        comment: z
-            .string()
-            .meta({
-                title: "评价内容",
-                description: "评价文字内容",
-            }),
-        images: z
-            .array(ReviewImageSchema)
-            .meta({
-                title: "评价图片列表",
-                description: "该评价的所有图片信息",
-            }),
+        orderId: z.string().max(255).meta({
+            title: "订单ID",
+            description: "关联的订单ID",
+        }),
+        latestReviewAt: z.date().meta({
+            title: "最近评价时间",
+            description: "最近一次评价时间",
+        }),
+        reviewCount: z.number().int().min(1).meta({
+            title: "评价次数",
+            description: "针对该对象的评价次数",
+        }),
+        averageRating: z.number().meta({
+            title: "平均评分",
+            description: "该对象的平均评分",
+        }),
+        comment: z.string().meta({
+            title: "评价内容",
+            description: "评价文字内容",
+        }),
+        images: z.array(ReviewImageSchema).meta({
+            title: "评价图片列表",
+            description: "该评价的所有图片信息",
+        }),
     })
     .meta({
         title: "用户已评价对象信息",
@@ -238,7 +205,8 @@ export const TargetReviewsQuerySchema = z
             .optional()
             .meta({
                 title: "服务ID",
-                description: "可选的服务ID过滤，用于查询服务人员提供某个具体服务的评价",
+                description:
+                    "可选的服务ID过滤，用于查询服务人员提供某个具体服务的评价",
             }),
     })
     .meta({
@@ -253,12 +221,10 @@ export const TargetReviewsResponseSchema = z
         items: z.array(
             z.object({
                 ...ReviewsSchema.shape,
-                images: z
-                    .array(ReviewImageSchema)
-                    .meta({
-                        title: "评价图片列表",
-                        description: "该评价的所有图片信息",
-                    }),
+                images: z.array(ReviewImageSchema).meta({
+                    title: "评价图片列表",
+                    description: "该评价的所有图片信息",
+                }),
                 reviewerAvatar: z.string().nullable().optional(),
                 reviewerAvatarUrl: z.string().nullable().optional(),
                 reviewerName: z.string().nullable().optional(),
@@ -282,14 +248,10 @@ export const ReviewStatsSchema = z
             description: "服务人员或店铺的唯一标识",
         }),
         targetType: ReviewTargetTypeEnum,
-        serviceId: z
-            .string()
-            .max(255)
-            .nullable()
-            .meta({
-                title: "服务ID",
-                description: "服务ID，NULL表示全部服务的统计",
-            }),
+        serviceId: z.string().max(255).meta({
+            title: "服务ID",
+            description: "服务ID，'__all__' 表示全部服务的统计",
+        }),
         totalCount: z.number().int().min(0).meta({
             title: "总评价数",
             description: "总评价数量",
@@ -324,26 +286,14 @@ export const ReviewStatsSchema = z
                 title: "平均服务质量评分",
                 description: "平均服务质量评分*100",
             }),
-        averageAttitude: z
-            .number()
-            .int()
-            .min(0)
-            .nullable()
-            .optional()
-            .meta({
-                title: "平均态度评分",
-                description: "平均态度评分*100",
-            }),
-        averagePunctuality: z
-            .number()
-            .int()
-            .min(0)
-            .nullable()
-            .optional()
-            .meta({
-                title: "平均准时性评分",
-                description: "平均准时性评分*100",
-            }),
+        averageAttitude: z.number().int().min(0).nullable().optional().meta({
+            title: "平均态度评分",
+            description: "平均态度评分*100",
+        }),
+        averagePunctuality: z.number().int().min(0).nullable().optional().meta({
+            title: "平均准时性评分",
+            description: "平均准时性评分*100",
+        }),
         goodRatePercentage: z.number().int().min(0).max(100).meta({
             title: "好评率",
             description: "好评率百分比（0-100）",

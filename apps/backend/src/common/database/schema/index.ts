@@ -16,6 +16,7 @@ export * from './enums';
 export * from './china-city';
 export * from './file';
 export * from './app-releases';
+export * from './home';
 
 export const createId = init({
     length: 15,
