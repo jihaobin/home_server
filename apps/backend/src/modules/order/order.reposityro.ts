@@ -7,7 +7,7 @@ import {
     eq,
     getTableColumns,
     gte,
-    isNotNull,
+    inArray,
     lte,
     type SQL,
     sql,
@@ -27,6 +27,8 @@ import {
     servicePersonnel,
     servicePersonnelPricing,
 } from 'src/common/database/schema/shops-service';
+import { reviews } from 'src/common/database/schema/reviews-social';
+import { files } from 'src/common/database/schema/file';
 
 export type OrderStatus = (typeof orders.status.enumValues)[number];
 
@@ -199,6 +201,122 @@ export class OrderRepository {
 
         return {
             items: data,
+            meta,
+        };
+    }
+
+    /**
+     * 获取用户端订单列表页卡片数据
+     *
+     * 专用接口：用于 `GET /api/order/cards`。
+     * 注意：只返回订单列表页需要的字段，不要混入详情字段。
+     */
+    async getOrderCardsByCustomerId({
+        customerId,
+        page = 1,
+        limit = 10,
+        statuses,
+        needsReviewOnly,
+    }: {
+        customerId: string;
+        page?: number;
+        limit?: number;
+        statuses?: OrderStatus[];
+        needsReviewOnly?: boolean;
+    }) {
+        const notExistsReviewSql = sql<boolean>`NOT EXISTS(
+            select 1
+            from ${reviews}
+            where ${reviews.orderId} = ${orders.id}
+              and ${reviews.reviewerId} = ${orders.customerId}
+        )`;
+
+        const conditions: SQL[] = [eq(orders.customerId, customerId)];
+
+        if (statuses?.length) {
+            conditions.push(inArray(orders.status, statuses));
+        }
+
+        // needs_review tab: completed 且当前用户未评价
+        if (needsReviewOnly) {
+            conditions.push(eq(orders.status, 'completed'));
+            conditions.push(notExistsReviewSql);
+        }
+
+        const whereClause = and(...conditions);
+
+        const [rows, totalResult] = await Promise.all([
+            this.db
+                .select({
+                    id: orders.id,
+                    status: orders.status,
+                    serviceName: services.name,
+                    serviceId: orders.serviceId,
+                    workerName: servicePersonnel.name,
+                    workerAvatar: servicePersonnel.avatar,
+                    workerAvatarBucketName: files.bucketName,
+                    workerAvatarObjectPath: files.objectPath,
+                    workerAvatarBlurhash: files.blurhash,
+                    appointmentTime: orders.appointmentTime,
+                    totalAmount: orders.totalAmount,
+                    paymentExpiresAt: orders.paymentExpiresAt,
+                    // 仅 completed 才需要评价；其他状态直接 false。
+                    needsReview: sql<boolean>`case when ${orders.status} = 'completed'
+                        then ${notExistsReviewSql}
+                        else false
+                    end`,
+                })
+                .from(orders)
+                .leftJoin(services, eq(orders.serviceId, services.id))
+                .leftJoin(
+                    orderAssignments,
+                    eq(orders.id, orderAssignments.orderId),
+                )
+                .leftJoin(
+                    servicePersonnel,
+                    eq(
+                        orderAssignments.servicePersonnelId,
+                        servicePersonnel.userId,
+                    ),
+                )
+                .leftJoin(files, eq(files.fileHash, servicePersonnel.avatar))
+                .where(whereClause)
+                .orderBy(desc(orders.createdAt))
+                .limit(limit)
+                .offset((page - 1) * limit),
+            this.db
+                .select({ count: sql<number>`count(*)` })
+                .from(orders)
+                .where(whereClause),
+        ]);
+
+        const totalCount = totalResult[0]?.count ?? 0;
+        const meta = this.buildPaginationMeta(totalCount, page, limit);
+
+        const items = rows.map((row) => {
+            return {
+                id: row.id,
+                status: row.status,
+                // serviceName 理论上不会为 null（FK restrict），但 join 仍做兜底。
+                serviceName: row.serviceName ?? row.serviceId,
+                workerName: row.workerName ?? null,
+                workerAvatar: row.workerAvatar ?? null,
+                workerAvatarBucketName: row.workerAvatarBucketName ?? null,
+                workerAvatarObjectPath: row.workerAvatarObjectPath ?? null,
+                workerAvatarBlurhash: row.workerAvatarBlurhash ?? null,
+                appointmentTime: row.appointmentTime,
+                totalAmount: Number(row.totalAmount ?? 0),
+                // 仅 pending_payment 才需要倒计时；其他状态一律返回 null，减少前端判断。
+                paymentExpiresAt:
+                    row.status === 'pending_payment'
+                        ? row.paymentExpiresAt
+                        : null,
+                needsReview: row.needsReview,
+            };
+        });
+
+        return {
+            items,
             meta,
         };
     }

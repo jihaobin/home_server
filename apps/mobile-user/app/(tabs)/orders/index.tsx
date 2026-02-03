@@ -1,9 +1,26 @@
+import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
 import { Text } from "@repo/mobile-ui/components/ui/text";
-import { useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import type React from "react";
+import { Pressable, RefreshControl, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import type { OrderCardsTab, OrderStatus } from "@repo/types";
+import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
+import { useOrderCardsListInfinite } from "@repo/hooks/api/order";
+import { useOrderActions } from "@/components/orders_screen/hooks/useOrderActions";
+import { useRouter } from "expo-router";
+import { usePaymentCountdown } from "@/hooks/usePaymentCountdown";
+import { Image as ExpoImage } from "expo-image";
+import { cssInterop } from "nativewind";
+import { FlashList, type FlashListRef } from "@shopify/flash-list";
 
-type OrdersTabId = "all" | "pending_payment" | "paid" | "in_progress" | "needs_review";
+// Enable NativeWind `className` on expo-image.
+cssInterop(ExpoImage, { className: { target: "style" } });
+const Image = ExpoImage as unknown as React.ComponentType<
+    React.ComponentProps<typeof ExpoImage> & { className?: string }
+>;
+
+type OrdersTabId = OrderCardsTab;
 
 type OrdersTab = {
     id: OrdersTabId;
@@ -18,22 +35,33 @@ const TABS: readonly OrdersTab[] = [
     { id: "needs_review", label: "待评价" },
 ];
 
-type OrderCardStatus = "pending_payment" | "cancelled" | "completed" | "paid";
-
 type OrderCardActionVariant = "primary" | "outline" | "outlineMuted" | "outlinePrimary";
 
+type OrderCardActionKey =
+    | "cancel"
+    | "pay"
+    | "progress"
+    | "confirm"
+    | "review"
+    | "reorder";
+
 type OrderCardAction = {
+    key: OrderCardActionKey;
     label: string;
     variant: OrderCardActionVariant;
 };
 
-type MockOrderCard = {
+type OrderCardViewModel = {
     id: string;
     title: string;
-    status: OrderCardStatus;
+    status: OrderStatus;
     statusText: string;
     workerName: string;
+    workerAvatarUrl?: string | null;
+    workerAvatarBlurhash?: string | null;
     serviceName: string;
+    totalAmount: number;
+    paymentExpiresAt?: string | null;
     itemCountText: string;
     appointmentText: string;
     totalAmountText: string;
@@ -41,65 +69,112 @@ type MockOrderCard = {
     actions: readonly OrderCardAction[];
 };
 
-const MOCK_ORDERS: readonly MockOrderCard[] = [
-    {
-        id: "o-1",
-        title: "叮咚上门直选",
-        status: "pending_payment",
-        statusText: "订单待付款",
-        workerName: "吴师傅",
-        serviceName: "家庭保洁3小时",
-        itemCountText: "共1件",
-        appointmentText: "2026-01-23 16:30",
-        totalAmountText: "¥180.00",
-        actions: [
-            { label: "取消订单", variant: "outlineMuted" },
-            { label: "立即支付", variant: "primary" },
-        ],
-    },
-    {
-        id: "o-2",
-        title: "叮咚上门直选",
-        status: "cancelled",
-        statusText: "未支付取消",
-        workerName: "吴师傅",
-        serviceName: "家庭保洁3小时",
-        itemCountText: "共1件",
-        appointmentText: "2026-01-23 16:30",
-        totalAmountText: "¥180.00",
-        actions: [{ label: "再来一单", variant: "outline" }],
-    },
-    {
-        id: "o-3",
-        title: "叮咚上门直选",
-        status: "completed",
-        statusText: "已完成",
-        workerName: "吴师傅",
-        serviceName: "家庭保洁3小时",
-        itemCountText: "共1件",
-        appointmentText: "2026-01-23 16:30",
-        totalAmountText: "¥180.00",
-        needsReview: true,
-        actions: [{ label: "评价", variant: "primary" }],
-    },
-    {
-        id: "o-4",
-        title: "叮咚上门直选",
-        status: "paid",
-        statusText: "待服务",
-        workerName: "吴师傅",
-        serviceName: "家庭保洁3小时",
-        itemCountText: "共1件",
-        appointmentText: "2026-01-23 16:30",
-        totalAmountText: "¥180.00",
-        actions: [
-            { label: "查看进度", variant: "outlinePrimary" },
-            { label: "确认收货", variant: "primary" },
-        ],
-    },
-] as const;
+const pad2 = (value: number) => String(value).padStart(2, "0");
 
-function OrderActionButton({ action }: { action: OrderCardAction }) {
+const formatAppointmentText = (value: string) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return "--";
+    }
+    const yyyy = date.getFullYear();
+    const mm = pad2(date.getMonth() + 1);
+    const dd = pad2(date.getDate());
+    const hh = pad2(date.getHours());
+    const min = pad2(date.getMinutes());
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+};
+
+const formatTotalAmountText = (amount: number) => {
+    if (Number.isNaN(amount)) {
+        return "--";
+    }
+    return `¥${amount.toFixed(2)}`;
+};
+
+const resolveStatusText = (status: OrderStatus, needsReview: boolean) => {
+    if (status === "completed" && needsReview) {
+        return "待评价";
+    }
+
+    switch (status) {
+        case "pending_payment":
+            return "订单待付款";
+        case "pending_acceptance":
+            return "等待接单";
+        case "paid":
+            return "待服务";
+        case "in_progress":
+            return "待验收";
+        case "completed":
+            return "已完成";
+        case "cancelled":
+            return "已取消";
+        case "payment_timeout":
+            return "支付超时";
+        case "refunded":
+            return "已退款";
+        case "staff_rejected":
+            return "服务人员拒单";
+        default:
+            return "--";
+    }
+};
+
+const resolveActions = (
+    status: OrderStatus,
+    needsReview: boolean,
+): readonly OrderCardAction[] => {
+    if (status === "pending_payment") {
+        return [
+            { key: "cancel", label: "取消订单", variant: "outlineMuted" },
+            { key: "pay", label: "立即支付", variant: "primary" },
+        ];
+    }
+
+    if (status === "pending_acceptance") {
+        return [
+            { key: "cancel", label: "取消订单", variant: "outlineMuted" },
+            { key: "progress", label: "查看进度", variant: "outlinePrimary" },
+        ];
+    }
+
+    if (status === "paid") {
+        return [
+            { key: "progress", label: "查看进度", variant: "outlinePrimary" },
+            // paid 状态下的“确认收货”业务含义可能会变，这里先跳详情由详情页承接。
+            { key: "confirm", label: "确认收货", variant: "primary" },
+        ];
+    }
+
+    if (status === "in_progress") {
+        return [{ key: "confirm", label: "确认验收", variant: "primary" }];
+    }
+
+    if (status === "completed" && needsReview) {
+        return [{ key: "review", label: "评价", variant: "primary" }];
+    }
+
+    if (
+        status === "cancelled" ||
+        status === "payment_timeout" ||
+        status === "refunded" ||
+        status === "staff_rejected"
+    ) {
+        return [{ key: "reorder", label: "再来一单", variant: "outline" }];
+    }
+
+    return [];
+};
+
+function OrderActionButton({
+    action,
+    onPress,
+    disabled,
+}: {
+    action: OrderCardAction;
+    onPress: () => void;
+    disabled?: boolean;
+}) {
     const base = "h-7 w-20 items-center justify-center rounded-full";
 
     const className =
@@ -119,23 +194,41 @@ function OrderActionButton({ action }: { action: OrderCardAction }) {
                     : "text-sm font-puhui-regular text-foreground";
 
     return (
-        <Pressable className={className}>
+        <Pressable
+            className={className}
+            style={disabled ? { opacity: 0.6 } : undefined}
+            disabled={disabled}
+            onPress={onPress}
+        >
             <Text className={textClassName}>{action.label}</Text>
         </Pressable>
     );
 }
 
-function OrderCard({ order }: { order: MockOrderCard }) {
+function OrderCard({
+    order,
+    onActionPress,
+    actionsDisabled,
+}: {
+    order: OrderCardViewModel;
+    onActionPress: (params: { order: OrderCardViewModel; action: OrderCardAction }) => void;
+    actionsDisabled?: boolean;
+}) {
     const statusTextClassName =
         order.status === "pending_payment"
             ? "text-destructive"
-            : order.status === "paid"
+            : order.status === "paid" || order.status === "pending_acceptance"
                 ? "text-primary"
                 : order.status === "cancelled"
                     ? "text-muted-foreground"
                     : "text-foreground";
 
-    const workerAvatar = require("@/assets/images/promo-2.png");
+    const workerAvatarSource = order.workerAvatarUrl
+        ? { uri: order.workerAvatarUrl }
+        : require("@/assets/images/promo-2.png");
+
+    const countdown = usePaymentCountdown(order.paymentExpiresAt);
+    const showPaymentCountdown = order.status === "pending_payment";
 
     return (
         <View className="mx-4 mt-3 rounded-lg bg-card shadow-sm">
@@ -144,13 +237,37 @@ function OrderCard({ order }: { order: MockOrderCard }) {
                     <Text className="text-sm font-puhui-regular text-foreground">{order.title}</Text>
                     <Text className={`text-sm font-puhui-regular ${statusTextClassName}`}>{order.statusText}</Text>
                 </View>
+
+                {showPaymentCountdown ? (
+                    <View className="mt-2 flex-row items-center justify-between">
+                        <Text className="text-xs font-puhui-regular text-muted-foreground">
+                            支付剩余：
+                            <Text className={countdown.isExpired ? "text-destructive" : "text-primary"}>
+                                {countdown.formatted}
+                            </Text>
+                        </Text>
+                        <Text className="text-xs font-puhui-regular text-muted-foreground">
+                            逾期将自动取消
+                        </Text>
+                    </View>
+                ) : null}
             </View>
 
             <View className="h-px bg-border" />
 
             <View className="px-3 py-2">
                 <View className="flex-row items-start">
-                    <Image source={workerAvatar} className="h-[68px] w-[68px] rounded-sm" resizeMode="cover" />
+                    <Image
+                        source={workerAvatarSource}
+                        placeholder={
+                            order.workerAvatarBlurhash
+                                ? { blurhash: order.workerAvatarBlurhash }
+                                : undefined
+                        }
+                        contentFit="cover"
+                        transition={200}
+                        className="h-[68px] w-[68px] rounded-sm"
+                    />
                     <View className="ml-2 flex-1">
                         <View className="flex-row items-start justify-between">
                             <View className="flex-1 pr-2">
@@ -187,8 +304,13 @@ function OrderCard({ order }: { order: MockOrderCard }) {
                 </View>
 
                 <View className="mt-3 flex-row justify-end gap-4">
-                    {order.actions.map((action) => (
-                        <OrderActionButton key={action.label} action={action} />
+                    {order.actions.map((action: OrderCardAction) => (
+                        <OrderActionButton
+                            key={action.key}
+                            action={action}
+                            disabled={actionsDisabled}
+                            onPress={() => onActionPress({ order, action })}
+                        />
                     ))}
                 </View>
             </View>
@@ -196,70 +318,253 @@ function OrderCard({ order }: { order: MockOrderCard }) {
     );
 }
 
+function OrderCardSkeleton() {
+    return (
+        <View className="mx-4 mt-3 rounded-lg bg-card shadow-sm">
+            <View className="px-3 pt-3 pb-3">
+                <View className="flex-row items-center justify-between">
+                    <Skeleton className="h-4 w-28" />
+                    <Skeleton className="h-4 w-16" />
+                </View>
+                <View className="mt-2 flex-row items-center justify-between">
+                    <Skeleton className="h-3 w-32" />
+                    <Skeleton className="h-3 w-20" />
+                </View>
+            </View>
+
+            <View className="h-px bg-border" />
+
+            <View className="px-3 py-2">
+                <View className="flex-row items-start">
+                    <Skeleton className="h-[68px] w-[68px] rounded-sm" />
+                    <View className="ml-2 flex-1">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="mt-2 h-3 w-36" />
+                        <View className="mt-3 flex-row items-center justify-between">
+                            <Skeleton className="h-3 w-20" />
+                            <Skeleton className="h-3 w-10" />
+                        </View>
+                    </View>
+                </View>
+            </View>
+
+            <View className="h-px bg-border" />
+
+            <View className="px-3 pt-3 pb-3">
+                <View className="flex-row items-center justify-between">
+                    <Skeleton className="h-3 w-36" />
+                    <Skeleton className="h-4 w-20" />
+                </View>
+                <View className="mt-3 flex-row justify-end gap-4">
+                    <Skeleton className="h-7 w-20 rounded-full" />
+                    <Skeleton className="h-7 w-20 rounded-full" />
+                </View>
+            </View>
+        </View>
+    );
+}
+
+function OrdersListSkeleton({ count = 4 }: { count?: number }) {
+    return (
+        <View className="flex-1">
+            {Array.from({ length: count }).map((_, index) => (
+                <OrderCardSkeleton key={index} />
+            ))}
+        </View>
+    );
+}
+
 export default function OrdersIndex() {
     const [activeTabId, setActiveTabId] = useState<OrdersTabId>("all");
 
-    const visibleOrders = useMemo(() => {
-        if (activeTabId === "all") {
-            return MOCK_ORDERS;
-        }
-        if (activeTabId === "needs_review") {
-            return MOCK_ORDERS.filter((order) => Boolean(order.needsReview));
-        }
-        if (activeTabId === "in_progress") {
-            // 设计稿里“待验收”卡片视觉同“待服务”区块，这里仅做 mock 过滤。
-            return MOCK_ORDERS.filter((order) => order.status === "paid");
-        }
-        return MOCK_ORDERS.filter((order) => order.status === activeTabId);
-    }, [activeTabId]);
+    const listRef = useRef<FlashListRef<OrderCardViewModel> | null>(null);
+
+    const cardsQuery = useOrderCardsListInfinite({ tab: activeTabId, limit: 10 });
+    const rawItems = useMemo(() => {
+        return cardsQuery.data?.pages.flatMap((page) => page.data) ?? [];
+    }, [cardsQuery.data]);
+
+    const visibleOrders: readonly OrderCardViewModel[] = useMemo(() => {
+        return rawItems.map((item) => {
+            const needsReview = Boolean(item.needsReview);
+            return {
+                id: item.id,
+                title: item.title,
+                status: item.status,
+                statusText: resolveStatusText(item.status, needsReview),
+                workerName: item.workerName ?? "待分配",
+                workerAvatarUrl: item.workerAvatarUrl,
+                workerAvatarBlurhash: item.workerAvatarBlurhash,
+                serviceName: item.serviceName,
+                totalAmount: item.totalAmount,
+                paymentExpiresAt: item.paymentExpiresAt,
+                itemCountText: `共${item.itemCount}件`,
+                appointmentText: formatAppointmentText(item.appointmentTime),
+                totalAmountText: formatTotalAmountText(item.totalAmount),
+                needsReview,
+                actions: resolveActions(item.status, needsReview),
+            };
+        });
+    }, [rawItems]);
+
+    const router = useRouter();
+    const {
+        payExistingOrder,
+        isPaying,
+        cancelOrder,
+        isCancelling,
+        completeOrder,
+        isCompleting,
+        reorder,
+    } = useOrderActions();
+
+    const actionsDisabled = isPaying || isCancelling || isCompleting;
+
+    const onActionPress = useMemo(() => {
+        return async ({
+            order,
+            action,
+        }: {
+            order: OrderCardViewModel;
+            action: OrderCardAction;
+        }) => {
+            switch (action.key) {
+                case "cancel":
+                    await cancelOrder({ orderId: order.id });
+                    return;
+                case "pay":
+                    await payExistingOrder({
+                        orderId: order.id,
+                        amount: order.totalAmount,
+                        paymentExpiresAt: order.paymentExpiresAt,
+                    });
+                    return;
+                case "progress":
+                    router.push(`/order/${order.id}`);
+                    return;
+                case "confirm":
+                    // paid 状态下的 confirm 先走详情；in_progress 直接确认完成。
+                    if (order.status === "in_progress") {
+                        await completeOrder({ orderId: order.id });
+                        return;
+                    }
+                    router.push(`/order/${order.id}`);
+                    return;
+                case "review":
+                    router.push(`/order/${order.id}`);
+                    return;
+                case "reorder":
+                    reorder();
+                    return;
+                default:
+                    return;
+            }
+        };
+    }, [cancelOrder, completeOrder, payExistingOrder, reorder, router]);
 
     return (
-        <View className="flex-1 bg-background">
-            <SafeAreaView edges={["top"]} className="bg-card">
-                <View className="h-11 items-center justify-center">
-                    <Text className="text-base font-puhui-medium text-foreground">订单</Text>
-                </View>
-
-                <View className="pb-2">
-                    <View className="mx-4 h-[30px] flex-row items-start justify-between">
-                        {TABS.map((tab) => {
-                            const isActive = tab.id === activeTabId;
-                            return (
-                                <Pressable
-                                    key={tab.id}
-                                    className="items-center"
-                                    onPress={() => setActiveTabId(tab.id)}
-                                >
-                                    <Text
-                                        className={
-                                            isActive
-                                                ? "text-sm font-puhui-regular text-primary"
-                                                : "text-sm font-puhui-regular text-muted-foreground"
-                                        }
-                                    >
-                                        {tab.label}
-                                    </Text>
-                                    <View className="mt-2 h-[3px] w-11 rounded-full bg-transparent">
-                                        {isActive ? (
-                                            <View className="h-[3px] w-11 rounded-full bg-primary" />
-                                        ) : null}
-                                    </View>
-                                </Pressable>
-                            );
-                        })}
+        <RequireAuth>
+            <View className="flex-1 bg-background">
+                <SafeAreaView edges={["top"]} className="bg-card">
+                    <View className="h-11 items-center justify-center">
+                        <Text className="text-base font-puhui-medium text-foreground">
+                            订单
+                        </Text>
                     </View>
-                </View>
-            </SafeAreaView>
 
-            <ScrollView
-                className="flex-1"
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingTop: 12, paddingBottom: 24 }}
-            >
-                {visibleOrders.map((order) => (
-                    <OrderCard key={order.id} order={order} />
-                ))}
-            </ScrollView>
-        </View>
+                    <View className="pb-2">
+                        <View className="mx-4 h-[30px] flex-row items-start justify-between">
+                            {TABS.map((tab) => {
+                                const isActive = tab.id === activeTabId;
+                                return (
+                                    <Pressable
+                                        key={tab.id}
+                                        className="items-center"
+                                        onPress={() => {
+                                            setActiveTabId(tab.id);
+                                            listRef.current?.scrollToOffset({
+                                                offset: 0,
+                                                animated: false,
+                                            });
+                                        }}
+                                    >
+                                        <Text
+                                            className={
+                                                isActive
+                                                    ? "text-sm font-puhui-regular text-primary"
+                                                    : "text-sm font-puhui-regular text-muted-foreground"
+                                            }
+                                        >
+                                            {tab.label}
+                                        </Text>
+                                        <View className="mt-2 h-[3px] w-11 rounded-full bg-transparent">
+                                            {isActive ? (
+                                                <View className="h-[3px] w-11 rounded-full bg-primary" />
+                                            ) : null}
+                                        </View>
+                                    </Pressable>
+                                );
+                            })}
+                        </View>
+                    </View>
+                </SafeAreaView>
+
+                <FlashList
+                    ref={(ref) => {
+                        listRef.current = ref;
+                    }}
+                    data={visibleOrders as OrderCardViewModel[]}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item }) => (
+                        <OrderCard
+                            order={item}
+                            onActionPress={onActionPress}
+                            actionsDisabled={actionsDisabled}
+                        />
+                    )}
+                    contentContainerStyle={{ paddingTop: 12, paddingBottom: 24 }}
+                    showsVerticalScrollIndicator={false}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={Boolean(cardsQuery.isFetching) && !cardsQuery.isFetchingNextPage}
+                            onRefresh={() => {
+                                cardsQuery.refetch();
+                            }}
+
+                        />
+                    }
+                    ListEmptyComponent={
+                        cardsQuery.isLoading ? (
+                            <OrdersListSkeleton />
+                        ) : cardsQuery.isError ? (
+                            <View className="flex-1 items-center justify-center py-12">
+                                <Text className="text-sm text-muted-foreground">
+                                    订单加载失败
+                                </Text>
+                            </View>
+                        ) : (
+                            <View className="flex-1 items-center justify-center py-12">
+                                <Text className="text-sm text-muted-foreground">
+                                    暂无订单
+                                </Text>
+                            </View>
+                        )
+                    }
+                    ListFooterComponent={
+                        cardsQuery.isFetchingNextPage ? (
+                            <View className="pb-6">
+                                <OrderCardSkeleton />
+                            </View>
+                        ) : null
+                    }
+                    onEndReachedThreshold={0.2}
+                    onEndReached={() => {
+                        if (cardsQuery.hasNextPage && !cardsQuery.isFetchingNextPage) {
+                            cardsQuery.fetchNextPage();
+                        }
+                    }}
+                />
+            </View>
+        </RequireAuth>
     );
 }

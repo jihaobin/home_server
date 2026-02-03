@@ -11,6 +11,8 @@ import type {
     NotificationDeliveryMode,
     NotificationEventPayload,
     OrderListRequest,
+    OrderCardsTab,
+    OrderCardsListResponse,
     OrderStatus,
     StaffOrderListRequest,
     UserRole,
@@ -26,7 +28,11 @@ import { PayService } from '../pay/pay.service';
 import { WorkSkillService } from '../work-skill/work-skill.service';
 import { NotificationPublisher } from '../notification/notification.publisher';
 import { NotificationTemplateService } from '../notification/notification-template.service';
-import { OrderRepository } from './order.reposityro';
+import {
+    OrderRepository,
+    type OrderStatus as DbOrderStatus,
+} from './order.reposityro';
+import { S3StoreServer } from 'src/common/s3_store/s3_store.service';
 import {
     PendingAcceptanceReminderRedisKeys,
     PENDING_ACCEPTANCE_REMINDER_SEQUENCE,
@@ -85,6 +91,9 @@ export class OrderService {
 
     @Inject(NotificationPublisher)
     private readonly notificationPublisher: NotificationPublisher;
+
+    @Inject(S3StoreServer)
+    private readonly s3StoreServer: S3StoreServer;
 
     private readonly defaultPaymentExpireMinutes = 15;
     private readonly defaultPendingAcceptanceTimeoutMinutes = 120;
@@ -467,6 +476,100 @@ export class OrderService {
                 `获取订单列表失败: ${this.extractErrorMessage(error)}`,
             );
         }
+    }
+
+    private resolveOrderCardsTabFilter(tab: OrderCardsTab): {
+        statuses?: DbOrderStatus[];
+        needsReviewOnly?: boolean;
+    } {
+        switch (tab) {
+            case 'all':
+                return {};
+            case 'pending_payment':
+                return { statuses: ['pending_payment'] };
+            case 'paid':
+                // paid tab 语义：pending_acceptance + paid
+                return { statuses: ['pending_acceptance', 'paid'] };
+            case 'in_progress':
+                return { statuses: ['in_progress'] };
+            case 'needs_review':
+                // needs_review tab：completed 且 needsReview=true
+                return { needsReviewOnly: true };
+            default:
+                // TS 理论上不可达；运行时兜底。
+                return {};
+        }
+    }
+
+    /**
+     * 用户端订单列表页：卡片列表接口（专用）
+     */
+    async getOrderCardsByCustomerId(params: {
+        customerId: string;
+        tab: OrderCardsTab;
+        page: number;
+        limit: number;
+    }): Promise<OrderCardsListResponse> {
+        // Query schema 不限制 limit；这里对数据库执行做一个软上限。
+        // 同时保证 meta.limit 不会超过 @repo/types 的 PaginationMetaSchema 约束（max=1000）。
+        const limit = Math.min(params.limit, 1000);
+
+        const { statuses, needsReviewOnly } = this.resolveOrderCardsTabFilter(
+            params.tab,
+        );
+
+        const result = await this.orderRepository.getOrderCardsByCustomerId({
+            customerId: params.customerId,
+            page: params.page,
+            limit,
+            statuses,
+            needsReviewOnly,
+        });
+
+        return {
+            items: await Promise.all(
+                result.items.map(async (item) => {
+                    const appointment =
+                        item.appointmentTime instanceof Date
+                            ? item.appointmentTime
+                            : new Date(item.appointmentTime);
+
+                    const paymentExpires = item.paymentExpiresAt
+                        ? item.paymentExpiresAt instanceof Date
+                            ? item.paymentExpiresAt
+                            : new Date(item.paymentExpiresAt)
+                        : null;
+
+                    return {
+                        id: item.id,
+                        // 已确认：title = serviceName
+                        title: item.serviceName,
+                        status: item.status,
+                        workerName: item.workerName,
+                        workerAvatar: item.workerAvatar ?? null,
+                        workerAvatarUrl:
+                            item.workerAvatarBucketName &&
+                            item.workerAvatarObjectPath
+                                ? await this.s3StoreServer.getPresignedDownloadUrl(
+                                      item.workerAvatarBucketName,
+                                      item.workerAvatarObjectPath,
+                                      600,
+                                  )
+                                : null,
+                        workerAvatarBlurhash: item.workerAvatarBlurhash ?? null,
+                        serviceName: item.serviceName,
+                        itemCount: 1,
+                        appointmentTime: appointment.toISOString(),
+                        totalAmount: item.totalAmount,
+                        paymentExpiresAt: paymentExpires
+                            ? paymentExpires.toISOString()
+                            : null,
+                        needsReview: item.needsReview,
+                    };
+                }),
+            ),
+            meta: result.meta,
+        };
     }
 
     async getOrdersByStaff(params: StaffOrderListRequest) {

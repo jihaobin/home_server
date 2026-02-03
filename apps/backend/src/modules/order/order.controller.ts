@@ -21,6 +21,8 @@ import {
     CreateDesignatedOrderSchema,
     OrderListRequestSchema,
     OrderListResponseSchema,
+    OrderCardsListQuerySchema,
+    OrderCardsListResponseSchema,
     StaffOrderListRequestSchema,
     StaffOrderListResponseSchema,
     VerifyOrderCheckinSchema,
@@ -109,6 +111,29 @@ export class OrderController {
         };
 
         return await this.orderService.getOrdersByStaff(params);
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['customer'])
+    @Get('cards')
+    @UsePipes(new ZodValidationPipe(OrderCardsListQuerySchema))
+    @ApiQueries(OrderCardsListQuerySchema)
+    @ApiSuccessResponse(OrderCardsListResponseSchema, {
+        description: '成功返回用户端订单卡片列表',
+    })
+    @ApiErrorResponses()
+    @ApiOperation({
+        summary: '获取用户端订单卡片列表',
+        description: '仅用于移动端用户订单列表页（tabs）',
+    })
+    async getOrderCards(@Query() query: any, @Req() req: Request) {
+        // ZodValidationPipe 已对 query 做了 auto-transform；这里直接使用即可。
+        return await this.orderService.getOrderCardsByCustomerId({
+            customerId: req.user.id,
+            tab: query.tab,
+            page: query.page,
+            limit: query.limit,
+        });
     }
 
     @UseGuards(AuthGuard)

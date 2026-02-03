@@ -15,6 +15,7 @@ import { OrderExpireConsumerService } from './workers/order-expire-consumer.serv
 import { PendingAcceptanceReminderWorker } from './workers/pending-acceptance-reminder.worker';
 import { ServiceEtaReminderWorker } from './workers/service-eta-reminder.worker';
 import { NotificationModule } from '../notification/notification.module';
+import { S3StoreServer } from 'src/common/s3_store/s3_store.service';
 
 @Module({
     controllers: [OrderController],
@@ -28,6 +29,7 @@ import { NotificationModule } from '../notification/notification.module';
         OrderExpireConsumerService,
         PendingAcceptanceReminderWorker,
         ServiceEtaReminderWorker,
+        S3StoreServer,
     ],
     imports: [
         ConfigModule,

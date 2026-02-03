@@ -4,21 +4,24 @@ import type {
     OrderDetail,
     OrderListRequest,
     OrderListResponse,
+    OrderCardsListResponse,
+    OrderCardsTab,
     OrderStatus,
     StaffOrderListRequest,
     StaffOrderListResponse,
     VerifyOrderCheckinDto,
-} from '@repo/types';
+} from "@repo/types";
 import {
+    useInfiniteQuery,
     useMutation,
     useQuery,
     useQueryClient,
     useSuspenseInfiniteQuery,
     useSuspenseQuery,
-} from '@tanstack/react-query';
-import { apiClient } from '@repo/lib/http-client';
+} from "@tanstack/react-query";
+import { apiClient } from "@repo/lib/http-client";
 
-type StaffOrdersListParams = Omit<StaffOrderListRequest, 'servicePersonnelId'>;
+type StaffOrdersListParams = Omit<StaffOrderListRequest, "servicePersonnelId">;
 
 const normalizePaginationParams = ({
     page,
@@ -45,15 +48,15 @@ const normalizePaginationParams = ({
  */
 export const useOrdersList = (params: OrderListRequest) =>
     useSuspenseQuery({
-        queryKey: ['orders-list', params],
+        queryKey: ["orders-list", params],
         queryFn: async () => {
-            const response = await apiClient.get<OrderListResponse>('/order', {
+            const response = await apiClient.get<OrderListResponse>("/order", {
                 query: normalizePaginationParams(params),
             });
             return response.data;
         },
         meta: {
-            errorMessage: '订单列表获取失败',
+            errorMessage: "订单列表获取失败",
         },
     });
 
@@ -62,10 +65,10 @@ export const useOrdersList = (params: OrderListRequest) =>
  */
 export const useStaffOrdersList = (params: StaffOrdersListParams) =>
     useSuspenseQuery({
-        queryKey: ['staff-orders-list', params],
+        queryKey: ["staff-orders-list", params],
         queryFn: async () => {
             const response = await apiClient.get<StaffOrderListResponse>(
-                '/order/assignments/me',
+                "/order/assignments/me",
                 {
                     query: normalizePaginationParams(params),
                 },
@@ -73,7 +76,7 @@ export const useStaffOrdersList = (params: StaffOrdersListParams) =>
             return response.data;
         },
         meta: {
-            errorMessage: '服务人员订单获取失败',
+            errorMessage: "服务人员订单获取失败",
         },
     });
 
@@ -82,13 +85,15 @@ export const useStaffOrdersList = (params: StaffOrdersListParams) =>
  */
 export const useOrderDetail = (orderId: string) =>
     useSuspenseQuery({
-        queryKey: ['order-detail', orderId],
+        queryKey: ["order-detail", orderId],
         queryFn: async () => {
-            const response = await apiClient.get<OrderDetail>(`/order/${orderId}`);
+            const response = await apiClient.get<OrderDetail>(
+                `/order/${orderId}`,
+            );
             return response.data;
         },
         meta: {
-            errorMessage: '订单详情获取失败',
+            errorMessage: "订单详情获取失败",
         },
     });
 
@@ -97,16 +102,16 @@ export const useOrderDetail = (orderId: string) =>
  */
 export const useOrderCheckin = (orderId: string, orderStatus?: OrderStatus) =>
     useQuery({
-        queryKey: ['order-checkin', orderId],
+        queryKey: ["order-checkin", orderId],
         queryFn: async () => {
             const response = await apiClient.get<GenerateOrderCheckinDto>(
                 `/order/${orderId}/check-in`,
             );
             return response.data;
         },
-        enabled: Boolean(orderId) && orderStatus === 'paid',
+        enabled: Boolean(orderId) && orderStatus === "paid",
         meta: {
-            errorMessage: '订单核验码获取失败',
+            errorMessage: "订单核验码获取失败",
         },
     });
 
@@ -120,14 +125,17 @@ export const useCreateDesignatedOrder = () => {
         mutationFn: (orderData: CreateDesignatedOrder) => {
             return apiClient.post<{
                 orderId: string;
-            }>('/order/createWithDesignatedPersonnel', orderData);
+            }>("/order/createWithDesignatedPersonnel", orderData);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['orders-list'] });
-            queryClient.invalidateQueries({ queryKey: ['staff-orders-list'] });
+            queryClient.invalidateQueries({ queryKey: ["orders-list"] });
+            queryClient.invalidateQueries({ queryKey: ["staff-orders-list"] });
+            queryClient.invalidateQueries({
+                queryKey: ["order-cards-list-infinite"],
+            });
         },
         scope: {
-            id: 'createDesignatedOrder',
+            id: "createDesignatedOrder",
         },
     });
 };
@@ -140,14 +148,14 @@ export const useVerifyCheckIn = () => {
 
     return useMutation({
         mutationFn: (verifyData: VerifyOrderCheckinDto) => {
-            return apiClient.post('/order/check-in/verify', verifyData);
+            return apiClient.post("/order/check-in/verify", verifyData);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['order-detail'] });
-            queryClient.invalidateQueries({ queryKey: ['staff-orders-list'] });
+            queryClient.invalidateQueries({ queryKey: ["order-detail"] });
+            queryClient.invalidateQueries({ queryKey: ["staff-orders-list"] });
         },
         scope: {
-            id: 'verifyCheckIn',
+            id: "verifyCheckIn",
         },
     });
 };
@@ -159,23 +167,34 @@ export const useCancelOrder = () => {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) => {
+        mutationFn: ({
+            orderId,
+            reason,
+        }: {
+            orderId: string;
+            reason: string;
+        }) => {
             return apiClient.post(`/order/${orderId}/cancel`, {
                 reason,
             });
         },
         onSuccess: (_data, variables) => {
-            queryClient.invalidateQueries({ queryKey: ['orders-list'] });
-            queryClient.invalidateQueries({ queryKey: ['orders-list-infinite'] });
-            queryClient.invalidateQueries({ queryKey: ['staff-orders-list'] });
+            queryClient.invalidateQueries({ queryKey: ["orders-list"] });
+            queryClient.invalidateQueries({
+                queryKey: ["orders-list-infinite"],
+            });
+            queryClient.invalidateQueries({ queryKey: ["staff-orders-list"] });
+            queryClient.invalidateQueries({
+                queryKey: ["order-cards-list-infinite"],
+            });
             if (variables?.orderId) {
                 queryClient.invalidateQueries({
-                    queryKey: ['order-detail', variables.orderId],
+                    queryKey: ["order-detail", variables.orderId],
                 });
             }
         },
         scope: {
-            id: 'cancelOrder',
+            id: "cancelOrder",
         },
     });
 };
@@ -188,17 +207,22 @@ export const useAcceptOrder = () => {
             return apiClient.post(`/order/${orderId}/accept`);
         },
         onSuccess: (_data, variables) => {
-            queryClient.invalidateQueries({ queryKey: ['orders-list'] });
-            queryClient.invalidateQueries({ queryKey: ['orders-list-infinite'] });
-            queryClient.invalidateQueries({ queryKey: ['staff-orders-list'] });
+            queryClient.invalidateQueries({ queryKey: ["orders-list"] });
+            queryClient.invalidateQueries({
+                queryKey: ["orders-list-infinite"],
+            });
+            queryClient.invalidateQueries({ queryKey: ["staff-orders-list"] });
+            queryClient.invalidateQueries({
+                queryKey: ["order-cards-list-infinite"],
+            });
             if (variables?.orderId) {
                 queryClient.invalidateQueries({
-                    queryKey: ['order-detail', variables.orderId],
+                    queryKey: ["order-detail", variables.orderId],
                 });
             }
         },
         scope: {
-            id: 'acceptOrder',
+            id: "acceptOrder",
         },
     });
 };
@@ -207,21 +231,32 @@ export const useRejectOrder = () => {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: ({ orderId, reason }: { orderId: string; reason: string }) => {
+        mutationFn: ({
+            orderId,
+            reason,
+        }: {
+            orderId: string;
+            reason: string;
+        }) => {
             return apiClient.post(`/order/${orderId}/reject`, { reason });
         },
         onSuccess: (_data, variables) => {
-            queryClient.invalidateQueries({ queryKey: ['orders-list'] });
-            queryClient.invalidateQueries({ queryKey: ['orders-list-infinite'] });
-            queryClient.invalidateQueries({ queryKey: ['staff-orders-list'] });
+            queryClient.invalidateQueries({ queryKey: ["orders-list"] });
+            queryClient.invalidateQueries({
+                queryKey: ["orders-list-infinite"],
+            });
+            queryClient.invalidateQueries({ queryKey: ["staff-orders-list"] });
+            queryClient.invalidateQueries({
+                queryKey: ["order-cards-list-infinite"],
+            });
             if (variables?.orderId) {
                 queryClient.invalidateQueries({
-                    queryKey: ['order-detail', variables.orderId],
+                    queryKey: ["order-detail", variables.orderId],
                 });
             }
         },
         scope: {
-            id: 'rejectOrder',
+            id: "rejectOrder",
         },
     });
 };
@@ -237,15 +272,22 @@ export const useCompleteOrder = () => {
             return apiClient.post(`/order/${orderId}/complete`);
         },
         onSuccess: (_data, orderId) => {
-            queryClient.invalidateQueries({ queryKey: ['orders-list'] });
-            queryClient.invalidateQueries({ queryKey: ['orders-list-infinite'] });
-            queryClient.invalidateQueries({ queryKey: ['staff-orders-list'] });
+            queryClient.invalidateQueries({ queryKey: ["orders-list"] });
+            queryClient.invalidateQueries({
+                queryKey: ["orders-list-infinite"],
+            });
+            queryClient.invalidateQueries({ queryKey: ["staff-orders-list"] });
+            queryClient.invalidateQueries({
+                queryKey: ["order-cards-list-infinite"],
+            });
             if (orderId) {
-                queryClient.invalidateQueries({ queryKey: ['order-detail', orderId] });
+                queryClient.invalidateQueries({
+                    queryKey: ["order-detail", orderId],
+                });
             }
         },
         scope: {
-            id: 'completeOrder',
+            id: "completeOrder",
         },
     });
 };
@@ -254,12 +296,12 @@ export const useCompleteOrder = () => {
  * 无限滚动加载订单列表
  */
 export const useOrdersListInfinite = (
-    params: Omit<OrderListRequest, 'page' | 'limit'>,
+    params: Omit<OrderListRequest, "page" | "limit">,
 ) =>
     useSuspenseInfiniteQuery({
-        queryKey: ['orders-list-infinite', params],
+        queryKey: ["orders-list-infinite", params],
         queryFn: async ({ pageParam = 1 }) => {
-            const response = await apiClient.get<OrderListResponse>('/order', {
+            const response = await apiClient.get<OrderListResponse>("/order", {
                 query: normalizePaginationParams({
                     ...params,
                     page: pageParam,
@@ -269,12 +311,55 @@ export const useOrdersListInfinite = (
             return {
                 data: response.data.items,
                 meta: response.data.meta,
-                nextCursor: response.data.meta.hasNext ? pageParam + 1 : undefined,
+                nextCursor: response.data.meta.hasNext
+                    ? pageParam + 1
+                    : undefined,
             };
         },
         getNextPageParam: (lastPage) => lastPage.nextCursor,
         initialPageParam: 1,
         meta: {
-            errorMessage: '订单列表获取失败',
+            errorMessage: "订单列表获取失败",
         },
     });
+
+/**
+ * 用户端订单列表页：卡片列表（支持分页 + tab）
+ *
+ * 非 Suspense 版本：便于移动端页面直接处理 loading/error。
+ */
+export const useOrderCardsListInfinite = (params: {
+    tab: OrderCardsTab;
+    limit?: number;
+}) => {
+    const limit = params.limit ?? 10;
+
+    return useInfiniteQuery({
+        queryKey: ["order-cards-list-infinite", { tab: params.tab, limit }],
+        queryFn: async ({ pageParam = 1 }) => {
+            const response = await apiClient.get<OrderCardsListResponse>(
+                "/order/cards",
+                {
+                    query: {
+                        tab: params.tab,
+                        page: String(pageParam),
+                        limit: String(limit),
+                    },
+                },
+            );
+
+            return {
+                data: response.data.items,
+                meta: response.data.meta,
+                nextCursor: response.data.meta.hasNext
+                    ? pageParam + 1
+                    : undefined,
+            };
+        },
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+        initialPageParam: 1,
+        meta: {
+            errorMessage: "订单列表获取失败",
+        },
+    });
+};
