@@ -38,11 +38,16 @@ export class HomeRepository {
         private readonly geoLocationService: GeoLocationService,
     ) {}
 
-    private async fileUrlOrNull(fileId?: string | null) {
-        if (!fileId) return null;
+    private async fileInfoOrNull(fileId?: string | null) {
+        if (!fileId) {
+            return null;
+        }
         try {
             const info = await this.filesService.getFileAccessInfo(fileId);
-            return info.fileUrl;
+            return {
+                url: info.fileUrl,
+                blurhash: info.blurhash ?? null,
+            };
         } catch {
             return null;
         }
@@ -104,46 +109,48 @@ export class HomeRepository {
 
         const banners = (
             await Promise.all(
-                bannerRows.map(async (b) => {
+                bannerRows.map(async (b): Promise<HomeBanner | null> => {
                     // 时间窗过滤（可选但推荐）
                     if (b.startsAt && b.startsAt > now) return null;
                     if (b.endsAt && b.endsAt < now) return null;
 
-                    const imageUrl = await this.fileUrlOrNull(b.imageFileId);
-                    if (!imageUrl) return null;
+                    const imageInfo = await this.fileInfoOrNull(b.imageFileId);
+                    if (!imageInfo?.url) return null;
 
                     return {
                         id: b.id,
                         title: b.title ?? '',
-                        imageUrl,
+                        imageUrl: imageInfo.url,
+                        imageBlurhash: imageInfo.blurhash,
                         linkType:
                             (b.linkType as HomeBanner['linkType']) ?? 'none',
                         linkTarget: b.linkTarget ?? null,
                         sortOrder: b.sortOrder ?? 0,
-                    } satisfies HomeBanner;
+                    };
                 }),
             )
-        ).filter((x): x is HomeBanner => Boolean(x));
+        ).filter(Boolean) as HomeBanner[];
 
         const guarantees = (
             await Promise.all(
-                guaranteeRows.map(async (g) => {
-                    const iconUrl = await this.fileUrlOrNull(g.iconFileId);
-                    if (!iconUrl) return null;
+                guaranteeRows.map(async (g): Promise<HomeGuarantee | null> => {
+                    const iconInfo = await this.fileInfoOrNull(g.iconFileId);
+                    if (!iconInfo?.url) return null;
                     return {
                         id: g.id,
                         label: g.label,
-                        iconUrl,
+                        iconUrl: iconInfo.url,
+                        iconBlurhash: iconInfo.blurhash,
                         sortOrder: g.sortOrder ?? 0,
-                    } satisfies HomeGuarantee;
+                    };
                 }),
             )
-        ).filter((x): x is HomeGuarantee => Boolean(x));
+        ).filter(Boolean) as HomeGuarantee[];
 
         // promos：补齐 pricing -> personnel/service；override 优先。
         const promos = (
             await Promise.all(
-                promoRows.map(async (p) => {
+                promoRows.map(async (p): Promise<HomePromo | null> => {
                     const [row] = await this.db
                         .select({
                             promoId: homePromos.id,
@@ -180,9 +187,11 @@ export class HomeRepository {
 
                     if (!row) return null;
 
-                    const imageUrl = row.overrideImageFileId
-                        ? await this.fileUrlOrNull(row.overrideImageFileId)
+                    const imageInfo = row.overrideImageFileId
+                        ? await this.fileInfoOrNull(row.overrideImageFileId)
                         : null;
+
+                    const imageUrl = imageInfo?.url ?? null;
 
                     return {
                         id: p.id,
@@ -197,10 +206,11 @@ export class HomeRepository {
                         price: Number(row.price),
                         currency: row.currency,
                         imageUrl,
-                    } satisfies HomePromo;
+                        imageBlurhash: imageInfo?.blurhash ?? null,
+                    };
                 }),
             )
-        ).filter((x): x is HomePromo => Boolean(x));
+        ).filter(Boolean) as HomePromo[];
 
         return { banners, guarantees, promos };
     }
@@ -209,6 +219,7 @@ export class HomeRepository {
         center: [number, number];
         maxDistanceKm: number;
         limit: number;
+        offset?: number;
     }): Promise<HomeRecommendedPersonnel[]> {
         const now = new Date();
         const centerGeom = params.center;
@@ -342,27 +353,33 @@ export class HomeRepository {
                 desc(recommendedPersonnelCTE.goodRatePercentage),
                 desc(recommendedPersonnelCTE.reviewCount),
             )
+            .offset(params.offset ?? 0)
             .limit(params.limit);
 
-        // 批量解析头像 URL（去重）
+        // 批量解析头像 URL/blurhash（去重）
         const avatarIds = Array.from(
             new Set(
                 rows.map((r) => r.avatarFileId).filter(Boolean) as string[],
             ),
         );
-        const avatarUrlMap = new Map<string, string>();
+        const avatarInfoMap = new Map<
+            string,
+            { url: string; blurhash: string | null }
+        >();
         await Promise.all(
             avatarIds.map(async (id) => {
-                const url = await this.fileUrlOrNull(id);
-                if (url) {
-                    avatarUrlMap.set(id, url);
-                }
+                const info = await this.fileInfoOrNull(id);
+                if (!info?.url) return;
+                avatarInfoMap.set(id, {
+                    url: info.url,
+                    blurhash: info.blurhash,
+                });
             }),
         );
 
         return rows.map((r) => {
-            const avatarUrl = r.avatarFileId
-                ? (avatarUrlMap.get(r.avatarFileId) ?? null)
+            const avatarInfo = r.avatarFileId
+                ? (avatarInfoMap.get(r.avatarFileId) ?? null)
                 : null;
 
             // 首页卡片地址：仅返回 service_personnel.detailed_address（不拼省市区全称）
@@ -373,7 +390,8 @@ export class HomeRepository {
             return {
                 personnelId: r.personnelId,
                 name: r.name ?? '服务人员',
-                avatarUrl,
+                avatarUrl: avatarInfo?.url ?? null,
+                avatarBlurhash: avatarInfo?.blurhash ?? null,
                 tag: r.tag,
                 minPrice: Number(r.minPrice),
                 distanceKm: Number(r.distanceKm),
@@ -390,6 +408,7 @@ export class HomeRepository {
 
     async getRecommendedPersonnelGlobal(params: {
         limit: number;
+        offset?: number;
     }): Promise<HomeRecommendedPersonnel[]> {
         const now = new Date();
 
@@ -503,27 +522,33 @@ export class HomeRepository {
                 desc(recommendedPersonnelCTE.reviewCount),
                 asc(recommendedPersonnelCTE.personnelId),
             )
+            .offset(params.offset ?? 0)
             .limit(params.limit);
 
-        // 批量解析头像 URL（去重）
+        // 批量解析头像 URL/blurhash（去重）
         const avatarIds = Array.from(
             new Set(
                 rows.map((r) => r.avatarFileId).filter(Boolean) as string[],
             ),
         );
-        const avatarUrlMap = new Map<string, string>();
+        const avatarInfoMap = new Map<
+            string,
+            { url: string; blurhash: string | null }
+        >();
         await Promise.all(
             avatarIds.map(async (id) => {
-                const url = await this.fileUrlOrNull(id);
-                if (url) {
-                    avatarUrlMap.set(id, url);
-                }
+                const info = await this.fileInfoOrNull(id);
+                if (!info?.url) return;
+                avatarInfoMap.set(id, {
+                    url: info.url,
+                    blurhash: info.blurhash,
+                });
             }),
         );
 
         return rows.map((r) => {
-            const avatarUrl = r.avatarFileId
-                ? (avatarUrlMap.get(r.avatarFileId) ?? null)
+            const avatarInfo = r.avatarFileId
+                ? (avatarInfoMap.get(r.avatarFileId) ?? null)
                 : null;
 
             // 首页卡片地址：仅返回 service_personnel.detailed_address（不拼省市区全称）
@@ -534,7 +559,8 @@ export class HomeRepository {
             return {
                 personnelId: r.personnelId,
                 name: r.name ?? '服务人员',
-                avatarUrl,
+                avatarUrl: avatarInfo?.url ?? null,
+                avatarBlurhash: avatarInfo?.blurhash ?? null,
                 tag: r.tag,
                 minPrice: Number(r.minPrice),
                 distanceKm: 0,

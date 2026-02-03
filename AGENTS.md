@@ -80,6 +80,12 @@ pnpm test --filter=backend
 - 管理端表单：按 `docs/admin-web-plan.md` 统一用 `@tanstack/react-form` + Zod；不要新写 `react-hook-form`。
 - 移动端 NativeWind：动态切换 `shadow-*`/`opacity-*`/`bg-*/opacity` 等 className 可能触发导航上下文崩溃；动态样式用内联 `style`。
 
+## 图片返回与占位（新增约定）
+
+- 移动端需要展示的远程图片：后端优先直接下发“预签名 URL + BlurHash”，避免客户端额外请求 `/files/*`。
+- 前端（Expo）：统一使用 `expo-image` 渲染远程图片，`placeholder={{ blurhash }}` 提供加载前占位。
+- 若无法提供 blurhash（存量数据/非图片/生成失败），返回 `null`，前端不传 placeholder 即可。
+
 ## 提交与 PR
 
 - 建议遵循 Conventional Commits（带 scope），例如：`feat(backend): add admin dashboard overview`。

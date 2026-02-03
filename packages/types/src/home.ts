@@ -6,6 +6,10 @@ import { ServiceCategoryTree, serviceCategoriesSchema } from "./service";
 
 export const HomeQuerySchema = z
     .object({
+        page: z.number().int().min(1).default(1).meta({
+            title: "页码",
+            description: "分页页码，从 1 开始",
+        }),
         lat: z.number().min(-90).max(90).optional().meta({
             title: "纬度",
             description:
@@ -52,6 +56,11 @@ export const HomeBannerSchema = z
         id: z.string().max(255),
         title: z.string().default(""),
         imageUrl: z.string().url(),
+        imageBlurhash: z.string().min(1).nullable().optional().meta({
+            title: "Banner 图片 BlurHash",
+            description:
+                "配合 expo-image placeholder 使用；为空表示暂无 blurhash。",
+        }),
         linkType: HomeBannerLinkTypeEnum,
         linkTarget: z.string().nullable().default(null),
         sortOrder: z.number().int().default(0),
@@ -68,6 +77,11 @@ export const HomeGuaranteeSchema = z
         id: z.string().max(255),
         label: z.string(),
         iconUrl: z.string().url(),
+        iconBlurhash: z.string().min(1).nullable().optional().meta({
+            title: "保障项图标 BlurHash",
+            description:
+                "配合 expo-image placeholder 使用；为空表示暂无 blurhash。",
+        }),
         sortOrder: z.number().int().default(0),
     })
     .meta({
@@ -88,6 +102,11 @@ export const HomePromoSchema = z
         price: z.number(),
         currency: z.string().min(1).max(3).default("CNY"),
         imageUrl: z.string().url().nullable().default(null),
+        imageBlurhash: z.string().min(1).nullable().optional().meta({
+            title: "特惠位图片 BlurHash",
+            description:
+                "配合 expo-image placeholder 使用；为空表示暂无 blurhash。",
+        }),
     })
     .meta({
         title: "首页特惠位",
@@ -103,6 +122,11 @@ export const HomeRecommendedPersonnelSchema = z
         personnelId: z.string().max(255),
         name: z.string(),
         avatarUrl: z.string().url().nullable().default(null),
+        avatarBlurhash: z.string().min(1).nullable().optional().meta({
+            title: "服务人员头像 BlurHash",
+            description:
+                "配合 expo-image placeholder 使用；为空表示暂无 blurhash。",
+        }),
         tag: z.string(),
         minPrice: z.number(),
         distanceKm: z.number(),
@@ -162,6 +186,10 @@ export type HomeBaseResponse = z.infer<typeof HomeBaseResponseSchema>;
 export const HomeRecommendationsResponseSchema = z
     .object({
         recommendedPersonnel: z.array(HomeRecommendedPersonnelSchema),
+        page: z.number().int().min(1),
+        limit: z.number().int().min(1).max(50),
+        hasMore: z.boolean(),
+        nextPage: z.number().int().min(1).nullable().default(null),
     })
     .meta({
         title: "首页推荐响应",

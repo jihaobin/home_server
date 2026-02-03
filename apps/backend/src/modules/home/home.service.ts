@@ -55,7 +55,9 @@ export class HomeService {
     async getHomeRecommendations(
         query: HomeQuery,
     ): Promise<HomeRecommendationsResponse> {
-        const { maxDistanceKm = 10, limit = 20, lat, lng } = query;
+        const { maxDistanceKm = 10, limit = 20, page = 1, lat, lng } = query;
+        const normalizedPage = Math.max(1, page);
+        const offset = (normalizedPage - 1) * limit;
 
         // 需求：当客户端未传入地址坐标时，不做位置过滤，返回全量推荐并按原优先级（去掉距离）排序。
         const recommended =
@@ -64,13 +66,19 @@ export class HomeService {
                       center: [lng, lat],
                       maxDistanceKm,
                       limit,
+                      offset,
                   })
                 : await this.homeRepository.getRecommendedPersonnelGlobal({
                       limit,
+                      offset,
                   });
 
         return {
             recommendedPersonnel: recommended,
+            page: normalizedPage,
+            limit,
+            hasMore: recommended.length === limit,
+            nextPage: recommended.length === limit ? normalizedPage + 1 : null,
         };
     }
 }

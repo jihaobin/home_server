@@ -2,7 +2,7 @@ import type React from "react";
 import { Image as ExpoImage } from "expo-image";
 import { cssInterop, useColorScheme } from "nativewind";
 import { router } from "expo-router";
-import { Suspense } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef } from "react";
 import { Platform, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@repo/mobile-ui/components/ui/text";
@@ -10,10 +10,12 @@ import { Button } from "@repo/mobile-ui/components/ui/button";
 import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
 import { StatusBar } from "expo-status-bar";
 import { NAV_THEME } from "@repo/mobile-ui/lib/mobile-user-constants";
-import { useHomeBase, useHomeRecommendations } from "@repo/hooks/api/home";
+import { useHomeBase, useHomeRecommendationsInfinite } from "@repo/hooks/api/home";
+import { FlashList } from "@shopify/flash-list";
 import useLocation from "@repo/hooks/useLocation";
 import { useHomeLocationStore } from "@/stores/home-location-store";
 import type { SelectLocation } from "@/stores/address-store";
+import type { HomeRecommendedPersonnel } from "@repo/types";
 
 // Enable NativeWind `className` on expo-image.
 cssInterop(ExpoImage, { className: { target: "style" } });
@@ -146,6 +148,7 @@ type RemotePromoCardItem = {
     tag: string;
     price: number;
     imageUrl: string | null;
+    imageBlurhash?: string | null;
 };
 
 function RemotePromoCard({ item }: { item: RemotePromoCardItem }) {
@@ -154,7 +157,13 @@ function RemotePromoCard({ item }: { item: RemotePromoCardItem }) {
             {item.imageUrl ? (
                 <Image
                     source={{ uri: item.imageUrl }}
+                    placeholder={
+                        item.imageBlurhash
+                            ? { blurhash: item.imageBlurhash }
+                            : undefined
+                    }
                     contentFit="cover"
+                    transition={200}
                     className="w-32 h-20"
                 />
             ) : (
@@ -188,20 +197,27 @@ function RemoteProviderCard({
         scheduleLine1: string;
         scheduleLine2: string;
         avatarUrl: string | null;
+        avatarBlurhash?: string | null;
     };
 }) {
     const showDistance = Boolean(item.distanceText);
 
     return (
-        <View className="h-[298px] w-[167px] overflow-hidden rounded-xl border border-border bg-card">
+        <View className="h-[298px] w-[158px] overflow-hidden rounded-xl border border-border bg-card">
             {item.avatarUrl ? (
                 <Image
                     source={{ uri: item.avatarUrl }}
+                    placeholder={
+                        item.avatarBlurhash
+                            ? { blurhash: item.avatarBlurhash }
+                            : undefined
+                    }
                     contentFit="cover"
-                    className="h-[170px] w-[167px]"
+                    transition={200}
+                    className="h-[170px] w-[158px]"
                 />
             ) : (
-                <View className="h-[170px] w-[167px] bg-muted" />
+                <View className="h-[170px] w-[158px] bg-muted" />
             )}
             <View className="flex-1 px-2 pt-2">
                 <View className="flex-row items-center justify-between gap-1">
@@ -323,11 +339,32 @@ function HomeBaseSkeleton() {
     );
 }
 
-function RecommendationsSkeleton() {
+function HomeRecommendationsSkeleton() {
     return (
-        <View className="mx-4 mt-2 w-[343px] flex-row flex-wrap gap-[9px]">
+        <View className="mx-4 mt-2 w-[343px] flex-row flex-wrap justify-between gap-y-[9px]">
             {Array.from({ length: 4 }).map((_, idx) => (
-                <Skeleton key={idx} className="h-[298px] w-[167px] rounded-xl" />
+                <View
+                    key={idx}
+                    className="h-[298px] w-[158px] overflow-hidden rounded-xl border border-border bg-card"
+                >
+                    <Skeleton className="h-[170px] w-full" />
+                    <View className="flex-1 px-2 pt-2">
+                        <View className="flex-row items-center justify-between">
+                            <Skeleton className="h-4 w-[72px] rounded" />
+                            <Skeleton className="h-4 w-10 rounded" />
+                        </View>
+                        <View className="mt-2 flex-row items-center gap-1">
+                            <Skeleton className="h-3 w-3 rounded" />
+                            <Skeleton className="h-3 w-[80px] rounded" />
+                        </View>
+                        <Skeleton className="mt-2 h-3 w-[110px] rounded" />
+                        <Skeleton className="mt-1 h-3 w-[96px] rounded" />
+                        <View className="mt-2 flex-row items-center justify-between">
+                            <Skeleton className="h-4 w-10 rounded" />
+                            <Skeleton className="h-6 w-[52px] rounded-full" />
+                        </View>
+                    </View>
+                </View>
             ))}
         </View>
     );
@@ -343,7 +380,13 @@ function HomeBaseContent() {
                 {data.banners[0]?.imageUrl ? (
                     <Image
                         source={{ uri: data.banners[0].imageUrl }}
+                        placeholder={
+                            data.banners[0].imageBlurhash
+                                ? { blurhash: data.banners[0].imageBlurhash }
+                                : undefined
+                        }
                         contentFit="cover"
+                        transition={200}
                         className="h-full w-full"
                     />
                 ) : (
@@ -361,6 +404,11 @@ function HomeBaseContent() {
                         {"iconUrl" in item && item.iconUrl ? (
                             <Image
                                 source={{ uri: item.iconUrl }}
+                                placeholder={
+                                    ("iconBlurhash" in item && item.iconBlurhash)
+                                        ? { blurhash: item.iconBlurhash }
+                                        : undefined
+                                }
                                 contentFit="contain"
                                 className="h-3 w-3"
                             />
@@ -416,6 +464,7 @@ function HomeBaseContent() {
                                         tag: p.tag,
                                         price: p.price,
                                         imageUrl: p.imageUrl,
+                                        imageBlurhash: p.imageBlurhash,
                                     }}
                                 />
                             ))
@@ -427,19 +476,27 @@ function HomeBaseContent() {
     );
 }
 
-type HomeRecommendationsParams = Parameters<typeof useHomeRecommendations>[0];
 type HomeLocationState = ReturnType<typeof useLocation>;
 type HomeSelectedLocation = SelectLocation | null;
 
-function HomeRecommendationsContent({
-    params,
-}: {
-    params: HomeRecommendationsParams;
-}) {
-    const rec = useHomeRecommendations(params);
-    const data = rec.data;
+type HomeRecommendationsParams = Parameters<
+    typeof useHomeRecommendationsInfinite
+>[0];
 
-    if (!data.recommendedPersonnel.length) {
+function HomeRecommendationsContent({
+    items,
+    isInitialLoading,
+    isFetchingNextPage,
+}: {
+    items: readonly HomeRecommendedPersonnel[];
+    isInitialLoading: boolean;
+    isFetchingNextPage: boolean;
+}) {
+    if (isInitialLoading) {
+        return <HomeRecommendationsSkeleton />;
+    }
+
+    if (!items.length) {
         return (
             <Text className="mx-4 mt-2 text-xs text-muted-foreground font-puhui-regular">
                 暂无可推荐的服务人员
@@ -448,23 +505,40 @@ function HomeRecommendationsContent({
     }
 
     return (
-        <View className="mx-4 mt-2 w-[343px] flex-row flex-wrap gap-[9px]">
-            {data.recommendedPersonnel.map((p) => (
-                <RemoteProviderCard
-                    key={p.personnelId}
-                    item={{
-                        id: p.personnelId,
-                        name: p.name,
-                        tag: p.tag,
-                        price: p.minPrice,
-                        distanceText: formatDistanceKm(p.distanceKm),
-                        address: p.addressText,
-                        scheduleLine1: formatWorkDays(p.workDays),
-                        scheduleLine2: `${formatTimeHHmm(p.workStartTime)}-${formatTimeHHmm(p.workEndTime)}`,
-                        avatarUrl: p.avatarUrl,
-                    }}
-                />
-            ))}
+        <View className="mx-4 mt-2">
+            <FlashList
+                data={items}
+                numColumns={2}
+                keyExtractor={(item) => item.personnelId}
+                renderItem={({ item }) => (
+                    <View className="mb-[9px]">
+                        <RemoteProviderCard
+                            item={{
+                                id: item.personnelId,
+                                name: item.name,
+                                tag: item.tag,
+                                price: item.minPrice,
+                                distanceText: formatDistanceKm(item.distanceKm),
+                                address: item.addressText,
+                                scheduleLine1: formatWorkDays(item.workDays),
+                                scheduleLine2: `${formatTimeHHmm(item.workStartTime)}-${formatTimeHHmm(item.workEndTime)}`,
+                                avatarUrl: item.avatarUrl,
+                                avatarBlurhash: item.avatarBlurhash,
+                            }}
+                        />
+                    </View>
+                )}
+                ListFooterComponent={
+                    isFetchingNextPage ? (
+                        <View className="items-center justify-center py-3">
+                            <Text className="text-xs text-muted-foreground font-puhui-regular">
+                                加载中...
+                            </Text>
+                        </View>
+                    ) : null
+                }
+                scrollEnabled={false}
+            />
         </View>
     );
 }
@@ -473,18 +547,14 @@ function HomeRecommendationsSection({
     location,
     locationError,
     selectedLocation,
+    onReachedPageEnd,
 }: {
     location: HomeLocationState["location"];
     locationError: HomeLocationState["error"];
     selectedLocation: HomeSelectedLocation;
+    onReachedPageEnd: (fn: () => void) => void;
 }) {
     const hasManualLocation = Boolean(selectedLocation);
-    const locationResolved =
-        hasManualLocation || Boolean(location) || Boolean(locationError);
-
-    if (!locationResolved) {
-        return <RecommendationsSkeleton />;
-    }
 
     const lat = hasManualLocation ? selectedLocation?.lat : location?.latitude;
     const lng = hasManualLocation ? selectedLocation?.lng : location?.longitude;
@@ -507,10 +577,29 @@ function HomeRecommendationsSection({
         }
         : {};
 
+    const rec = useHomeRecommendationsInfinite(params);
+    const items = useMemo(
+        () => rec.data?.pages.flatMap((page) => page.recommendedPersonnel) ?? [],
+        [rec.data],
+    );
+
+    // 将“加载下一页”的回调交给父级 ScrollView 的 onScroll 触发，避免嵌套滚动。
+    const loadMore = useCallback(() => {
+        if (rec.hasNextPage && !rec.isFetchingNextPage) {
+            rec.fetchNextPage();
+        }
+    }, [rec]);
+
+    useEffect(() => {
+        onReachedPageEnd(loadMore);
+    }, [onReachedPageEnd, loadMore]);
+
     return (
-        <Suspense fallback={<RecommendationsSkeleton />}>
-            <HomeRecommendationsContent params={params} />
-        </Suspense>
+        <HomeRecommendationsContent
+            items={items}
+            isInitialLoading={rec.isLoading && !rec.data}
+            isFetchingNextPage={rec.isFetchingNextPage}
+        />
     );
 }
 
@@ -534,11 +623,34 @@ export default function HomeScreen() {
         location?.province ||
         "全国";
 
+    const loadMoreRef = useRef<null | (() => void)>(null);
+    const setLoadMore = useCallback((fn: () => void) => {
+        loadMoreRef.current = fn;
+    }, []);
+
+    // 无改动外层结构：通过外层 ScrollView 的滚动触底判断触发推荐列表拉取下一页。
+    const handleScroll = useCallback((event: any) => {
+        const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+        const paddingToBottom = 160;
+        const isNearBottom =
+            layoutMeasurement.height + contentOffset.y >=
+            contentSize.height - paddingToBottom;
+
+        if (isNearBottom) {
+            loadMoreRef.current?.();
+        }
+    }, []);
+
     return (
         <View className="flex-1 bg-background">
             <StatusBar style={colorScheme === "dark" ? "light" : "dark"} backgroundColor={statusBarBackground} />
             <StatusBarBackground color={statusBarBackground} />
-            <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+            <ScrollView
+                className="flex-1"
+                showsVerticalScrollIndicator={false}
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
+            >
                 <View className="pb-6">
                     <View className="bg-primary">
                         <SafeAreaView edges={["top"]}>
@@ -595,6 +707,7 @@ export default function HomeScreen() {
                         location={location}
                         locationError={locationError}
                         selectedLocation={selectedLocation}
+                        onReachedPageEnd={setLoadMore}
                     />
                 </View>
             </ScrollView>
