@@ -16,3 +16,4 @@ export * from "./pay";
 export * from "./app-release";
 export * from "./home";
 export * from "./home-admin";
+export * from "./chat";
