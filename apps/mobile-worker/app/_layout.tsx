@@ -17,10 +17,11 @@ import {
     useNotificationSocket,
     type NotificationSocketNotification,
 } from "../hooks/use-notification-socket";
+import { useChatSocket } from "../hooks/use-chat-socket";
 import { authClient } from "../lib/auth";
 import { AppUpdateProvider } from "@repo/mobile-ui/app-update/AppUpdateProvider";
 
-import Push from '@tencentcloud/react-native-push';
+import Push from "@tencentcloud/react-native-push";
 
 if (Platform.OS !== "web") {
     Notifications.setNotificationHandler({
@@ -36,7 +37,8 @@ if (Platform.OS !== "web") {
 
 const SDKAppID = Number(process.env.EXPO_PUBLIC_TENCENT_PUSH_SDK_APP_ID || 0); // 来自环境变量
 const appKey = process.env.EXPO_PUBLIC_TENCENT_PUSH_APP_KEY; // 来自环境变量
-const canInitPush = !!Push && Number.isFinite(SDKAppID) && SDKAppID > 0 && !!appKey;
+const canInitPush =
+    !!Push && Number.isFinite(SDKAppID) && SDKAppID > 0 && !!appKey;
 
 type RegistrationListener = (registrationId: string) => void;
 const registrationIdListeners = new Set<RegistrationListener>();
@@ -118,7 +120,10 @@ export default function RootLayout() {
         );
 
         // 监听在线推送
-        Push.addPushListener(Push.EVENT.MESSAGE_RECEIVED, handleMessageReceived);
+        Push.addPushListener(
+            Push.EVENT.MESSAGE_RECEIVED,
+            handleMessageReceived,
+        );
 
         // 监听在线推送被撤回
         Push.addPushListener(Push.EVENT.MESSAGE_REVOKED, handleMessageRevoked);
@@ -148,7 +153,11 @@ export default function RootLayout() {
         if (Platform.OS === "web") {
             // Adds the background color to the html element to prevent white background on overscroll.
             const doc = (globalThis as Record<string, unknown>).document as
-                | { documentElement?: { classList?: { add: (value: string) => void } } }
+                | {
+                      documentElement?: {
+                          classList?: { add: (value: string) => void };
+                      };
+                  }
                 | undefined;
             doc?.documentElement?.classList?.add("bg-background");
         }
@@ -165,7 +174,9 @@ export default function RootLayout() {
             <Provider authClient={authClient}>
                 <AppUpdateProvider app="mobile-worker">
                     <ThemeProvider value={NAV_THEME[colorScheme ?? "light"]}>
-                        <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+                        <StatusBar
+                            style={colorScheme === "dark" ? "light" : "dark"}
+                        />
                         <RootNavigation />
                         <PortalHost />
                     </ThemeProvider>
@@ -185,15 +196,20 @@ function RootNavigation() {
             {isAuthenticated ? (
                 <NotificationSocketBridge enabled={isAuthenticated} />
             ) : null}
+            {isAuthenticated ? (
+                <ChatSocketBridge enabled={isAuthenticated} />
+            ) : null}
             <Stack
                 screenOptions={{
                     header: () => null,
                     headerShown: false,
                     headerBackTitle: "返回",
                     headerStyle: {
-                        backgroundColor: NAV_THEME[colorScheme ?? "light"].colors.card,
+                        backgroundColor:
+                            NAV_THEME[colorScheme ?? "light"].colors.card,
                     },
-                    headerTintColor: NAV_THEME[colorScheme ?? "light"].colors.primary,
+                    headerTintColor:
+                        NAV_THEME[colorScheme ?? "light"].colors.primary,
                     headerTitleStyle: {
                         color: NAV_THEME[colorScheme ?? "light"].colors.text,
                     },
@@ -290,6 +306,19 @@ function RootNavigation() {
     );
 }
 
+function ChatSocketBridge({ enabled }: { enabled: boolean }) {
+    const { lastError } = useChatSocket({ enabled });
+
+    React.useEffect(() => {
+        if (!enabled || !lastError) {
+            return;
+        }
+        toast.error(`聊天连接异常：${lastError}`);
+    }, [enabled, lastError]);
+
+    return null;
+}
+
 function NotificationSocketBridge({ enabled }: { enabled: boolean }) {
     const queryClient = useQueryClient();
     useNotificationPermission(enabled);
@@ -298,11 +327,11 @@ function NotificationSocketBridge({ enabled }: { enabled: boolean }) {
     const invalidateOrders = React.useCallback(
         async (orderId?: string) => {
             await queryClient.invalidateQueries({
-                queryKey: ['staff-orders-list'],
+                queryKey: ["staff-orders-list"],
             });
             if (orderId) {
                 await queryClient.invalidateQueries({
-                    queryKey: ['order-detail', orderId],
+                    queryKey: ["order-detail", orderId],
                 });
             }
         },
@@ -310,42 +339,48 @@ function NotificationSocketBridge({ enabled }: { enabled: boolean }) {
     );
 
     const buildNotificationContent = React.useCallback(
-        (payload: NotificationSocketNotification['payload']) => {
+        (payload: NotificationSocketNotification["payload"]) => {
             const orderLabel =
                 payload.serviceName ??
-                (payload.orderId ? `订单 ${payload.orderId}` : '订单');
+                (payload.orderId ? `订单 ${payload.orderId}` : "订单");
             switch (payload.event) {
-                case 'order_pending_acceptance_assigned':
+                case "order_pending_acceptance_assigned":
                     return {
-                        title: '新订单待接单',
+                        title: "新订单待接单",
                         body:
                             payload.message ??
                             `${orderLabel} 待接单，请尽快处理`,
                     };
-                case 'order_cancelled':
+                case "order_cancelled":
                     return {
-                        title: '订单已取消',
-                        body: payload.message ?? '订单已被取消，请查看原因',
+                        title: "订单已取消",
+                        body: payload.message ?? "订单已被取消，请查看原因",
                     };
-                case 'order_payment_expired':
+                case "order_payment_expired":
                     return {
-                        title: '订单支付超时',
-                        body: payload.message ?? '客户支付超时，订单自动取消',
+                        title: "订单支付超时",
+                        body: payload.message ?? "客户支付超时，订单自动取消",
                     };
-                case 'order_pending_acceptance_warning':
+                case "order_pending_acceptance_warning":
                     return {
-                        title: '接单提醒',
-                        body: payload.message ?? `${orderLabel} 即将超时，请尽快操作`,
+                        title: "接单提醒",
+                        body:
+                            payload.message ??
+                            `${orderLabel} 即将超时，请尽快操作`,
                     };
-                case 'order_service_eta_warning':
+                case "order_service_eta_warning":
                     return {
-                        title: '上门提醒',
-                        body: payload.message ?? `${orderLabel} 即将开始，请不要迟到`,
+                        title: "上门提醒",
+                        body:
+                            payload.message ??
+                            `${orderLabel} 即将开始，请不要迟到`,
                     };
                 default:
                     return {
-                        title: '订单提醒',
-                        body: payload.message ?? '您有新的订单消息，请打开应用查看',
+                        title: "订单提醒",
+                        body:
+                            payload.message ??
+                            "您有新的订单消息，请打开应用查看",
                     };
             }
         },
@@ -353,8 +388,8 @@ function NotificationSocketBridge({ enabled }: { enabled: boolean }) {
     );
 
     const presentNativeNotification = React.useCallback(
-        async (payload: NotificationSocketNotification['payload']) => {
-            if (Platform.OS === 'web') {
+        async (payload: NotificationSocketNotification["payload"]) => {
+            if (Platform.OS === "web") {
                 return;
             }
             try {
@@ -370,7 +405,7 @@ function NotificationSocketBridge({ enabled }: { enabled: boolean }) {
                     trigger: null,
                 });
             } catch (error) {
-                console.warn('[notification] 发送系统通知失败', error);
+                console.warn("[notification] 发送系统通知失败", error);
             }
         },
         [buildNotificationContent],
@@ -384,10 +419,9 @@ function NotificationSocketBridge({ enabled }: { enabled: boolean }) {
             }
             const orderId = payload.orderId;
             switch (payload.event) {
-                case 'order_pending_acceptance_assigned': {
+                case "order_pending_acceptance_assigned": {
                     const label =
-                        payload.serviceName ??
-                        `订单 ${orderId ?? ''}`.trim();
+                        payload.serviceName ?? `订单 ${orderId ?? ""}`.trim();
                     toast.success(
                         payload.message ?? `${label} 待接单，请尽快处理`,
                     );
@@ -395,23 +429,21 @@ function NotificationSocketBridge({ enabled }: { enabled: boolean }) {
                     void presentNativeNotification(payload);
                     break;
                 }
-                case 'order_cancelled': {
-                    toast.warning(
-                        payload.message ?? '订单已取消，请查看原因',
-                    );
+                case "order_cancelled": {
+                    toast.warning(payload.message ?? "订单已取消，请查看原因");
                     void invalidateOrders(orderId);
                     void presentNativeNotification(payload);
                     break;
                 }
-                case 'order_payment_expired': {
-                    toast.info(payload.message ?? '订单支付已超时');
+                case "order_payment_expired": {
+                    toast.info(payload.message ?? "订单支付已超时");
                     void invalidateOrders(orderId);
                     void presentNativeNotification(payload);
                     break;
                 }
-                case 'order_pending_acceptance_warning':
-                case 'order_service_eta_warning': {
-                    toast.info(payload.message ?? '订单提醒');
+                case "order_pending_acceptance_warning":
+                case "order_service_eta_warning": {
+                    toast.info(payload.message ?? "订单提醒");
                     void presentNativeNotification(payload);
                     break;
                 }
@@ -457,7 +489,7 @@ const useIsomorphicLayoutEffect =
 
 function useNotificationPermission(enabled: boolean) {
     React.useEffect(() => {
-        if (!enabled || Platform.OS === 'web') {
+        if (!enabled || Platform.OS === "web") {
             return;
         }
         let active = true;
@@ -471,7 +503,7 @@ function useNotificationPermission(enabled: boolean) {
                     await Notifications.requestPermissionsAsync();
                 }
             } catch (error) {
-                console.warn('[notification] 请求通知权限失败', error);
+                console.warn("[notification] 请求通知权限失败", error);
             }
         })();
         return () => {

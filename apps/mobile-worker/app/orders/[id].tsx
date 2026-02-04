@@ -5,6 +5,7 @@ import {
     useOrderDetail,
     useRejectOrder,
 } from "@repo/hooks/api/order";
+import { useChatUpsertConversation } from "@repo/hooks/api/chat";
 import type { AssignmentDecisionStatus } from "@repo/types";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { Suspense, useState } from "react";
@@ -126,12 +127,23 @@ const DetailSkeleton = () => (
     </View>
 );
 
-function DetailErrorFallback({ error, resetErrorBoundary }: { error: Error; resetErrorBoundary: () => void }) {
+function DetailErrorFallback({
+    error,
+    resetErrorBoundary,
+}: {
+    error: Error;
+    resetErrorBoundary: () => void;
+}) {
     return (
         <View style={styles.errorContainer}>
             <Text style={styles.errorTitle}>无法加载订单</Text>
-            <Text style={styles.errorMessage}>{error.message || "请稍后再试"}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={resetErrorBoundary}>
+            <Text style={styles.errorMessage}>
+                {error.message || "请稍后再试"}
+            </Text>
+            <TouchableOpacity
+                style={styles.retryButton}
+                onPress={resetErrorBoundary}
+            >
                 <Text style={styles.retryText}>重新加载</Text>
             </TouchableOpacity>
         </View>
@@ -158,19 +170,29 @@ const InfoRow = ({ icon, label, value }: InfoRowProps) => (
     </View>
 );
 
-type TimelineItem = { key: string; label: string; value: string; note?: string };
+type TimelineItem = {
+    key: string;
+    label: string;
+    value: string;
+    note?: string;
+};
 
 export default function OrderDetailScreen() {
     const router = useRouter();
     const params = useLocalSearchParams<{ id?: string | string[] }>();
     const orderIdParam = params.id;
-    const orderId = Array.isArray(orderIdParam) ? orderIdParam[0] : orderIdParam;
+    const orderId = Array.isArray(orderIdParam)
+        ? orderIdParam[0]
+        : orderIdParam;
 
     if (!orderId) {
         return (
             <View style={styles.errorContainer}>
                 <Text style={styles.errorTitle}>未找到订单</Text>
-                <TouchableOpacity style={styles.retryButton} onPress={() => router.back()}>
+                <TouchableOpacity
+                    style={styles.retryButton}
+                    onPress={() => router.back()}
+                >
                     <Text style={styles.retryText}>返回订单列表</Text>
                 </TouchableOpacity>
             </View>
@@ -189,26 +211,34 @@ export default function OrderDetailScreen() {
 function OrderDetailContent({ orderId }: { orderId: string }) {
     const router = useRouter();
     const { data: order } = useOrderDetail(orderId);
+    const upsertChatConversation = useChatUpsertConversation();
     const cancelOrder = useCancelOrder();
     const acceptOrder = useAcceptOrder();
     const rejectOrder = useRejectOrder();
     const [cancelModalVisible, setCancelModalVisible] = useState(false);
     const [cancelReason, setCancelReason] = useState(DEFAULT_CANCEL_REASON);
-    const [cancelReasonError, setCancelReasonError] = useState<string | null>(null);
+    const [cancelReasonError, setCancelReasonError] = useState<string | null>(
+        null,
+    );
     const [rejectModalVisible, setRejectModalVisible] = useState(false);
     const [rejectReason, setRejectReason] = useState("无法提供服务：行程冲突");
-    const [rejectReasonError, setRejectReasonError] = useState<string | null>(null);
+    const [rejectReasonError, setRejectReasonError] = useState<string | null>(
+        null,
+    );
 
-    const statusMeta = ORDER_STATUS_DISPLAY[order.status] ?? ORDER_STATUS_DISPLAY.cancelled;
+    const statusMeta =
+        ORDER_STATUS_DISPLAY[order.status] ?? ORDER_STATUS_DISPLAY.cancelled;
     const assignmentDecision = order.assignment?.decisionStatus ?? null;
     const decisionMeta = assignmentDecision
         ? DECISION_STATUS_DISPLAY[assignmentDecision]
         : null;
     const canDecideAssignment =
-        order.status === "pending_acceptance" && assignmentDecision === "pending";
+        order.status === "pending_acceptance" &&
+        assignmentDecision === "pending";
     const canCancel = ["paid", "in_progress"].includes(order.status as string);
     const description =
-        (order as { remark?: string; note?: string; description?: string }).remark ??
+        (order as { remark?: string; note?: string; description?: string })
+            .remark ??
         (order as { note?: string; description?: string }).note ??
         (order as { note?: string; description?: string }).description ??
         "暂无补充说明";
@@ -238,10 +268,11 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
         : "无优惠";
     const amountTotalText = formatCurrency(order.totalAmount);
     const assignmentTypeLabel = assignment?.assignmentType
-        ? ASSIGNMENT_TYPE_LABELS[assignment.assignmentType] ?? "系统派单"
+        ? (ASSIGNMENT_TYPE_LABELS[assignment.assignmentType] ?? "系统派单")
         : "系统派单";
     const decisionDescription =
-        decisionMeta?.description ?? "系统正在同步派单状态，稍后刷新即可查看最新结果。";
+        decisionMeta?.description ??
+        "系统正在同步派单状态，稍后刷新即可查看最新结果。";
     const assignedAtText = formatDateTime(assignment?.assignedAt);
     const acceptedAtText = formatDateTime(assignment?.acceptedAt);
     const rejectedAtText = formatDateTime(assignment?.rejectedAt);
@@ -359,14 +390,55 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
             Alert.alert("拒绝失败", (error as Error)?.message ?? "请稍后再试");
         }
     };
+
+    const handleChatWithCustomer = async () => {
+        try {
+            const peerUserId = (order as { customerId?: string }).customerId;
+            if (!peerUserId) {
+                Alert.alert("无法发起聊天", "未找到客户账号信息");
+                return;
+            }
+            const conversation = await upsertChatConversation.mutateAsync({
+                peerUserId,
+            });
+            router.push(`/chat/${conversation.id}` as never);
+        } catch (error) {
+            Alert.alert(
+                "发起聊天失败",
+                (error as Error)?.message ?? "请稍后再试",
+            );
+        }
+    };
+
+    const handleSendOrderCardToCustomer = async () => {
+        try {
+            const peerUserId = (order as { customerId?: string }).customerId;
+            if (!peerUserId) {
+                Alert.alert("无法发送", "未找到客户账号信息");
+                return;
+            }
+            const conversation = await upsertChatConversation.mutateAsync({
+                peerUserId,
+            });
+            router.push(
+                `/chat/${conversation.id}?draftOrderId=${encodeURIComponent(order.id)}` as never,
+            );
+        } catch (error) {
+            Alert.alert("发送失败", (error as Error)?.message ?? "请稍后再试");
+        }
+    };
     return (
         <SafeAreaView style={styles.container}>
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 <View style={styles.card}>
                     <View style={styles.orderHeader}>
                         <View style={{ flex: 1 }}>
-                            <Text style={styles.orderService}>{order.service?.name ?? "未知服务"}</Text>
-                            <Text style={styles.orderSerial}>订单号：{order.orderSerial}</Text>
+                            <Text style={styles.orderService}>
+                                {order.service?.name ?? "未知服务"}
+                            </Text>
+                            <Text style={styles.orderSerial}>
+                                订单号：{order.orderSerial}
+                            </Text>
                         </View>
                         <View style={styles.headerBadges}>
                             <View
@@ -375,7 +447,9 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                                     { backgroundColor: statusMeta.color },
                                 ]}
                             >
-                                <Text style={styles.statusText}>{statusMeta.label}</Text>
+                                <Text style={styles.statusText}>
+                                    {statusMeta.label}
+                                </Text>
                             </View>
                             {decisionMeta ? (
                                 <View
@@ -396,12 +470,18 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                             ) : null}
                         </View>
                     </View>
-                    <Text style={styles.statusDescription}>{statusMeta.description}</Text>
+                    <Text style={styles.statusDescription}>
+                        {statusMeta.description}
+                    </Text>
                     <View style={styles.summaryGrid}>
                         {summaryMetrics.map((item) => (
                             <View key={item.key} style={styles.summaryTile}>
-                                <Text style={styles.summaryTileLabel}>{item.label}</Text>
-                                <Text style={styles.summaryTileValue}>{item.value}</Text>
+                                <Text style={styles.summaryTileLabel}>
+                                    {item.label}
+                                </Text>
+                                <Text style={styles.summaryTileValue}>
+                                    {item.value}
+                                </Text>
                             </View>
                         ))}
                     </View>
@@ -412,14 +492,24 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                     <View style={styles.amountRow}>
                         <View style={[styles.amountBox, styles.amountHalfBox]}>
                             <Text style={styles.amountLabel}>原价金额</Text>
-                            <Text style={styles.amountValue}>{amountOriginalText}</Text>
+                            <Text style={styles.amountValue}>
+                                {amountOriginalText}
+                            </Text>
                         </View>
-                        <View style={[styles.amountBox, styles.amountHalfBox, styles.amountHalfBoxLast]}>
+                        <View
+                            style={[
+                                styles.amountBox,
+                                styles.amountHalfBox,
+                                styles.amountHalfBoxLast,
+                            ]}
+                        >
                             <Text style={styles.amountLabel}>优惠抵扣</Text>
                             <Text
                                 style={[
                                     styles.amountValue,
-                                    order.discountAmount ? styles.amountDiscount : styles.amountMuted,
+                                    order.discountAmount
+                                        ? styles.amountDiscount
+                                        : styles.amountMuted,
                                 ]}
                             >
                                 {amountDiscountText}
@@ -429,7 +519,9 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                     <View style={styles.amountRow}>
                         <View style={styles.amountBox}>
                             <Text style={styles.amountLabel}>应付金额</Text>
-                            <Text style={styles.amountTotal}>{amountTotalText}</Text>
+                            <Text style={styles.amountTotal}>
+                                {amountTotalText}
+                            </Text>
                             <Text style={styles.amountHint}>{couponText}</Text>
                         </View>
                     </View>
@@ -437,9 +529,43 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
 
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>服务地点与客户信息</Text>
-                    <InfoRow icon="person-circle-outline" label="联系人" value={contactName} />
-                    <InfoRow icon="call-outline" label="联系电话" value={contactPhone} />
-                    <InfoRow icon="navigate-outline" label="服务地址" value={addressText} />
+                    <InfoRow
+                        icon="person-circle-outline"
+                        label="联系人"
+                        value={contactName}
+                    />
+                    <InfoRow
+                        icon="call-outline"
+                        label="联系电话"
+                        value={contactPhone}
+                    />
+                    <InfoRow
+                        icon="navigate-outline"
+                        label="服务地址"
+                        value={addressText}
+                    />
+                    <TouchableOpacity
+                        style={styles.chatButton}
+                        onPress={handleChatWithCustomer}
+                        disabled={upsertChatConversation.isPending}
+                    >
+                        <Text style={styles.chatButtonText}>
+                            {upsertChatConversation.isPending
+                                ? "正在打开..."
+                                : "联系客户"}
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.chatButton}
+                        onPress={handleSendOrderCardToCustomer}
+                        disabled={upsertChatConversation.isPending}
+                    >
+                        <Text style={styles.chatButtonText}>
+                            {upsertChatConversation.isPending
+                                ? "正在打开..."
+                                : "发送订单卡片"}
+                        </Text>
+                    </TouchableOpacity>
                 </View>
 
                 <View style={styles.card}>
@@ -459,17 +585,29 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                             <View key={item.key} style={styles.timelineRow}>
                                 <View style={styles.timelineIndicator}>
                                     <View style={styles.timelineDot} />
-                                    {index < timelineItems.length - 1 ? <View style={styles.timelineLine} /> : null}
+                                    {index < timelineItems.length - 1 ? (
+                                        <View style={styles.timelineLine} />
+                                    ) : null}
                                 </View>
                                 <View style={styles.timelineContent}>
-                                    <Text style={styles.timelineLabel}>{item.label}</Text>
-                                    <Text style={styles.timelineValue}>{item.value}</Text>
-                                    {item.note ? <Text style={styles.timelineNote}>{item.note}</Text> : null}
+                                    <Text style={styles.timelineLabel}>
+                                        {item.label}
+                                    </Text>
+                                    <Text style={styles.timelineValue}>
+                                        {item.value}
+                                    </Text>
+                                    {item.note ? (
+                                        <Text style={styles.timelineNote}>
+                                            {item.note}
+                                        </Text>
+                                    ) : null}
                                 </View>
                             </View>
                         ))
                     ) : (
-                        <Text style={styles.descText}>暂无进展记录，完成接单后即可查看时间节点。</Text>
+                        <Text style={styles.descText}>
+                            暂无进展记录，完成接单后即可查看时间节点。
+                        </Text>
                     )}
                 </View>
 
@@ -477,7 +615,11 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                     <Text style={styles.cardTitle}>派单信息</Text>
                     {assignment ? (
                         <>
-                            <InfoRow icon="swap-horizontal-outline" label="指派方式" value={assignmentTypeLabel} />
+                            <InfoRow
+                                icon="swap-horizontal-outline"
+                                label="指派方式"
+                                value={assignmentTypeLabel}
+                            />
                             <InfoRow
                                 icon="people-outline"
                                 label="接单状态"
@@ -485,32 +627,56 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                                     <Text
                                         style={[
                                             styles.assignmentStatusText,
-                                            { color: decisionMeta?.color ?? "#333" },
+                                            {
+                                                color:
+                                                    decisionMeta?.color ??
+                                                    "#333",
+                                            },
                                         ]}
                                     >
                                         {decisionMeta?.label ?? "未指派"}
                                     </Text>
                                 }
                             />
-                            <Text style={styles.decisionDescription}>{decisionDescription}</Text>
+                            <Text style={styles.decisionDescription}>
+                                {decisionDescription}
+                            </Text>
                             {assignedAtText ? (
-                                <InfoRow icon="time-outline" label="派单时间" value={assignedAtText} />
+                                <InfoRow
+                                    icon="time-outline"
+                                    label="派单时间"
+                                    value={assignedAtText}
+                                />
                             ) : null}
                             {acceptedAtText ? (
-                                <InfoRow icon="checkmark-circle-outline" label="接单时间" value={acceptedAtText} />
+                                <InfoRow
+                                    icon="checkmark-circle-outline"
+                                    label="接单时间"
+                                    value={acceptedAtText}
+                                />
                             ) : null}
                             {rejectedAtText ? (
-                                <InfoRow icon="close-circle-outline" label="拒绝时间" value={rejectedAtText} />
+                                <InfoRow
+                                    icon="close-circle-outline"
+                                    label="拒绝时间"
+                                    value={rejectedAtText}
+                                />
                             ) : null}
                             {assignment.rejectReason ? (
                                 <View style={styles.noticeBox}>
-                                    <Text style={styles.noticeLabel}>拒绝原因</Text>
-                                    <Text style={styles.noticeText}>{assignment.rejectReason}</Text>
+                                    <Text style={styles.noticeLabel}>
+                                        拒绝原因
+                                    </Text>
+                                    <Text style={styles.noticeText}>
+                                        {assignment.rejectReason}
+                                    </Text>
                                 </View>
                             ) : null}
                         </>
                     ) : (
-                        <Text style={styles.descText}>该订单尚未派单，等待系统调度。</Text>
+                        <Text style={styles.descText}>
+                            该订单尚未派单，等待系统调度。
+                        </Text>
                     )}
                 </View>
 
@@ -535,21 +701,37 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                     {canDecideAssignment ? (
                         <>
                             <TouchableOpacity
-                                style={[styles.actionButton, styles.rejectButton]}
+                                style={[
+                                    styles.actionButton,
+                                    styles.rejectButton,
+                                ]}
                                 onPress={openRejectModal}
-                                disabled={rejectOrder.isPending || acceptOrder.isPending}
+                                disabled={
+                                    rejectOrder.isPending ||
+                                    acceptOrder.isPending
+                                }
                             >
                                 <Text style={styles.rejectText}>
-                                    {rejectOrder.isPending ? "拒绝中..." : "拒绝接单"}
+                                    {rejectOrder.isPending
+                                        ? "拒绝中..."
+                                        : "拒绝接单"}
                                 </Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                                style={[styles.actionButton, styles.acceptButton]}
+                                style={[
+                                    styles.actionButton,
+                                    styles.acceptButton,
+                                ]}
                                 onPress={handleAccept}
-                                disabled={acceptOrder.isPending || rejectOrder.isPending}
+                                disabled={
+                                    acceptOrder.isPending ||
+                                    rejectOrder.isPending
+                                }
                             >
                                 <Text style={styles.acceptText}>
-                                    {acceptOrder.isPending ? "确认中..." : "确认接单"}
+                                    {acceptOrder.isPending
+                                        ? "确认中..."
+                                        : "确认接单"}
                                 </Text>
                             </TouchableOpacity>
                         </>
@@ -561,7 +743,9 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                             disabled={cancelOrder.isPending}
                         >
                             <Text style={styles.cancelText}>
-                                {cancelOrder.isPending ? "取消中..." : "取消订单"}
+                                {cancelOrder.isPending
+                                    ? "取消中..."
+                                    : "取消订单"}
                             </Text>
                         </TouchableOpacity>
                     ) : null}
@@ -577,15 +761,22 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                 <View style={styles.modalBackdrop}>
                     <KeyboardAvoidingView
                         style={styles.modalWrapper}
-                        behavior={Platform.select({ ios: "padding", android: undefined })}
+                        behavior={Platform.select({
+                            ios: "padding",
+                            android: undefined,
+                        })}
                     >
                         <View style={styles.modalCard}>
                             <Text style={styles.modalTitle}>填写取消原因</Text>
-                            <Text style={styles.modalSubtitle}>该原因会同步给客服与用户，便于后续跟进。</Text>
+                            <Text style={styles.modalSubtitle}>
+                                该原因会同步给客服与用户，便于后续跟进。
+                            </Text>
                             <TextInput
                                 style={[
                                     styles.reasonInput,
-                                    cancelReasonError ? styles.inputError : null,
+                                    cancelReasonError
+                                        ? styles.inputError
+                                        : null,
                                 ]}
                                 value={cancelReason}
                                 onChangeText={(value) => {
@@ -601,21 +792,29 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                                 editable={!cancelOrder.isPending}
                             />
                             {cancelReasonError ? (
-                                <Text style={styles.inputErrorText}>{cancelReasonError}</Text>
+                                <Text style={styles.inputErrorText}>
+                                    {cancelReasonError}
+                                </Text>
                             ) : null}
                             <View style={styles.modalActions}>
                                 <TouchableOpacity
-                                    style={[styles.modalButton, styles.modalCancelButton]}
+                                    style={[
+                                        styles.modalButton,
+                                        styles.modalCancelButton,
+                                    ]}
                                     onPress={closeCancelModal}
                                     disabled={cancelOrder.isPending}
                                 >
-                                    <Text style={styles.modalCancelText}>返回</Text>
+                                    <Text style={styles.modalCancelText}>
+                                        返回
+                                    </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                     style={[
                                         styles.modalButton,
                                         styles.modalConfirmButton,
-                                        cancelOrder.isPending && styles.modalButtonDisabled,
+                                        cancelOrder.isPending &&
+                                            styles.modalButtonDisabled,
                                     ]}
                                     onPress={handleCancelConfirm}
                                     disabled={cancelOrder.isPending}
@@ -623,7 +822,9 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                                     {cancelOrder.isPending ? (
                                         <ActivityIndicator color="#fff" />
                                     ) : (
-                                        <Text style={styles.modalConfirmText}>确认取消</Text>
+                                        <Text style={styles.modalConfirmText}>
+                                            确认取消
+                                        </Text>
                                     )}
                                 </TouchableOpacity>
                             </View>
@@ -641,7 +842,10 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                 <View style={styles.modalBackdrop}>
                     <KeyboardAvoidingView
                         style={styles.modalWrapper}
-                        behavior={Platform.select({ ios: "padding", android: undefined })}
+                        behavior={Platform.select({
+                            ios: "padding",
+                            android: undefined,
+                        })}
                     >
                         <View style={styles.modalCard}>
                             <Text style={styles.modalTitle}>填写拒绝原因</Text>
@@ -651,7 +855,9 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                             <TextInput
                                 style={[
                                     styles.reasonInput,
-                                    rejectReasonError ? styles.inputError : null,
+                                    rejectReasonError
+                                        ? styles.inputError
+                                        : null,
                                 ]}
                                 value={rejectReason}
                                 onChangeText={(value) => {
@@ -667,21 +873,29 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                                 editable={!rejectOrder.isPending}
                             />
                             {rejectReasonError ? (
-                                <Text style={styles.inputErrorText}>{rejectReasonError}</Text>
+                                <Text style={styles.inputErrorText}>
+                                    {rejectReasonError}
+                                </Text>
                             ) : null}
                             <View style={styles.modalActions}>
                                 <TouchableOpacity
-                                    style={[styles.modalButton, styles.modalCancelButton]}
+                                    style={[
+                                        styles.modalButton,
+                                        styles.modalCancelButton,
+                                    ]}
                                     onPress={closeRejectModal}
                                     disabled={rejectOrder.isPending}
                                 >
-                                    <Text style={styles.modalCancelText}>返回</Text>
+                                    <Text style={styles.modalCancelText}>
+                                        返回
+                                    </Text>
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                     style={[
                                         styles.modalButton,
                                         styles.modalConfirmButton,
-                                        rejectOrder.isPending && styles.modalButtonDisabled,
+                                        rejectOrder.isPending &&
+                                            styles.modalButtonDisabled,
                                     ]}
                                     onPress={handleRejectConfirm}
                                     disabled={rejectOrder.isPending}
@@ -689,7 +903,9 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                                     {rejectOrder.isPending ? (
                                         <ActivityIndicator color="#fff" />
                                     ) : (
-                                        <Text style={styles.modalConfirmText}>确认拒绝</Text>
+                                        <Text style={styles.modalConfirmText}>
+                                            确认拒绝
+                                        </Text>
                                     )}
                                 </TouchableOpacity>
                             </View>
@@ -728,7 +944,7 @@ function formatDateTime(value?: string | Date | null) {
 }
 
 function formatCurrency(value?: number | string | null) {
-    const amount = typeof value === "string" ? Number(value) : value ?? 0;
+    const amount = typeof value === "string" ? Number(value) : (value ?? 0);
     return `¥${amount.toFixed(2)}`;
 }
 
@@ -942,7 +1158,18 @@ const styles = StyleSheet.create({
         backgroundColor: "#2196F3",
         alignItems: "center",
     },
+    chatButton: {
+        marginTop: 12,
+        paddingVertical: 10,
+        borderRadius: 8,
+        backgroundColor: "#4CAF50",
+        alignItems: "center",
+    },
     scanButtonText: {
+        color: "white",
+        fontWeight: "bold",
+    },
+    chatButtonText: {
         color: "white",
         fontWeight: "bold",
     },

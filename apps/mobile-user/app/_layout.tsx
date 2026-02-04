@@ -11,8 +11,10 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Provider } from "@repo/mobile-ui/components/provider";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { Toaster } from "sonner-native";
+import { toast } from "sonner-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppUpdateProvider } from "@repo/mobile-ui/app-update/AppUpdateProvider";
+import { useChatSocket } from "../hooks/use-chat-socket";
 
 export default function RootLayout() {
     const hasMounted = React.useRef(false);
@@ -29,7 +31,11 @@ export default function RootLayout() {
         if (Platform.OS === "web") {
             // Adds the background color to the html element to prevent white background on overscroll.
             const doc = (globalThis as Record<string, unknown>).document as
-                | { documentElement?: { classList?: { add: (value: string) => void } } }
+                | {
+                      documentElement?: {
+                          classList?: { add: (value: string) => void };
+                      };
+                  }
                 | undefined;
             doc?.documentElement?.classList?.add("bg-background");
         }
@@ -46,7 +52,9 @@ export default function RootLayout() {
             <Provider>
                 <AppUpdateProvider app="mobile-user">
                     <ThemeProvider value={navTheme}>
-                        <StatusBar style={colorScheme === "dark" ? "light" : "dark"} />
+                        <StatusBar
+                            style={colorScheme === "dark" ? "light" : "dark"}
+                        />
                         <RootNavigation />
                         <PortalHost />
                         <Toaster />
@@ -60,85 +68,106 @@ export default function RootLayout() {
 function RootNavigation() {
     const { colorScheme } = useColorScheme();
     const { session } = useSession();
+    const isAuthenticated = !!session?.user?.id;
 
     return (
-        <Stack
-            screenOptions={{
-                headerShown: false,
-                headerBackTitle: "返回", // 为返回按钮添加文字
-                headerStyle: {
-                    backgroundColor: NAV_THEME[colorScheme ?? "light"].colors.card, // 动态设置导航栏背景颜色
-                },
-                headerTintColor: NAV_THEME[colorScheme ?? "light"].colors.primary, // 动态设置返回按钮和标题颜色
-                headerTitleStyle: {
-                    color: NAV_THEME[colorScheme ?? "light"].colors.text, // 动态设置标题文字颜色
-                },
-            }}
-        >
-            <Stack.Protected guard={!!session?.user.id}>
-                <Stack.Screen
-                    name="(tabs)"
-                    options={{
-                        headerShown: false,
-                    }}
-                />
+        <>
+            {isAuthenticated ? (
+                <ChatSocketBridge enabled={isAuthenticated} />
+            ) : null}
+            <Stack
+                screenOptions={{
+                    headerShown: false,
+                    headerBackTitle: "返回", // 为返回按钮添加文字
+                    headerStyle: {
+                        backgroundColor:
+                            NAV_THEME[colorScheme ?? "light"].colors.card, // 动态设置导航栏背景颜色
+                    },
+                    headerTintColor:
+                        NAV_THEME[colorScheme ?? "light"].colors.primary, // 动态设置返回按钮和标题颜色
+                    headerTitleStyle: {
+                        color: NAV_THEME[colorScheme ?? "light"].colors.text, // 动态设置标题文字颜色
+                    },
+                }}
+            >
+                <Stack.Protected guard={!!session?.user.id}>
+                    <Stack.Screen
+                        name="(tabs)"
+                        options={{
+                            headerShown: false,
+                        }}
+                    />
 
-                <Stack.Screen
-                    name="address/edit-address"
-                    options={{
-                        headerShown: true,
-                    }}
-                />
-                <Stack.Screen
-                    name="address/service-address"
-                    options={{
-                        title: "服务地址",
-                        headerShown: true,
-                    }}
-                />
-                <Stack.Screen
-                    name="address/select-city"
-                    options={{
-                        title: "服务地址",
-                        headerShown: true,
-                    }}
-                />
-                <Stack.Screen
-                    name="address/select-address"
-                    options={{
-                        title: "详细地址",
-                        headerShown: true,
-                    }}
-                />
+                    <Stack.Screen
+                        name="address/edit-address"
+                        options={{
+                            headerShown: true,
+                        }}
+                    />
+                    <Stack.Screen
+                        name="address/service-address"
+                        options={{
+                            title: "服务地址",
+                            headerShown: true,
+                        }}
+                    />
+                    <Stack.Screen
+                        name="address/select-city"
+                        options={{
+                            title: "服务地址",
+                            headerShown: true,
+                        }}
+                    />
+                    <Stack.Screen
+                        name="address/select-address"
+                        options={{
+                            title: "详细地址",
+                            headerShown: true,
+                        }}
+                    />
 
-                <Stack.Screen
-                    name="servicePersonnel/index"
-                    options={{
-                        headerShown: false,
-                    }}
-                />
-            </Stack.Protected>
+                    <Stack.Screen
+                        name="servicePersonnel/index"
+                        options={{
+                            headerShown: false,
+                        }}
+                    />
+                </Stack.Protected>
 
-            <Stack.Protected guard={!session?.user.id}>
-                <Stack.Screen
-                    name="auth/login"
-                    options={{
-                        headerShown: false,
-                    }}
-                />
-                <Stack.Screen
-                    name="auth/verify"
-                    options={{
-                        headerShown: false,
-                    }}
-                />
-            </Stack.Protected>
-        </Stack>
+                <Stack.Protected guard={!session?.user.id}>
+                    <Stack.Screen
+                        name="auth/login"
+                        options={{
+                            headerShown: false,
+                        }}
+                    />
+                    <Stack.Screen
+                        name="auth/verify"
+                        options={{
+                            headerShown: false,
+                        }}
+                    />
+                </Stack.Protected>
+            </Stack>
+        </>
     );
+}
+
+function ChatSocketBridge({ enabled }: { enabled: boolean }) {
+    const { lastError } = useChatSocket({ enabled });
+
+    React.useEffect(() => {
+        if (!enabled || !lastError) {
+            return;
+        }
+        toast.error(`聊天连接异常：${lastError}`);
+    }, [enabled, lastError]);
+
+    return null;
 }
 
 const useIsomorphicLayoutEffect =
     Platform.OS === "web" &&
-        typeof (globalThis as Record<string, unknown>).window === "undefined"
+    typeof (globalThis as Record<string, unknown>).window === "undefined"
         ? React.useEffect
         : React.useLayoutEffect;

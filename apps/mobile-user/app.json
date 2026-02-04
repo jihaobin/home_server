@@ -14,6 +14,7 @@
         },
         "android": {
             "edgeToEdgeEnabled": true,
+            "softwareKeyboardLayoutMode": "resize",
             "permissions": [
                 "android.permission.ACCESS_COARSE_LOCATION",
                 "android.permission.ACCESS_FINE_LOCATION",
@@ -34,10 +35,7 @@
                             "pathPrefix": "/check-in"
                         }
                     ],
-                    "category": [
-                        "BROWSABLE",
-                        "DEFAULT"
-                    ]
+                    "category": ["BROWSABLE", "DEFAULT"]
                 }
             ],
             "jsEngine": "hermes"
@@ -96,9 +94,7 @@
                 "expo-build-properties",
                 {
                     "android": {
-                        "buildArchs": [
-                            "arm64-v8a"
-                        ]
+                        "buildArchs": ["arm64-v8a"]
                     }
                 }
             ]

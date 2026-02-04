@@ -10,6 +10,7 @@
     },
     "exports": {
         "./*": "./src/*.ts",
+        "./api/chat": "./src/api/chat/index.ts",
         "./api/address": "./src/api/address/index.ts",
         "./api/home": "./src/api/home/index.ts",
         "./api/order": "./src/api/order/index.ts",

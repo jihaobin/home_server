@@ -4,8 +4,12 @@
         "strict": true,
         "jsxImportSource": "nativewind",
         "paths": {
-            "@/*": ["./*"],
-            "@repo/mobile-ui/*": ["../../packages/mobile-ui/src/*"]
+            "@/*": [
+                "./*"
+            ],
+            "@repo/mobile-ui/*": [
+                "../../packages/mobile-ui/src/*"
+            ]
         }
     },
     "include": [

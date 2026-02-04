@@ -35,7 +35,9 @@ function WorkerTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                 const labelPosition =
                     options.tabBarLabelPosition ?? "below-icon";
                 const labelText =
-                    typeof options.title === "string" ? options.title : route.name;
+                    typeof options.title === "string"
+                        ? options.title
+                        : route.name;
                 const renderLabel = () => {
                     if (options.tabBarShowLabel === false) {
                         return null;
@@ -59,16 +61,16 @@ function WorkerTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                     );
                 };
                 const color = isFocused
-                    ? options.tabBarActiveTintColor ?? colors.primary
-                    : options.tabBarInactiveTintColor ?? colors.text;
+                    ? (options.tabBarActiveTintColor ?? colors.primary)
+                    : (options.tabBarInactiveTintColor ?? colors.text);
 
                 const icon =
                     typeof options.tabBarIcon === "function"
                         ? options.tabBarIcon({
-                            focused: isFocused,
-                            color,
-                            size: 22,
-                        })
+                              focused: isFocused,
+                              color,
+                              size: 22,
+                          })
                         : null;
 
                 const onPress = () => {
@@ -123,7 +125,9 @@ export default function TabLayout() {
                 name="index"
                 options={{
                     title: "首页",
-                    tabBarIcon: ({ color, size }) => <House size={size} color={color} />,
+                    tabBarIcon: ({ color, size }) => (
+                        <House size={size} color={color} />
+                    ),
                 }}
             />
             <Tabs.Screen
@@ -141,6 +145,19 @@ export default function TabLayout() {
                     title: "收益",
                     tabBarIcon: ({ color, size }) => (
                         <Ionicons name="wallet" size={size} color={color} />
+                    ),
+                }}
+            />
+            <Tabs.Screen
+                name="chat"
+                options={{
+                    title: "聊天",
+                    tabBarIcon: ({ color, size }) => (
+                        <Ionicons
+                            name="chatbubbles-outline"
+                            size={size}
+                            color={color}
+                        />
                     ),
                 }}
             />
