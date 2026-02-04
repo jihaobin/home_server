@@ -70,7 +70,7 @@ pnpm test --filter=backend
 
 ## 约定与差异
 
-- 格式：`.editorconfig` 默认 `CRLF + 4 空格`；移动端（`apps/mobile-*`）由 Biome 统一为 `tab + 双引号`。
+- 格式：`.editorconfig` 默认 `CRLF + 4 空格`；
 - React 版本：`pnpm-workspace.yaml` 使用 catalogs；Expo 用 `react19-1`，Admin Web 用 `react19-2`。
 - Admin Web SSR：必须遵循 `docs/admin-web-ssr-guide.md`（`ensureSsrApiClient` + `prefetchDehydratedState` + `HydrateClient`）。
 
