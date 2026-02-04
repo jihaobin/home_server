@@ -421,6 +421,13 @@
       "when": 1769657065128,
       "tag": "0059_fresh_phil_sheldon",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1770169845571,
+      "tag": "0060_living_expediter",
+      "breakpoints": true
     }
   ]
 }

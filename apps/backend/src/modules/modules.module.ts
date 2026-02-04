@@ -12,6 +12,7 @@ import { AdminModule } from './admin/admin.module';
 import { NotificationModule } from './notification/notification.module';
 import { AppReleaseModule } from './app-release/app-release.module';
 import { HomeModule } from './home/home.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
     imports: [
@@ -25,6 +26,7 @@ import { HomeModule } from './home/home.module';
         FilesModule,
         ReviewModule,
         NotificationModule,
+        ChatModule,
         AppReleaseModule,
         HomeModule,
         AdminModule,

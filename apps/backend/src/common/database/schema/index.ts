@@ -17,6 +17,7 @@ export * from './china-city';
 export * from './file';
 export * from './app-releases';
 export * from './home';
+export * from './chat';
 
 export const createId = init({
     length: 15,
