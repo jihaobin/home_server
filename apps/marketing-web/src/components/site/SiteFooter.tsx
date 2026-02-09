@@ -89,9 +89,11 @@ export function SiteFooter() {
                     <div>
                         © {new Date().getFullYear()} {SITE_NAME}. 保留所有权利。
                     </div>
-                    <div>
-                        本网站内容为示例占位，请按实际业务与合规要求完善。
-                    </div>
+                </div>
+                <div className="mt-4 flex flex-col gap-2 text-xs text-muted-foreground md:flex-row md:items-center md:justify-center">
+                    <Link href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=42110002000301">鄂公网安备42110002000301号</Link>
+                    <div className="hidden md:block">·</div>
+                    <Link href="https://beian.miit.gov.cn/">鄂ICP备2026000485号-1</Link>
                 </div>
             </Container>
         </footer>
