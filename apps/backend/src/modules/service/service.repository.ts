@@ -10,7 +10,7 @@ import type {
     UpdateService,
     UpdateServiceCategory,
 } from '@repo/types';
-import { and, asc, count, eq, type SQL, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
 import { serviceCategories, services } from 'src/common/database/schema';
@@ -51,6 +51,31 @@ export class ServiceRepository {
         return result.rows[0].has_create_some_service_categories;
     }
 
+    private async getCategoryDescendantIds(
+        categoryId: string,
+    ): Promise<string[]> {
+        const normalized = categoryId.trim();
+        if (!normalized) return [];
+
+        const s = sql`
+            WITH RECURSIVE category_tree AS (
+                SELECT id
+                FROM service_categories
+                WHERE id = ${normalized}
+
+                UNION ALL
+
+                SELECT sc.id
+                FROM service_categories sc
+                INNER JOIN category_tree ct ON sc.parent_id = ct.id
+            )
+            SELECT id FROM category_tree
+        `;
+
+        const result = await this.db.execute<{ id: string }>(s);
+        return result.rows.map((r) => r.id);
+    }
+
     async getServiceCategories(
         dep?: number,
         keyword?: string,
@@ -84,44 +109,105 @@ export class ServiceRepository {
                 );
         }
 
-        // 返回树状结构的全部分类数据
+        // 返回树状结构分类（仅包含 services.category_id 关联到的分类 + 它们的祖先链）。
+        // 说明：home/base 需要的“父分类/子分类”不应该由 dep 推断，而应该由真实上架服务所覆盖到的分类集合推导出来。
+        // 规则：如果某个叶子分类的任一祖先分类被停用（is_active=false）或缺失，则该叶子分类及其链路不应展示（不做“提升为根节点”的兜底）。
         const categories = await this.db
             .select()
             .from(serviceCategories)
-            .where(eq(serviceCategories.isActive, true))
             .orderBy(
                 asc(serviceCategories.dep),
                 asc(serviceCategories.sortOrder),
                 asc(serviceCategories.name),
             );
 
+        const serviceCategoryIdRows = await this.db.execute<{
+            category_id: string;
+        }>(sql`
+            SELECT DISTINCT category_id
+            FROM services
+            WHERE is_active = true
+        `);
+
+        const categoryById = new Map(
+            categories.map((category) => [category.id, category]),
+        );
+
+        const includedCategoryIds = new Set<string>();
+        for (const row of serviceCategoryIdRows.rows) {
+            const chain: string[] = [];
+            let current = categoryById.get(row.category_id);
+
+            // category 不存在：跳过
+            if (!current) {
+                continue;
+            }
+
+            // 叶子分类停用：跳过
+            if (current.isActive === false) {
+                continue;
+            }
+
+            // 向上补齐祖先链；任一祖先缺失或停用 -> 整条链不纳入
+            let valid = true;
+            while (current) {
+                if (current.isActive === false) {
+                    valid = false;
+                    break;
+                }
+                chain.push(current.id);
+
+                if (!current.parentId) {
+                    break;
+                }
+                const next = categoryById.get(current.parentId);
+                if (!next) {
+                    valid = false;
+                    break;
+                }
+                current = next;
+            }
+
+            if (!valid) {
+                continue;
+            }
+
+            for (const id of chain) {
+                includedCategoryIds.add(id);
+            }
+        }
+
+        const filteredCategories = categories.filter(
+            (category) =>
+                category.isActive === true &&
+                includedCategoryIds.has(category.id),
+        );
+
         // 构建树状结构
         const categoryMap = new Map<string, ServiceCategoryTree>();
         const rootCategories: ServiceCategoryTree[] = [];
 
-        // 先将所有分类转换为树节点格式
-        categories.forEach((category) => {
-            const treeNode: ServiceCategoryTree = {
+        filteredCategories.forEach((category) => {
+            categoryMap.set(category.id, {
                 ...category,
                 children: [],
-            };
-            categoryMap.set(category.id, treeNode);
+            });
         });
 
-        // 构建父子关系
-        categories.forEach((category) => {
+        filteredCategories.forEach((category) => {
             const treeNode = categoryMap.get(category.id)!;
 
             if (category.parentId) {
-                // 有父节点，添加到父节点的children中
+                // 祖先链要求完整且启用，所以这里父节点缺失时直接丢弃（不提升为根）。
                 const parent = categoryMap.get(category.parentId);
-                if (parent) {
-                    parent.children.push(treeNode);
+                if (!parent) {
+                    return;
                 }
-            } else {
-                // 没有父节点，是根节点
-                rootCategories.push(treeNode);
+                parent.children.push(treeNode);
+                return;
             }
+
+            rootCategories.push(treeNode);
         });
 
         return rootCategories;
@@ -130,6 +216,15 @@ export class ServiceRepository {
     async createServiceCategory(
         data: CreateServiceCategory,
     ): Promise<ServiceCategory> {
+        // 暂时仅允许创建 dep=1 的一级分类。
+        // 后续会考虑移除 dep/parent_id 以消除父子关系。
+        if (data.parentId) {
+            throw new BadRequestException('暂不支持创建子分类');
+        }
+        if (data.dep !== undefined && data.dep !== 1) {
+            throw new BadRequestException('暂不支持创建非一级分类');
+        }
+
         // 确保 dep 有值，如果没有提供则默认为 1（根分类）
         const categoryData = {
             ...data,
@@ -187,6 +282,22 @@ export class ServiceRepository {
         return category || null;
     }
 
+    async getActiveServicesByCategoryIds(categoryIds: string[]) {
+        if (!Array.isArray(categoryIds) || categoryIds.length === 0) {
+            return [] as (typeof services.$inferSelect)[];
+        }
+
+        return await this.db
+            .select()
+            .from(services)
+            .where(
+                and(
+                    eq(services.isActive, true),
+                    inArray(services.categoryId, categoryIds),
+                ),
+            );
+    }
+
     // ========== 服务项目相关方法 ==========
 
     /**
@@ -213,26 +324,6 @@ export class ServiceRepository {
         sortBy = 'createdAt',
         sortOrder = 'desc',
     }: ServiceListRequest) {
-        // 构建分类查询条件
-        const categoryConditions: SQL[] = [
-            eq(serviceCategories.isActive, true),
-        ];
-
-        if (categoryId) {
-            categoryConditions.push(eq(serviceCategories.id, categoryId));
-        }
-
-        const categoryWhereCondition =
-            categoryConditions.length > 0
-                ? and(...categoryConditions)
-                : undefined;
-
-        // 先查询所有符合条件的分类
-        const allCategories = await this.db
-            .select()
-            .from(serviceCategories)
-            .where(categoryWhereCondition);
-
         // 构建服务查询条件
         const serviceConditions: SQL[] = [];
 
@@ -249,10 +340,85 @@ export class ServiceRepository {
             serviceConditions.push(eq(services.isActive, isActive));
         }
 
+        // categoryId：聚合 category 子树下的全部服务，返回单个分类节点（前端取 items[0].children 做 Tab）
+        if (categoryId) {
+            const [rootCategory] = await this.db
+                .select()
+                .from(serviceCategories)
+                .where(
+                    and(
+                        eq(serviceCategories.isActive, true),
+                        eq(serviceCategories.id, categoryId),
+                    ),
+                )
+                .limit(1);
+
+            if (!rootCategory) {
+                return { items: [], total: 0, page, limit };
+            }
+
+            const descendantIds =
+                await this.getCategoryDescendantIds(categoryId);
+            if (descendantIds.length === 0) {
+                return { items: [], total: 0, page, limit };
+            }
+
+            serviceConditions.push(inArray(services.categoryId, descendantIds));
+
+            const serviceWhereCondition =
+                serviceConditions.length > 0
+                    ? and(...serviceConditions)
+                    : undefined;
+
+            const allServices = await this.db
+                .select()
+                .from(services)
+                .where(serviceWhereCondition);
+
+            const sortedServices = [...allServices].sort((a, b) => {
+                let comparison = 0;
+                switch (sortBy) {
+                    case 'name':
+                        comparison = a.name.localeCompare(b.name);
+                        break;
+                    case 'createdAt':
+                    default:
+                        comparison = a.name.localeCompare(b.name);
+                        break;
+                }
+                return sortOrder === 'asc' ? comparison : -comparison;
+            });
+
+            const total = 1;
+            const offset = (page - 1) * limit;
+            const items =
+                offset === 0
+                    ? [{ ...rootCategory, children: sortedServices }]
+                    : [];
+
+            return {
+                items,
+                total,
+                page,
+                limit,
+            };
+        }
+
         const serviceWhereCondition =
             serviceConditions.length > 0
                 ? and(...serviceConditions)
                 : undefined;
+
+        // 构建分类查询条件
+        const categoryWhereCondition = and(
+            eq(serviceCategories.isActive, true),
+        );
+
+        // 先查询所有符合条件的分类
+        const allCategories = await this.db
+            .select()
+            .from(serviceCategories)
+            .where(categoryWhereCondition);
 
         // 查询所有符合条件的服务
         const allServices = await this.db

@@ -1,0 +1,1 @@
+ALTER TABLE "review_stats" ADD COLUMN "photo_count" integer DEFAULT 0 NOT NULL;

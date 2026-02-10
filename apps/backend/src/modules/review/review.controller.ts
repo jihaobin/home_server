@@ -123,16 +123,22 @@ export class ReviewController {
         @Param('targetType') targetType: string,
         @Param('targetId') targetId: string,
         @Query(new ZodValidationPipe(TargetReviewsQuerySchema))
-        query: TargetReviewsQuery,
+        query: TargetReviewsQuery & {
+            tab?: 'all' | 'latest' | 'photos' | 'positive' | 'negative';
+        },
     ) {
         // 验证 targetType
         const validatedTargetType = ReviewTargetTypeEnum.parse(targetType);
 
         // 处理查询参数类型转换
-        const params: TargetReviewsQuery = {
+        const params: TargetReviewsQuery & {
+            tab?: 'all' | 'latest' | 'photos' | 'positive' | 'negative';
+        } = {
             page: query.page ? Number(query.page) : 1,
             limit: query.limit ? Number(query.limit) : 10,
             serviceId: query.serviceId,
+            // `tab` 为新增筛选字段；未传则按 all 处理。
+            tab: query.tab,
         };
 
         return await this.reviewService.getReviewsByTarget(

@@ -9,12 +9,7 @@ import {
 import { useStaffOrdersList } from "@repo/hooks/api/order";
 import type { StaffOrderListResponse } from "@repo/types";
 import { useRouter } from "expo-router";
-import React, {
-    Suspense,
-    useCallback,
-    useMemo,
-    useState,
-} from "react";
+import React, { Suspense, useCallback, useMemo, useState } from "react";
 import {
     ActivityIndicator,
     RefreshControl,
@@ -144,8 +139,12 @@ function HomeContent() {
         <View style={styles.container}>
             <View style={styles.header}>
                 <View>
-                    <Text style={styles.greeting}>{`你好，${greetingName}`}</Text>
-                    <Text style={styles.subGreeting}>欢迎回来，祝您服务顺利</Text>
+                    <Text
+                        style={styles.greeting}
+                    >{`你好，${greetingName}`}</Text>
+                    <Text style={styles.subGreeting}>
+                        欢迎回来，祝您服务顺利
+                    </Text>
                 </View>
                 <TouchableOpacity onPress={() => router.push("/scan" as never)}>
                     <Ionicons name="qr-code-outline" size={28} color="#333" />
@@ -156,7 +155,10 @@ function HomeContent() {
                 style={styles.content}
                 showsVerticalScrollIndicator={false}
                 refreshControl={
-                    <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
+                    <RefreshControl
+                        refreshing={isRefreshing}
+                        onRefresh={handleRefresh}
+                    />
                 }
             >
                 <View style={styles.statsCard}>
@@ -202,19 +204,27 @@ function HomeContent() {
                         <QuickActionButton
                             icon="person-outline"
                             label="个人信息"
-                            onPress={() => router.push("/profile/edit" as never)}
+                            onPress={() =>
+                                router.push("/profile/edit" as never)
+                            }
                             color="#2196F3"
                         />
                         <QuickActionButton
                             icon="settings-outline"
                             label="服务设置"
-                            onPress={() => router.push("/profile/service-settings" as never)}
+                            onPress={() =>
+                                router.push(
+                                    "/profile/service-settings" as never,
+                                )
+                            }
                             color="#FF9800"
                         />
                         <QuickActionButton
                             icon="cash-outline"
                             label="立即提现"
-                            onPress={() => router.push("/earnings/withdraw" as never)}
+                            onPress={() =>
+                                router.push("/earnings/withdraw" as never)
+                            }
                             color="#9C27B0"
                         />
                     </View>
@@ -223,14 +233,22 @@ function HomeContent() {
                 <View style={styles.section}>
                     <View style={styles.sectionHeader}>
                         <Text style={styles.sectionTitle}>待处理订单</Text>
-                        <TouchableOpacity onPress={() => router.push("/orders" as never)}>
+                        <TouchableOpacity
+                            onPress={() => router.push("/orders" as never)}
+                        >
                             <Text style={styles.moreText}>更多</Text>
                         </TouchableOpacity>
                     </View>
                     {upcomingOrders.length === 0 ? (
                         <View style={styles.emptyOrders}>
-                            <Ionicons name="checkmark-circle-outline" size={40} color="#bbb" />
-                            <Text style={styles.emptyOrdersText}>暂无待处理订单</Text>
+                            <Ionicons
+                                name="checkmark-circle-outline"
+                                size={40}
+                                color="#bbb"
+                            />
+                            <Text style={styles.emptyOrdersText}>
+                                暂无待处理订单
+                            </Text>
                         </View>
                     ) : (
                         upcomingOrders.map((order) => {
@@ -238,16 +256,24 @@ function HomeContent() {
                                 ORDER_STATUS_DISPLAY[order.status] ??
                                 ORDER_STATUS_DISPLAY.cancelled;
                             const decisionMeta =
-                                DECISION_STATUS_DISPLAY[order.decisionStatus ?? 'pending'];
+                                DECISION_STATUS_DISPLAY[
+                                    order.decisionStatus ?? "pending"
+                                ];
                             return (
                                 <TouchableOpacity
                                     key={order.id}
                                     style={styles.orderCard}
-                                    onPress={() => router.push(`/orders/${order.id}` as never)}
+                                    onPress={() =>
+                                        router.push(
+                                            `/orders/${order.id}` as never,
+                                        )
+                                    }
                                 >
                                     <View style={styles.orderHeader}>
                                         <View style={{ flex: 1 }}>
-                                            <Text style={styles.orderService}>{order.serviceName}</Text>
+                                            <Text style={styles.orderService}>
+                                                {order.serviceName}
+                                            </Text>
                                             {order.serviceSpecification ? (
                                                 <Text style={styles.orderSpec}>
                                                     {order.serviceSpecification}
@@ -258,10 +284,17 @@ function HomeContent() {
                                             <View
                                                 style={[
                                                     styles.homeStatusBadge,
-                                                    { backgroundColor: statusMeta.color },
+                                                    {
+                                                        backgroundColor:
+                                                            statusMeta.color,
+                                                    },
                                                 ]}
                                             >
-                                                <Text style={styles.homeStatusText}>
+                                                <Text
+                                                    style={
+                                                        styles.homeStatusText
+                                                    }
+                                                >
                                                     {statusMeta.label}
                                                 </Text>
                                             </View>
@@ -269,13 +302,18 @@ function HomeContent() {
                                                 <View
                                                     style={[
                                                         styles.homeDecisionBadge,
-                                                        { borderColor: decisionMeta.color },
+                                                        {
+                                                            borderColor:
+                                                                decisionMeta.color,
+                                                        },
                                                     ]}
                                                 >
                                                     <Text
                                                         style={[
                                                             styles.homeDecisionText,
-                                                            { color: decisionMeta.color },
+                                                            {
+                                                                color: decisionMeta.color,
+                                                            },
                                                         ]}
                                                     >
                                                         {decisionMeta.label}
@@ -283,20 +321,34 @@ function HomeContent() {
                                                 </View>
                                             ) : null}
                                             <Text style={styles.orderPrice}>
-                                                ¥{formatCurrency(order.totalAmount)}
+                                                ¥
+                                                {formatCurrency(
+                                                    order.totalAmount,
+                                                )}
                                             </Text>
                                         </View>
                                     </View>
                                     <View style={styles.orderInfo}>
-                                        <Ionicons name="location-outline" size={16} color="#666" />
+                                        <Ionicons
+                                            name="location-outline"
+                                            size={16}
+                                            color="#666"
+                                        />
                                         <Text style={styles.orderAddress}>
-                                            {order.address || "客户未提供详细地址"}
+                                            {order.address ||
+                                                "客户未提供详细地址"}
                                         </Text>
                                     </View>
                                     <View style={styles.orderInfo}>
-                                        <Ionicons name="time-outline" size={16} color="#666" />
+                                        <Ionicons
+                                            name="time-outline"
+                                            size={16}
+                                            color="#666"
+                                        />
                                         <Text style={styles.orderTime}>
-                                            {formatDateTime(order.appointmentTime)}
+                                            {formatDateTime(
+                                                order.appointmentTime,
+                                            )}
                                         </Text>
                                     </View>
                                 </TouchableOpacity>
@@ -332,7 +384,10 @@ function HomeErrorFallback({
             <Text style={styles.errorMessage}>
                 {error.message || "请检查网络连接后重试"}
             </Text>
-            <TouchableOpacity style={styles.retryButton} onPress={resetErrorBoundary}>
+            <TouchableOpacity
+                style={styles.retryButton}
+                onPress={resetErrorBoundary}
+            >
                 <Text style={styles.retryText}>重新加载</Text>
             </TouchableOpacity>
         </View>
@@ -400,7 +455,11 @@ function countTodayOrders(orders: StaffOrder[]) {
 }
 
 function selectUpcomingOrders(orders: StaffOrder[]) {
-    const TARGET_STATUSES = new Set(["pending_acceptance", "paid", "in_progress"]);
+    const TARGET_STATUSES = new Set([
+        "pending_acceptance",
+        "paid",
+        "in_progress",
+    ]);
     return orders
         .filter((order) => TARGET_STATUSES.has(order.status))
         .sort((a, b) => {
@@ -423,7 +482,7 @@ function normalizeDate(value?: string | Date | null) {
 }
 
 function formatCurrency(value?: number | string | null) {
-    const amount = typeof value === "string" ? Number(value) : value ?? 0;
+    const amount = typeof value === "string" ? Number(value) : (value ?? 0);
     if (!Number.isFinite(amount)) {
         return "0.00";
     }
@@ -435,12 +494,15 @@ function formatDateTime(value?: string | Date | null) {
     if (!date) {
         return "--";
     }
+    const end = new Date(date.getTime() + 2 * 60 * 60 * 1000);
     const yyyy = date.getFullYear();
     const mm = `${date.getMonth() + 1}`.padStart(2, "0");
     const dd = `${date.getDate()}`.padStart(2, "0");
     const hh = `${date.getHours()}`.padStart(2, "0");
     const mi = `${date.getMinutes()}`.padStart(2, "0");
-    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+    const endHh = `${end.getHours()}`.padStart(2, "0");
+    const endMi = `${end.getMinutes()}`.padStart(2, "0");
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}-${endHh}:${endMi}`;
 }
 
 const styles = StyleSheet.create({

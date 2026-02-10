@@ -1,6 +1,6 @@
 import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
 import { Text } from "@repo/mobile-ui/components/ui/text";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import { Pressable, RefreshControl, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -8,7 +8,7 @@ import type { OrderCardsTab, OrderStatus } from "@repo/types";
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import { useOrderCardsListInfinite } from "@repo/hooks/api/order";
 import { useOrderActions } from "@/components/orders_screen/hooks/useOrderActions";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { usePaymentCountdown } from "@/hooks/usePaymentCountdown";
 import { Image as ExpoImage } from "expo-image";
 import { cssInterop } from "nativewind";
@@ -35,7 +35,11 @@ const TABS: readonly OrdersTab[] = [
     { id: "needs_review", label: "待评价" },
 ];
 
-type OrderCardActionVariant = "primary" | "outline" | "outlineMuted" | "outlinePrimary";
+type OrderCardActionVariant =
+    | "primary"
+    | "outline"
+    | "outlineMuted"
+    | "outlinePrimary";
 
 type OrderCardActionKey =
     | "cancel"
@@ -60,6 +64,8 @@ type OrderCardViewModel = {
     workerAvatarUrl?: string | null;
     workerAvatarBlurhash?: string | null;
     serviceName: string;
+    serviceId: string;
+    servicePersonnelId?: string | null;
     totalAmount: number;
     paymentExpiresAt?: string | null;
     itemCountText: string;
@@ -76,12 +82,15 @@ const formatAppointmentText = (value: string) => {
     if (Number.isNaN(date.getTime())) {
         return "--";
     }
+    const end = new Date(date.getTime() + 2 * 60 * 60 * 1000);
     const yyyy = date.getFullYear();
     const mm = pad2(date.getMonth() + 1);
     const dd = pad2(date.getDate());
     const hh = pad2(date.getHours());
     const min = pad2(date.getMinutes());
-    return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+    const endHh = pad2(end.getHours());
+    const endMin = pad2(end.getMinutes());
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}-${endHh}:${endMin}`;
 };
 
 const formatTotalAmountText = (amount: number) => {
@@ -211,9 +220,14 @@ function OrderCard({
     actionsDisabled,
 }: {
     order: OrderCardViewModel;
-    onActionPress: (params: { order: OrderCardViewModel; action: OrderCardAction }) => void;
+    onActionPress: (params: {
+        order: OrderCardViewModel;
+        action: OrderCardAction;
+    }) => void;
     actionsDisabled?: boolean;
 }) {
+    const router = useRouter();
+
     const statusTextClassName =
         order.status === "pending_payment"
             ? "text-destructive"
@@ -231,18 +245,30 @@ function OrderCard({
     const showPaymentCountdown = order.status === "pending_payment";
 
     return (
-        <View className="mx-4 mt-3 rounded-lg bg-card shadow-sm">
+        <Pressable onPress={() => router.push(`/order/${order.id}`)} className="mx-4 mt-3 rounded-lg bg-card shadow-sm">
             <View className="px-3 pt-3 pb-3">
                 <View className="flex-row items-center justify-between">
-                    <Text className="text-sm font-puhui-regular text-foreground">{order.title}</Text>
-                    <Text className={`text-sm font-puhui-regular ${statusTextClassName}`}>{order.statusText}</Text>
+                    <Text className="text-sm font-puhui-regular text-foreground">
+                        {order.title}
+                    </Text>
+                    <Text
+                        className={`text-sm font-puhui-regular ${statusTextClassName}`}
+                    >
+                        {order.statusText}
+                    </Text>
                 </View>
 
                 {showPaymentCountdown ? (
                     <View className="mt-2 flex-row items-center justify-between">
                         <Text className="text-xs font-puhui-regular text-muted-foreground">
                             支付剩余：
-                            <Text className={countdown.isExpired ? "text-destructive" : "text-primary"}>
+                            <Text
+                                className={
+                                    countdown.isExpired
+                                        ? "text-destructive"
+                                        : "text-primary"
+                                }
+                            >
                                 {countdown.formatted}
                             </Text>
                         </Text>
@@ -271,7 +297,9 @@ function OrderCard({
                     <View className="ml-2 flex-1">
                         <View className="flex-row items-start justify-between">
                             <View className="flex-1 pr-2">
-                                <Text className="text-sm font-puhui-regular text-foreground">{order.workerName}</Text>
+                                <Text className="text-sm font-puhui-regular text-foreground">
+                                    {order.workerName}
+                                </Text>
                                 <Text className="mt-2 text-xs font-puhui-regular text-muted-foreground">
                                     {order.serviceName}
                                 </Text>
@@ -291,12 +319,18 @@ function OrderCard({
             <View className="px-3 pt-3 pb-3">
                 <View className="flex-row items-center justify-between">
                     <Text className="text-xs font-puhui-regular">
-                        <Text className="text-xs text-foreground">预约时间：</Text>
-                        <Text className="text-xs text-muted-foreground">{order.appointmentText}</Text>
+                        <Text className="text-xs text-foreground">
+                            预约时间：
+                        </Text>
+                        <Text className="text-xs text-muted-foreground">
+                            {order.appointmentText}
+                        </Text>
                     </Text>
 
                     <View className="flex-row items-end">
-                        <Text className="font-puhui-regular text-foreground">应付总额：</Text>
+                        <Text className="font-puhui-regular text-foreground">
+                            应付总额：
+                        </Text>
                         <Text className="ml-1 font-din-alt-bold text-foreground">
                             {order.totalAmountText}
                         </Text>
@@ -314,7 +348,7 @@ function OrderCard({
                     ))}
                 </View>
             </View>
-        </View>
+        </Pressable>
     );
 }
 
@@ -377,9 +411,35 @@ function OrdersListSkeleton({ count = 4 }: { count?: number }) {
 export default function OrdersIndex() {
     const [activeTabId, setActiveTabId] = useState<OrdersTabId>("all");
 
+    const params = useLocalSearchParams<{
+        tab?: string | string[];
+        requestId?: string | string[];
+    }>();
+    const tabParam = Array.isArray(params.tab) ? params.tab[0] : params.tab;
+    const requestIdParam = Array.isArray(params.requestId)
+        ? params.requestId[0]
+        : params.requestId;
+
     const listRef = useRef<FlashListRef<OrderCardViewModel> | null>(null);
 
-    const cardsQuery = useOrderCardsListInfinite({ tab: activeTabId, limit: 10 });
+    useEffect(() => {
+        if (!tabParam) {
+            return;
+        }
+        const requestedTab = tabParam as OrdersTabId;
+        const isValid = TABS.some((tab) => tab.id === requestedTab);
+        if (!isValid) {
+            return;
+        }
+
+        setActiveTabId((prev) => (prev === requestedTab ? prev : requestedTab));
+        listRef.current?.scrollToOffset({ offset: 0, animated: false });
+    }, [tabParam, requestIdParam]);
+
+    const cardsQuery = useOrderCardsListInfinite({
+        tab: activeTabId,
+        limit: 10,
+    });
     const rawItems = useMemo(() => {
         return cardsQuery.data?.pages.flatMap((page) => page.data) ?? [];
     }, [cardsQuery.data]);
@@ -396,9 +456,11 @@ export default function OrdersIndex() {
                 workerAvatarUrl: item.workerAvatarUrl,
                 workerAvatarBlurhash: item.workerAvatarBlurhash,
                 serviceName: item.serviceName,
+                serviceId: item.serviceId,
+                servicePersonnelId: item.servicePersonnelId,
                 totalAmount: item.totalAmount,
                 paymentExpiresAt: item.paymentExpiresAt,
-                itemCountText: `共${item.itemCount}件`,
+                itemCountText: `共${item.itemCount ?? 0}件`,
                 appointmentText: formatAppointmentText(item.appointmentTime),
                 totalAmountText: formatTotalAmountText(item.totalAmount),
                 needsReview,
@@ -454,6 +516,17 @@ export default function OrdersIndex() {
                     router.push(`/order/${order.id}`);
                     return;
                 case "reorder":
+                    if (order.serviceId && order.servicePersonnelId) {
+                        router.push({
+                            pathname: "/servicePersonnel/[id]",
+                            params: {
+                                id: order.servicePersonnelId,
+                                serviceId: order.serviceId,
+                                serviceName: order.serviceName,
+                            },
+                        });
+                        return;
+                    }
                     reorder();
                     return;
                 default:
@@ -522,15 +595,20 @@ export default function OrdersIndex() {
                             actionsDisabled={actionsDisabled}
                         />
                     )}
-                    contentContainerStyle={{ paddingTop: 12, paddingBottom: 24 }}
+                    contentContainerStyle={{
+                        paddingTop: 12,
+                        paddingBottom: 24,
+                    }}
                     showsVerticalScrollIndicator={false}
                     refreshControl={
                         <RefreshControl
-                            refreshing={Boolean(cardsQuery.isFetching) && !cardsQuery.isFetchingNextPage}
+                            refreshing={
+                                Boolean(cardsQuery.isFetching) &&
+                                !cardsQuery.isFetchingNextPage
+                            }
                             onRefresh={() => {
                                 cardsQuery.refetch();
                             }}
-
                         />
                     }
                     ListEmptyComponent={
@@ -559,7 +637,10 @@ export default function OrdersIndex() {
                     }
                     onEndReachedThreshold={0.2}
                     onEndReached={() => {
-                        if (cardsQuery.hasNextPage && !cardsQuery.isFetchingNextPage) {
+                        if (
+                            cardsQuery.hasNextPage &&
+                            !cardsQuery.isFetchingNextPage
+                        ) {
                             cardsQuery.fetchNextPage();
                         }
                     }}

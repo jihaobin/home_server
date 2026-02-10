@@ -5,6 +5,8 @@ import { GeoLocationService } from 'src/common/services/geo-location.service';
 import { ServiceModule } from '../service/service.module';
 import { WorkSkillModule } from '../work-skill/work-skill.module';
 import { PayModule } from '../pay/pay.module';
+import { AddressRespository } from '../address/address.repository';
+import { ServicePersonnelRepository } from '../service-personnel/service-personnel.repository';
 import { OrderController } from './order.controller';
 import { OrderService } from './order.service';
 import { OrderCheckinService } from './order-checkin.service';
@@ -22,6 +24,8 @@ import { S3StoreServer } from 'src/common/s3_store/s3_store.service';
     providers: [
         OrderService,
         OrderRepository,
+        AddressRespository,
+        ServicePersonnelRepository,
         OrderCheckinService,
         OrderCheckinRepository,
         GeoLocationService,

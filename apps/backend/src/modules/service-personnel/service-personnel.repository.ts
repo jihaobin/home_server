@@ -445,6 +445,7 @@ export class ServicePersonnelRepository {
     // }
 
     async getPersonnelServiceDetails(personnelId: string, serviceId: string) {
+        const now = new Date();
         const query = await this.db.query.servicePersonnel.findFirst({
             where: and(eq(servicePersonnel.userId, personnelId)),
             columns: {
@@ -465,10 +466,17 @@ export class ServicePersonnelRepository {
                     where: and(
                         eq(servicePersonnelPricing.serviceId, serviceId),
                         eq(servicePersonnelPricing.isActive, true),
+                        // 有效期：from <= now 且 (to is null 或 to >= now)
+                        sql`(${servicePersonnelPricing.effectiveFrom} IS NULL OR ${servicePersonnelPricing.effectiveFrom} <= ${now})`,
+                        sql`(${servicePersonnelPricing.effectiveTo} IS NULL OR ${servicePersonnelPricing.effectiveTo} >= ${now})`,
                     ),
                 },
             },
         });
+
+        if (!query) {
+            return null;
+        }
 
         // 获取该用户已经被占用的时间段
         const occupiedTimeSlots =
@@ -479,24 +487,31 @@ export class ServicePersonnelRepository {
         // 安全地访问skills数组
         const firstSkill = query?.skills?.[0];
 
+        // 人员存在但未提供该服务
+        if (!firstSkill) {
+            return null;
+        }
+
         return {
-            userId: query?.userId,
-            bio: query?.bio,
-            province: query?.province,
-            district: query?.district,
-            county: query?.county,
-            detailedAddress: query?.detailedAddress,
-            yearsOfExperience: query?.yearsOfExperience,
-            workStartTime: query?.workStartTime,
-            workEndTime: query?.workEndTime,
-            isAvailable: query?.isAvailable,
-            workDays: query?.workDays,
-            currentStatus: query?.currentStatus,
-            lastActiveAt: query?.lastActiveAt,
-            specifications: query?.pricing || [],
-            description: firstSkill?.description || null,
-            servicedCount: firstSkill?.servicedCount || 0,
-            galleryFileIds: firstSkill?.galleryFileIds ?? [],
+            userId: query.userId,
+            name: query.name?.trim() || null,
+            avatar: query.avatar?.trim() || null,
+            bio: query.bio,
+            province: query.province,
+            district: query.district,
+            county: query.county,
+            detailedAddress: query.detailedAddress,
+            yearsOfExperience: query.yearsOfExperience,
+            workStartTime: query.workStartTime,
+            workEndTime: query.workEndTime,
+            isAvailable: query.isAvailable,
+            workDays: query.workDays,
+            currentStatus: query.currentStatus,
+            lastActiveAt: query.lastActiveAt,
+            specifications: query.pricing ?? [],
+            description: firstSkill.description || null,
+            servicedCount: firstSkill.servicedCount || 0,
+            galleryFileIds: firstSkill.galleryFileIds ?? [],
             occupiedTimeSlots,
         };
     }

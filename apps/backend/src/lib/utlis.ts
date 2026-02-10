@@ -52,3 +52,62 @@ export function isTimeInRange(
     // 或者用户时间 <= 结束时间 (例如 00:00:00 <= 用户时间 <= 06:00:00)
     return userTimeValue >= startTimeValue || userTimeValue <= endTimeValue;
 }
+
+type HmsParts = {
+    hours: number;
+    minutes: number;
+    seconds: number;
+};
+
+function parseHms(timeStr: string): HmsParts | null {
+    const match = /^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/.exec(timeStr);
+    if (!match) {
+        return null;
+    }
+    return {
+        hours: Number(match[1]),
+        minutes: Number(match[2]),
+        seconds: Number(match[3]),
+    };
+}
+
+/**
+ * 判断 appointmentTime 是否命中“从 workStartTime 起算”的固定步长网格。
+ *
+ * 约定：workStartTime 形如 HH:MM:SS；网格步长默认 120 分钟。
+ */
+export function isAlignedToWorkStartTimeGrid(
+    appointmentTime: Date,
+    workStartTime: string,
+    stepMinutes = 120,
+): boolean {
+    if (!appointmentTime || Number.isNaN(appointmentTime.getTime())) {
+        return false;
+    }
+    if (!Number.isFinite(stepMinutes) || stepMinutes <= 0) {
+        return false;
+    }
+    const parts = parseHms(workStartTime);
+    if (!parts) {
+        return false;
+    }
+
+    // 使用 appointmentTime 的本地日期，拼出同一天的 workStartTime 作为网格基准。
+    const base = new Date(
+        appointmentTime.getFullYear(),
+        appointmentTime.getMonth(),
+        appointmentTime.getDate(),
+        parts.hours,
+        parts.minutes,
+        parts.seconds,
+        0,
+    );
+
+    const diffMs = appointmentTime.getTime() - base.getTime();
+    if (diffMs < 0) {
+        return false;
+    }
+
+    const stepMs = stepMinutes * 60 * 1000;
+    return diffMs % stepMs === 0;
+}

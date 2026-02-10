@@ -4,9 +4,15 @@ import type {
     HomeQuery,
     HomeRecommendationsResponse,
     HomeResponse,
+    ServiceCategoryTree,
+    Services,
 } from '@repo/types';
 import { HomeRepository } from './home.repository';
 import { ServiceService } from '../service/service.service';
+
+type HomeQueryWithCategoryId = HomeQuery & {
+    categoryId?: string;
+};
 
 @Injectable()
 export class HomeService {
@@ -17,7 +23,7 @@ export class HomeService {
 
     async getHome(
         userId: string | undefined,
-        query: HomeQuery,
+        query: HomeQueryWithCategoryId,
     ): Promise<HomeResponse> {
         // 聚合接口：为兼容旧客户端，继续返回 base + recommendations。
         // 不依赖登录态；若传入坐标则按距离优先排序，否则返回全量推荐。
@@ -38,6 +44,8 @@ export class HomeService {
             this.serviceService.getServiceCategories(0, ''),
         ]);
 
+        const categoryTree = categories as unknown as ServiceCategoryTree[];
+
         // 运营位 fileUrl 在 repo 内部已解析；这里做一次防御性清洗。
         const banners = opsConfig.banners.filter((b) => Boolean(b.imageUrl));
         const guarantees = opsConfig.guarantees.filter((g) =>
@@ -48,14 +56,79 @@ export class HomeService {
             banners,
             guarantees,
             promos: opsConfig.promos,
-            categories,
+            categories: categoryTree,
+        };
+    }
+
+    async getHomeMoreServices(): Promise<{
+        categories: ServiceCategoryTree[];
+    }> {
+        const categories = (await this.serviceService.getServiceCategories(
+            0,
+            '',
+        )) as unknown as ServiceCategoryTree[];
+
+        const collectCategoryIds = (
+            nodes: readonly ServiceCategoryTree[],
+            acc: Set<string>,
+        ) => {
+            for (const node of nodes) {
+                acc.add(node.id);
+                if (Array.isArray(node.children) && node.children.length > 0) {
+                    collectCategoryIds(node.children, acc);
+                }
+            }
+        };
+
+        const categoryIds = new Set<string>();
+        collectCategoryIds(categories, categoryIds);
+
+        const services =
+            await this.serviceService.getActiveServicesByCategoryIds(
+                Array.from(categoryIds),
+            );
+
+        const servicesByCategoryId = new Map<string, Services[]>();
+        for (const service of services) {
+            const key = service.categoryId;
+            const existing = servicesByCategoryId.get(key);
+            if (existing) {
+                existing.push(service);
+            } else {
+                servicesByCategoryId.set(key, [service]);
+            }
+        }
+
+        const attachServices = (nodes: readonly ServiceCategoryTree[]) =>
+            nodes.map((node) => {
+                const nextChildren = Array.isArray(node.children)
+                    ? attachServices(node.children)
+                    : node.children;
+                const nodeServices = servicesByCategoryId.get(node.id) ?? [];
+
+                return {
+                    ...node,
+                    children: nextChildren as unknown as ServiceCategoryTree[],
+                    services: nodeServices,
+                };
+            });
+
+        return {
+            categories: attachServices(categories),
         };
     }
 
     async getHomeRecommendations(
-        query: HomeQuery,
+        query: HomeQueryWithCategoryId,
     ): Promise<HomeRecommendationsResponse> {
-        const { maxDistanceKm = 10, limit = 20, page = 1, lat, lng } = query;
+        const {
+            maxDistanceKm = 10,
+            limit = 20,
+            page = 1,
+            lat,
+            lng,
+            categoryId,
+        } = query;
         const normalizedPage = Math.max(1, page);
         const offset = (normalizedPage - 1) * limit;
 
@@ -67,10 +140,12 @@ export class HomeService {
                       maxDistanceKm,
                       limit,
                       offset,
+                      categoryId,
                   })
                 : await this.homeRepository.getRecommendedPersonnelGlobal({
                       limit,
                       offset,
+                      categoryId,
                   });
 
         return {

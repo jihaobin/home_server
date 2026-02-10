@@ -56,22 +56,13 @@ export class AdminServiceCategoriesService {
     async createCategory(
         payload: CreateAdminServiceCategoryInput,
     ): Promise<AdminServiceCategory> {
-        const parentId =
-            payload.parentId === undefined ? null : payload.parentId;
-
-        const parent = parentId
-            ? await this.repository.findById(parentId)
-            : null;
-
-        if (parentId && !parent) {
-            throw new BadRequestException('父分类不存在');
+        // 暂时仅允许创建 dep=1 的一级分类（不允许创建子分类）。
+        if (payload.parentId) {
+            throw new BadRequestException('暂不支持创建子分类');
         }
 
-        if (parent && parent.dep >= 2) {
-            throw new BadRequestException('仅支持两级分类');
-        }
-
-        const dep = parent ? parent.dep + 1 : 1;
+        const parentId = null;
+        const dep = 1;
 
         const sortOrder =
             payload.sortOrder ??
@@ -125,33 +116,15 @@ export class AdminServiceCategoriesService {
                 throw new BadRequestException('父分类不能是自身');
             }
 
-            nextParentId = payload.parentId ?? null;
-
-            if (nextParentId) {
-                const parent = await this.repository.findById(nextParentId);
-
-                if (!parent) {
-                    throw new BadRequestException('父分类不存在');
-                }
-
-                if (parent.dep >= 2) {
-                    throw new BadRequestException('仅支持两级分类');
-                }
-
-                if (
-                    existing.dep === 1 &&
-                    (await this.repository.countChildren(existing.id)) > 0 &&
-                    parent.id !== existing.parentId
-                ) {
-                    throw new BadRequestException(
-                        '拥有子分类的节点无法移动到二级分类',
-                    );
-                }
-
-                nextDep = parent.dep + 1;
-            } else {
-                nextDep = 1;
+            // 暂时不允许设置父分类（不允许创建/移动到子分类）。
+            if (payload.parentId) {
+                throw new BadRequestException(
+                    '暂不支持设置父分类（仅支持一级分类）',
+                );
             }
+
+            nextParentId = null;
+            nextDep = 1;
         }
 
         const description =

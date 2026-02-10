@@ -17,6 +17,117 @@ export class ReviewService {
     @Inject(FilesService)
     private readonly filesService: FilesService;
 
+    private async decorateReviewsForPublic(items: any[]) {
+        const fileIds = items
+            .map((item) => item.imageIds)
+            .flat()
+            .filter(Boolean);
+
+        const imageInfoMap = new Map<
+            string,
+            { url: string; blurhash?: string }
+        >();
+        if (fileIds.length > 0) {
+            const imageInfoList = await Promise.all(
+                fileIds.map(async (id: string) => {
+                    try {
+                        const image =
+                            await this.filesService.getFileAccessInfo(id);
+                        return {
+                            id,
+                            url: image.fileUrl,
+                            blurhash: image.blurhash,
+                        };
+                    } catch (_error) {
+                        return null;
+                    }
+                }),
+            );
+
+            imageInfoList.forEach((info) => {
+                if (info) {
+                    imageInfoMap.set(info.id, {
+                        url: info.url,
+                        blurhash: info.blurhash,
+                    });
+                }
+            });
+        }
+
+        const isHttpUrl = (value: string) =>
+            value.startsWith('http://') || value.startsWith('https://');
+
+        const avatarFileIds = Array.from(
+            new Set(
+                items
+                    .map((item) => (item.reviewerAvatarFileId ?? '').trim())
+                    .filter((id: string) => Boolean(id) && !isHttpUrl(id)),
+            ),
+        );
+
+        const avatarInfoMap = new Map<
+            string,
+            { url: string; blurhash?: string }
+        >();
+        await Promise.all(
+            avatarFileIds.map(async (fileId) => {
+                try {
+                    const info =
+                        await this.filesService.getFileAccessInfo(fileId);
+                    avatarInfoMap.set(fileId, {
+                        url: info.fileUrl,
+                        blurhash: info.blurhash,
+                    });
+                } catch (_error) {
+                    // ignore
+                }
+            }),
+        );
+
+        const maskPhone = (value: unknown): string | null => {
+            if (typeof value !== 'string') return null;
+            const v = value.trim();
+            if (v.length < 7) return null;
+            return `${v.slice(0, 3)}****${v.slice(-4)}`;
+        };
+
+        return items.map((item) => {
+            const isAnonymous = Boolean(item.isAnonymous);
+            const reviewerPhoneMasked = isAnonymous
+                ? null
+                : maskPhone(item.reviewerPhoneNumber);
+
+            const avatarIdentifier = (item.reviewerAvatarFileId ?? '').trim();
+            const reviewerAvatar = isAnonymous
+                ? null
+                : !avatarIdentifier
+                  ? null
+                  : isHttpUrl(avatarIdentifier)
+                    ? { url: avatarIdentifier }
+                    : (avatarInfoMap.get(avatarIdentifier) ?? null);
+
+            // omit internal join-only fields
+            const {
+                reviewerAvatarFileId: _reviewerAvatarFileId,
+                reviewerPhoneNumber: _reviewerPhoneNumber,
+                ...rest
+            } = item;
+
+            return {
+                ...rest,
+                images: (item.imageIds || [])
+                    .map((id: string) => imageInfoMap.get(id))
+                    .filter(Boolean) as Array<{
+                    url: string;
+                    blurhash?: string;
+                }>,
+                reviewerAvatar,
+                reviewerName: isAnonymous ? null : item.reviewerName || null,
+                reviewerPhoneMasked,
+            };
+        });
+    }
+
     /**
      * 创建评价
      * @param reviewData 评价数据
@@ -212,7 +323,9 @@ export class ReviewService {
     async getReviewsByTarget(
         targetId: string,
         targetType: 'personnel' | 'shop',
-        query: TargetReviewsQuery,
+        query: TargetReviewsQuery & {
+            tab?: 'all' | 'latest' | 'photos' | 'positive' | 'negative';
+        },
     ) {
         try {
             const result = await this.reviewRepository.getReviewsByTargetPublic(
@@ -221,64 +334,13 @@ export class ReviewService {
                 query.page,
                 query.limit,
                 query.serviceId,
+                query.tab,
             );
 
-            // 获取所有图片ID
-            const fileIds = result.items
-                .map((item) => item.imageIds)
-                .flat()
-                .filter(Boolean);
-
-            // 批量获取图片访问信息
-            const imageInfoMap = new Map<
-                string,
-                { url: string; blurhash?: string }
-            >();
-
-            if (fileIds.length > 0) {
-                const imageInfoList = await Promise.all(
-                    fileIds.map(async (id) => {
-                        try {
-                            const image =
-                                await this.filesService.getFileAccessInfo(id);
-                            return {
-                                id,
-                                url: image.fileUrl,
-                                blurhash: image.blurhash,
-                            };
-                        } catch (_error) {
-                            // 如果某个图片获取失败，返回null
-                            return null;
-                        }
-                    }),
-                );
-
-                // 创建图片ID到图片信息的映射
-                imageInfoList.forEach((info) => {
-                    if (info) {
-                        imageInfoMap.set(info.id, {
-                            url: info.url,
-                            blurhash: info.blurhash,
-                        });
-                    }
-                });
-            }
-
-            // 将图片信息映射到评价对象中
-            const itemsWithImages = result.items.map((item) => ({
-                ...item,
-                images: (item.imageIds || [])
-                    .map((id) => imageInfoMap.get(id))
-                    .filter(Boolean) as Array<{
-                    url: string;
-                    blurhash?: string;
-                }>,
-                reviewerAvatarUrl: item.reviewerAvatar || null,
-                reviewerName: item.reviewerName || null,
-            }));
+            const items = await this.decorateReviewsForPublic(result.items);
 
             return {
-                items: itemsWithImages,
+                items,
                 total: result.total,
                 page: result.page,
                 limit: result.limit,
@@ -291,6 +353,27 @@ export class ReviewService {
                 `获取评价列表失败: ${error instanceof Error ? error.message : String(error)}`,
             );
         }
+    }
+
+    /**
+     * 获取 Top 评价（用于其它聚合接口）
+     * 固定返回最多 limit 条，并补齐 images（预签名 URL + blurhash）与展示用 reviewer 字段。
+     */
+    async getTopReviewsByTarget(
+        targetId: string,
+        targetType: 'personnel' | 'shop',
+        options: { serviceId?: string; limit?: number } = {},
+    ) {
+        const limit = options.limit ?? 5;
+
+        const result = await this.reviewRepository.getTopReviewsByTargetPublic(
+            targetId,
+            targetType,
+            limit,
+            options.serviceId,
+        );
+
+        return await this.decorateReviewsForPublic(result.items);
     }
 
     /**
@@ -312,6 +395,9 @@ export class ReviewService {
                 serviceId,
             );
 
+            const photoCount =
+                (stats as unknown as { photoCount?: number }).photoCount ?? 0;
+
             // 计算好评率
             const goodRatePercentage = calculateGoodRatePercentage(
                 stats.goodCount,
@@ -326,6 +412,7 @@ export class ReviewService {
                 targetType: stats.targetType,
                 serviceId: stats.serviceId,
                 totalCount: stats.totalCount,
+                photoCount,
                 goodCount: stats.goodCount,
                 neutralCount: stats.neutralCount,
                 badCount: stats.badCount,
@@ -336,7 +423,7 @@ export class ReviewService {
                 averagePunctuality: stats.averagePunctuality,
                 goodRatePercentage,
                 lastReviewAt: stats.lastReviewAt,
-            };
+            } as unknown as ReviewStats;
         } catch (error) {
             if (error instanceof BadRequestException) {
                 throw error;

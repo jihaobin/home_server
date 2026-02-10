@@ -128,6 +128,7 @@ export const reviewStats = pgTable(
         targetType: reviewTargetTypeEnum('target_type').notNull(), // 被评价对象类型
         serviceId: varchar('service_id', { length: 255 }).notNull(), // 服务 ID；'__all__' 表示全部服务汇总
         totalCount: integer('total_count').default(0).notNull(), // 总评价数
+        photoCount: integer('photo_count').default(0).notNull(), // 晒图评价数（有图评价条数）
         goodCount: integer('good_count').default(0).notNull(), // 好评数（4-5星）
         neutralCount: integer('neutral_count').default(0).notNull(), // 中评数（3星）
         badCount: integer('bad_count').default(0).notNull(), // 差评数（1-2星）

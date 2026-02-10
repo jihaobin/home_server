@@ -11,10 +11,12 @@ import {
     Res,
     StreamableFile,
     UploadedFile,
+    UploadedFiles,
     UseGuards,
     UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
 import { S3StoreServer } from 'src/common/s3_store/s3_store.service';
 import type { UserSession } from '../auth/auth.guard';
@@ -59,6 +61,46 @@ export class FilesController {
             uploadedAt: fileRecord.uploadedAt,
             blurhash: fileRecord.blurhash || undefined,
         };
+    }
+
+    /**
+     * 文件批量上传端点（通用，不限制数量；数量限制由客户端自行控制）
+     */
+    @Post('upload/batch')
+    @UseGuards(AuthGuard)
+    @UseInterceptors(FilesInterceptor('files'))
+    async uploadFilesBatch(
+        @UploadedFiles() batchFiles: Express.Multer.File[],
+        @Req() req: Request,
+    ): Promise<FileUploadResponse[]> {
+        if (!batchFiles || batchFiles.length === 0) {
+            throw new HttpException('未选择文件', HttpStatus.BAD_REQUEST);
+        }
+
+        const userId = req.user.id;
+
+        const records = await Promise.all(
+            batchFiles.map(async (file) => {
+                const fileRecord = await this.filesService.uploadFile(
+                    file,
+                    userId,
+                );
+                const fileUrl = this.filesService.generateFileUrl(fileRecord);
+                return {
+                    id: fileRecord.id,
+                    originalName: fileRecord.originalName,
+                    fileName: fileRecord.fileName,
+                    fileSize: fileRecord.fileSize,
+                    mimeType: fileRecord.mimeType,
+                    fileType: fileRecord.fileType,
+                    fileUrl,
+                    uploadedAt: fileRecord.uploadedAt,
+                    blurhash: fileRecord.blurhash || undefined,
+                } satisfies FileUploadResponse;
+            }),
+        );
+
+        return records;
     }
 
     /**

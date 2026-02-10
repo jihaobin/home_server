@@ -3,11 +3,7 @@ export const ServiceEtaReminderRedisKeys = {
     lockPrefix: 'lock:service-eta:',
 } as const;
 
-export type ServiceEtaReminderStage =
-    | 'eta_60'
-    | 'eta_30'
-    | 'eta_15'
-    | 'auto_cancel';
+export type ServiceEtaReminderStage = 'eta_60' | 'eta_30' | 'eta_15';
 
 export type ServiceEtaWarningLevel = 'mild' | 'serious' | 'critical';
 
@@ -38,12 +34,6 @@ export const SERVICE_ETA_REMINDER_SEQUENCE: readonly ServiceEtaReminderDefinitio
             warningLevel: 'critical',
             escalateLabel: '仅剩 15 分钟，请确保准时到达客户地点',
         },
-        {
-            stage: 'auto_cancel',
-            offsetMs: 0,
-            warningLevel: 'critical',
-            escalateLabel: '预约时间已到，系统将取消未执行的订单',
-        },
     ] as const;
 
 export interface ServiceEtaReminderTask {
@@ -51,6 +41,7 @@ export interface ServiceEtaReminderTask {
     assignmentId: string;
     stage: ServiceEtaReminderStage;
     appointmentTime: string;
+    appointmentWindowEndTime?: string;
     scheduledAt: string;
     warningLevel: ServiceEtaWarningLevel;
 }

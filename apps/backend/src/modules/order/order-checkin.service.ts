@@ -6,7 +6,7 @@ import {
     Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { type VerifyOrderCheckinDto } from '@repo/types';
+import type { OrderCheckinPayload, VerifyOrderCheckinDto } from '@repo/types';
 import * as QRCode from 'qrcode';
 import { GeoLocationService } from 'src/common/services/geo-location.service';
 import { OrderRepository } from './order.reposityro';
@@ -18,7 +18,7 @@ export interface GenerateQrResult {
     expiresAt: Date;
     ttlSeconds: number;
     qrCodeDataUrl: string;
-    payload: string;
+    payload: OrderCheckinPayload;
 }
 
 export interface VerifyResult {
@@ -60,6 +60,11 @@ export class OrderCheckinService {
             throw new ForbiddenException('无权为该订单生成核验码');
         }
 
+        // 仅允许对已支付（或服务中）订单生成核验二维码。
+        if (order.status !== 'paid' && order.status !== 'in_progress') {
+            throw new BadRequestException('当前订单状态不允许生成核验码');
+        }
+
         await this.orderCheckinRepository.revokePending(request.orderId);
 
         const token = randomBytes(24).toString('hex');
@@ -73,7 +78,7 @@ export class OrderCheckinService {
         });
 
         const payload = this.buildPayload(request.orderId, token);
-        const qrCodeDataUrl = await QRCode.toDataURL(payload, {
+        const qrCodeDataUrl = await QRCode.toDataURL(JSON.stringify(payload), {
             errorCorrectionLevel: 'M',
             margin: 1,
             scale: 6,
@@ -85,7 +90,7 @@ export class OrderCheckinService {
             expiresAt,
             ttlSeconds: Math.floor(this.ttlMs / 1000),
             qrCodeDataUrl,
-            payload: JSON.parse(payload),
+            payload,
         };
     }
 
@@ -153,19 +158,27 @@ export class OrderCheckinService {
         // }
 
         const verifiedAt = new Date();
-        await this.orderCheckinRepository.updateStatus(record.id, 'verified', {
-            verifiedAt,
-            verifiedBy: dto.staffId,
-            verifiedGeom: userPoint,
-        });
-
-        // 更新订单状态为 in_progress
-        if (order.status === 'paid') {
-            await this.orderRepository.updateOrderStatus(
-                record.orderId,
-                'in_progress',
+        await this.orderRepository.transaction(async (tx) => {
+            await this.orderCheckinRepository.updateStatus(
+                record.id,
+                'verified',
+                {
+                    verifiedAt,
+                    verifiedBy: dto.staffId,
+                    verifiedGeom: userPoint,
+                },
+                tx,
             );
-        }
+
+            // paid -> in_progress + serviceStartedAt(=verifiedAt)，原子 + 幂等。
+            if (order.status === 'paid') {
+                await this.orderRepository.startService(
+                    record.orderId,
+                    verifiedAt,
+                    tx,
+                );
+            }
+        });
 
         return {
             orderId: record.orderId,
@@ -174,8 +187,8 @@ export class OrderCheckinService {
         };
     }
 
-    private buildPayload(orderId: string, token: string): string {
-        return JSON.stringify({ orderId, token });
+    private buildPayload(orderId: string, token: string): OrderCheckinPayload {
+        return { orderId, token };
     }
 
     private resolveNumber(key: string, fallback: number): number {

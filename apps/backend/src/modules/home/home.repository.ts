@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
 import {
@@ -51,6 +51,33 @@ export class HomeRepository {
         } catch {
             return null;
         }
+    }
+
+    private async getCategoryDescendantIds(
+        categoryId: string,
+    ): Promise<string[]> {
+        const normalized = categoryId.trim();
+        if (!normalized) return [];
+
+        // include self + descendants (service_categories.parent_id)
+        // Use raw SQL names here to avoid alias/column rendering mismatches.
+        const s = sql`
+            WITH RECURSIVE category_tree AS (
+                SELECT id
+                FROM service_categories
+                WHERE id = ${normalized}
+
+                UNION ALL
+
+                SELECT sc.id
+                FROM service_categories sc
+                INNER JOIN category_tree ct ON sc.parent_id = ct.id
+            )
+            SELECT id FROM category_tree
+        `;
+
+        const result = await this.db.execute<{ id: string }>(s);
+        return result.rows.map((r) => r.id);
     }
 
     async getUserDefaultAddress(
@@ -220,9 +247,17 @@ export class HomeRepository {
         maxDistanceKm: number;
         limit: number;
         offset?: number;
+        categoryId?: string;
     }): Promise<HomeRecommendedPersonnel[]> {
         const now = new Date();
         const centerGeom = params.center;
+
+        const categoryIds = params.categoryId
+            ? await this.getCategoryDescendantIds(params.categoryId)
+            : null;
+        if (params.categoryId && (!categoryIds || categoryIds.length === 0)) {
+            return [];
+        }
 
         const userPoint = this.geoLocationService.createUserPoint(
             centerGeom[0],
@@ -239,11 +274,24 @@ export class HomeRepository {
         );
 
         // 1) 为每个服务人员选 1 条“最低起价”定价（跨服务），并取该定价对应的 services.name 作为 tag。
+        const optimalPricingConditions = [
+            eq(servicePersonnelPricing.isActive, true),
+            eq(services.isActive, true),
+            sql`(${servicePersonnelPricing.effectiveFrom} IS NULL OR ${servicePersonnelPricing.effectiveFrom} <= ${now})`,
+            sql`(${servicePersonnelPricing.effectiveTo} IS NULL OR ${servicePersonnelPricing.effectiveTo} >= ${now})`,
+        ];
+        if (categoryIds && categoryIds.length > 0) {
+            optimalPricingConditions.push(
+                inArray(services.categoryId, categoryIds),
+            );
+        }
+
         const optimalPricingCTE = this.db.$with('optimal_pricing').as(
             this.db
                 .select({
                     userId: servicePersonnelPricing.userId,
                     pricingId: servicePersonnelPricing.id,
+                    serviceId: servicePersonnelPricing.serviceId,
                     price: servicePersonnelPricing.price,
                     currency: servicePersonnelPricing.currency,
                     estimatedDurationMinutes:
@@ -260,14 +308,7 @@ export class HomeRepository {
                     services,
                     eq(services.id, servicePersonnelPricing.serviceId),
                 )
-                .where(
-                    and(
-                        eq(servicePersonnelPricing.isActive, true),
-                        eq(services.isActive, true),
-                        sql`(${servicePersonnelPricing.effectiveFrom} IS NULL OR ${servicePersonnelPricing.effectiveFrom} <= ${now})`,
-                        sql`(${servicePersonnelPricing.effectiveTo} IS NULL OR ${servicePersonnelPricing.effectiveTo} >= ${now})`,
-                    ),
-                ),
+                .where(and(...optimalPricingConditions)),
         );
 
         // 2) 关联人员基础信息、最优定价、全局评分统计与距离。
@@ -279,6 +320,8 @@ export class HomeRepository {
                         personnelId: servicePersonnel.userId,
                         name: servicePersonnel.name,
                         avatarFileId: servicePersonnel.avatar,
+                        serviceId: optimalPricingCTE.serviceId,
+                        pricingId: optimalPricingCTE.pricingId,
                         province: servicePersonnel.province,
                         district: servicePersonnel.district,
                         county: servicePersonnel.county,
@@ -387,7 +430,7 @@ export class HomeRepository {
 
             const ratingValue = Number((r.averageRating ?? 0) / 100);
 
-            return {
+            const base = {
                 personnelId: r.personnelId,
                 name: r.name ?? '服务人员',
                 avatarUrl: avatarInfo?.url ?? null,
@@ -403,14 +446,41 @@ export class HomeRepository {
                 goodRatePercentage: Number(r.goodRatePercentage ?? 0),
                 reviewCount: Number(r.reviewCount ?? 0),
             } satisfies HomeRecommendedPersonnel;
+
+            // 兼容：@repo/types 尚未发布到新字段时，避免类型层面 excess property 报错。
+            const extra = {
+                serviceId: r.serviceId,
+                pricingId: r.pricingId,
+            };
+            return Object.assign(base, extra);
         });
     }
 
     async getRecommendedPersonnelGlobal(params: {
         limit: number;
         offset?: number;
+        categoryId?: string;
     }): Promise<HomeRecommendedPersonnel[]> {
         const now = new Date();
+
+        const categoryIds = params.categoryId
+            ? await this.getCategoryDescendantIds(params.categoryId)
+            : null;
+        if (params.categoryId && (!categoryIds || categoryIds.length === 0)) {
+            return [];
+        }
+
+        const optimalPricingConditions = [
+            eq(servicePersonnelPricing.isActive, true),
+            eq(services.isActive, true),
+            sql`(${servicePersonnelPricing.effectiveFrom} IS NULL OR ${servicePersonnelPricing.effectiveFrom} <= ${now})`,
+            sql`(${servicePersonnelPricing.effectiveTo} IS NULL OR ${servicePersonnelPricing.effectiveTo} >= ${now})`,
+        ];
+        if (categoryIds && categoryIds.length > 0) {
+            optimalPricingConditions.push(
+                inArray(services.categoryId, categoryIds),
+            );
+        }
 
         // 1) 为每个服务人员选 1 条“最低起价”定价（跨服务），并取该定价对应的 services.name 作为 tag。
         const optimalPricingCTE = this.db.$with('optimal_pricing').as(
@@ -418,6 +488,7 @@ export class HomeRepository {
                 .select({
                     userId: servicePersonnelPricing.userId,
                     pricingId: servicePersonnelPricing.id,
+                    serviceId: servicePersonnelPricing.serviceId,
                     price: servicePersonnelPricing.price,
                     currency: servicePersonnelPricing.currency,
                     estimatedDurationMinutes:
@@ -434,14 +505,7 @@ export class HomeRepository {
                     services,
                     eq(services.id, servicePersonnelPricing.serviceId),
                 )
-                .where(
-                    and(
-                        eq(servicePersonnelPricing.isActive, true),
-                        eq(services.isActive, true),
-                        sql`(${servicePersonnelPricing.effectiveFrom} IS NULL OR ${servicePersonnelPricing.effectiveFrom} <= ${now})`,
-                        sql`(${servicePersonnelPricing.effectiveTo} IS NULL OR ${servicePersonnelPricing.effectiveTo} >= ${now})`,
-                    ),
-                ),
+                .where(and(...optimalPricingConditions)),
         );
 
         // 2) 关联人员基础信息、最优定价、全局评分统计。
@@ -454,6 +518,8 @@ export class HomeRepository {
                         personnelId: servicePersonnel.userId,
                         name: servicePersonnel.name,
                         avatarFileId: servicePersonnel.avatar,
+                        serviceId: optimalPricingCTE.serviceId,
+                        pricingId: optimalPricingCTE.pricingId,
                         province: servicePersonnel.province,
                         district: servicePersonnel.district,
                         county: servicePersonnel.county,
@@ -556,7 +622,7 @@ export class HomeRepository {
 
             const ratingValue = Number((r.averageRating ?? 0) / 100);
 
-            return {
+            const base = {
                 personnelId: r.personnelId,
                 name: r.name ?? '服务人员',
                 avatarUrl: avatarInfo?.url ?? null,
@@ -572,6 +638,12 @@ export class HomeRepository {
                 goodRatePercentage: Number(r.goodRatePercentage ?? 0),
                 reviewCount: Number(r.reviewCount ?? 0),
             } satisfies HomeRecommendedPersonnel;
+
+            const extra = {
+                serviceId: r.serviceId,
+                pricingId: r.pricingId,
+            };
+            return Object.assign(base, extra);
         });
     }
 }

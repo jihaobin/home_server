@@ -1345,7 +1345,8 @@ export class PayService {
      * @param orderId 订单ID
      */
     async handleOrderCompletion(orderId: string) {
-        const order = await this.order.getOrderById(orderId);
+        // 收益/退款等内部流程需要使用数据库原始订单记录（decimal 保持 string）。
+        const order = await this.orderRepository.getOrderById(orderId);
 
         if (!order) {
             throw new BadRequestException('订单不存在');
@@ -1397,7 +1398,8 @@ export class PayService {
         }
 
         // 1. 获取订单信息和支付记录
-        const order = await this.order.getOrderById(orderId);
+        // 退款流程使用数据库原始金额类型（decimal string），避免与面向客户端的 OrderService view 混用。
+        const order = await this.orderRepository.getOrderById(orderId);
         if (!order) {
             throw new BadRequestException('订单不存在');
         }

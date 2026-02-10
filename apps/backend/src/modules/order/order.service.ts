@@ -6,10 +6,14 @@ import {
     forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import Decimal from 'decimal.js';
 import type {
     CreateDesignatedOrder,
     NotificationDeliveryMode,
     NotificationEventPayload,
+    OrderConfirmDesignatedPreviewQuery,
+    OrderConfirmDesignatedPreviewResponse,
+    Pricing,
     OrderListRequest,
     OrderCardsTab,
     OrderCardsListResponse,
@@ -23,9 +27,16 @@ import {
     OrderExpireRedisKeys,
 } from 'src/common/cache';
 import { DbType } from 'src/common/database/db';
-import { extractParams, isTimeInRange } from 'src/lib/utlis';
+import {
+    extractParams,
+    isAlignedToWorkStartTimeGrid,
+    isTimeInRange,
+} from 'src/lib/utlis';
 import { PayService } from '../pay/pay.service';
 import { WorkSkillService } from '../work-skill/work-skill.service';
+import { ServiceService } from '../service/service.service';
+import { AddressRespository } from '../address/address.repository';
+import { ServicePersonnelRepository } from '../service-personnel/service-personnel.repository';
 import { NotificationPublisher } from '../notification/notification.publisher';
 import { NotificationTemplateService } from '../notification/notification-template.service';
 import {
@@ -79,6 +90,15 @@ export class OrderService {
 
     @Inject(WorkSkillService)
     private readonly workSkillService: WorkSkillService;
+
+    @Inject(ServiceService)
+    private readonly serviceService: ServiceService;
+
+    @Inject(AddressRespository)
+    private readonly addressRepository: AddressRespository;
+
+    @Inject(ServicePersonnelRepository)
+    private readonly servicePersonnelRepository: ServicePersonnelRepository;
 
     @Inject(forwardRef(() => PayService))
     private readonly payService: PayService;
@@ -260,9 +280,12 @@ export class OrderService {
         if (!Number.isFinite(appointmentMs)) {
             return [];
         }
+        const windowMs = 2 * 60 * 60 * 1000;
+        const deadlineMs = appointmentMs + windowMs;
+        const appointmentWindowEndTime = new Date(deadlineMs).toISOString();
         const entries: ServiceEtaReminderEntry[] = [];
         for (const definition of SERVICE_ETA_REMINDER_SEQUENCE) {
-            const scheduledAtMs = appointmentMs - definition.offsetMs;
+            const scheduledAtMs = deadlineMs - definition.offsetMs;
             if (!Number.isFinite(scheduledAtMs) || scheduledAtMs <= 0) {
                 continue;
             }
@@ -272,6 +295,7 @@ export class OrderService {
                 assignmentId: order.assignment.id,
                 stage: definition.stage,
                 appointmentTime: appointment.toISOString(),
+                appointmentWindowEndTime,
                 scheduledAt: scheduledAt.toISOString(),
                 warningLevel: definition.warningLevel,
             };
@@ -558,6 +582,8 @@ export class OrderService {
                                 : null,
                         workerAvatarBlurhash: item.workerAvatarBlurhash ?? null,
                         serviceName: item.serviceName,
+                        serviceId: item.serviceId,
+                        servicePersonnelId: item.servicePersonnelId ?? null,
                         itemCount: 1,
                         appointmentTime: appointment.toISOString(),
                         totalAmount: item.totalAmount,
@@ -627,7 +653,116 @@ export class OrderService {
                 }
             }
 
-            return { ...order };
+            // 订单详情页强依赖：金额字段统一 number 化，动作语义由后端裁决。
+            const originalAmount = new Decimal(order.originalAmount)
+                .toDecimalPlaces(2)
+                .toNumber();
+            const discountAmount = new Decimal(order.discountAmount ?? 0)
+                .toDecimalPlaces(2)
+                .toNumber();
+            const totalAmount = new Decimal(order.totalAmount)
+                .toDecimalPlaces(2)
+                .toNumber();
+
+            const paymentExpiresAt =
+                order.paymentExpiresAt instanceof Date
+                    ? order.paymentExpiresAt
+                    : new Date(order.paymentExpiresAt);
+
+            const now = new Date();
+            const canCancel = [
+                'pending_payment',
+                'pending_acceptance',
+                'paid',
+                'staff_rejected',
+            ].includes(order.status);
+
+            const canPay =
+                order.status === 'pending_payment' &&
+                !Number.isNaN(paymentExpiresAt.getTime()) &&
+                paymentExpiresAt.getTime() > now.getTime();
+
+            const showCheckinQr =
+                order.status === 'paid' || order.status === 'in_progress';
+
+            const {
+                serviceImageBucketName,
+                serviceImageObjectPath,
+                serviceImageBlurhash,
+                personnelAvatarBucketName,
+                personnelAvatarObjectPath,
+                personnelAvatarBlurhash,
+                ...safeOrder
+            } = order;
+
+            const [serviceImageUrl, personnelAvatarUrl] = await Promise.all([
+                serviceImageBucketName && serviceImageObjectPath
+                    ? this.s3StoreServer.getPresignedDownloadUrl(
+                          serviceImageBucketName,
+                          serviceImageObjectPath,
+                          600,
+                      )
+                    : Promise.resolve(null),
+                personnelAvatarBucketName && personnelAvatarObjectPath
+                    ? this.s3StoreServer.getPresignedDownloadUrl(
+                          personnelAvatarBucketName,
+                          personnelAvatarObjectPath,
+                          600,
+                      )
+                    : Promise.resolve(null),
+            ]);
+
+            const normalizedPayments = Array.isArray(safeOrder.payments)
+                ? safeOrder.payments.map((payment: any) => {
+                      const amount =
+                          typeof payment?.amount === 'string' ||
+                          typeof payment?.amount === 'number'
+                              ? new Decimal(payment.amount)
+                                    .toDecimalPlaces(2)
+                                    .toNumber()
+                              : payment?.amount;
+                      return {
+                          ...payment,
+                          amount,
+                      };
+                  })
+                : safeOrder.payments;
+
+            const service = safeOrder.service
+                ? {
+                      ...safeOrder.service,
+                      imageUrl: serviceImageUrl,
+                      imageBlurhash: serviceImageBlurhash ?? null,
+                      // 保持旧字段兼容：如果消费端仍读取 imageFileUrl，也能直接用。
+                      imageFileUrl: serviceImageUrl ?? null,
+                  }
+                : null;
+
+            const assignment = safeOrder.assignment
+                ? {
+                      ...safeOrder.assignment,
+                      servicePersonnel: safeOrder.assignment.servicePersonnel
+                          ? {
+                                ...safeOrder.assignment.servicePersonnel,
+                                avatarUrl: personnelAvatarUrl,
+                                avatarBlurhash: personnelAvatarBlurhash ?? null,
+                            }
+                          : safeOrder.assignment.servicePersonnel,
+                  }
+                : null;
+
+            return {
+                ...safeOrder,
+                originalAmount,
+                discountAmount,
+                totalAmount,
+                payments: normalizedPayments,
+                service,
+                assignment,
+                canCancel,
+                canPay,
+                showCheckinQr,
+            };
         } catch (error) {
             if (error instanceof BadRequestException) {
                 throw error;
@@ -637,6 +772,151 @@ export class OrderService {
                 `获取订单详情失败: ${this.extractErrorMessage(error)}`,
             );
         }
+    }
+
+    /**
+     * 确认订单预览（指定服务人员下单）
+     *
+     * 目标：创建订单前返回确认页渲染所需的聚合数据与 pricing（v1 仅 service_fee）。
+     */
+    async getConfirmDesignatedPreview(
+        params: { customerId: string } & OrderConfirmDesignatedPreviewQuery,
+    ): Promise<OrderConfirmDesignatedPreviewResponse> {
+        const {
+            customerId,
+            personnelId,
+            serviceId,
+            specificationId,
+            addressId,
+            appointmentTime,
+            couponCode,
+        } = params;
+
+        const address = addressId
+            ? await this.addressRepository.findByIdAndUserId(
+                  addressId,
+                  customerId,
+              )
+            : await this.addressRepository.findDefaultByUserId(customerId);
+
+        if (addressId && !address) {
+            throw new BadRequestException('地址不存在或无权限');
+        }
+
+        const details =
+            await this.servicePersonnelRepository.getPersonnelServiceDetails(
+                personnelId,
+                serviceId,
+            );
+
+        if (!details) {
+            throw new BadRequestException('服务人员或服务不存在');
+        }
+
+        const rawSpecs = details.specifications ?? [];
+        if (rawSpecs.length === 0) {
+            throw new BadRequestException('该服务暂无可用定价');
+        }
+
+        const specifications = rawSpecs.map((spec: any) => ({
+            id: String(spec.id),
+            userId: String(spec.userId),
+            serviceId: String(spec.serviceId),
+            name:
+                typeof spec.name === 'string' && spec.name.trim()
+                    ? spec.name.trim()
+                    : undefined,
+            price: String(spec.price),
+            currency: String(spec.currency ?? 'CNY'),
+            estimatedDurationMinutes:
+                typeof spec.estimatedDurationMinutes === 'number'
+                    ? spec.estimatedDurationMinutes
+                    : undefined,
+        }));
+
+        const selectedSpecification = specificationId
+            ? specifications.find((spec) => spec.id === specificationId)
+            : (() => {
+                  let best = specifications[0];
+                  let bestPrice = new Decimal(best.price);
+                  for (const spec of specifications.slice(1)) {
+                      const price = new Decimal(spec.price);
+                      if (price.lessThan(bestPrice)) {
+                          best = spec;
+                          bestPrice = price;
+                      }
+                  }
+                  return best;
+              })();
+
+        if (specificationId && !selectedSpecification) {
+            throw new BadRequestException('服务规格不存在或已失效');
+        }
+
+        if (!selectedSpecification) {
+            throw new BadRequestException('服务规格不存在');
+        }
+
+        const service = await this.serviceService.getServiceById(serviceId);
+        if (!service) {
+            throw new BadRequestException('服务不存在');
+        }
+
+        const latestPrice = new Decimal(selectedSpecification.price)
+            .toDecimalPlaces(2)
+            .toNumber();
+        if (!Number.isFinite(latestPrice) || latestPrice <= 0) {
+            throw new BadRequestException('服务定价信息异常，请稍后重试');
+        }
+
+        const pricing: Pricing = {
+            currency: selectedSpecification.currency || 'CNY',
+            items: [
+                {
+                    key: 'service_fee',
+                    label: '服务费用',
+                    amount: latestPrice,
+                },
+            ],
+            originalAmount: latestPrice,
+            discountAmount: 0,
+            totalAmount: latestPrice,
+        };
+
+        return {
+            address,
+            servicePersonnel: {
+                userId: details.userId,
+                name: details.name,
+                avatar: details.avatar,
+                bio: details.bio,
+                province: details.province,
+                district: details.district,
+                county: details.county,
+                detailedAddress: details.detailedAddress ?? '',
+                yearsOfExperience: details.yearsOfExperience,
+                workStartTime: details.workStartTime,
+                workEndTime: details.workEndTime,
+                isAvailable: details.isAvailable,
+                workDays: details.workDays,
+                currentStatus: details.currentStatus,
+                lastActiveAt: details.lastActiveAt,
+            },
+            service: {
+                id: service.id,
+                name: service.name,
+                imageFileUrl: service.imageFileUrl ?? null,
+            },
+            specifications,
+            selected: {
+                specificationId: selectedSpecification.id,
+                addressId: address?.id,
+                appointmentTime,
+                couponCode,
+            },
+            pricing,
+            paymentExpiresAt: this.calculatePaymentExpiresAt().toISOString(),
+        };
     }
 
     /**
@@ -701,6 +981,19 @@ export class OrderService {
             throw new BadRequestException('服务时间不在工作人员的工作时间段内');
         }
 
+        // 4.1 2 小时网格对齐校验：以 workStartTime 为基准每 +120 分钟。
+        if (
+            !isAlignedToWorkStartTimeGrid(
+                appointmentTime,
+                ServicePersonnel.workStartTime,
+                120,
+            )
+        ) {
+            throw new BadRequestException(
+                '预约时间必须命中从上班时间起算的 2 小时网格点',
+            );
+        }
+
         // 5. 获取服务规格信息（价格和时长）
         // 从servicePersonnelPricing表中查询指定的服务规格
         const specification =
@@ -725,58 +1018,7 @@ export class OrderService {
             throw new BadRequestException('服务规格已失效');
         }
 
-        // 6. 在相同的时间段中该工作人员是否有其他订单
-        // 使用规格中的服务时长计算订单结束时间
-        const appointmentStartTime = new Date(createOrderDto.appointmentTime);
-        const estimatedDuration = specification.estimatedDurationMinutes;
-        const appointmentEndTime = new Date(appointmentStartTime);
-        appointmentEndTime.setMinutes(
-            appointmentEndTime.getMinutes() + estimatedDuration,
-        );
-
-        // 查询该时间段内是否已有其他订单
-        const existingOrders =
-            await this.orderRepository.getOrdersByPersonnelAndTimeRange(
-                createOrderDto.designatedPersonnelId,
-                appointmentStartTime,
-                appointmentEndTime,
-            );
-
-        // 检查是否有时间冲突的订单
-        const hasConflictingOrder = existingOrders.some((order) => {
-            // 如果订单状态是已取消或已退款，则不视为冲突
-            if (
-                order.status === 'cancelled' ||
-                order.status === 'refunded' ||
-                order.status === 'pending_payment' ||
-                order.status === 'payment_timeout'
-            ) {
-                return false;
-            }
-
-            // 获取该订单的服务规格信息
-            if (!order.specificationId) {
-                return false;
-            }
-
-            // 从订单中获取预约时间
-            const orderStartTime = new Date(order.appointmentTime);
-            const orderDuration =
-                order.specification?.estimatedDurationMinutes || 0;
-            const orderEndTime = new Date(orderStartTime);
-            orderEndTime.setMinutes(orderEndTime.getMinutes() + orderDuration);
-
-            // 检查时间是否重叠
-            // 重叠条件：当前订单开始时间 < 查询订单结束时间 且 当前订单结束时间 > 查询订单开始时间
-            return (
-                orderStartTime < appointmentEndTime &&
-                orderEndTime > appointmentStartTime
-            );
-        });
-
-        if (hasConflictingOrder) {
-            throw new BadRequestException('该时间段工作人员已有其他订单');
-        }
+        // 6. 新语义：不做时间冲突检测（同一时间段允许多单）
 
         // 7. 计算定价
         /**
@@ -791,6 +1033,15 @@ export class OrderService {
             throw new BadRequestException('服务定价信息异常，请稍后重试');
         }
 
+        const discountAmount = createOrderDto.discountAmount ?? 0;
+        if (!Number.isFinite(discountAmount) || discountAmount < 0) {
+            throw new BadRequestException('折扣金额不合法');
+        }
+
+        if (discountAmount > latestPrice) {
+            throw new BadRequestException('折扣金额不能大于服务费用');
+        }
+
         // 计算价格差异百分比
         const priceDifference = Math.abs(userPrice - latestPrice) / latestPrice;
 
@@ -801,6 +1052,44 @@ export class OrderService {
 
         // 8. 调用创建订单方法
         try {
+            // 二次校验：以服务端最新规格价为准落库，并同步返回 pricing.totalAmount 供支付使用。
+            const totalAmount = new Decimal(latestPrice)
+                .minus(discountAmount)
+                .toDecimalPlaces(2)
+                .toNumber();
+
+            const pricing: Pricing = {
+                currency: specification.currency || 'CNY',
+                items: [
+                    {
+                        key: 'service_fee',
+                        label: '服务费用',
+                        amount: new Decimal(latestPrice)
+                            .toDecimalPlaces(2)
+                            .toNumber(),
+                    },
+                    ...(discountAmount > 0
+                        ? ([
+                              {
+                                  key: 'promo_discount',
+                                  label: '优惠',
+                                  amount: new Decimal(discountAmount)
+                                      .mul(-1)
+                                      .toDecimalPlaces(2)
+                                      .toNumber(),
+                              },
+                          ] as Pricing['items'])
+                        : ([] as Pricing['items'])),
+                ],
+                originalAmount: new Decimal(latestPrice)
+                    .toDecimalPlaces(2)
+                    .toNumber(),
+                discountAmount: new Decimal(discountAmount)
+                    .toDecimalPlaces(2)
+                    .toNumber(),
+                totalAmount,
+            };
+
             const result =
                 await this.orderRepository.createOrderWithDesignatedPersonnel({
                     customerId: createOrderDto.customerId,
@@ -808,10 +1097,13 @@ export class OrderService {
                     addressId: createOrderDto.addressId,
                     specificationId: createOrderDto.specificationId,
                     appointmentTime: appointmentTime,
-                    discountAmount:
-                        createOrderDto?.discountAmount?.toString() || '0',
+                    discountAmount: new Decimal(discountAmount)
+                        .toDecimalPlaces(2)
+                        .toString(),
                     designatedPersonnelId: createOrderDto.designatedPersonnelId,
-                    price: userPrice.toString(), // 使用用户看到的价格
+                    price: new Decimal(latestPrice)
+                        .toDecimalPlaces(2)
+                        .toString(),
                     paymentExpiresAt,
                     remark: createOrderDto.remark?.trim() || null,
                 });
@@ -840,12 +1132,102 @@ export class OrderService {
 
             return {
                 orderId: result.orderId,
+                pricing,
+                paymentExpiresAt: paymentExpiresAt.toISOString(),
             };
         } catch (error) {
             throw new BadRequestException(
                 `创建指定服务人员订单失败: ${this.extractErrorMessage(error)}`,
             );
         }
+    }
+
+    /**
+     * 服务人员改期：将 appointmentTime 修改为新的 2 小时窗口起点。
+     */
+    async rescheduleOrder(params: {
+        orderId: string;
+        staffId: string;
+        appointmentTime: string;
+    }) {
+        const { orderId, staffId } = params;
+        if (!orderId) {
+            throw new BadRequestException('订单ID不能为空');
+        }
+        if (!staffId) {
+            throw new BadRequestException('缺少服务人员身份信息');
+        }
+
+        const nextAppointment = new Date(params.appointmentTime);
+        if (Number.isNaN(nextAppointment.getTime())) {
+            throw new BadRequestException('预约时间格式不正确');
+        }
+        if (nextAppointment < new Date()) {
+            throw new BadRequestException('预约时间不能是过去的时间');
+        }
+
+        const order = await this.orderRepository.getOrderById(orderId);
+        if (!order) {
+            throw new BadRequestException('订单不存在');
+        }
+
+        if (!order.assignment?.servicePersonnelId) {
+            throw new BadRequestException('订单尚未分配服务人员');
+        }
+        if (order.assignment.servicePersonnelId !== staffId) {
+            throw new BadRequestException('订单必须分配给当前服务人员');
+        }
+
+        const allowedStatuses: DbOrderStatus[] = ['pending_acceptance', 'paid'];
+        if (!allowedStatuses.includes(order.status)) {
+            throw new BadRequestException('当前订单状态不允许改期');
+        }
+
+        const personnel = await this.workSkillService.getPersonnelInfo(
+            staffId,
+            order.serviceId,
+        );
+        if (!personnel?.userId) {
+            throw new BadRequestException('服务人员不存在');
+        }
+
+        const { weekday, timeStr } = extractParams(nextAppointment);
+        if (!personnel.workDays?.includes(weekday.toString())) {
+            throw new BadRequestException('服务时间不在工作人员的工作日列表中');
+        }
+        if (
+            !isTimeInRange(
+                timeStr,
+                personnel.workStartTime,
+                personnel.workEndTime,
+            )
+        ) {
+            throw new BadRequestException('服务时间不在工作人员的工作时间段内');
+        }
+        if (
+            !isAlignedToWorkStartTimeGrid(
+                nextAppointment,
+                personnel.workStartTime,
+                120,
+            )
+        ) {
+            throw new BadRequestException(
+                '预约时间必须命中从上班时间起算的 2 小时网格点',
+            );
+        }
+
+        const updated = await this.orderRepository.updateAppointmentTime(
+            orderId,
+            nextAppointment,
+            allowedStatuses,
+        );
+        if (!updated) {
+            throw new BadRequestException('订单改期失败');
+        }
+
+        const detailed = await this.orderRepository.getOrderById(orderId);
+        await this.scheduleServiceEtaReminders(detailed);
+        return detailed;
     }
 
     /**
@@ -1110,11 +1492,11 @@ export class OrderService {
                 throw new BadRequestException('订单必须处于服务中状态才能完成');
             }
 
-            // 更新订单状态为 completed
-            const updatedOrder = await this.orderRepository.updateOrderStatus(
-                id,
-                'completed',
-            );
+            // 更新订单状态为 completed，并递增服务完成次数（原子 + 幂等）
+            const updatedOrder =
+                await this.orderRepository.completeOrderAndIncrementServicedCount(
+                    id,
+                );
 
             // 订单完成后处理收益分配
             await this.payService.handleOrderCompletion(id);

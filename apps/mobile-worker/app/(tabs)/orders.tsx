@@ -61,8 +61,13 @@ function OrdersErrorFallback({
     return (
         <View style={styles.errorContainer}>
             <Text style={styles.errorTitle}>订单加载失败</Text>
-            <Text style={styles.errorMessage}>{error.message || "请稍后重试"}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={resetErrorBoundary}>
+            <Text style={styles.errorMessage}>
+                {error.message || "请稍后重试"}
+            </Text>
+            <TouchableOpacity
+                style={styles.retryButton}
+                onPress={resetErrorBoundary}
+            >
                 <Text style={styles.retryText}>重新加载</Text>
             </TouchableOpacity>
         </View>
@@ -74,7 +79,9 @@ function OrdersContent() {
     const statusParam =
         selectedTab === "all" ? undefined : (selectedTab as OrdersTabStatus);
     const decisionStatusFilter =
-        selectedTab === "pending_acceptance" ? ("pending" as StaffOrder["decisionStatus"]) : undefined;
+        selectedTab === "pending_acceptance"
+            ? ("pending" as StaffOrder["decisionStatus"])
+            : undefined;
 
     return (
         <View style={styles.container}>
@@ -93,10 +100,18 @@ function OrdersContent() {
                         const isActive = selectedTab === item.key;
                         return (
                             <TouchableOpacity
-                                style={[styles.tabButton, isActive && styles.tabButtonActive]}
+                                style={[
+                                    styles.tabButton,
+                                    isActive && styles.tabButtonActive,
+                                ]}
                                 onPress={() => setSelectedTab(item.key)}
                             >
-                                <Text style={[styles.tabText, isActive && styles.tabTextActive]}>
+                                <Text
+                                    style={[
+                                        styles.tabText,
+                                        isActive && styles.tabTextActive,
+                                    ]}
+                                >
                                     {item.label}
                                 </Text>
                             </TouchableOpacity>
@@ -152,7 +167,7 @@ function OrdersList({
         }
     }, [refetch]);
 
-    const orders = data.items ?? [];
+    const orders = useMemo(() => data?.items ?? [], [data]);
 
     const sortedOrders = useMemo(() => {
         return [...orders].sort((a, b) => {
@@ -171,7 +186,8 @@ function OrdersList({
     }, [decisionStatusFilter, sortedOrders]);
 
     const renderOrderCard = ({ item }: { item: StaffOrder }) => {
-        const meta = ORDER_STATUS_DISPLAY[item.status] ?? ORDER_STATUS_DISPLAY.cancelled;
+        const meta =
+            ORDER_STATUS_DISPLAY[item.status] ?? ORDER_STATUS_DISPLAY.cancelled;
         const appointment = formatDateTime(item.appointmentTime);
         const price = formatCurrency(item.totalAmount);
         const decisionMeta =
@@ -185,20 +201,37 @@ function OrdersList({
             >
                 <View style={styles.orderHeader}>
                     <View style={{ flex: 1 }}>
-                        <Text style={styles.orderService}>{item.serviceName}</Text>
+                        <Text style={styles.orderService}>
+                            {item.serviceName}
+                        </Text>
                         {item.serviceSpecification ? (
-                            <Text style={styles.specText}>{item.serviceSpecification}</Text>
+                            <Text style={styles.specText}>
+                                {item.serviceSpecification}
+                            </Text>
                         ) : null}
                     </View>
                     <View style={styles.badgesColumn}>
-                        <View style={[styles.statusBadge, { backgroundColor: meta.color }]}>
+                        <View
+                            style={[
+                                styles.statusBadge,
+                                { backgroundColor: meta.color },
+                            ]}
+                        >
                             <Text style={styles.statusText}>{meta.label}</Text>
                         </View>
                         {decisionMeta ? (
                             <View
-                                style={[styles.decisionBadge, { borderColor: decisionMeta.color }]}
+                                style={[
+                                    styles.decisionBadge,
+                                    { borderColor: decisionMeta.color },
+                                ]}
                             >
-                                <Text style={[styles.decisionText, { color: decisionMeta.color }]}>
+                                <Text
+                                    style={[
+                                        styles.decisionText,
+                                        { color: decisionMeta.color },
+                                    ]}
+                                >
                                     {decisionMeta.label}
                                 </Text>
                             </View>
@@ -212,11 +245,17 @@ function OrdersList({
                 </View>
                 <View style={styles.orderInfo}>
                     <Ionicons name="location-outline" size={16} color="#666" />
-                    <Text style={styles.infoText}>{item.address || "未提供服务地址"}</Text>
+                    <Text style={styles.infoText}>
+                        {item.address || "未提供服务地址"}
+                    </Text>
                 </View>
                 {remark ? (
                     <View style={styles.orderInfo}>
-                        <Ionicons name="document-text-outline" size={16} color="#666" />
+                        <Ionicons
+                            name="document-text-outline"
+                            size={16}
+                            color="#666"
+                        />
                         <Text
                             style={styles.remarkText}
                             numberOfLines={2}
@@ -230,7 +269,9 @@ function OrdersList({
                     <Text style={styles.orderPrice}>{price}</Text>
                     <TouchableOpacity
                         style={styles.detailButton}
-                        onPress={() => router.push(`/orders/${item.id}` as never)}
+                        onPress={() =>
+                            router.push(`/orders/${item.id}` as never)
+                        }
                     >
                         <Text style={styles.detailButtonText}>查看详情</Text>
                     </TouchableOpacity>
@@ -287,16 +328,19 @@ function formatDateTime(value?: string | Date | null) {
     if (!value) return "--";
     const date = typeof value === "string" ? new Date(value) : value;
     if (Number.isNaN(date.getTime())) return "--";
+    const end = new Date(date.getTime() + 2 * 60 * 60 * 1000);
     const yyyy = date.getFullYear();
     const mm = `${date.getMonth() + 1}`.padStart(2, "0");
     const dd = `${date.getDate()}`.padStart(2, "0");
     const hh = `${date.getHours()}`.padStart(2, "0");
     const mi = `${date.getMinutes()}`.padStart(2, "0");
-    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+    const endHh = `${end.getHours()}`.padStart(2, "0");
+    const endMi = `${end.getMinutes()}`.padStart(2, "0");
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}-${endHh}:${endMi}`;
 }
 
 function formatCurrency(value?: number | string | null) {
-    const amount = typeof value === "string" ? Number(value) : value ?? 0;
+    const amount = typeof value === "string" ? Number(value) : (value ?? 0);
     return `¥${amount.toFixed(2)}`;
 }
 

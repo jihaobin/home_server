@@ -7,11 +7,13 @@ import {
     eq,
     getTableColumns,
     gte,
+    isNull,
     inArray,
     lte,
     type SQL,
     sql,
 } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
 import { userAddresses } from 'src/common/database/schema/addresses';
@@ -22,7 +24,10 @@ import {
     orders,
     payments,
 } from 'src/common/database/schema/orders';
-import { services } from 'src/common/database/schema/server';
+import {
+    services,
+    servicePersonnelSkills,
+} from 'src/common/database/schema/server';
 import {
     servicePersonnel,
     servicePersonnelPricing,
@@ -36,6 +41,10 @@ export type OrderStatus = (typeof orders.status.enumValues)[number];
 export class OrderRepository {
     @Inject(DB)
     private readonly db: DbType;
+
+    async transaction<T>(callback: (tx: DbType) => Promise<T>): Promise<T> {
+        return await this.db.transaction(callback);
+    }
 
     // 定义合法的状态转换
     // key: 当前状态, value: 可转换到的下一个状态数组
@@ -252,6 +261,7 @@ export class OrderRepository {
                     status: orders.status,
                     serviceName: services.name,
                     serviceId: orders.serviceId,
+                    servicePersonnelId: orderAssignments.servicePersonnelId,
                     workerName: servicePersonnel.name,
                     workerAvatar: servicePersonnel.avatar,
                     workerAvatarBucketName: files.bucketName,
@@ -299,6 +309,8 @@ export class OrderRepository {
                 status: row.status,
                 // serviceName 理论上不会为 null（FK restrict），但 join 仍做兜底。
                 serviceName: row.serviceName ?? row.serviceId,
+                serviceId: row.serviceId,
+                servicePersonnelId: row.servicePersonnelId ?? null,
                 workerName: row.workerName ?? null,
                 workerAvatar: row.workerAvatar ?? null,
                 workerAvatarBucketName: row.workerAvatarBucketName ?? null,
@@ -483,6 +495,19 @@ export class OrderRepository {
         const { geom: servicePersonnelGeom, ...servicePersonnelColumns } =
             getTableColumns(servicePersonnel);
 
+        const notExistsReviewSql = sql<boolean>`NOT EXISTS(
+            select 1
+            from ${reviews}
+            where ${reviews.orderId} = ${orders.id}
+              and ${reviews.reviewerId} = ${orders.customerId}
+        )`;
+
+        const serviceImageFile = alias(files, 'order_detail_service_image');
+        const personnelAvatarFile = alias(
+            files,
+            'order_detail_personnel_avatar',
+        );
+
         const [orderRow] = await this.db
             .select({
                 order: orderColumns,
@@ -493,6 +518,19 @@ export class OrderRepository {
                     ...servicePersonnelColumns,
                     geom: servicePersonnelGeom,
                 },
+                specificationName: servicePersonnelPricing.name,
+                estimatedDurationMinutes:
+                    servicePersonnelPricing.estimatedDurationMinutes,
+                needsReview: sql<boolean>`case when ${orders.status} = 'completed'
+                    then ${notExistsReviewSql}
+                    else false
+                end`,
+                serviceImageBucketName: serviceImageFile.bucketName,
+                serviceImageObjectPath: serviceImageFile.objectPath,
+                serviceImageBlurhash: serviceImageFile.blurhash,
+                personnelAvatarBucketName: personnelAvatarFile.bucketName,
+                personnelAvatarObjectPath: personnelAvatarFile.objectPath,
+                personnelAvatarBlurhash: personnelAvatarFile.blurhash,
                 paymentsJson: sql<any>`(
                         SELECT COALESCE(json_agg(row_to_json(p.*)), '[]'::json)
                         FROM ${payments} p
@@ -531,6 +569,10 @@ export class OrderRepository {
             })
             .from(orders)
             .leftJoin(services, eq(orders.serviceId, services.id))
+            .leftJoin(
+                serviceImageFile,
+                eq(serviceImageFile.id, services.imageFileId),
+            )
             .leftJoin(userAddresses, eq(orders.addressId, userAddresses.id))
             .leftJoin(orderAssignments, eq(orders.id, orderAssignments.orderId))
             .leftJoin(
@@ -539,6 +581,14 @@ export class OrderRepository {
                     orderAssignments.servicePersonnelId,
                     servicePersonnel.userId,
                 ),
+            )
+            .leftJoin(
+                personnelAvatarFile,
+                eq(personnelAvatarFile.fileHash, servicePersonnel.avatar),
+            )
+            .leftJoin(
+                servicePersonnelPricing,
+                eq(orders.specificationId, servicePersonnelPricing.id),
             )
             .where(eq(orders.id, id))
             .limit(1);
@@ -581,6 +631,17 @@ export class OrderRepository {
             assignment: assignmentWithPersonnel,
             payments: orderRow.paymentsJson || [],
             couponUsageRecords: orderRow.couponsJson || [],
+            specificationName: orderRow.specificationName ?? null,
+            estimatedDurationMinutes: orderRow.estimatedDurationMinutes ?? null,
+            needsReview: orderRow.needsReview ?? false,
+            serviceImageBucketName: orderRow.serviceImageBucketName ?? null,
+            serviceImageObjectPath: orderRow.serviceImageObjectPath ?? null,
+            serviceImageBlurhash: orderRow.serviceImageBlurhash ?? null,
+            personnelAvatarBucketName:
+                orderRow.personnelAvatarBucketName ?? null,
+            personnelAvatarObjectPath:
+                orderRow.personnelAvatarObjectPath ?? null,
+            personnelAvatarBlurhash: orderRow.personnelAvatarBlurhash ?? null,
         };
     }
 
@@ -742,7 +803,7 @@ export class OrderRepository {
         }
 
         // 3. 更新订单状态
-        const updatedOrders = await this.db
+        const updatedOrders = await db
             .update(orders)
             .set({
                 status: newStatus,
@@ -757,6 +818,121 @@ export class OrderRepository {
         }
 
         return updatedOrders[0];
+    }
+
+    /**
+     * 扫码核验后将订单从 paid 原子切换到 in_progress，并写入 serviceStartedAt。
+     *
+     * 幂等：仅当 status='paid' 且 service_started_at 为空时才会写入。
+     */
+    async startService(
+        orderId: string,
+        startedAt: Date,
+        executor?: DbType,
+    ): Promise<boolean> {
+        const db = executor ?? this.db;
+        const [updated] = await db
+            .update(orders)
+            .set({
+                status: 'in_progress',
+                serviceStartedAt: startedAt,
+                updatedAt: startedAt,
+            })
+            .where(
+                and(
+                    eq(orders.id, orderId),
+                    eq(orders.status, 'paid'),
+                    isNull(orders.serviceStartedAt),
+                ),
+            )
+            .returning({ id: orders.id });
+
+        return Boolean(updated?.id);
+    }
+
+    /**
+     * 服务人员改期：仅更新 orders.appointment_time。
+     */
+    async updateAppointmentTime(
+        orderId: string,
+        appointmentTime: Date,
+        allowedStatuses: OrderStatus[],
+        executor?: DbType,
+    ) {
+        const db = executor ?? this.db;
+        const [updated] = await db
+            .update(orders)
+            .set({
+                appointmentTime,
+                updatedAt: new Date(),
+            })
+            .where(
+                and(
+                    eq(orders.id, orderId),
+                    inArray(orders.status, allowedStatuses),
+                ),
+            )
+            .returning();
+
+        return updated ?? null;
+    }
+
+    /**
+     * 完成订单并递增 serviced_count（原子 + 幂等）
+     *
+     * 幂等保证：仅允许从 in_progress -> completed，重复调用不会重复计数。
+     */
+    async completeOrderAndIncrementServicedCount(orderId: string) {
+        return await this.db.transaction(async (tx) => {
+            const now = new Date();
+
+            const [updated] = await tx
+                .update(orders)
+                .set({
+                    status: 'completed',
+                    updatedAt: now,
+                    serviceCompletedAt: now,
+                })
+                .where(
+                    and(
+                        eq(orders.id, orderId),
+                        eq(orders.status, 'in_progress'),
+                    ),
+                )
+                .returning();
+
+            if (!updated) {
+                throw new BadRequestException('订单必须处于服务中状态才能完成');
+            }
+
+            const assignment = await tx.query.orderAssignments.findFirst({
+                where: eq(orderAssignments.orderId, orderId),
+                columns: {
+                    servicePersonnelId: true,
+                },
+            });
+
+            if (!assignment?.servicePersonnelId) {
+                throw new BadRequestException('订单未找到分配的服务人员');
+            }
+
+            await tx
+                .update(servicePersonnelSkills)
+                .set({
+                    servicedCount: sql`${servicePersonnelSkills.servicedCount} + 1`,
+                })
+                .where(
+                    and(
+                        eq(
+                            servicePersonnelSkills.userId,
+                            assignment.servicePersonnelId,
+                        ),
+                        eq(servicePersonnelSkills.serviceId, updated.serviceId),
+                    ),
+                );
+
+            return updated;
+        });
     }
 
     /**

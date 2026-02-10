@@ -1,6 +1,9 @@
 import type {
     CreateDesignatedOrder,
+    CreateDesignatedOrderResponse,
     GenerateOrderCheckinDto,
+    OrderConfirmDesignatedPreviewQuery,
+    OrderConfirmDesignatedPreviewResponse,
     OrderDetail,
     OrderListRequest,
     OrderListResponse,
@@ -41,6 +44,17 @@ const normalizePaginationParams = ({
     limit: limit ? limit.toString() : undefined,
     startTime: startTime ? startTime.toISOString() : undefined,
     endTime: endTime ? endTime.toISOString() : undefined,
+});
+
+const normalizeConfirmPreviewParams = (
+    params: OrderConfirmDesignatedPreviewQuery,
+): Record<string, string | undefined> => ({
+    personnelId: params.personnelId,
+    serviceId: params.serviceId,
+    specificationId: params.specificationId,
+    addressId: params.addressId,
+    appointmentTime: params.appointmentTime,
+    couponCode: params.couponCode,
 });
 
 /**
@@ -109,7 +123,9 @@ export const useOrderCheckin = (orderId: string, orderStatus?: OrderStatus) =>
             );
             return response.data;
         },
-        enabled: Boolean(orderId) && orderStatus === "paid",
+        enabled:
+            Boolean(orderId) &&
+            (orderStatus === "paid" || orderStatus === "in_progress"),
         meta: {
             errorMessage: "订单核验码获取失败",
         },
@@ -123,9 +139,10 @@ export const useCreateDesignatedOrder = () => {
 
     return useMutation({
         mutationFn: (orderData: CreateDesignatedOrder) => {
-            return apiClient.post<{
-                orderId: string;
-            }>("/order/createWithDesignatedPersonnel", orderData);
+            return apiClient.post<CreateDesignatedOrderResponse>(
+                "/order/createWithDesignatedPersonnel",
+                orderData,
+            );
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["orders-list"] });
@@ -139,6 +156,51 @@ export const useCreateDesignatedOrder = () => {
         },
     });
 };
+
+/**
+ * 确认订单预览（指定服务人员）
+ */
+export const useOrderConfirmDesignatedPreview = (
+    params: OrderConfirmDesignatedPreviewQuery,
+    options: { enabled?: boolean } = {},
+) =>
+    useQuery({
+        queryKey: ["order-confirm-designated-preview", params],
+        queryFn: async () => {
+            const response =
+                await apiClient.get<OrderConfirmDesignatedPreviewResponse>(
+                    "/order/confirm/designated",
+                    {
+                        query: normalizeConfirmPreviewParams(params),
+                    },
+                );
+            return response.data;
+        },
+        enabled: options.enabled ?? true,
+        meta: {
+            errorMessage: "确认订单预览获取失败",
+        },
+    });
+
+export const useOrderConfirmDesignatedPreviewSuspense = (
+    params: OrderConfirmDesignatedPreviewQuery,
+) =>
+    useSuspenseQuery({
+        queryKey: ["order-confirm-designated-preview", params],
+        queryFn: async () => {
+            const response =
+                await apiClient.get<OrderConfirmDesignatedPreviewResponse>(
+                    "/order/confirm/designated",
+                    {
+                        query: normalizeConfirmPreviewParams(params),
+                    },
+                );
+            return response.data;
+        },
+        meta: {
+            errorMessage: "确认订单预览获取失败",
+        },
+    });
 
 /**
  * 核验订单（扫码）
@@ -195,6 +257,38 @@ export const useCancelOrder = () => {
         },
         scope: {
             id: "cancelOrder",
+        },
+    });
+};
+
+/**
+ * 服务人员改期：更新订单 appointmentTime（2 小时窗口起点）。
+ */
+export const useRescheduleOrder = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({
+            orderId,
+            appointmentTime,
+        }: {
+            orderId: string;
+            appointmentTime: string;
+        }) => {
+            return apiClient.post<OrderDetail>(`/order/${orderId}/reschedule`, {
+                appointmentTime,
+            });
+        },
+        onSuccess: (_data, variables) => {
+            queryClient.invalidateQueries({ queryKey: ["staff-orders-list"] });
+            if (variables?.orderId) {
+                queryClient.invalidateQueries({
+                    queryKey: ["order-detail", variables.orderId],
+                });
+            }
+        },
+        scope: {
+            id: "rescheduleOrder",
         },
     });
 };

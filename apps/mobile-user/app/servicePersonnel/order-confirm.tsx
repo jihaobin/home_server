@@ -1,524 +1,604 @@
 import { Button } from "@repo/mobile-ui/components/ui/button";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
+import { BottomSheetModal } from "@repo/mobile-ui/components/ui/modal/BottomSheetModal";
 import { Separator } from "@repo/mobile-ui/components/ui/separator";
 import { Text } from "@repo/mobile-ui/components/ui/text";
-import { Link, useFocusEffect, useRouter } from "expo-router";
-import { icons as lucideIconRegistry } from "lucide-react-native";
-import { useCallback, useEffect, useState } from "react";
-import {
-	AppState,
-	type AppStateStatus,
-	Pressable,
-	RefreshControl,
-	ScrollView,
-	TextInput,
-	View,
-} from "react-native";
+import { Textarea } from "@repo/mobile-ui/components/ui/textarea";
+import { ArrowLeft } from "@repo/mobile-ui/lib/icons/ArrowLeft";
+import { ChevronRight } from "@repo/mobile-ui/lib/icons/ChevronRight";
+import { MapPin } from "@repo/mobile-ui/lib/icons/MapPin";
+import { X } from "@repo/mobile-ui/lib/icons/X";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { Image, Pressable, ScrollView, View } from "react-native";
+import * as React from "react";
 import { toast } from "sonner-native";
-import { PaySheet } from "@/components/pay/paySheet";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
+import { useOrderConfirmDesignatedPreview } from "@repo/hooks/api/order";
 import { useAddressEditStore } from "@/stores/address-store";
 import useServiceStore from "@/stores/service";
-
-const ICON_MAP = lucideIconRegistry;
-const MAX_REMARK_LENGTH = 200;
+import { PaySheet } from "@/components/pay/paySheet";
+import { ServiceTimePickerSheet } from "@/components/service-personnel/ServiceTimePickerSheet";
 
 export default function OrderConfirmScreen() {
-	const router = useRouter();
+    const router = useRouter();
+    const { session } = useSession();
+    const customerId = session?.user?.id ?? "";
 
-	// 从 zustand store 获取数据
-	const {
-		selectedServiceTime,
-		selectedSpecification,
-		selectService,
-		selectServicePersonnelInfo,
-	} = useServiceStore();
+    const params = useLocalSearchParams<{
+        personnelId?: string | string[];
+        serviceId?: string | string[];
+        serviceName?: string | string[];
+        specificationId?: string | string[];
+    }>();
 
-	const { selectedAddress, reset } = useAddressEditStore();
-	const { session, refetch: refetchSession } = useSession();
+    const personnelId = Array.isArray(params.personnelId)
+        ? params.personnelId[0]
+        : params.personnelId
+          ? String(params.personnelId)
+          : "";
+    const serviceId = Array.isArray(params.serviceId)
+        ? params.serviceId[0]
+        : params.serviceId
+          ? String(params.serviceId)
+          : "";
+    const serviceName = Array.isArray(params.serviceName)
+        ? params.serviceName[0]
+        : params.serviceName
+          ? String(params.serviceName)
+          : "";
+    const routeSpecificationId = Array.isArray(params.specificationId)
+        ? params.specificationId[0]
+        : params.specificationId
+          ? String(params.specificationId)
+          : undefined;
 
-	const [showPaymentModal, setShowPaymentModal] = useState(false);
-	const [isRefreshing, setIsRefreshing] = useState(false);
-	const [orderRemark, setOrderRemark] = useState("");
-	const [missingFields, setMissingFields] = useState<{
-		address?: boolean;
-		serviceTime?: boolean;
-	}>({});
+    const { selectedAddress } = useAddressEditStore();
+    const { selectedServiceTime } = useServiceStore();
 
-	// 从 store 获取服务信息
-	const servicePrice = selectedSpecification
-		? Number.parseFloat(selectedSpecification.price)
-		: 0;
-	const totalAmount = servicePrice;
+    const [specificationId, setSpecificationId] = React.useState<
+        string | undefined
+    >(routeSpecificationId);
+    const [isPaySheetVisible, setIsPaySheetVisible] = React.useState(false);
+    const [remark, setRemark] = React.useState<string>("");
+    const [isRemarkSheetVisible, setIsRemarkSheetVisible] =
+        React.useState(false);
+    const [remarkDraft, setRemarkDraft] = React.useState("");
+    const [isServiceTimeSheetVisible, setIsServiceTimeSheetVisible] =
+        React.useState(false);
 
-	// 格式化服务时间
-	const formatServiceTime = (date: Date | undefined) => {
-		if (!date) return "请选择时间";
+    const appointmentTime = selectedServiceTime
+        ? selectedServiceTime.toISOString()
+        : undefined;
 
-		const now = new Date();
-		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-		const tomorrow = new Date(today);
-		tomorrow.setDate(today.getDate() + 1);
-		const targetDate = new Date(
-			date.getFullYear(),
-			date.getMonth(),
-			date.getDate(),
-		);
+    const previewQuery = React.useMemo(
+        () => ({
+            personnelId,
+            serviceId,
+            specificationId,
+            addressId: selectedAddress?.id ?? undefined,
+            appointmentTime,
+        }),
+        [
+            personnelId,
+            serviceId,
+            specificationId,
+            selectedAddress?.id,
+            appointmentTime,
+        ],
+    );
 
-		let dayLabel = "";
-		if (targetDate.getTime() === today.getTime()) {
-			dayLabel = "今天";
-		} else if (targetDate.getTime() === tomorrow.getTime()) {
-			dayLabel = "明天";
-		} else {
-			const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-			dayLabel = weekdays[date.getDay()];
-		}
+    const preview = useOrderConfirmDesignatedPreview(previewQuery, {
+        enabled: Boolean(personnelId && serviceId),
+    }).data;
 
-		const timeLabel = `${date.getHours().toString().padStart(2, "0")}:${date.getMinutes().toString().padStart(2, "0")}`;
+    React.useEffect(() => {
+        if (!preview?.selected?.specificationId) {
+            return;
+        }
+        if (!specificationId) {
+            setSpecificationId(preview.selected.specificationId);
+        }
+    }, [preview?.selected?.specificationId, specificationId]);
 
-		return `${dayLabel} ${timeLabel}`;
-	};
+    const selectedSpec = React.useMemo(() => {
+        const specs = preview?.specifications ?? [];
+        if (!specificationId) {
+            return specs[0];
+        }
+        return (
+            specs.find((spec: { id: string }) => spec.id === specificationId) ??
+            specs[0]
+        );
+    }, [preview?.specifications, specificationId]);
 
-	const serviceTime = formatServiceTime(selectedServiceTime);
+    const serviceFeeAmount = React.useMemo(() => {
+        const items = preview?.pricing?.items ?? [];
+        const serviceFee = items.find(
+            (item: { key: string }) => item.key === "service_fee",
+        );
+        const amount = serviceFee?.amount;
+        return typeof amount === "number" && Number.isFinite(amount)
+            ? amount
+            : 0;
+    }, [preview?.pricing?.items]);
 
-	// 页面失焦时重置地址选择状态
-	useFocusEffect(
-		useCallback(() => {
-			return () => {
-				reset();
-				setShowPaymentModal(false);
-			};
-		}, [reset]),
-	);
+    const totalAmount =
+        typeof preview?.pricing?.totalAmount === "number"
+            ? preview.pricing.totalAmount
+            : 0;
 
-	useEffect(() => {
-		const handleAppStateChange = (nextState: AppStateStatus) => {
-			if (nextState !== "active") {
-				setShowPaymentModal(false);
-			}
-		};
+    const warmTip =
+        "温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案。";
 
-		const subscription = AppState.addEventListener(
-			"change",
-			handleAppStateChange,
-		);
+    const serviceTimeLabel = React.useMemo(() => {
+        if (!selectedServiceTime) {
+            return "请选择时间";
+        }
+        const date = selectedServiceTime;
+        const end = new Date(date.getTime() + 2 * 60 * 60 * 1000);
+        const weekdays = [
+            "周日",
+            "周一",
+            "周二",
+            "周三",
+            "周四",
+            "周五",
+            "周六",
+        ];
+        const dayLabel = weekdays[date.getDay()] ?? "";
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        const hh = String(date.getHours());
+        const mm = String(date.getMinutes()).padStart(2, "0");
+        const endHh = String(end.getHours());
+        const endMm = String(end.getMinutes()).padStart(2, "0");
+        return `${month}月${day}日 ${dayLabel} ${hh}:${mm}~${endHh}:${endMm}`;
+    }, [selectedServiceTime]);
 
-		return () => {
-			subscription.remove();
-		};
-	}, []);
+    const openPaySheet = () => {
+        if (!customerId) {
+            toast.error("请先登录");
+            return;
+        }
+        if (!preview?.address?.id) {
+            toast.error("请选择服务地址");
+            return;
+        }
+        if (!selectedServiceTime) {
+            toast.error("请选择服务时间");
+            return;
+        }
+        if (!selectedSpec?.id) {
+            toast.error("请选择服务规格");
+            return;
+        }
+        setIsPaySheetVisible(true);
+    };
 
-	// 跳转到地址选择页面
-	const handleSelectAddress = () => {
-		router.push({
-			pathname: "/address/service-address",
-			params: { mode: "select" },
-		});
-	};
+    const openRemarkSheet = () => {
+        setRemarkDraft(remark);
+        setIsRemarkSheetVisible(true);
+    };
 
-	// 校验订单信息
-	const validateOrderInfo = (): { valid: boolean; message?: string } => {
-		// 检查用户登录状态
-		if (!session?.user.id) {
-			return { valid: false, message: "请先登录" };
-		}
+    const closeRemarkSheet = () => {
+        setIsRemarkSheetVisible(false);
+        setRemarkDraft(remark);
+    };
 
-		// 检查服务地址
-		if (!selectedAddress) {
-			return { valid: false, message: "请选择服务地址" };
-		}
+    const confirmRemark = () => {
+        setRemark(remarkDraft);
+        setIsRemarkSheetVisible(false);
+    };
 
-		// 检查服务时间
-		if (!selectedServiceTime) {
-			return { valid: false, message: "请选择服务时间" };
-		}
+    return (
+        <View className="flex-1 bg-background">
+            {/* 顶部导航栏（按 Figma：左右 78px，中间标题） */}
+            <View className="bg-card pb-3 pt-12">
+                <View className="flex-row items-center">
+                    <View className="w-[78px] pl-4">
+                        <Pressable
+                            onPress={() => router.back()}
+                            className="h-[46px] w-[46px] items-center justify-center"
+                            hitSlop={8}
+                        >
+                            <Icon
+                                as={ArrowLeft}
+                                size={22}
+                                className="text-foreground"
+                            />
+                        </Pressable>
+                    </View>
+                    <View className="flex-1 items-center">
+                        <Text className="text-base font-puhui-medium text-foreground">
+                            确认订单
+                        </Text>
+                    </View>
+                    <View className="w-[78px]" />
+                </View>
+            </View>
 
-		// 检查服务时间是否在未来
-		const now = new Date();
-		if (selectedServiceTime <= now) {
-			return { valid: false, message: "服务时间必须是未来时间" };
-		}
+            <ScrollView
+                className="flex-1"
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 120 }}
+            >
+                {/* 主卡片（地址 + 服务 + 规格 + 时间 + 备注） */}
+                <View className="mx-4 mt-3 overflow-hidden rounded-xl bg-card">
+                    <Pressable
+                        onPress={() =>
+                            router.push({
+                                pathname: "/address/service-address",
+                                params: { mode: "select" },
+                            })
+                        }
+                        className="px-3 py-3"
+                    >
+                        <View className="flex-row items-start">
+                            <View className="mt-0.5">
+                                <Icon
+                                    as={MapPin}
+                                    size={18}
+                                    className="text-primary"
+                                />
+                            </View>
+                            <View className="ml-2 flex-1">
+                                <View className="flex-row items-center">
+                                    <Text
+                                        className="flex-1 text-xs font-puhui-medium text-foreground"
+                                        numberOfLines={1}
+                                    >
+                                        {preview?.address?.detailedAddress ??
+                                            "请选择服务地址"}
+                                    </Text>
+                                    {preview?.address?.homeNumber ? (
+                                        <Text className="ml-2 text-xs font-puhui-medium text-foreground">
+                                            {preview.address.homeNumber}
+                                        </Text>
+                                    ) : null}
+                                    {preview?.address?.isDefault ? (
+                                        <View className="ml-2 rounded-[2px] bg-secondary px-1.5 py-[1px]">
+                                            <Text className="text-xs font-puhui-regular text-primary">
+                                                默认
+                                            </Text>
+                                        </View>
+                                    ) : null}
+                                </View>
+                                <Text className="mt-1 text-xs font-puhui-regular text-muted-foreground">
+                                    {preview?.address
+                                        ? `${preview.address.recipientName}  ${preview.address.recipientPhone}`
+                                        : ""}
+                                </Text>
+                            </View>
+                            <View className="ml-2">
+                                <Icon
+                                    as={ChevronRight}
+                                    size={18}
+                                    className="text-muted-foreground"
+                                />
+                            </View>
+                        </View>
+                    </Pressable>
 
-		// 检查服务规格
-		if (!selectedSpecification?.id) {
-			return { valid: false, message: "请选择服务规格" };
-		}
+                    <Separator className="bg-border" />
 
-		// 检查服务人员
-		if (!selectServicePersonnelInfo?.userId) {
-			return { valid: false, message: "请选择服务人员" };
-		}
+                    <View className="px-3 py-3">
+                        <View className="flex-row items-start">
+                            <View className="h-[52px] w-[52px] overflow-hidden rounded-lg bg-muted">
+                                <Image
+                                    source={
+                                        preview?.service?.imageFileUrl
+                                            ? {
+                                                  uri: preview.service
+                                                      .imageFileUrl,
+                                              }
+                                            : require("../../assets/images/promo-1.png")
+                                    }
+                                    resizeMode="cover"
+                                    style={{ width: "100%", height: "100%" }}
+                                />
+                            </View>
+                            <View className="ml-3 flex-1 flex-row justify-between">
+                                <View>
+                                    <Text className="text-sm font-puhui-regular text-foreground">
+                                        {preview?.servicePersonnel?.name ?? ""}
+                                    </Text>
+                                    <Text className="mt-1 text-xs font-puhui-regular text-muted-foreground">
+                                        {selectedSpec?.name ?? serviceName}
+                                    </Text>
+                                </View>
+                                <View className="items-end">
+                                    <Text className="text-sm font-din-alt-bold text-foreground">
+                                        ¥{serviceFeeAmount.toFixed(2)}
+                                    </Text>
+                                    <Text className="mt-3 text-xs font-puhui-regular text-muted-foreground">
+                                        共1件
+                                    </Text>
+                                </View>
+                            </View>
+                        </View>
+                    </View>
 
-		// 检查服务价格
-		if (servicePrice <= 0) {
-			return { valid: false, message: "服务价格异常，请重新选择服务" };
-		}
+                    <Separator className="bg-border" />
 
-		return { valid: true };
-	};
+                    <View className="px-3 py-3">
+                        <Text className="text-sm font-puhui-regular text-foreground">
+                            规格选择
+                        </Text>
+                        <View className="mt-3 flex-row gap-3">
+                            {(preview?.specifications ?? []).map(
+                                (spec: {
+                                    id: string;
+                                    name?: string | null;
+                                }) => {
+                                    const isSelected =
+                                        Boolean(specificationId) &&
+                                        spec.id === specificationId;
+                                    return (
+                                        <View
+                                            key={spec.id}
+                                            className={
+                                                isSelected
+                                                    ? "h-[26px] w-[76px] items-center justify-center rounded-[4px] border border-primary bg-secondary"
+                                                    : "h-[26px] w-[76px] items-center justify-center rounded-[4px] bg-background"
+                                            }
+                                        >
+                                            <Text
+                                                onPress={() =>
+                                                    setSpecificationId(spec.id)
+                                                }
+                                                className={
+                                                    isSelected
+                                                        ? "text-xs font-puhui-regular text-primary"
+                                                        : "text-xs font-puhui-regular text-foreground"
+                                                }
+                                            >
+                                                {spec.name || "标准"}
+                                            </Text>
+                                        </View>
+                                    );
+                                },
+                            )}
+                        </View>
+                    </View>
 
-	// 点击立即支付按钮
-	const handleClickPay = () => {
-		// 重置缺失字段状态
-		setMissingFields({});
+                    <Separator className="bg-border" />
 
-		// 先进行基础校验（除支付方式外）
-		const validation = validateOrderInfo();
-		if (!validation.valid) {
-			// 标记缺失的字段
-			const newMissingFields: {
-				address?: boolean;
-				serviceTime?: boolean;
-			} = {};
+                    <Pressable
+                        onPress={() => setIsServiceTimeSheetVisible(true)}
+                        className="px-3 py-3"
+                    >
+                        <View className="flex-row items-center">
+                            <View className="flex-1 flex-row items-center">
+                                <Text className="text-xs font-puhui-regular text-muted-foreground">
+                                    服务时间：
+                                </Text>
+                                <Text className="ml-2 text-xs font-puhui-regular text-foreground">
+                                    {serviceTimeLabel}
+                                </Text>
+                            </View>
+                            <Icon
+                                as={ChevronRight}
+                                size={18}
+                                className="text-muted-foreground"
+                            />
+                        </View>
+                    </Pressable>
 
-			if (!selectedAddress) {
-				newMissingFields.address = true;
-			}
-			if (!selectedServiceTime) {
-				newMissingFields.serviceTime = true;
-			}
+                    <Separator className="bg-border" />
 
-			setMissingFields(newMissingFields);
-			toast.error(validation.message || "订单信息不完整");
-			return;
-		}
+                    <View className="px-3 py-3">
+                        <Pressable
+                            onPress={openRemarkSheet}
+                            className="flex-row items-center justify-between active:bg-muted/30"
+                        >
+                            <Text className="text-xs font-puhui-regular text-muted-foreground">
+                                订单备注
+                            </Text>
+                            <View className="flex-row items-center">
+                                <Text
+                                    className={`mr-1 text-xs font-puhui-regular ${
+                                        remark.trim()
+                                            ? "text-foreground"
+                                            : "text-muted-foreground"
+                                    }`}
+                                    numberOfLines={1}
+                                >
+                                    {remark.trim() ? remark : "无备注"}
+                                </Text>
+                                <Icon
+                                    as={ChevronRight}
+                                    size={16}
+                                    className="text-muted-foreground"
+                                />
+                            </View>
+                        </Pressable>
+                    </View>
+                </View>
 
-		// 校验通过，打开支付方式选择模态框
-		setShowPaymentModal(true);
-	};
+                {/* 费用明细 */}
+                <View className="mx-4 mt-3 overflow-hidden rounded-xl bg-card">
+                    <View className="px-3 pb-2 pt-3">
+                        <Text className="text-sm font-puhui-regular text-foreground">
+                            费用明细
+                        </Text>
+                    </View>
+                    <Separator className="bg-border" />
+                    {(preview?.pricing?.items ?? []).map(
+                        (item: {
+                            key: string;
+                            label: string;
+                            amount: number;
+                        }) => (
+                            <View key={item.key}>
+                                <View className="px-3 py-3">
+                                    <View className="flex-row items-center justify-between">
+                                        <Text className="text-xs font-puhui-regular text-muted-foreground">
+                                            {item.label}：
+                                        </Text>
+                                        <Text className="text-xs font-din-alt-bold text-foreground">
+                                            ￥{item.amount.toFixed(2)}
+                                        </Text>
+                                    </View>
+                                </View>
+                                <Separator className="bg-border" />
+                            </View>
+                        ),
+                    )}
+                    <Separator className="bg-border" />
+                    <View className="px-3 py-3">
+                        <View className="flex-row items-center justify-between">
+                            <Text className="text-xs font-puhui-regular text-muted-foreground">
+                                合计：
+                            </Text>
+                            <View className="flex-row items-baseline">
+                                <Text className="text-xs font-puhui-regular text-foreground">
+                                    ￥
+                                </Text>
+                                <Text className="text-lg font-din-alt-bold text-primary">
+                                    {totalAmount.toFixed(2)}
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
+                </View>
 
-	const handleRefresh = useCallback(async () => {
-		setIsRefreshing(true);
-		try {
-			await refetchSession();
-			setMissingFields({});
-			setShowPaymentModal(false);
-			setOrderRemark("");
-		} finally {
-			setIsRefreshing(false);
-		}
-	}, [refetchSession]);
+                {/* 温馨提示 */}
+                {/* <View className="mx-4 mt-3">
+                    <Text className="text-sm font-puhui-regular text-foreground">
+                        温馨提示：
+                    </Text>
+                    <Text className="mt-2 text-xs font-puhui-regular leading-5 text-muted-foreground">
+                        {warmTip}
+                    </Text>
+                </View> */}
 
-	return (
-		<View className="flex-1 bg-background">
-			{/* 顶部导航栏 */}
-			<View className="border-b border-border bg-background px-4 pt-12 pb-4">
-				<View className="flex-row items-center">
-					<Pressable
-						onPress={() => router.back()}
-						className="mr-3 h-10 w-10 items-center justify-center active:opacity-60"
-						hitSlop={8}
-					>
-						<Icon
-							as={ICON_MAP.ChevronLeft}
-							size={24}
-							className="text-foreground"
-						/>
-					</Pressable>
-					<Text className="text-xl font-bold text-foreground">确认订单</Text>
-				</View>
-			</View>
+                {/* 协议勾选 */}
+                <View className="mx-4 mt-4 flex-row items-center">
+                    <View className="h-4 w-4 items-center justify-center rounded-full bg-primary">
+                        <View className="h-2 w-2 rounded-full bg-card" />
+                    </View>
+                    <Text className="ml-2 text-xs font-puhui-regular text-foreground">
+                        同意
+                        <Text className="text-xs font-puhui-regular text-primary">
+                            《服务购买协议》
+                        </Text>
+                    </Text>
+                </View>
+            </ScrollView>
 
-			<ScrollView
-				className="flex-1"
-				showsVerticalScrollIndicator={false}
-				contentContainerStyle={{ paddingBottom: 120 }}
-				refreshControl={
-					<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
-				}
-			>
-				{/* 服务时间卡片 */}
-				<Link
-					href={"/servicePersonnel/time-picker"}
-					className={`mx-4 mt-4 rounded-2xl border bg-card p-4 ${
-						missingFields.serviceTime
-							? "border-destructive border-2"
-							: "border-border"
-					}`}
-				>
-					<View className="flex-row items-center">
-						<View
-							className={`h-12 w-12 items-center justify-center rounded-full ${
-								missingFields.serviceTime
-									? "bg-destructive/10"
-									: "bg-primary/10"
-							}`}
-						>
-							<Icon
-								as={ICON_MAP.Clock}
-								size={24}
-								className={
-									missingFields.serviceTime
-										? "text-destructive"
-										: "text-primary"
-								}
-							/>
-						</View>
-						<View className="ml-3 flex-1">
-							<View className="flex-row items-center">
-								<Text className="text-sm text-muted-foreground">服务时间</Text>
-								{missingFields.serviceTime && (
-									<View className="ml-2 rounded-full bg-destructive px-2 py-0.5">
-										<Text className="text-xs text-destructive-foreground">
-											必填
-										</Text>
-									</View>
-								)}
-							</View>
-							<Text
-								className={`mt-1 text-base font-semibold ${
-									missingFields.serviceTime
-										? "text-destructive"
-										: "text-foreground"
-								}`}
-							>
-								{serviceTime}
-							</Text>
-						</View>
-						<Pressable hitSlop={8} className="active:opacity-60">
-							<Icon
-								as={ICON_MAP.ChevronRight}
-								size={20}
-								className="text-muted-foreground"
-							/>
-						</Pressable>
-					</View>
-				</Link>
+            {/* 底部栏 */}
+            <View
+                className="absolute bottom-0 left-0 right-0 bg-card px-4 py-3"
+                style={{
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: -2 },
+                    shadowOpacity: 0.08,
+                    shadowRadius: 8,
+                    elevation: 8,
+                }}
+            >
+                <View className="flex-row items-center justify-between">
+                    <View className="flex-row items-baseline">
+                        <Text className="text-sm font-puhui-regular text-foreground">
+                            合计：
+                        </Text>
+                        <Text className="ml-1 text-lg font-din-alt-bold text-primary">
+                            ¥
+                        </Text>
+                        <Text className="text-xl font-din-alt-bold text-primary">
+                            {totalAmount.toFixed(2)}
+                        </Text>
+                    </View>
+                    <Button
+                        onPress={openPaySheet}
+                        className="h-10 w-[92px] rounded-full"
+                    >
+                        <Text className="text-sm font-puhui-medium text-primary-foreground">
+                            立即支付
+                        </Text>
+                    </Button>
+                </View>
+            </View>
 
-				{/* 服务地址卡片 */}
-				<Pressable
-					onPress={handleSelectAddress}
-					className={`mx-4 mt-3 rounded-2xl border bg-card p-4 active:opacity-80 ${
-						missingFields.address
-							? "border-destructive border-2"
-							: "border-border"
-					}`}
-				>
-					<View className="flex-row items-start">
-						<View
-							className={`h-12 w-12 items-center justify-center rounded-full ${
-								missingFields.address ? "bg-destructive/10" : "bg-primary/10"
-							}`}
-						>
-							<Icon
-								as={ICON_MAP.MapPin}
-								size={24}
-								className={
-									missingFields.address ? "text-destructive" : "text-primary"
-								}
-							/>
-						</View>
-						{selectedAddress ? (
-							<View className="ml-3 flex-1">
-								<View className="flex-row items-center justify-between">
-									<Text className="text-base font-semibold text-foreground">
-										{selectedAddress.recipientName}
-									</Text>
-									<Text className="text-base text-foreground">
-										{selectedAddress.recipientPhone}
-									</Text>
-								</View>
-								<Text className="mt-2 text-sm leading-5 text-muted-foreground">
-									{selectedAddress.detailedAddress}
-								</Text>
-							</View>
-						) : (
-							<View className="ml-3 flex-1">
-								<View className="flex-row items-center">
-									<Text
-										className={`text-base font-semibold ${
-											missingFields.address
-												? "text-destructive"
-												: "text-foreground"
-										}`}
-									>
-										请选择服务地址
-									</Text>
-									{missingFields.address && (
-										<View className="ml-2 rounded-full bg-destructive px-2 py-0.5">
-											<Text className="text-xs text-destructive-foreground">
-												必填
-											</Text>
-										</View>
-									)}
-								</View>
-								<Text className="mt-2 text-sm leading-5 text-muted-foreground">
-									点击选择或添加新地址
-								</Text>
-							</View>
-						)}
-						<View className="ml-2 active:opacity-60">
-							<Icon
-								as={ICON_MAP.ChevronRight}
-								size={20}
-								className="text-muted-foreground"
-							/>
-						</View>
-					</View>
-				</Pressable>
+            <BottomSheetModal
+                visible={isRemarkSheetVisible}
+                onClose={closeRemarkSheet}
+                initialHeightRatio={0.6}
+                minHeightRatio={0.45}
+                maxHeightRatio={0.8}
+                backdropClassName="bg-foreground/30"
+                sheetClassName="rounded-t-2xl bg-card"
+            >
+                <View className="flex-1 px-4 pb-6">
+                    <View className="pt-3">
+                        <View className="flex-row items-center justify-center">
+                            <Text className="text-base font-puhui-medium text-foreground">
+                                订单备注
+                            </Text>
+                            <Pressable
+                                onPress={closeRemarkSheet}
+                                className="absolute right-0 h-8 w-8 items-center justify-center"
+                                hitSlop={8}
+                            >
+                                <Icon
+                                    as={X}
+                                    size={20}
+                                    className="text-muted-foreground"
+                                />
+                            </Pressable>
+                        </View>
+                    </View>
+                    <View className="mt-4 flex-1 rounded-xl bg-muted/30 px-3 py-3">
+                        <Textarea
+                            value={remarkDraft}
+                            onChangeText={setRemarkDraft}
+                            placeholder="选填，请先和商家协商一致，付款后商家可见"
+                            maxLength={200}
+                            className="flex-1 border-0 bg-transparent px-0 py-0 text-xs font-puhui-regular"
+                        />
+                        <Text className="mt-2 text-right text-xs font-puhui-regular text-muted-foreground">
+                            {remarkDraft.length}/200
+                        </Text>
+                    </View>
+                    <Button
+                        onPress={confirmRemark}
+                        className="mt-6 h-11 w-full rounded-full bg-primary"
+                    >
+                        <Text className="text-base font-puhui-medium text-primary-foreground">
+                            确定
+                        </Text>
+                    </Button>
+                </View>
+            </BottomSheetModal>
 
-				{/* 服务详情卡片 */}
-				<View className="mx-4 mt-3 rounded-2xl border border-border bg-card p-4">
-					<View className="flex-row items-center justify-between mb-3">
-						<Text className="text-base font-bold text-foreground">
-							服务详情
-						</Text>
-					</View>
+            <ServiceTimePickerSheet
+                visible={isServiceTimeSheetVisible}
+                onClose={() => setIsServiceTimeSheetVisible(false)}
+                workStartTime={preview?.servicePersonnel?.workStartTime}
+                workEndTime={preview?.servicePersonnel?.workEndTime}
+                workDays={preview?.servicePersonnel?.workDays}
+            />
 
-					<View className="flex-row items-start">
-						<View className="h-20 w-20 rounded-xl bg-muted" />
-						<View className="ml-3 flex-1">
-							<Text className="text-base font-semibold text-foreground">
-								{selectService?.label}
-							</Text>
-							<Text className="mt-1 text-sm text-muted-foreground">
-								{selectedSpecification?.name}
-							</Text>
-							<View className="mt-2 flex-row items-baseline">
-								<Text className="text-lg font-bold text-primary">
-									¥{servicePrice}
-								</Text>
-							</View>
-						</View>
-					</View>
-				</View>
-
-				{/* 订单备注 */}
-				<View className="mx-4 mt-3 rounded-2xl border border-border bg-card p-4">
-				<View className="flex-row items-center justify-between">
-					<Text className="text-base font-semibold text-foreground">
-						订单备注
-					</Text>
-				</View>
-				<TextInput
-					value={orderRemark}
-					onChangeText={(text) =>
-						setOrderRemark(text.slice(0, MAX_REMARK_LENGTH))
-					}
-					placeholder="选填：门禁信息、到场要求等，最多200字"
-					multiline
-					maxLength={MAX_REMARK_LENGTH}
-					className="mt-3 rounded-xl border border-border bg-background px-3 py-2 text-base text-foreground"
-					placeholderTextColor="#9CA3AF"
-				/>
-				<View className="mt-2 flex-row justify-end">
-					<Text className="text-xs text-muted-foreground">
-						{orderRemark.length}/{MAX_REMARK_LENGTH}
-					</Text>
-				</View>
-			</View>
-
-				{/* 费用明细 */}
-				<View className="mx-4 mt-3 rounded-2xl border border-border bg-card p-4">
-					<Text className="mb-3 text-base font-bold text-foreground">
-						费用明细
-					</Text>
-
-					<View className="space-y-3">
-						<View className="flex-row items-center justify-between">
-							<Text className="text-sm text-foreground">服务费用</Text>
-							<Text className="text-base font-semibold text-foreground">
-								¥{servicePrice}
-							</Text>
-						</View>
-
-						<Separator className="my-2 bg-border" />
-
-						<View className="flex-row items-center justify-between">
-							<Text className="text-base font-bold text-foreground">
-								合计金额
-							</Text>
-							<View className="flex-row items-baseline">
-								<Text className="text-xs text-muted-foreground">¥</Text>
-								<Text className="text-2xl font-bold text-primary">
-									{totalAmount.toFixed(2)}
-								</Text>
-							</View>
-						</View>
-					</View>
-				</View>
-
-				{/* 温馨提示 */}
-				<View className="mx-4 mt-3 rounded-2xl border border-accent/30 bg-accent/10 p-4">
-					<View className="flex-row items-start">
-						<Icon
-							as={ICON_MAP.Info}
-							size={18}
-							className="mt-0.5 text-accent-foreground"
-						/>
-						<View className="ml-2 flex-1">
-							<Text className="text-sm font-semibold text-foreground">
-								温馨提示
-							</Text>
-							<Text className="mt-1 text-xs leading-5 text-muted-foreground">
-								• 师傅将在预约时间准时上门服务
-								{"\n"}• 服务完成后请及时验收并评价
-							</Text>
-						</View>
-					</View>
-				</View>
-			</ScrollView>
-
-			{/* 底部支付栏 */}
-			<View
-				className="absolute bottom-0 left-0 right-0 border-t border-border bg-background px-4 py-4"
-				style={{
-					shadowColor: "#000",
-					shadowOffset: { width: 0, height: -2 },
-					shadowOpacity: 0.1,
-					shadowRadius: 8,
-					elevation: 8,
-				}}
-			>
-				<View className="flex-row items-center justify-between">
-					<View className="flex-1">
-						<Text className="text-sm text-muted-foreground">实付金额</Text>
-						<View className="mt-1 flex-row items-baseline">
-							<Text className="text-xs text-primary">¥</Text>
-							<Text className="text-2xl font-bold text-primary">
-								{totalAmount.toFixed(2)}
-							</Text>
-						</View>
-					</View>
-					<Button
-						onPress={handleClickPay}
-						className="h-12 rounded-full bg-primary px-8"
-					>
-						<Text className="text-base font-semibold text-primary-foreground">
-							立即支付
-						</Text>
-					</Button>
-				</View>
-			</View>
-
-			{/* 支付方式选择模态框 */}
-			{showPaymentModal ? (
-				<PaySheet
-					visible={showPaymentModal}
-					onClose={() => setShowPaymentModal(false)}
-					orderData={{
-						customerId: session?.user.id || "",
-						serviceId: selectService?.id || "",
-						addressId: selectedAddress?.id || "",
-						appointmentTime: selectedServiceTime?.toISOString() || "",
-						designatedPersonnelId: selectServicePersonnelInfo?.userId || "",
-						specificationId: selectedSpecification?.id || "",
-						displayPrice: servicePrice,
-						remark: orderRemark.trim(),
-					}}
-					totalAmount={totalAmount}
-					onPaymentSuccess={(orderId) => {
-						console.log("支付成功，订单ID:", orderId);
-					}}
-					onPaymentFailed={(orderId, message) => {
-						console.log("支付失败，订单ID:", orderId, "原因:", message);
-					}}
-					onPaymentCancelled={() => {
-						console.log("用户取消支付");
-					}}
-				/>
-			) : null}
-		</View>
-	);
+            {preview && selectedSpec ? (
+                <PaySheet
+                    visible={isPaySheetVisible}
+                    onClose={() => setIsPaySheetVisible(false)}
+                    totalAmount={totalAmount}
+                    orderData={{
+                        customerId,
+                        serviceId,
+                        addressId: preview.address?.id ?? "",
+                        appointmentTime: appointmentTime ?? "",
+                        designatedPersonnelId: personnelId,
+                        specificationId: selectedSpec.id,
+                        displayPrice: serviceFeeAmount,
+                        remark: remark.trim() ? remark.trim() : undefined,
+                        ...(preview.pricing.discountAmount > 0
+                            ? { discountAmount: preview.pricing.discountAmount }
+                            : {}),
+                    }}
+                />
+            ) : null}
+        </View>
+    );
 }

@@ -52,11 +52,27 @@ export default function ChatConversationScreen() {
 
     return (
         <RequireAuth>
-            <KeyboardAvoidingView
-                style={{ flex: 1 }}
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-            >
-            </KeyboardAvoidingView>
+            <View className="flex-1 bg-background">
+                <ChatMessageListView
+                    items={messages}
+                    onLoadMore={() => {
+                        if (hasNextPage && !isFetchingNextPage) {
+                            void fetchNextPage();
+                        }
+                    }}
+                    hasMore={!!hasNextPage}
+                    isLoadingMore={isFetchingNextPage}
+                    onOpenOrder={(orderId) =>
+                        router.push(`/order/${orderId}` as any)
+                    }
+                />
+                <ChatComposerView
+                    onSendText={(text) => send({ type: "text", text })}
+                    onPickImage={() => void sendImageFromLibrary()}
+                    onPickVideo={() => void sendVideoFromLibrary()}
+                    disabled={isUploading}
+                />
+            </View>
         </RequireAuth>
     );
 }

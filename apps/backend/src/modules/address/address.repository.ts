@@ -158,4 +158,51 @@ export class AddressRespository {
             geom: item.geom as number[] | undefined,
         }));
     }
+
+    async findByIdAndUserId(
+        addressId: string,
+        userId: string,
+    ): Promise<UserAddresses | null> {
+        const response = await this.db.query.userAddresses.findFirst({
+            where: and(
+                eq(userAddresses.id, addressId),
+                eq(userAddresses.userId, userId),
+            ),
+        });
+
+        if (!response) {
+            return null;
+        }
+
+        return {
+            ...response,
+            addressName: response.addressName ?? '',
+            homeNumber: response.homeNumber ?? '',
+            city: response.city ?? '',
+            district: response.district ?? '',
+            geom: response.geom as number[] | undefined,
+        };
+    }
+
+    async findDefaultByUserId(userId: string): Promise<UserAddresses | null> {
+        const response = await this.db.query.userAddresses.findFirst({
+            where: and(
+                eq(userAddresses.userId, userId),
+                eq(userAddresses.isDefault, true),
+            ),
+        });
+
+        if (!response) {
+            return null;
+        }
+
+        return {
+            ...response,
+            addressName: response.addressName ?? '',
+            homeNumber: response.homeNumber ?? '',
+            city: response.city ?? '',
+            district: response.district ?? '',
+            geom: response.geom as number[] | undefined,
+        };
+    }
 }

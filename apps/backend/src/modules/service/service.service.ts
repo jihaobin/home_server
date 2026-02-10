@@ -111,6 +111,16 @@ export class ServiceService {
             ? await this.attachIconUrl(category, { deep: false })
             : category;
     }
+
+    async getActiveServicesByCategoryIds(categoryIds: string[]) {
+        const rows =
+            await this.serviceRepository.getActiveServicesByCategoryIds(
+                categoryIds,
+            );
+        return await Promise.all(
+            rows.map((row) => this.attachServiceImage(row)),
+        );
+    }
     // ========== 服务项目相关业务方法 ==========
 
     /**

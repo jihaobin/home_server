@@ -2,20 +2,34 @@ import type React from "react";
 import { Image as ExpoImage } from "expo-image";
 import { cssInterop, useColorScheme } from "nativewind";
 import { router } from "expo-router";
-import { Suspense, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+    Suspense,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 import { Platform, Pressable, ScrollView, View } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+    SafeAreaView,
+    useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { Button } from "@repo/mobile-ui/components/ui/button";
 import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
 import { StatusBar } from "expo-status-bar";
 import { NAV_THEME } from "@repo/mobile-ui/lib/mobile-user-constants";
-import { useHomeBase, useHomeRecommendationsInfinite } from "@repo/hooks/api/home";
+import {
+    useHomeBase,
+    useHomeRecommendationsInfinite,
+} from "@repo/hooks/api/home";
 import { FlashList } from "@shopify/flash-list";
 import useLocation from "@repo/hooks/useLocation";
 import { useHomeLocationStore } from "@/stores/home-location-store";
 import type { SelectLocation } from "@/stores/address-store";
 import type { HomeRecommendedPersonnel } from "@repo/types";
+import { MoreServicesBottomSheet } from "@/components/more-services/MoreServicesBottomSheet";
 
 // Enable NativeWind `className` on expo-image.
 cssInterop(ExpoImage, { className: { target: "style" } });
@@ -25,6 +39,9 @@ const Image = ExpoImage as unknown as React.ComponentType<
 
 type ImageSource = React.ComponentProps<typeof ExpoImage>["source"];
 
+// DEV: 调试开关——设为 true 时，总是显示“更多服务”入口。
+const FORCE_SHOW_MORE_SERVICES_ENTRY = true;
+
 type GuaranteeItem = {
     id: string;
     label: string;
@@ -32,10 +49,26 @@ type GuaranteeItem = {
 };
 
 const GUARANTEES: readonly GuaranteeItem[] = [
-    { id: "late-comp", label: "迟到必赔", icon: require("@/assets/images/迟到必赔.png") },
-    { id: "redo", label: "不满意重做", icon: require("@/assets/images/不满意重做.png") },
-    { id: "24h", label: "7×24小时服务", icon: require("@/assets/images/7_24小时服务.png") },
-    { id: "all-guarantee", label: "全场保障", icon: require("@/assets/images/全场保障.png") },
+    {
+        id: "late-comp",
+        label: "迟到必赔",
+        icon: require("@/assets/images/迟到必赔.png"),
+    },
+    {
+        id: "redo",
+        label: "不满意重做",
+        icon: require("@/assets/images/不满意重做.png"),
+    },
+    {
+        id: "24h",
+        label: "7×24小时服务",
+        icon: require("@/assets/images/7_24小时服务.png"),
+    },
+    {
+        id: "all-guarantee",
+        label: "全场保障",
+        icon: require("@/assets/images/全场保障.png"),
+    },
 ] as const;
 
 // 后端返回的分类 icon 还未落到移动端资源映射前，先用当前像素稿的本地 icon 兜底。
@@ -83,9 +116,7 @@ function formatWorkDays(value: string): string {
     const uniqueSorted = Array.from(new Set(digits)).sort(
         (a, b) => Number(a) - Number(b),
     );
-    return uniqueSorted
-        .map((d) => WEEKDAY_BY_DIGIT[d] ?? d)
-        .join("、");
+    return uniqueSorted.map((d) => WEEKDAY_BY_DIGIT[d] ?? d).join("、");
 }
 
 function formatTimeHHmm(value: string): string {
@@ -118,7 +149,8 @@ function formatDistanceKm(distanceKm: number): string {
         return `${Math.round(meters)}米`;
     }
 
-    const kmText = distanceKm < 10 ? distanceKm.toFixed(1) : distanceKm.toFixed(0);
+    const kmText =
+        distanceKm < 10 ? distanceKm.toFixed(1) : distanceKm.toFixed(0);
     return `${kmText}公里`;
 }
 
@@ -135,9 +167,15 @@ function resolveCategoryIconSource(
 function PriceTag({ price }: { price: number }) {
     return (
         <View className="flex-row items-center">
-            <Text className="text-xs text-destructive font-din-alt-bold">￥</Text>
-            <Text className="text-lg text-destructive font-din-alt-bold">{price}</Text>
-            <Text className="ml-0.5 text-xs text-foreground font-puhui-regular">起</Text>
+            <Text className="text-xs text-destructive font-din-alt-bold">
+                ￥
+            </Text>
+            <Text className="text-lg text-destructive font-din-alt-bold">
+                {price}
+            </Text>
+            <Text className="ml-0.5 text-xs text-foreground font-puhui-regular">
+                起
+            </Text>
         </View>
     );
 }
@@ -170,10 +208,14 @@ function RemotePromoCard({ item }: { item: RemotePromoCardItem }) {
                 <View className="w-32 h-20 bg-muted" />
             )}
             <View className="px-2 pt-1.5">
-                <Text className="text-sm text-foreground font-puhui-regular">{item.name}</Text>
+                <Text className="text-sm text-foreground font-puhui-regular">
+                    {item.name}
+                </Text>
                 <View className="mt-2 flex-row items-center">
                     <View className="p-[2px] items-center justify-center rounded border border-primary">
-                        <Text className="text-xs text-primary font-puhui-regular">{item.tag}</Text>
+                        <Text className="text-xs text-primary font-puhui-regular">
+                            {item.tag}
+                        </Text>
                     </View>
                 </View>
                 <View className="mt-2">
@@ -189,6 +231,9 @@ function RemoteProviderCard({
 }: {
     item: {
         id: string;
+        serviceId?: string;
+        pricingId?: string;
+        serviceName?: string;
         name: string;
         tag: string;
         price: number;
@@ -223,11 +268,15 @@ function RemoteProviderCard({
                 <View className="flex-row items-center justify-between gap-1">
                     <View className="flex-1">
                         <View className="flex-row items-center">
-                            <Text className="text-sm text-foreground font-puhui-regular">{item.name}</Text>
+                            <Text className="text-sm text-foreground font-puhui-regular">
+                                {item.name}
+                            </Text>
                         </View>
                     </View>
                     <View className="p-[2px]  items-center justify-center rounded border border-primary">
-                        <Text className="text-xs text-primary font-puhui-regular">{item.tag}</Text>
+                        <Text className="text-xs text-primary font-puhui-regular">
+                            {item.tag}
+                        </Text>
                     </View>
                 </View>
 
@@ -238,8 +287,13 @@ function RemoteProviderCard({
                             contentFit="contain"
                             className="h-3 w-3"
                         />
-                        <Text className=" text-xs text-primary font-puhui-medium">{item.distanceText}</Text>
-                        <Text className="text-xs text-muted-foreground font-puhui-regular"> · </Text>
+                        <Text className=" text-xs text-primary font-puhui-medium">
+                            {item.distanceText}
+                        </Text>
+                        <Text className="text-xs text-muted-foreground font-puhui-regular">
+                            {" "}
+                            ·{" "}
+                        </Text>
                         <Text
                             className="flex-1 text-xs text-muted-foreground font-puhui-regular"
                             numberOfLines={1}
@@ -281,17 +335,35 @@ function RemoteProviderCard({
 
                 <View className="mt-auto flex-row items-end justify-between pb-1.5">
                     <PriceTag price={item.price} />
-                    <View className="h-5 w-16 items-center justify-center rounded-full bg-primary">
+                    <Pressable
+                        className="h-5 w-16 items-center justify-center rounded-full bg-primary"
+                        onPress={() =>
+                            router.push({
+                                pathname: "/servicePersonnel/[id]",
+                                params: {
+                                    id: item.id,
+                                    ...(item.serviceId
+                                        ? { serviceId: item.serviceId }
+                                        : {}),
+                                    ...(item.pricingId
+                                        ? { pricingId: item.pricingId }
+                                        : {}),
+                                    ...(item.serviceName
+                                        ? { serviceName: item.serviceName }
+                                        : { serviceName: item.tag }),
+                                },
+                            })
+                        }
+                    >
                         <Text className="text-xs text-primary-foreground font-puhui-medium">
                             立即预约
                         </Text>
-                    </View>
+                    </Pressable>
                 </View>
             </View>
         </View>
     );
 }
-
 
 function StatusBarBackground({ color }: { color: string }) {
     const insets = useSafeAreaInsets();
@@ -370,9 +442,41 @@ function HomeRecommendationsSkeleton() {
     );
 }
 
-function HomeBaseContent() {
+function HomeBaseContent({
+    onOpenMoreServices,
+    moreServicesVisible,
+    onCloseMoreServices,
+}: {
+    onOpenMoreServices: () => void;
+    moreServicesVisible: boolean;
+    onCloseMoreServices: () => void;
+}) {
     const homeBase = useHomeBase();
     const data = homeBase.data;
+
+    const categoryItems = data.categories.map((c) => ({
+        id: c.id,
+        label: c.name,
+        icon: resolveCategoryIconSource(c.name, c.iconFileUrl ?? null),
+    }));
+
+    // 设计稿（375 宽）分类区为 5 列 x 2 行。
+    // 当父分类数量超过两行容量时，显示“更多服务”入口（占用最后一个格子）。
+    const homeCategoryCapacity = 10;
+    const shouldShowMoreServicesEntry =
+        FORCE_SHOW_MORE_SERVICES_ENTRY ||
+        categoryItems.length > homeCategoryCapacity;
+
+    const categoriesToRender = shouldShowMoreServicesEntry
+        ? [
+              ...categoryItems.slice(0, Math.max(0, homeCategoryCapacity - 1)),
+              {
+                  id: "more-services-entry",
+                  label: "更多服务",
+                  icon: CATEGORY_FALLBACK_ICON,
+              },
+          ]
+        : categoryItems;
 
     return (
         <>
@@ -399,79 +503,110 @@ function HomeBaseContent() {
             </View>
 
             <View className="mx-4 mt-3 w-[343px] flex-row items-center justify-between">
-                {(data.guarantees.length ? data.guarantees : GUARANTEES).map((item) => (
-                    <View key={item.id} className="flex-row items-center">
-                        {"iconUrl" in item && item.iconUrl ? (
-                            <Image
-                                source={{ uri: item.iconUrl }}
-                                placeholder={
-                                    ("iconBlurhash" in item && item.iconBlurhash)
-                                        ? { blurhash: item.iconBlurhash }
-                                        : undefined
-                                }
-                                contentFit="contain"
-                                className="h-3 w-3"
-                            />
-                        ) : (
-                            <Image
-                                source={(item as GuaranteeItem).icon}
-                                contentFit="contain"
-                                className="h-3 w-3"
-                            />
-                        )}
-                        <Text className="ml-1 text-xs text-muted-foreground font-puhui-regular">
-                            {item.label}
-                        </Text>
-                    </View>
-                ))}
+                {(data.guarantees.length ? data.guarantees : GUARANTEES).map(
+                    (item) => (
+                        <View key={item.id} className="flex-row items-center">
+                            {"iconUrl" in item && item.iconUrl ? (
+                                <Image
+                                    source={{ uri: item.iconUrl }}
+                                    placeholder={
+                                        "iconBlurhash" in item &&
+                                        item.iconBlurhash
+                                            ? { blurhash: item.iconBlurhash }
+                                            : undefined
+                                    }
+                                    contentFit="contain"
+                                    className="h-3 w-3"
+                                />
+                            ) : (
+                                <Image
+                                    source={(item as GuaranteeItem).icon}
+                                    contentFit="contain"
+                                    className="h-3 w-3"
+                                />
+                            )}
+                            <Text className="ml-1 text-xs text-muted-foreground font-puhui-regular">
+                                {item.label}
+                            </Text>
+                        </View>
+                    ),
+                )}
             </View>
 
-            {data.categories.length ? (
+            {categoriesToRender.length ? (
                 <View className="mx-[17px] mt-4 w-[341px] flex-row flex-wrap gap-6">
-                    {data.categories
-                        .map((c) => ({
-                            id: c.id,
-                            label: c.name,
-                            icon: resolveCategoryIconSource(
-                                c.name,
-                                c.iconFileUrl ?? null,
-                            ),
-                        }))
-                        .map((item) => (
-                            <View key={item.id} className="w-[49px] items-center">
-                                <Image source={item.icon} contentFit="contain" className="h-[49px] w-[49px]" />
-                                <Text className="mt-1 text-xs text-foreground font-puhui-regular" numberOfLines={1}>
-                                    {item.label}
-                                </Text>
-                            </View>
-                        ))}
+                    {categoriesToRender.map((item) => (
+                        <Pressable
+                            key={item.id}
+                            className="w-[49px] items-center"
+                            onPress={() => {
+                                if (item.label === "更多服务") {
+                                    onOpenMoreServices();
+                                    return;
+                                }
+
+                                router.push({
+                                    pathname: "/category/filter",
+                                    params: {
+                                        categoryId: String(item.id),
+                                        categoryName: item.label,
+                                        // 分类筛选页默认选中 Tab
+                                        defaultTabName: item.label,
+                                    },
+                                });
+                            }}
+                        >
+                            <Image
+                                source={item.icon}
+                                contentFit="contain"
+                                className="h-[49px] w-[49px]"
+                            />
+                            <Text
+                                className="mt-1 text-xs text-foreground font-puhui-regular"
+                                numberOfLines={1}
+                            >
+                                {item.label}
+                            </Text>
+                        </Pressable>
+                    ))}
                 </View>
             ) : null}
 
-            {data.promos.length > 0 && <View className="mx-4 mt-5 h-[205px] rounded-xl bg-card shadow-lg">
-                <Text className="ml-3 mt-3 text-lg text-foreground font-puhui-medium">
-                    特惠服务
-                </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mt-2">
-                    <View className="flex-row gap-3 px-3">
-                        {data.promos.length
-                            ? data.promos.map((p) => (
-                                <RemotePromoCard
-                                    key={p.id}
-                                    item={{
-                                        id: p.id,
-                                        name: p.personnelName,
-                                        tag: p.tag,
-                                        price: p.price,
-                                        imageUrl: p.imageUrl,
-                                        imageBlurhash: p.imageBlurhash,
-                                    }}
-                                />
-                            ))
-                            : null}
-                    </View>
-                </ScrollView>
-            </View>}
+            <MoreServicesBottomSheet
+                visible={moreServicesVisible}
+                onClose={onCloseMoreServices}
+            />
+
+            {data.promos.length > 0 && (
+                <View className="mx-4 mt-5 h-[205px] rounded-xl bg-card shadow-lg">
+                    <Text className="ml-3 mt-3 text-lg text-foreground font-puhui-medium">
+                        特惠服务
+                    </Text>
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        className="mt-2"
+                    >
+                        <View className="flex-row gap-3 px-3">
+                            {data.promos.length
+                                ? data.promos.map((p) => (
+                                      <RemotePromoCard
+                                          key={p.id}
+                                          item={{
+                                              id: p.id,
+                                              name: p.personnelName,
+                                              tag: p.tag,
+                                              price: p.price,
+                                              imageUrl: p.imageUrl,
+                                              imageBlurhash: p.imageBlurhash,
+                                          }}
+                                      />
+                                  ))
+                                : null}
+                        </View>
+                    </ScrollView>
+                </View>
+            )}
         </>
     );
 }
@@ -515,6 +650,9 @@ function HomeRecommendationsContent({
                         <RemoteProviderCard
                             item={{
                                 id: item.personnelId,
+                                serviceId: item.serviceId,
+                                pricingId: item.pricingId,
+                                serviceName: item.tag,
                                 name: item.name,
                                 tag: item.tag,
                                 price: item.minPrice,
@@ -571,15 +709,16 @@ function HomeRecommendationsSection({
 
     const params: HomeRecommendationsParams = hasCoords
         ? {
-            lat,
-            lng,
-            ...(addressText ? { addressText } : {}),
-        }
+              lat,
+              lng,
+              ...(addressText ? { addressText } : {}),
+          }
         : {};
 
     const rec = useHomeRecommendationsInfinite(params);
     const items = useMemo(
-        () => rec.data?.pages.flatMap((page) => page.recommendedPersonnel) ?? [],
+        () =>
+            rec.data?.pages.flatMap((page) => page.recommendedPersonnel) ?? [],
         [rec.data],
     );
 
@@ -628,9 +767,12 @@ export default function HomeScreen() {
         loadMoreRef.current = fn;
     }, []);
 
+    const [moreServicesVisible, setMoreServicesVisible] = useState(false);
+
     // 无改动外层结构：通过外层 ScrollView 的滚动触底判断触发推荐列表拉取下一页。
     const handleScroll = useCallback((event: any) => {
-        const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+        const { layoutMeasurement, contentOffset, contentSize } =
+            event.nativeEvent;
         const paddingToBottom = 160;
         const isNearBottom =
             layoutMeasurement.height + contentOffset.y >=
@@ -643,7 +785,10 @@ export default function HomeScreen() {
 
     return (
         <View className="flex-1 bg-background">
-            <StatusBar style={colorScheme === "dark" ? "light" : "dark"} backgroundColor={statusBarBackground} />
+            <StatusBar
+                style={colorScheme === "dark" ? "light" : "dark"}
+                backgroundColor={statusBarBackground}
+            />
             <StatusBarBackground color={statusBarBackground} />
             <ScrollView
                 className="flex-1"
@@ -664,7 +809,8 @@ export default function HomeScreen() {
                                     <Pressable
                                         onPress={() =>
                                             router.push({
-                                                pathname: "/address/select-address",
+                                                pathname:
+                                                    "/address/select-address",
                                                 params: { scene: "home" },
                                             })
                                         }
@@ -696,7 +842,15 @@ export default function HomeScreen() {
                     </View>
 
                     <Suspense fallback={<HomeBaseSkeleton />}>
-                        <HomeBaseContent />
+                        <HomeBaseContent
+                            onOpenMoreServices={() =>
+                                setMoreServicesVisible(true)
+                            }
+                            moreServicesVisible={moreServicesVisible}
+                            onCloseMoreServices={() =>
+                                setMoreServicesVisible(false)
+                            }
+                        />
                     </Suspense>
 
                     <Text className="mx-4 mt-3 text-base text-foreground font-puhui-medium">

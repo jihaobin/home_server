@@ -58,10 +58,55 @@ export class ServicePersonnelService {
      * 根据用户位置、价格区间、服务类型等条件筛选合适的服务人员
      */
     async findMatchedPersonnel(filters: ServicePersonnelFilterRequest) {
-        // 调用Repository层执行复杂的数据查询
-        return await this.servicePersonnelRepository.findMatchedPersonnel(
-            filters,
+        const result =
+            await this.servicePersonnelRepository.findMatchedPersonnel(filters);
+
+        // 兼容：原有 avatarUrl 可能为文件 hash；新增 avatar 提供可直接渲染的 URL + blurhash。
+        const items = result.items ?? [];
+        const isHttpUrl = (value: string) =>
+            value.startsWith('http://') || value.startsWith('https://');
+
+        const avatarFileIds = Array.from(
+            new Set(
+                items
+                    .map((p) => (p.avatarUrl ?? '').trim())
+                    .filter((id) => Boolean(id) && !isHttpUrl(id)),
+            ),
         );
+
+        const avatarInfoMap = new Map<
+            string,
+            { url: string; blurhash: string | null }
+        >();
+        await Promise.all(
+            avatarFileIds.map(async (fileId) => {
+                const info = await this.getFileAccessInfoSafely(fileId);
+                if (!info?.url) return;
+                avatarInfoMap.set(fileId, {
+                    url: info.url,
+                    blurhash: info.blurhash ?? null,
+                });
+            }),
+        );
+
+        const nextItems = items.map((p) => {
+            const raw = (p.avatarUrl ?? '').trim();
+            const avatar = !raw
+                ? null
+                : isHttpUrl(raw)
+                  ? { url: raw, blurhash: null }
+                  : (avatarInfoMap.get(raw) ?? null);
+
+            return {
+                ...p,
+                avatar,
+            };
+        });
+
+        return {
+            ...result,
+            items: nextItems,
+        };
     }
 
     async getPersonnelServiceDetails({
@@ -78,13 +123,31 @@ export class ServicePersonnelService {
                 serviceId,
             );
 
-        const galleryFileIds = details?.galleryFileIds ?? [];
+        if (!details) {
+            throw new NotFoundException('服务详情不存在');
+        }
+
+        if (!details.specifications || details.specifications.length === 0) {
+            throw new NotFoundException('该服务暂无可用定价');
+        }
+
+        const galleryFileIds = details.galleryFileIds ?? [];
         const gallery = await this.buildFileAccessList(galleryFileIds);
+
+        const topReviews = await this.reviewService.getTopReviewsByTarget(
+            personnelId,
+            ReviewTargetTypeEnum.parse('personnel'),
+            {
+                serviceId,
+                limit: 5,
+            },
+        );
 
         return {
             ...details,
             galleryFileIds,
             gallery,
+            topReviews,
         };
     }
 

@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 
 import { ServiceCategoryTree, serviceCategoriesSchema } from "./service";
+import { ServicesSchema } from "./database-entity";
 
 // ==================== Home Query ====================
 
@@ -9,6 +10,11 @@ export const HomeQuerySchema = z
         page: z.number().int().min(1).default(1).meta({
             title: "页码",
             description: "分页页码，从 1 开始",
+        }),
+        categoryId: z.string().max(255).optional().meta({
+            title: "分类ID",
+            description:
+                "可选；用于按服务分类过滤首页推荐（分类筛选页的‘推荐’Tab）",
         }),
         lat: z.number().min(-90).max(90).optional().meta({
             title: "纬度",
@@ -129,6 +135,15 @@ export const HomeRecommendedPersonnelSchema = z
         }),
         tag: z.string(),
         minPrice: z.number(),
+        serviceId: z.string().max(255).optional().meta({
+            title: "默认服务ID",
+            description:
+                "推荐卡片对应的默认服务ID（与 tag/minPrice 来自同一条最低起价定价记录）",
+        }),
+        pricingId: z.string().max(255).optional().meta({
+            title: "最低起价定价ID",
+            description: "推荐卡片最低起价对应的定价记录ID（可选）",
+        }),
         distanceKm: z.number(),
         addressText: z.string(),
         workDays: z.string(),

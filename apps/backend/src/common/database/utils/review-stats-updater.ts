@@ -34,6 +34,7 @@ export async function updateReviewStats(
     const stats = await db
         .select({
             totalCount: sql<number>`COUNT(*)::int`,
+            photoCount: sql<number>`COUNT(*) FILTER (WHERE jsonb_array_length(${reviews.imageIds}) > 0)::int`,
             goodCount: sql<number>`COUNT(*) FILTER (WHERE ${reviews.rating} >= 4)::int`,
             neutralCount: sql<number>`COUNT(*) FILTER (WHERE ${reviews.rating} = 3)::int`,
             badCount: sql<number>`COUNT(*) FILTER (WHERE ${reviews.rating} <= 2)::int`,
@@ -70,6 +71,7 @@ export async function updateReviewStats(
             targetType,
             serviceId,
             totalCount: stat.totalCount,
+            photoCount: stat.photoCount,
             goodCount: stat.goodCount,
             neutralCount: stat.neutralCount,
             badCount: stat.badCount,
@@ -88,6 +90,7 @@ export async function updateReviewStats(
             ],
             set: {
                 totalCount: stat.totalCount,
+                photoCount: stat.photoCount,
                 goodCount: stat.goodCount,
                 neutralCount: stat.neutralCount,
                 badCount: stat.badCount,

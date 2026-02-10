@@ -4,6 +4,7 @@ import {
     useCancelOrder,
     useOrderDetail,
     useRejectOrder,
+    useRescheduleOrder,
 } from "@repo/hooks/api/order";
 import { useChatUpsertConversation } from "@repo/hooks/api/chat";
 import type { AssignmentDecisionStatus } from "@repo/types";
@@ -24,6 +25,171 @@ import {
 } from "react-native";
 import { ErrorBoundary } from "react-error-boundary";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { DateTimePicker } from "@repo/mobile-ui/components/ui/date-time-picker";
+
+const SERVICE_TIME_WINDOW_STEP_MINUTES = 120;
+const SERVICE_TIME_WINDOW_MS = 2 * 60 * 60 * 1000;
+
+type HmsParts = {
+    hours: number;
+    minutes: number;
+    seconds: number;
+};
+
+function parseHms(timeStr: string): HmsParts | null {
+    const match = /^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/.exec(timeStr);
+    if (!match) {
+        return null;
+    }
+    return {
+        hours: Number(match[1]),
+        minutes: Number(match[2]),
+        seconds: Number(match[3]),
+    };
+}
+
+function resolveWorkBoundsForDate(params: {
+    date: Date;
+    workStartTime: string;
+    workEndTime: string;
+}) {
+    const startParts = parseHms(params.workStartTime);
+    const endParts = parseHms(params.workEndTime);
+    if (!startParts || !endParts) {
+        return null;
+    }
+    const start = new Date(
+        params.date.getFullYear(),
+        params.date.getMonth(),
+        params.date.getDate(),
+        startParts.hours,
+        startParts.minutes,
+        startParts.seconds,
+        0,
+    );
+    let end = new Date(
+        params.date.getFullYear(),
+        params.date.getMonth(),
+        params.date.getDate(),
+        endParts.hours,
+        endParts.minutes,
+        endParts.seconds,
+        0,
+    );
+    if (end.getTime() < start.getTime()) {
+        end = new Date(end.getTime() + 24 * 60 * 60 * 1000);
+    }
+    return { start, end };
+}
+
+function resolveWeekdayValue(date: Date): string {
+    const raw = date.getDay();
+    const weekday = raw === 0 ? 7 : raw;
+    return String(weekday);
+}
+
+function normalizeWorkDays(workDays: unknown): Set<string> {
+    if (Array.isArray(workDays)) {
+        return new Set(workDays.map((d) => String(d).trim()).filter(Boolean));
+    }
+    if (typeof workDays === "string") {
+        return new Set(
+            workDays
+                .split("")
+                .map((d) => d.trim())
+                .filter(Boolean),
+        );
+    }
+    return new Set();
+}
+
+function resolveAlignedRescheduleTime(params: {
+    draft: Date;
+    workStartTime: string;
+    workEndTime: string;
+    now: Date;
+}) {
+    const bounds = resolveWorkBoundsForDate({
+        date: params.draft,
+        workStartTime: params.workStartTime,
+        workEndTime: params.workEndTime,
+    });
+    if (!bounds) {
+        return null;
+    }
+
+    const stepMs = SERVICE_TIME_WINDOW_STEP_MINUTES * 60 * 1000;
+    const startMs = bounds.start.getTime();
+    const endMs = bounds.end.getTime();
+    const maxDiff = endMs - startMs;
+    if (maxDiff < 0) {
+        return null;
+    }
+    const maxN = Math.floor(maxDiff / stepMs);
+
+    const diff = params.draft.getTime() - startMs;
+    let n = Math.round(diff / stepMs);
+    if (!Number.isFinite(n)) {
+        return null;
+    }
+    n = Math.max(0, Math.min(maxN, n));
+
+    let candidateMs = startMs + n * stepMs;
+    const nowMs = params.now.getTime();
+    while (candidateMs < nowMs && n < maxN) {
+        n += 1;
+        candidateMs = startMs + n * stepMs;
+    }
+    if (candidateMs < nowMs) {
+        return null;
+    }
+    if (candidateMs > endMs) {
+        return null;
+    }
+    return new Date(candidateMs);
+}
+
+function buildTimeWindowSlots(params: {
+    date: Date;
+    workStartTime: string;
+    workEndTime: string;
+    now: Date;
+}): { start: Date; label: string }[] {
+    const bounds = resolveWorkBoundsForDate({
+        date: params.date,
+        workStartTime: params.workStartTime,
+        workEndTime: params.workEndTime,
+    });
+    if (!bounds) {
+        return [];
+    }
+
+    const stepMs = SERVICE_TIME_WINDOW_STEP_MINUTES * 60 * 1000;
+    const nowMs = params.now.getTime();
+    const slots: { start: Date; label: string }[] = [];
+
+    for (
+        let t = bounds.start.getTime();
+        t <= bounds.end.getTime();
+        t += stepMs
+    ) {
+        if (t < nowMs) {
+            continue;
+        }
+        const start = new Date(t);
+        const end = new Date(t + SERVICE_TIME_WINDOW_MS);
+        const hh = `${start.getHours()}`.padStart(2, "0");
+        const mi = `${start.getMinutes()}`.padStart(2, "0");
+        const endHh = `${end.getHours()}`.padStart(2, "0");
+        const endMi = `${end.getMinutes()}`.padStart(2, "0");
+        slots.push({
+            start,
+            label: `${hh}:${mi}-${endHh}:${endMi}`,
+        });
+    }
+
+    return slots;
+}
 
 const ORDER_STATUS_DISPLAY: Record<
     string,
@@ -97,20 +263,6 @@ const DECISION_STATUS_DISPLAY: Record<
     },
 };
 
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
-    alipay: "支付宝",
-    wechat_pay: "微信支付",
-    bank_transfer: "银行转账",
-    cash: "现金",
-    other: "其他",
-};
-
-const PAYMENT_STATUS_LABELS: Record<string, string> = {
-    pending: "待支付",
-    succeeded: "支付成功",
-    failed: "支付失败",
-    refunded: "已退款",
-};
 
 const ASSIGNMENT_TYPE_LABELS: Record<string, string> = {
     system_auto: "系统派单",
@@ -215,6 +367,7 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
     const cancelOrder = useCancelOrder();
     const acceptOrder = useAcceptOrder();
     const rejectOrder = useRejectOrder();
+    const rescheduleOrder = useRescheduleOrder();
     const [cancelModalVisible, setCancelModalVisible] = useState(false);
     const [cancelReason, setCancelReason] = useState(DEFAULT_CANCEL_REASON);
     const [cancelReasonError, setCancelReasonError] = useState<string | null>(
@@ -226,6 +379,85 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
         null,
     );
 
+    const [rescheduleModalVisible, setRescheduleModalVisible] = useState(false);
+    const [rescheduleDraft, setRescheduleDraft] = useState<Date>(() => {
+        const base = order.appointmentTime
+            ? new Date(order.appointmentTime)
+            : null;
+        return base && !Number.isNaN(base.getTime()) ? base : new Date();
+    });
+
+    const rescheduleAvailability = React.useMemo(() => {
+        const schedule = order.assignment?.servicePersonnel as
+            | {
+                  workStartTime?: unknown;
+                  workEndTime?: unknown;
+                  workDays?: unknown;
+              }
+            | undefined;
+        const workStartTime =
+            typeof schedule?.workStartTime === "string"
+                ? schedule.workStartTime
+                : null;
+        const workEndTime =
+            typeof schedule?.workEndTime === "string"
+                ? schedule.workEndTime
+                : null;
+        const workDaySet = normalizeWorkDays(schedule?.workDays);
+
+        if (!workStartTime || !workEndTime) {
+            return {
+                canReschedule: false,
+                title: "暂时无法改期",
+                message:
+                    "未获取到您的工作时间配置，请稍后重试或先完善服务设置。",
+                workStartTime,
+                workEndTime,
+                slots: [] as { start: Date; label: string }[],
+            };
+        }
+
+        const weekday = resolveWeekdayValue(rescheduleDraft);
+        const isWorkday = !workDaySet.size || workDaySet.has(weekday);
+        if (!isWorkday) {
+            return {
+                canReschedule: false,
+                title: "当天不可改期",
+                message: "该日期不在您的工作日范围内，请选择其他日期。",
+                workStartTime,
+                workEndTime,
+                slots: [] as { start: Date; label: string }[],
+            };
+        }
+
+        const slots = buildTimeWindowSlots({
+            date: rescheduleDraft,
+            workStartTime,
+            workEndTime,
+            now: new Date(),
+        });
+        if (!slots.length) {
+            return {
+                canReschedule: false,
+                title: "当天无可用时间段",
+                message:
+                    "当前日期内已没有可选的 2 小时窗口起点（可能已过工作时间或时间段已过去）。请换一天试试。",
+                workStartTime,
+                workEndTime,
+                slots,
+            };
+        }
+
+        return {
+            canReschedule: true,
+            title: `当天可选时间段（${slots.length} 个）`,
+            message: slots.map((slot) => slot.label).join("、"),
+            workStartTime,
+            workEndTime,
+            slots,
+        };
+    }, [order.assignment?.servicePersonnel, rescheduleDraft]);
+
     const statusMeta =
         ORDER_STATUS_DISPLAY[order.status] ?? ORDER_STATUS_DISPLAY.cancelled;
     const assignmentDecision = order.assignment?.decisionStatus ?? null;
@@ -235,7 +467,19 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
     const canDecideAssignment =
         order.status === "pending_acceptance" &&
         assignmentDecision === "pending";
-    const canCancel = ["paid", "in_progress"].includes(order.status as string);
+    // 订单是否可取消由后端统一裁决（避免端上复制状态机）。
+    const canCancel =
+        typeof order.canCancel === "boolean"
+            ? order.canCancel
+            : [
+                  "pending_payment",
+                  "pending_acceptance",
+                  "paid",
+                  "staff_rejected",
+              ].includes(order.status as string);
+    const canReschedule = ["pending_acceptance", "paid"].includes(
+        order.status as string,
+    );
     const description =
         (order as { remark?: string; note?: string; description?: string })
             .remark ??
@@ -276,8 +520,6 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
     const assignedAtText = formatDateTime(assignment?.assignedAt);
     const acceptedAtText = formatDateTime(assignment?.acceptedAt);
     const rejectedAtText = formatDateTime(assignment?.rejectedAt);
-    const payments = order.payments ?? [];
-    const hasPayments = payments.length > 0;
     const timelineItems: TimelineItem[] = [];
     const appointmentText = formatDateTime(order.appointmentTime);
     if (appointmentText) {
@@ -373,6 +615,112 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
     const closeRejectModal = () => {
         setRejectModalVisible(false);
         setRejectReasonError(null);
+    };
+
+    const openRescheduleModal = () => {
+        const base = order.appointmentTime
+            ? new Date(order.appointmentTime)
+            : null;
+        const fallback =
+            base && !Number.isNaN(base.getTime()) ? base : new Date();
+        const schedule = order.assignment?.servicePersonnel as
+            | {
+                  workStartTime?: unknown;
+                  workEndTime?: unknown;
+              }
+            | undefined;
+        const workStartTime =
+            typeof schedule?.workStartTime === "string"
+                ? schedule.workStartTime
+                : null;
+        const workEndTime =
+            typeof schedule?.workEndTime === "string"
+                ? schedule.workEndTime
+                : null;
+        const aligned =
+            workStartTime && workEndTime
+                ? resolveAlignedRescheduleTime({
+                      draft: fallback,
+                      workStartTime,
+                      workEndTime,
+                      now: new Date(),
+                  })
+                : null;
+
+        setRescheduleDraft(aligned ?? fallback);
+        setRescheduleModalVisible(true);
+    };
+
+    const closeRescheduleModal = () => {
+        if (rescheduleOrder.isPending) {
+            return;
+        }
+        setRescheduleModalVisible(false);
+    };
+
+    const handleRescheduleConfirm = async () => {
+        if (rescheduleOrder.isPending) {
+            return;
+        }
+        if (!rescheduleAvailability.canReschedule) {
+            Alert.alert(
+                rescheduleAvailability.title,
+                rescheduleAvailability.message,
+            );
+            return;
+        }
+        const schedule = order.assignment?.servicePersonnel as
+            | {
+                  workStartTime?: unknown;
+                  workEndTime?: unknown;
+                  workDays?: unknown;
+              }
+            | undefined;
+        const workStartTime =
+            typeof schedule?.workStartTime === "string"
+                ? schedule.workStartTime
+                : null;
+        const workEndTime =
+            typeof schedule?.workEndTime === "string"
+                ? schedule.workEndTime
+                : null;
+        if (!workStartTime || !workEndTime) {
+            Alert.alert("无法改期", "缺少服务人员工作时间配置");
+            return;
+        }
+
+        const aligned = resolveAlignedRescheduleTime({
+            draft: rescheduleDraft,
+            workStartTime,
+            workEndTime,
+            now: new Date(),
+        });
+        if (!aligned) {
+            Alert.alert(
+                "时间不合法",
+                "请选择可用的 2 小时窗口起点（系统按您的工作时间自动生成）。",
+            );
+            return;
+        }
+
+        const workDaySet = normalizeWorkDays(schedule?.workDays);
+        if (workDaySet.size) {
+            const weekday = resolveWeekdayValue(aligned);
+            if (!workDaySet.has(weekday)) {
+                Alert.alert("时间不合法", "选择的日期不在工作日范围内");
+                return;
+            }
+        }
+        try {
+            await rescheduleOrder.mutateAsync({
+                orderId,
+                appointmentTime: aligned.toISOString(),
+            });
+            setRescheduleModalVisible(false);
+            Alert.alert("改期成功", "已更新订单预约时间");
+        } catch (error) {
+            Alert.alert("改期失败", (error as Error)?.message ?? "请稍后再试");
+        }
     };
 
     const handleRejectConfirm = async () => {
@@ -696,7 +1044,7 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                 </View>
             </ScrollView>
 
-            {(canDecideAssignment || canCancel) && (
+            {(canDecideAssignment || canCancel || canReschedule) && (
                 <View style={styles.footer}>
                     {canDecideAssignment ? (
                         <>
@@ -746,6 +1094,25 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                                 {cancelOrder.isPending
                                     ? "取消中..."
                                     : "取消订单"}
+                            </Text>
+                        </TouchableOpacity>
+                    ) : null}
+
+                    {canReschedule ? (
+                        <TouchableOpacity
+                            style={[styles.actionButton, styles.acceptButton]}
+                            onPress={openRescheduleModal}
+                            disabled={
+                                rescheduleOrder.isPending ||
+                                acceptOrder.isPending ||
+                                rejectOrder.isPending ||
+                                cancelOrder.isPending
+                            }
+                        >
+                            <Text style={styles.acceptText}>
+                                {rescheduleOrder.isPending
+                                    ? "改期中..."
+                                    : "改期"}
                             </Text>
                         </TouchableOpacity>
                     ) : null}
@@ -824,6 +1191,138 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                                     ) : (
                                         <Text style={styles.modalConfirmText}>
                                             确认取消
+                                        </Text>
+                                    )}
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </KeyboardAvoidingView>
+                </View>
+            </Modal>
+
+            <Modal
+                visible={rescheduleModalVisible}
+                animationType="slide"
+                transparent
+                onRequestClose={closeRescheduleModal}
+            >
+                <View style={styles.modalBackdrop}>
+                    <KeyboardAvoidingView
+                        style={styles.modalWrapper}
+                        behavior={Platform.select({
+                            ios: "padding",
+                            android: undefined,
+                        })}
+                    >
+                        <View style={styles.modalCard}>
+                            <Text style={styles.modalTitle}>
+                                选择新的预约时间
+                            </Text>
+                            <Text style={styles.modalSubtitle}>
+                                请选择 2 小时窗口的起始时间点。
+                            </Text>
+                            <View style={styles.rescheduleHintCard}>
+                                <Text style={styles.rescheduleHintTitle}>
+                                    {rescheduleAvailability.title}
+                                </Text>
+                                <Text style={styles.rescheduleHintMeta}>
+                                    工作时间：
+                                    {rescheduleAvailability.workStartTime ??
+                                        "--"}
+                                    -
+                                    {rescheduleAvailability.workEndTime ?? "--"}
+                                    {"  "}·{"  "}
+                                    步长：{
+                                        SERVICE_TIME_WINDOW_STEP_MINUTES
+                                    }{" "}
+                                    分钟
+                                </Text>
+                                <Text
+                                    style={
+                                        rescheduleAvailability.canReschedule
+                                            ? styles.rescheduleHintBody
+                                            : styles.rescheduleHintBodyWarning
+                                    }
+                                >
+                                    {rescheduleAvailability.message}
+                                </Text>
+                            </View>
+                            <DateTimePicker
+                                mode="single"
+                                timePicker
+                                locale="zh-cn"
+                                minDate={new Date()}
+                                date={rescheduleDraft}
+                                onChange={({ date }) => {
+                                    if (!date) return;
+                                    const resolved =
+                                        date instanceof Date
+                                            ? date
+                                            : new Date(date as string);
+                                    if (!Number.isNaN(resolved.getTime())) {
+                                        const schedule = order.assignment
+                                            ?.servicePersonnel as
+                                            | {
+                                                  workStartTime?: unknown;
+                                                  workEndTime?: unknown;
+                                              }
+                                            | undefined;
+                                        const workStartTime =
+                                            typeof schedule?.workStartTime ===
+                                            "string"
+                                                ? schedule.workStartTime
+                                                : null;
+                                        const workEndTime =
+                                            typeof schedule?.workEndTime ===
+                                            "string"
+                                                ? schedule.workEndTime
+                                                : null;
+
+                                        const aligned =
+                                            workStartTime && workEndTime
+                                                ? resolveAlignedRescheduleTime({
+                                                      draft: resolved,
+                                                      workStartTime,
+                                                      workEndTime,
+                                                      now: new Date(),
+                                                  })
+                                                : null;
+
+                                        setRescheduleDraft(aligned ?? resolved);
+                                    }
+                                }}
+                            />
+                            <View style={styles.modalActions}>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.modalButton,
+                                        styles.modalCancelButton,
+                                    ]}
+                                    onPress={closeRescheduleModal}
+                                    disabled={rescheduleOrder.isPending}
+                                >
+                                    <Text style={styles.modalCancelText}>
+                                        返回
+                                    </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.modalButton,
+                                        styles.modalConfirmButton,
+                                        rescheduleOrder.isPending &&
+                                            styles.modalButtonDisabled,
+                                    ]}
+                                    onPress={handleRescheduleConfirm}
+                                    disabled={
+                                        rescheduleOrder.isPending ||
+                                        !rescheduleAvailability.canReschedule
+                                    }
+                                >
+                                    {rescheduleOrder.isPending ? (
+                                        <ActivityIndicator color="#fff" />
+                                    ) : (
+                                        <Text style={styles.modalConfirmText}>
+                                            确认改期
                                         </Text>
                                     )}
                                 </TouchableOpacity>
@@ -935,12 +1434,15 @@ function formatDateTime(value?: string | Date | null) {
     if (!value) return null;
     const date = typeof value === "string" ? new Date(value) : value;
     if (Number.isNaN(date.getTime())) return null;
+    const end = new Date(date.getTime() + 2 * 60 * 60 * 1000);
     const yyyy = date.getFullYear();
     const mm = `${date.getMonth() + 1}`.padStart(2, "0");
     const dd = `${date.getDate()}`.padStart(2, "0");
     const hh = `${date.getHours()}`.padStart(2, "0");
     const mi = `${date.getMinutes()}`.padStart(2, "0");
-    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+    const endHh = `${end.getHours()}`.padStart(2, "0");
+    const endMi = `${end.getMinutes()}`.padStart(2, "0");
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}-${endHh}:${endMi}`;
 }
 
 function formatCurrency(value?: number | string | null) {
@@ -1391,5 +1893,36 @@ const styles = StyleSheet.create({
     modalConfirmText: {
         color: "white",
         fontWeight: "bold",
+    },
+
+    rescheduleHintCard: {
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 10,
+        backgroundColor: "#F6F7F9",
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: "#E5E7EB",
+    },
+    rescheduleHintTitle: {
+        fontSize: 13,
+        fontWeight: "700",
+        color: "#111827",
+    },
+    rescheduleHintMeta: {
+        marginTop: 6,
+        fontSize: 12,
+        color: "#6B7280",
+    },
+    rescheduleHintBody: {
+        marginTop: 8,
+        fontSize: 12,
+        lineHeight: 18,
+        color: "#374151",
+    },
+    rescheduleHintBodyWarning: {
+        marginTop: 8,
+        fontSize: 12,
+        lineHeight: 18,
+        color: "#B45309",
     },
 });

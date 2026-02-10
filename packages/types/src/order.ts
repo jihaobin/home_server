@@ -112,6 +112,14 @@ export const OrderCardSchema = z
                 "配合 expo-image placeholder 使用；为空表示暂无 blurhash。",
         }),
         serviceName: z.string().min(1),
+        serviceId: z.string().min(1).meta({
+            title: "服务ID",
+            description: "用于跳转服务详情/再次预约。",
+        }),
+        servicePersonnelId: z.string().min(1).nullable().optional().meta({
+            title: "服务人员ID",
+            description: "订单关联的服务人员ID（可能为空）。",
+        }),
         itemCount: z.number().int().min(0),
         appointmentTime: z.iso.datetime({ offset: true, local: true }),
         totalAmount: z.number().min(0),
@@ -219,6 +227,7 @@ const OrderDetailServicePersonnelSchema = z.object({
     ...ServicePersonnelSchema.shape,
     lastActiveAt: z.coerce.date(),
     avatarUrl: z.string().optional().nullable(),
+    avatarBlurhash: z.string().min(1).optional().nullable(),
     userName: z.string().optional().nullable(),
     image: z.string().optional().nullable(),
 });
@@ -269,6 +278,8 @@ export const OrderDetailSchema = z
                 description: z.string().nullable(),
                 imageFileId: z.string().nullable().optional(),
                 imageFileUrl: z.string().nullable().optional(),
+                imageUrl: z.string().url().nullable().optional(),
+                imageBlurhash: z.string().min(1).nullable().optional(),
             })
             .nullable()
             .meta({
@@ -276,6 +287,17 @@ export const OrderDetailSchema = z
                 title: "服务信息",
             }),
         assignment: OrderDetailAssignmentSchema,
+        specificationName: z.string().min(1).nullable().optional(),
+        estimatedDurationMinutes: z
+            .number()
+            .int()
+            .positive()
+            .nullable()
+            .optional(),
+        needsReview: z.boolean().optional(),
+        canCancel: z.boolean().optional(),
+        canPay: z.boolean().optional(),
+        showCheckinQr: z.boolean().optional(),
         address: z
             .object({
                 id: z.string(),
@@ -501,6 +523,197 @@ export const OrderListResponseSchema = z
 
 export type OrderListResponse = z.infer<typeof OrderListResponseSchema>;
 
+// ========== Mobile User 确认订单页（designated personnel） ==========
+
+export const PricingItemKeySchema = z
+    .enum([
+        "service_fee",
+        "on_site_fee",
+        "platform_fee",
+        "coupon_discount",
+        "promo_discount",
+    ])
+    .meta({
+        title: "费用项 key",
+        description: "确认订单页费用拆分项的稳定 key；折扣项使用负数金额表示。",
+    });
+
+export type PricingItemKey = z.infer<typeof PricingItemKeySchema>;
+
+export const PricingItemSchema = z
+    .object({
+        key: PricingItemKeySchema,
+        label: z.string().min(1).meta({
+            title: "费用项名称",
+            description: "用于前端渲染展示的 label。",
+        }),
+        amount: z.number().meta({
+            title: "金额（元）",
+            description:
+                "金额单位：元；允许两位小数；优惠/折扣项使用负数表示。",
+        }),
+    })
+    .meta({
+        title: "费用拆分项",
+        description: "确认订单页费用明细条目。",
+    });
+
+export type PricingItem = z.infer<typeof PricingItemSchema>;
+
+export const PricingSchema = z
+    .object({
+        currency: z.string().default("CNY").meta({
+            title: "币种",
+            description: "默认 CNY。",
+        }),
+        items: z.array(PricingItemSchema).meta({
+            title: "费用明细",
+            description:
+                "按约定顺序返回：service_fee、on_site_fee、platform_fee、coupon_discount、promo_discount。",
+        }),
+        originalAmount: z.number().min(0).meta({
+            title: "原价合计",
+            description: "正数费用项合计（sum(amount>0)）。",
+        }),
+        discountAmount: z.number().min(0).meta({
+            title: "优惠合计",
+            description: "折扣项绝对值合计（abs(sum(amount<0))）。",
+        }),
+        totalAmount: z.number().min(0).meta({
+            title: "应付金额",
+            description: "应付金额（originalAmount - discountAmount）。",
+        }),
+    })
+    .meta({
+        title: "费用拆分",
+        description:
+            "确认订单页统一以服务端返回的 pricing.totalAmount 作为展示/下单/支付的金额来源。",
+    });
+
+export type Pricing = z.infer<typeof PricingSchema>;
+
+export const OrderConfirmDesignatedPreviewQuerySchema = z
+    .object({
+        personnelId: z.string().min(1).meta({
+            title: "服务人员 ID",
+            description: "指定服务人员（userId）。",
+        }),
+        serviceId: z.string().min(1).meta({
+            title: "服务 ID",
+            description: "服务项目 ID。",
+        }),
+        specificationId: z.string().min(1).optional().meta({
+            title: "规格 ID",
+            description: "可选：service_personnel_pricing 表的 ID。",
+        }),
+        addressId: z.string().min(1).optional().meta({
+            title: "地址 ID",
+            description: "可选：用户选择的地址 ID；为空则返回默认地址。",
+        }),
+        appointmentTime: z.iso
+            .datetime({ offset: true, local: true })
+            .optional()
+            .meta({
+                title: "预约时间",
+                description: "可选：用于确认页展示。",
+            }),
+        couponCode: z.string().min(1).optional().meta({
+            title: "优惠券码",
+            description: "可选：v1 不计算折扣，仅透传/占位。",
+        }),
+    })
+    .meta({
+        title: "确认订单预览（指定服务人员）Query",
+        description:
+            "创建订单前的确认页聚合预览参数：personnelId + serviceId 必填，其余可选。",
+    });
+
+export type OrderConfirmDesignatedPreviewQuery = z.infer<
+    typeof OrderConfirmDesignatedPreviewQuerySchema
+>;
+
+export const OrderConfirmDesignatedPreviewSpecificationSchema = z
+    .object({
+        id: z.string().min(1),
+        userId: z.string().min(1),
+        name: z.string().optional(),
+        serviceId: z.string().min(1),
+        price: z.string().regex(/^\d+(\.\d+)?$/, "price必须为数字字符串"),
+        currency: z.string().min(1),
+        estimatedDurationMinutes: z.number().int().positive().optional(),
+    })
+    .meta({
+        title: "服务规格",
+        description:
+            "用于确认订单页展示/选择的规格列表，结构与 service-personnel/getServiceDetails 保持一致。",
+    });
+
+export type OrderConfirmDesignatedPreviewSpecification = z.infer<
+    typeof OrderConfirmDesignatedPreviewSpecificationSchema
+>;
+
+export const OrderConfirmDesignatedPreviewSelectedSchema = z
+    .object({
+        specificationId: z.string().min(1),
+        addressId: z.string().min(1).optional(),
+        appointmentTime: z.iso
+            .datetime({ offset: true, local: true })
+            .optional(),
+        couponCode: z.string().min(1).optional(),
+    })
+    .meta({
+        title: "确认页已选项",
+        description: "确认订单预览返回当前选中的规格/地址/预约时间等。",
+    });
+
+export type OrderConfirmDesignatedPreviewSelected = z.infer<
+    typeof OrderConfirmDesignatedPreviewSelectedSchema
+>;
+
+export const OrderConfirmDesignatedPreviewResponseSchema = z
+    .object({
+        address: UserAddressesSchema.nullable().meta({
+            title: "地址",
+            description: "用户选择的地址或默认地址；无地址则为 null。",
+        }),
+        servicePersonnel: ServicePersonnelSchema.omit({ geom: true }).meta({
+            title: "服务人员",
+            description: "确认页展示所需的服务人员信息（不包含 geom）。",
+        }),
+        service: z
+            .object({
+                id: z.string().min(1),
+                name: z.string().min(1),
+                imageFileUrl: z.string().url().nullable().optional(),
+            })
+            .meta({
+                title: "服务信息",
+                description: "确认页展示所需的服务信息（最小子集）。",
+            }),
+        specifications: z.array(
+            OrderConfirmDesignatedPreviewSpecificationSchema,
+        ),
+        selected: OrderConfirmDesignatedPreviewSelectedSchema,
+        pricing: PricingSchema,
+        paymentExpiresAt: z.iso
+            .datetime({ offset: true, local: true })
+            .nullable()
+            .optional()
+            .meta({
+                title: "支付过期时间",
+                description:
+                    "可选：用于确认页展示支付倒计时/有效期；也可仅在下单响应返回。",
+            }),
+    })
+    .meta({
+        title: "确认订单预览（指定服务人员）Response",
+        description: "用于确认订单页的一次性聚合数据源。",
+    });
+
+export type OrderConfirmDesignatedPreviewResponse = z.infer<
+    typeof OrderConfirmDesignatedPreviewResponseSchema
+>;
+
 // 创建指定服务人员订单的 Schema
 export const CreateDesignatedOrderSchema = z
     .object({
@@ -554,6 +767,31 @@ export const CreateDesignatedOrderSchema = z
     });
 
 export type CreateDesignatedOrder = z.infer<typeof CreateDesignatedOrderSchema>;
+
+export const CreateDesignatedOrderResponseSchema = z
+    .object({
+        orderId: z.string().min(1).meta({
+            title: "订单 ID",
+            description: "创建成功后的订单 ID。",
+        }),
+        pricing: PricingSchema.meta({
+            title: "费用拆分",
+            description:
+                "下单后返回 pricing 用于前端二次校验与支付展示金额；displayAmount 应使用 pricing.totalAmount。",
+        }),
+        paymentExpiresAt: z.iso.datetime({ offset: true, local: true }).meta({
+            title: "支付过期时间",
+            description: "订单待支付的有效期截止时间。",
+        }),
+    })
+    .meta({
+        title: "创建指定服务人员订单 Response",
+        description: "创建指定服务人员订单后的响应（含二次校验所需字段）。",
+    });
+
+export type CreateDesignatedOrderResponse = z.infer<
+    typeof CreateDesignatedOrderResponseSchema
+>;
 
 export const orderCheckinPayloadSchema = z.object({
     orderId: z.string().min(1, "订单 ID 不能为空"),

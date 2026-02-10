@@ -17,8 +17,16 @@ import { ZodValidationPipe } from 'src/common/pipes';
 import { OrderService } from './order.service';
 import { OrderCheckinService } from './order-checkin.service';
 import {
+    OrderRescheduleSchema,
+    type OrderRescheduleDto,
+} from './dto/order-reschedule.dto';
+import {
     CreateDesignatedOrder,
     CreateDesignatedOrderSchema,
+    CreateDesignatedOrderResponseSchema,
+    OrderConfirmDesignatedPreviewQuerySchema,
+    OrderConfirmDesignatedPreviewResponseSchema,
+    type OrderConfirmDesignatedPreviewQuery,
     OrderListRequestSchema,
     OrderListResponseSchema,
     OrderCardsListQuerySchema,
@@ -186,6 +194,56 @@ export class OrderController {
     }
 
     @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Post(':id/reschedule')
+    @UsePipes(new ZodValidationPipe(OrderRescheduleSchema))
+    @ApiOperation({
+        summary: '服务人员改期',
+        description:
+            '将订单预约时间修改为新的 2 小时窗口起点（不做时间冲突检测）。',
+    })
+    @ApiBodies(OrderRescheduleSchema)
+    async rescheduleOrder(
+        @Param('id') id: string,
+        @Body() dto: OrderRescheduleDto,
+        @Req() req: Request,
+    ) {
+        const staffId = req.user.id;
+        if (!staffId) {
+            throw new BadRequestException('缺少服务人员身份信息');
+        }
+        return await this.orderService.rescheduleOrder({
+            orderId: id,
+            staffId,
+            appointmentTime: dto.appointmentTime,
+        });
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['customer'])
+    @Get('confirm/designated')
+    @UsePipes(new ZodValidationPipe(OrderConfirmDesignatedPreviewQuerySchema))
+    @ApiQueries(OrderConfirmDesignatedPreviewQuerySchema)
+    @ApiSuccessResponse(OrderConfirmDesignatedPreviewResponseSchema, {
+        description: '成功返回确认订单预览数据（指定服务人员下单）',
+    })
+    @ApiErrorResponses()
+    @ApiOperation({
+        summary: '确认订单预览（指定服务人员）',
+        description:
+            '创建订单前返回确认页所需聚合数据：地址、规格列表、选中项与 pricing。',
+    })
+    async getConfirmDesignatedPreview(
+        @Query() query: OrderConfirmDesignatedPreviewQuery,
+        @Req() req: Request,
+    ) {
+        return await this.orderService.getConfirmDesignatedPreview({
+            customerId: req.user.id,
+            ...query,
+        });
+    }
+
+    @UseGuards(AuthGuard)
     @Roles(['customer'])
     @Post('createWithDesignatedPersonnel')
     @UsePipes(new ZodValidationPipe(CreateDesignatedOrderSchema))
@@ -194,15 +252,23 @@ export class OrderController {
         description: '用户指定服务人员并下单',
     })
     @ApiBodies(CreateDesignatedOrderSchema)
+    @ApiSuccessResponse(CreateDesignatedOrderResponseSchema, {
+        description: '成功返回订单ID、pricing 与支付过期时间（用于二次校验）',
+    })
     // @ApiSuccessResponse(, {
     //     description: '成功返回结果',
     // })
     async createOrderWithDesignatedPersonnel(
         @Body() createOrderDto: CreateDesignatedOrder,
+        @Req() req: Request,
     ) {
-        return await this.orderService.createOrderWithDesignatedPersonnel(
-            createOrderDto,
-        );
+        if (createOrderDto.customerId !== req.user.id) {
+            throw new BadRequestException('customerId 与当前登录用户不一致');
+        }
+        return await this.orderService.createOrderWithDesignatedPersonnel({
+            ...createOrderDto,
+            customerId: req.user.id,
+        });
     }
 
     @UseGuards(AuthGuard)

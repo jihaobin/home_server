@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, getTableColumns, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, gte, lte, sql } from 'drizzle-orm';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
 import {
@@ -162,6 +162,7 @@ export class ReviewRepository {
         const stats = await tx
             .select({
                 totalCount: sql<number>`COUNT(*)::int`,
+                photoCount: sql<number>`COUNT(*) FILTER (WHERE jsonb_array_length(${reviews.imageIds}) > 0)::int`,
                 goodCount: sql<number>`COUNT(*) FILTER (WHERE ${reviews.rating} >= 4)::int`,
                 neutralCount: sql<number>`COUNT(*) FILTER (WHERE ${reviews.rating} = 3)::int`,
                 badCount: sql<number>`COUNT(*) FILTER (WHERE ${reviews.rating} <= 2)::int`,
@@ -202,6 +203,7 @@ export class ReviewRepository {
                 targetType,
                 serviceId,
                 totalCount: stat.totalCount,
+                photoCount: stat.photoCount,
                 goodCount: stat.goodCount,
                 neutralCount: stat.neutralCount,
                 badCount: stat.badCount,
@@ -220,6 +222,7 @@ export class ReviewRepository {
                 ],
                 set: {
                     totalCount: stat.totalCount,
+                    photoCount: stat.photoCount,
                     goodCount: stat.goodCount,
                     neutralCount: stat.neutralCount,
                     badCount: stat.badCount,
@@ -410,6 +413,7 @@ export class ReviewRepository {
         page: number,
         limit: number,
         serviceId?: string,
+        tab?: 'all' | 'latest' | 'photos' | 'positive' | 'negative',
     ) {
         try {
             // 构建查询条件
@@ -423,6 +427,23 @@ export class ReviewRepository {
                 conditions.push(eq(reviews.serviceId, serviceId));
             }
 
+            // Tab 过滤：latest 与 all 集合一致，仅排序不同（当前已按 created_at DESC 排序）。
+            switch (tab) {
+                case 'photos':
+                    conditions.push(
+                        sql`jsonb_array_length(${reviews.imageIds}) > 0`,
+                    );
+                    break;
+                case 'positive':
+                    conditions.push(gte(reviews.rating, 4));
+                    break;
+                case 'negative':
+                    conditions.push(lte(reviews.rating, 2));
+                    break;
+                default:
+                    break;
+            }
+
             const reviewColumns = getTableColumns(reviews);
             const userColumns = getTableColumns(users);
 
@@ -431,7 +452,8 @@ export class ReviewRepository {
                 .select({
                     ...reviewColumns,
                     reviewerName: userColumns.name,
-                    reviewerAvatar: userColumns.image,
+                    reviewerAvatarFileId: userColumns.image,
+                    reviewerPhoneNumber: userColumns.phoneNumber,
                 })
                 .from(reviews)
                 .leftJoin(users, eq(reviews.reviewerId, users.id))
@@ -460,6 +482,53 @@ export class ReviewRepository {
     }
 
     /**
+     * 获取目标对象的 Top 评价（公开接口，聚合用）
+     * - 固定排序：created_at DESC, rating DESC
+     * - 固定 limit
+     */
+    async getTopReviewsByTargetPublic(
+        targetId: string,
+        targetType: ReviewTargetType,
+        limit: number,
+        serviceId?: string,
+    ) {
+        try {
+            const conditions = [
+                eq(reviews.targetId, targetId),
+                eq(reviews.targetType, targetType),
+            ];
+
+            if (serviceId) {
+                conditions.push(eq(reviews.serviceId, serviceId));
+            }
+
+            const reviewColumns = getTableColumns(reviews);
+            const userColumns = getTableColumns(users);
+
+            const items = await this.db
+                .select({
+                    ...reviewColumns,
+                    reviewerName: userColumns.name,
+                    reviewerAvatarFileId: userColumns.image,
+                    reviewerPhoneNumber: userColumns.phoneNumber,
+                })
+                .from(reviews)
+                .leftJoin(users, eq(reviews.reviewerId, users.id))
+                .where(and(...conditions))
+                .orderBy(desc(reviews.createdAt), desc(reviews.rating))
+                .limit(limit);
+
+            return {
+                items,
+            };
+        } catch (error) {
+            throw new BadRequestException(
+                `获取Top评价失败: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
+    }
+
+    /**
      * 获取评价统计信息
      * @param targetId 目标对象ID
      * @param targetType 目标对象类型
@@ -472,17 +541,19 @@ export class ReviewRepository {
         serviceId?: string,
     ) {
         try {
+            const globalServiceId = '__all__';
+            const resolvedServiceId = serviceId?.trim()
+                ? serviceId.trim()
+                : globalServiceId;
+
             // 构建查询条件
             const conditions = [
                 eq(reviewStats.targetId, targetId),
                 eq(reviewStats.targetType, targetType),
             ];
 
-            if (serviceId) {
-                conditions.push(eq(reviewStats.serviceId, serviceId));
-            } else {
-                conditions.push(sql`${reviewStats.serviceId} IS NULL`);
-            }
+            // 约定：review_stats.service_id 非空；未传 serviceId 时使用 '__all__'
+            conditions.push(eq(reviewStats.serviceId, resolvedServiceId));
 
             const [stats] = await this.db
                 .select()
@@ -491,17 +562,18 @@ export class ReviewRepository {
 
             return (
                 stats || {
-                    targetId: '',
-                    targetType: 'personnel',
-                    serviceId: null,
+                    targetId,
+                    targetType,
+                    serviceId: resolvedServiceId,
                     totalCount: 0,
+                    photoCount: 0,
                     goodCount: 0,
                     neutralCount: 0,
                     badCount: 0,
                     averageRating: 0,
-                    averageServiceQuality: null,
-                    averageAttitude: null,
-                    averagePunctuality: null,
+                    averageServiceQuality: 0,
+                    averageAttitude: 0,
+                    averagePunctuality: 0,
                     lastReviewAt: null,
                     updatedAt: null,
                 }

@@ -3,12 +3,21 @@ import type {
     HomeQuery,
     HomeRecommendationsResponse,
     HomeResponse,
+    ServiceCategoryTree,
 } from "@repo/types";
-import { useInfiniteQuery, useSuspenseQuery } from "@tanstack/react-query";
+import {
+    useInfiniteQuery,
+    useQuery,
+    useSuspenseQuery,
+} from "@tanstack/react-query";
 
 import { apiClient } from "@repo/lib/http-client";
 
 type HomeQueryParams = Partial<HomeQuery>;
+
+type HomeMoreServicesResponse = {
+    categories: ServiceCategoryTree[];
+};
 
 /**
  * 用户端首页聚合接口
@@ -21,6 +30,9 @@ export const useHome = (params: HomeQueryParams = {}) =>
         queryFn: async () => {
             const response = await apiClient.get<HomeResponse>("/home", {
                 query: {
+                    ...(params.categoryId !== undefined
+                        ? { categoryId: params.categoryId }
+                        : {}),
                     ...(params.lat !== undefined
                         ? { lat: params.lat.toString() }
                         : {}),
@@ -64,6 +76,26 @@ export const useHomeBase = () =>
     });
 
 /**
+ * 用户端首页“更多服务”弹层数据
+ * - 可匿名
+ * - 懒加载：仅在弹层打开时请求
+ */
+export const useHomeMoreServices = (options: { enabled?: boolean } = {}) =>
+    useQuery({
+        queryKey: ["home-more-services"],
+        queryFn: async () => {
+            const response = await apiClient.get<HomeMoreServicesResponse>(
+                "/home/more-services",
+            );
+            return response.data;
+        },
+        enabled: options.enabled,
+        meta: {
+            errorMessage: "更多服务数据获取失败",
+        },
+    });
+
+/**
  * 用户端首页推荐列表
  * - 可匿名
  * - 不传 lat/lng 时，后端返回全量推荐（无距离过滤）
@@ -76,6 +108,9 @@ export const useHomeRecommendations = (params: HomeQueryParams = {}) =>
                 "/home/recommendations",
                 {
                     query: {
+                        ...(params.categoryId !== undefined
+                            ? { categoryId: params.categoryId }
+                            : {}),
                         ...(params.lat !== undefined
                             ? { lat: params.lat.toString() }
                             : {}),
@@ -108,6 +143,7 @@ export const useHomeRecommendations = (params: HomeQueryParams = {}) =>
  */
 export const useHomeRecommendationsInfinite = (
     params: Omit<HomeQueryParams, "page"> = {},
+    options: { enabled?: boolean } = {},
 ) =>
     useInfiniteQuery({
         queryKey: ["home-recommendations-infinite", params],
@@ -118,6 +154,9 @@ export const useHomeRecommendationsInfinite = (
                 {
                     query: {
                         page: pageParam.toString(),
+                        ...(params.categoryId !== undefined
+                            ? { categoryId: params.categoryId }
+                            : {}),
                         ...(params.lat !== undefined
                             ? { lat: params.lat.toString() }
                             : {}),
@@ -139,6 +178,7 @@ export const useHomeRecommendationsInfinite = (
             return response.data;
         },
         getNextPageParam: (lastPage) => lastPage.nextPage ?? undefined,
+        enabled: options.enabled,
         meta: {
             errorMessage: "首页推荐数据获取失败",
         },

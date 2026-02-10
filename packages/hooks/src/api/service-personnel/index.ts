@@ -1,19 +1,19 @@
 import type {
-	MatchedPersonnel,
-	PaginatedData,
-	ServiceDetails,
-	ServicePersonnelDashboardStats,
-	ServicePersonnelDetailsQuery,
-	ServicePersonnelFilterRequest,
-	ServicePersonnelProfile,
-	UpdateServicePersonnelProfileRequest,
+    MatchedPersonnel,
+    PaginatedData,
+    ServiceDetails,
+    ServicePersonnelDashboardStats,
+    ServicePersonnelDetailsQuery,
+    ServicePersonnelFilterRequest,
+    ServicePersonnelProfile,
+    UpdateServicePersonnelProfileRequest,
 } from "@repo/types";
 import {
-	useMutation,
-	useQuery,
-	useQueryClient,
-	useSuspenseInfiniteQuery,
-	useSuspenseQuery,
+    useMutation,
+    useQuery,
+    useQueryClient,
+    useSuspenseInfiniteQuery,
+    useSuspenseQuery,
 } from "@tanstack/react-query";
 import { apiClient } from "@repo/lib/http-client";
 
@@ -21,57 +21,68 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
 
 export type ServicePersonnelSearchResult = PaginatedData<MatchedPersonnel>;
+
+export type MatchedPersonnelUI = MatchedPersonnel & {
+    // 后端 search 新增：用于 UI 直接渲染头像（url + blurhash）；保留 avatarUrl(hash) 兼容。
+    avatar?: {
+        url: string;
+        blurhash?: string | null;
+    } | null;
+};
+
+export type ServicePersonnelSearchUIResult = PaginatedData<MatchedPersonnelUI>;
 export type ServicePersonnelSearchParams = Omit<
-	ServicePersonnelFilterRequest,
-	"page" | "pageSize"
+    ServicePersonnelFilterRequest,
+    "page" | "pageSize"
 > & {
-	page?: number;
-	pageSize?: number;
+    page?: number;
+    pageSize?: number;
+    enabled?: boolean;
 };
 
 const buildSearchQuery = (
-	params: ServicePersonnelSearchParams,
-	pageOverride?: number,
+    params: ServicePersonnelSearchParams,
+    pageOverride?: number,
 ) => {
-	const {
-		serviceId,
-		userLat,
-		userLng,
-		maxDistance,
-		minPrice,
-		maxPrice,
-		minYearsOfExperience,
-		needServiceTime,
-		page = DEFAULT_PAGE,
-		pageSize = DEFAULT_PAGE_SIZE,
-		sortBy = "distance",
-		sortOrder = "asc",
-	} = params;
+    const {
+        serviceId,
+        userLat,
+        userLng,
+        maxDistance,
+        minPrice,
+        maxPrice,
+        minYearsOfExperience,
+        needServiceTime,
+        page = DEFAULT_PAGE,
+        pageSize = DEFAULT_PAGE_SIZE,
+        sortBy = "distance",
+        sortOrder = "asc",
+    } = params;
 
-	const resolvedPage = pageOverride ?? page;
+    const resolvedPage = pageOverride ?? page;
 
-	return {
-		serviceId,
-		userLat: userLat.toString(),
-		userLng: userLng.toString(),
-		...(maxDistance !== undefined
-			? { maxDistance: maxDistance.toString() }
-			: {}),
-		...(minPrice !== undefined ? { minPrice: minPrice.toString() } : {}),
-		...(maxPrice !== undefined ? { maxPrice: maxPrice.toString() } : {}),
-		...(minYearsOfExperience !== undefined
-			? { minYearsOfExperience: minYearsOfExperience.toString() }
-			: {}),
-		...(needServiceTime
-			? {
-					needServiceTime: needServiceTime.toISOString(),
-				}
-			: {}),
-		page: resolvedPage.toString(),
-		pageSize: pageSize.toString(),
-		sortBy,
-		sortOrder,
-	};
+    return {
+        serviceId,
+        userLat: userLat.toString(),
+        userLng: userLng.toString(),
+        ...(maxDistance !== undefined
+            ? { maxDistance: maxDistance.toString() }
+            : {}),
+        ...(minPrice !== undefined ? { minPrice: minPrice.toString() } : {}),
+        ...(maxPrice !== undefined ? { maxPrice: maxPrice.toString() } : {}),
+        ...(minYearsOfExperience !== undefined
+            ? { minYearsOfExperience: minYearsOfExperience.toString() }
+            : {}),
+        ...(needServiceTime
+            ? {
+                  needServiceTime: needServiceTime.toISOString(),
+              }
+            : {}),
+        page: resolvedPage.toString(),
+        pageSize: pageSize.toString(),
+        sortBy,
+        sortOrder,
+    };
 };
 
 /**
@@ -91,24 +102,50 @@ const buildSearchQuery = (
  * @note 后端会自动从认证信息中获取用户ID（如果已登录）
  */
 export const useServicePersonnelSearch = (
-	params: ServicePersonnelSearchParams,
+    params: ServicePersonnelSearchParams,
 ) =>
-	useSuspenseQuery({
-		queryKey: ["service-personnel-search", params],
-		queryFn: async () => {
-			const response =
-				await apiClient.get<ServicePersonnelSearchResult>(
-					"/service-personnel/search",
-					{
-						query: buildSearchQuery(params),
-					},
-				);
-			return response.data;
-		},
-		meta: {
-			errorMessage: "服务人员筛选失败",
-		},
-});
+    useSuspenseQuery({
+        queryKey: ["service-personnel-search", params],
+        queryFn: async () => {
+            const response =
+                await apiClient.get<ServicePersonnelSearchUIResult>(
+                    "/service-personnel/search",
+                    {
+                        query: buildSearchQuery(params),
+                    },
+                );
+            return response.data;
+        },
+        meta: {
+            errorMessage: "服务人员筛选失败",
+        },
+    });
+
+/**
+ * 非 Suspense 版本（便于在页面内按条件 enabled 控制请求）。
+ */
+export const useServicePersonnelSearchQuery = (
+    params: ServicePersonnelSearchParams,
+) => {
+    const { enabled = true, ...restParams } = params;
+    return useQuery({
+        queryKey: ["service-personnel-search", restParams],
+        queryFn: async () => {
+            const response =
+                await apiClient.get<ServicePersonnelSearchUIResult>(
+                    "/service-personnel/search",
+                    {
+                        query: buildSearchQuery(restParams),
+                    },
+                );
+            return response.data;
+        },
+        enabled,
+        meta: {
+            errorMessage: "服务人员筛选失败",
+        },
+    });
+};
 
 /**
  * 服务人员搜索的无限分页 Hook，适合构建下拉加载更多场景。
@@ -127,113 +164,145 @@ export const useServicePersonnelSearch = (
  * @note 后端会自动从认证信息中获取用户ID（如果已登录）
  */
 export const useServicePersonnelSearchInfinite = (
-	params: ServicePersonnelSearchParams,
+    params: ServicePersonnelSearchParams,
 ) =>
-	useSuspenseInfiniteQuery({
-		queryKey: ["service-personnel-search-infinite", params],
-		queryFn: async ({ pageParam = DEFAULT_PAGE }) => {
-			const response =
-				await apiClient.get<ServicePersonnelSearchResult>(
-					"/service-personnel/search",
-					{
-						query: buildSearchQuery(params, pageParam),
-					},
-				);
-			return {
-				items: response.data.items,
-				meta: response.data.meta,
-				page: pageParam,
-			};
-		},
-		getNextPageParam: (lastPage) => {
-			return lastPage.meta.hasNext ? lastPage.page + 1 : undefined;
-		},
-		initialPageParam: DEFAULT_PAGE,
-		meta: {
-			errorMessage: "服务人员筛选失败",
-		},
-});
+    useSuspenseInfiniteQuery({
+        queryKey: ["service-personnel-search-infinite", params],
+        queryFn: async ({ pageParam = DEFAULT_PAGE }) => {
+            const response =
+                await apiClient.get<ServicePersonnelSearchUIResult>(
+                    "/service-personnel/search",
+                    {
+                        query: buildSearchQuery(params, pageParam),
+                    },
+                );
+            return {
+                items: response.data.items,
+                meta: response.data.meta,
+                page: pageParam,
+            };
+        },
+        getNextPageParam: (lastPage) => {
+            return lastPage.meta.hasNext ? lastPage.page + 1 : undefined;
+        },
+        initialPageParam: DEFAULT_PAGE,
+        meta: {
+            errorMessage: "服务人员筛选失败",
+        },
+    });
 
 /**
  * 获取服务人员的具体服务详情
  * 根据服务人员ID和服务ID，获取该服务人员提供的具体服务详情，包括服务描述、价格、可用时间等信息。
  */
 export const useServicePersonnelDetails = (
-	params: ServicePersonnelDetailsQuery,
+    params: ServicePersonnelDetailsQuery,
 ) =>
-	useSuspenseQuery({
-		queryKey: ["service-personnel-details", params],
-		queryFn: async () => {
-			const response = await apiClient.get<ServiceDetails>(
+    useSuspenseQuery({
+        queryKey: ["service-personnel-details", params],
+        queryFn: async () => {
+            const response = await apiClient.get<ServiceDetails>(
+                "/service-personnel/getServiceDetails",
+                {
+                    query: {
+                        serviceId: params.serviceId,
+                        personnelId: params.personnelId,
+                    },
+                },
+            );
+            return response.data;
+        },
+        meta: {
+            errorMessage: "服务人员详情获取失败",
+        },
+    });
 
-
-				"/service-personnel/getServiceDetails",
-				{
-					query: {
-						serviceId: params.serviceId,
-						personnelId: params.personnelId,
-					},
-				},
-			);
-			return response.data;
-		},
-		meta: {
-			errorMessage: "服务人员详情获取失败",
-		},
-	});
+/**
+ * 获取服务人员的具体服务详情（非 Suspense 版本）
+ * - 便于页面按 enabled 控制请求，并在 404/无定价时渲染错误态。
+ */
+export const useServicePersonnelDetailsQuery = (
+    params: ServicePersonnelDetailsQuery,
+    options: { enabled?: boolean } = {},
+) => {
+    const enabled = options.enabled ?? true;
+    return useQuery({
+        queryKey: ["service-personnel-details", params],
+        queryFn: async () => {
+            const response = await apiClient.get<ServiceDetails>(
+                "/service-personnel/getServiceDetails",
+                {
+                    query: {
+                        serviceId: params.serviceId,
+                        personnelId: params.personnelId,
+                    },
+                },
+            );
+            return response.data;
+        },
+        enabled:
+            enabled && Boolean(params.personnelId) && Boolean(params.serviceId),
+        meta: {
+            errorMessage: "服务人员详情获取失败",
+        },
+    });
+};
 
 /**
  * 获取指定服务人员的聚合资料（头像/手机号/服务/资质等）
  */
 export const useServicePersonnelProfile = (personnelId?: string) =>
-	useQuery({
-		queryKey: ["service-personnel-profile", personnelId],
-		enabled: Boolean(personnelId),
-		queryFn: async () => {
-			if (!personnelId) {
-				return null;
-			}
-			const response = await apiClient.get<ServicePersonnelProfile>(
-				`/service-personnel/profile/${personnelId}`,
-			);
-			return response.data;
-		},
-		meta: {
-			errorMessage: "服务人员资料获取失败",
-		},
-	});
+    useQuery({
+        queryKey: ["service-personnel-profile", personnelId],
+        enabled: Boolean(personnelId),
+        queryFn: async () => {
+            if (!personnelId) {
+                return null;
+            }
+            const response = await apiClient.get<ServicePersonnelProfile>(
+                `/service-personnel/profile/${personnelId}`,
+            );
+            return response.data;
+        },
+        meta: {
+            errorMessage: "服务人员资料获取失败",
+        },
+    });
 
 export const useServicePersonnelDashboardStats = (personnelId?: string) =>
-	useQuery({
-		queryKey: ["service-personnel-dashboard", personnelId],
-		enabled: Boolean(personnelId),
-		queryFn: async () => {
-			const response =
-				await apiClient.get<ServicePersonnelDashboardStats>(
-					"/service-personnel/dashboard/me",
-				);
-			return response.data;
-		},
-		meta: {
-			errorMessage: "个人统计获取失败",
-		},
-	});
+    useQuery({
+        queryKey: ["service-personnel-dashboard", personnelId],
+        enabled: Boolean(personnelId),
+        queryFn: async () => {
+            const response =
+                await apiClient.get<ServicePersonnelDashboardStats>(
+                    "/service-personnel/dashboard/me",
+                );
+            return response.data;
+        },
+        meta: {
+            errorMessage: "个人统计获取失败",
+        },
+    });
 
 export const useUpdateServicePersonnelProfile = () => {
-	const queryClient = useQueryClient();
+    const queryClient = useQueryClient();
 
-	return useMutation({
-		mutationFn: async (payload: UpdateServicePersonnelProfileRequest) => {
-			const response = await apiClient.put("/service-personnel/profile", payload);
-			return response.data;
-		},
-		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: ["service-personnel-profile"],
-			});
-		},
-		scope: {
-			id: "updateServicePersonnelProfile",
-		},
-	});
+    return useMutation({
+        mutationFn: async (payload: UpdateServicePersonnelProfileRequest) => {
+            const response = await apiClient.put(
+                "/service-personnel/profile",
+                payload,
+            );
+            return response.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: ["service-personnel-profile"],
+            });
+        },
+        scope: {
+            id: "updateServicePersonnelProfile",
+        },
+    });
 };

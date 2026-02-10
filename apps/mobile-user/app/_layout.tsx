@@ -32,10 +32,10 @@ export default function RootLayout() {
             // Adds the background color to the html element to prevent white background on overscroll.
             const doc = (globalThis as Record<string, unknown>).document as
                 | {
-                      documentElement?: {
-                          classList?: { add: (value: string) => void };
-                      };
-                  }
+                    documentElement?: {
+                        classList?: { add: (value: string) => void };
+                    };
+                }
                 | undefined;
             doc?.documentElement?.classList?.add("bg-background");
         }
@@ -126,8 +126,9 @@ function RootNavigation() {
                         }}
                     />
 
+
                     <Stack.Screen
-                        name="servicePersonnel/index"
+                        name="category/filter"
                         options={{
                             headerShown: false,
                         }}
@@ -168,6 +169,6 @@ function ChatSocketBridge({ enabled }: { enabled: boolean }) {
 
 const useIsomorphicLayoutEffect =
     Platform.OS === "web" &&
-    typeof (globalThis as Record<string, unknown>).window === "undefined"
+        typeof (globalThis as Record<string, unknown>).window === "undefined"
         ? React.useEffect
         : React.useLayoutEffect;

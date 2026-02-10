@@ -208,6 +208,14 @@ export const TargetReviewsQuerySchema = z
                 description:
                     "可选的服务ID过滤，用于查询服务人员提供某个具体服务的评价",
             }),
+        tab: z
+            .enum(["all", "latest", "photos", "positive", "negative"])
+            .optional()
+            .meta({
+                title: "评价筛选 Tab",
+                description:
+                    "评价列表筛选：all=全部，latest=最新（仅排序不同），photos=晒图，positive=好评，negative=差评",
+            }),
     })
     .meta({
         title: "目标对象评价查询参数",
@@ -221,13 +229,13 @@ export const TargetReviewsResponseSchema = z
         items: z.array(
             z.object({
                 ...ReviewsSchema.shape,
-                images: z.array(ReviewImageSchema).meta({
+                images: z.array(ReviewImageSchema).default([]).meta({
                     title: "评价图片列表",
                     description: "该评价的所有图片信息",
                 }),
-                reviewerAvatar: z.string().nullable().optional(),
-                reviewerAvatarUrl: z.string().nullable().optional(),
                 reviewerName: z.string().nullable().optional(),
+                reviewerAvatar: ReviewImageSchema.nullable().optional(),
+                reviewerPhoneMasked: z.string().nullable().optional(),
             }),
         ),
         total: z.number().int().min(0),
@@ -255,6 +263,10 @@ export const ReviewStatsSchema = z
         totalCount: z.number().int().min(0).meta({
             title: "总评价数",
             description: "总评价数量",
+        }),
+        photoCount: z.number().int().min(0).meta({
+            title: "晒图评价数",
+            description: "晒图评价数量（有图评价条数）",
         }),
         goodCount: z.number().int().min(0).meta({
             title: "好评数",
