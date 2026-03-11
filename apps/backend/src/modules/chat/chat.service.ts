@@ -6,7 +6,7 @@ import {
     Logger,
 } from '@nestjs/common';
 
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import type {
     ChatConversation,
@@ -23,6 +23,7 @@ import { CACHE_SERVICE, type IAdvancedCacheService } from 'src/common/cache';
 import { users } from 'src/common/database/schema/auth-user';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
+import { servicePersonnel } from 'src/common/database/schema/shops-service';
 
 import {
     CHAT_RATE_LIMIT_DEFAULT_MAX_PER_WINDOW,
@@ -40,6 +41,10 @@ import type {
 } from './chat.repository';
 
 type UserRoleInDb = 'customer' | 'service_personnel' | (string & {});
+type ChatRoleCapability = {
+    canActAsCustomer: boolean;
+    canActAsWorker: boolean;
+};
 
 @Injectable()
 export class ChatService {
@@ -61,18 +66,88 @@ export class ChatService {
         return CHAT_RATE_LIMIT_DEFAULT_MAX_PER_WINDOW;
     }
 
+    private normalizeRoleToken(input: string): string | undefined {
+        const normalized = input
+            .trim()
+            .replace(/^['"]+|['"]+$/g, '')
+            .trim()
+            .toLowerCase();
+        return normalized.length > 0 ? normalized : undefined;
+    }
+
     private extractUserRoles(user: { role: unknown }): UserRoleInDb[] {
-        const role = user.role;
-        if (Array.isArray(role)) {
-            return role.filter((r): r is string => typeof r === 'string');
-        }
-        if (typeof role === 'string') {
-            return role
+        const raw = user.role;
+        const parsed: string[] = [];
+
+        const appendFromString = (source: string) => {
+            const trimmed = source.trim();
+            if (!trimmed) {
+                return;
+            }
+
+            // 兼容 JSON 数组字符串：["customer","service_personnel"]
+            if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+                try {
+                    const json = JSON.parse(trimmed);
+                    if (Array.isArray(json)) {
+                        for (const item of json) {
+                            if (typeof item === 'string') {
+                                parsed.push(item);
+                            }
+                        }
+                        return;
+                    }
+                } catch {
+                    // 忽略并降级到普通分割逻辑
+                }
+            }
+
+            // 兼容 PG 数组字符串：{customer,service_personnel}
+            const pgArrayLike =
+                trimmed.startsWith('{') && trimmed.endsWith('}');
+            const payload = pgArrayLike ? trimmed.slice(1, -1) : trimmed;
+            payload
                 .split(',')
-                .map((r) => r.trim())
-                .filter(Boolean);
+                .map((item) => item.trim())
+                .filter(Boolean)
+                .forEach((item) => parsed.push(item));
+        };
+
+        if (Array.isArray(raw)) {
+            raw.forEach((item) => {
+                if (typeof item === 'string') {
+                    parsed.push(item);
+                }
+            });
+        } else if (typeof raw === 'string') {
+            appendFromString(raw);
         }
-        return [];
+
+        const normalized = parsed
+            .map((item) => this.normalizeRoleToken(item))
+            .filter((item): item is string => Boolean(item));
+
+        return Array.from(new Set(normalized)) as UserRoleInDb[];
+    }
+
+    private resolveChatRoleCapability(user: {
+        role: unknown;
+        hasServicePersonnelProfile: boolean;
+    }): ChatRoleCapability {
+        const roles = new Set(this.extractUserRoles(user));
+        const canActAsWorker =
+            roles.has('service_personnel') || user.hasServicePersonnelProfile;
+
+        // 业务上 customer 为默认身份；兼容历史数据里仅保留 service_personnel 的场景
+        const canActAsCustomer =
+            roles.has('customer') ||
+            roles.has('service_personnel') ||
+            roles.size === 0;
+
+        return {
+            canActAsCustomer,
+            canActAsWorker,
+        };
     }
 
     private async requireUserById(userId: string) {
@@ -80,6 +155,11 @@ export class ChatService {
             .select({
                 id: users.id,
                 role: users.role,
+                hasServicePersonnelProfile: sql<boolean>`EXISTS (
+                    SELECT 1
+                    FROM ${servicePersonnel}
+                    WHERE ${servicePersonnel.userId} = ${users.id}
+                )`,
             })
             .from(users)
             .where(eq(users.id, userId))
@@ -94,20 +174,15 @@ export class ChatService {
     private normalizeConversationPair(params: {
         meId: string;
         peerUserId: string;
-        meRoles: UserRoleInDb[];
-        peerRoles: UserRoleInDb[];
+        meCapability: ChatRoleCapability;
+        peerCapability: ChatRoleCapability;
         clientRole: ChatClientRole;
     }): { userId: string; workerUserId: string } {
-        const meIsWorker = params.meRoles.includes('service_personnel');
-        const peerIsWorker = params.peerRoles.includes('service_personnel');
-        const meIsCustomer = params.meRoles.includes('customer');
-        const peerIsCustomer = params.peerRoles.includes('customer');
-
         if (params.clientRole === 'customer') {
-            if (!meIsCustomer) {
+            if (!params.meCapability.canActAsCustomer) {
                 throw new ForbiddenException('当前账号不具备普通用户身份');
             }
-            if (!peerIsWorker) {
+            if (!params.peerCapability.canActAsWorker) {
                 throw new BadRequestException('只能与服务人员建立私聊');
             }
             return {
@@ -116,10 +191,10 @@ export class ChatService {
             };
         }
 
-        if (!meIsWorker) {
+        if (!params.meCapability.canActAsWorker) {
             throw new ForbiddenException('当前账号不具备服务人员身份');
         }
-        if (!peerIsCustomer) {
+        if (!params.peerCapability.canActAsCustomer) {
             throw new BadRequestException('服务人员端只能与普通用户私聊');
         }
 
@@ -164,8 +239,8 @@ export class ChatService {
         const pair = this.normalizeConversationPair({
             meId: params.requesterId,
             peerUserId: params.peerUserId,
-            meRoles: this.extractUserRoles(me),
-            peerRoles: this.extractUserRoles(peer),
+            meCapability: this.resolveChatRoleCapability(me),
+            peerCapability: this.resolveChatRoleCapability(peer),
             clientRole: params.clientRole,
         });
 
@@ -251,7 +326,7 @@ export class ChatService {
         cursor?: string;
         limit?: number;
     }): Promise<ChatMessageListResponse> {
-        const conversation = await this.requireConversationAccessible({
+        await this.requireConversationAccessible({
             requesterId: params.requesterId,
             conversationId: params.conversationId,
             clientRole: params.clientRole,
