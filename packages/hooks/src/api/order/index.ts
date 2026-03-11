@@ -111,6 +111,24 @@ export const useOrderDetail = (orderId: string) =>
         },
     });
 
+export const useOrderDetailQuery = (
+    orderId: string,
+    options: { enabled?: boolean } = {},
+) =>
+    useQuery({
+        queryKey: ["order-detail", orderId],
+        queryFn: async () => {
+            const response = await apiClient.get<OrderDetail>(
+                `/order/${orderId}`,
+            );
+            return response.data;
+        },
+        enabled: (options.enabled ?? true) && Boolean(orderId),
+        meta: {
+            errorMessage: "订单详情获取失败",
+        },
+    });
+
 /**
  * 获取订单核验二维码
  */
@@ -425,6 +443,7 @@ export const useOrdersListInfinite = (
 export const useOrderCardsListInfinite = (params: {
     tab: OrderCardsTab;
     limit?: number;
+    enabled?: boolean;
 }) => {
     const limit = params.limit ?? 10;
 
@@ -452,6 +471,7 @@ export const useOrderCardsListInfinite = (params: {
         },
         getNextPageParam: (lastPage) => lastPage.nextCursor,
         initialPageParam: 1,
+        enabled: params.enabled ?? true,
         meta: {
             errorMessage: "订单列表获取失败",
         },

@@ -263,7 +263,6 @@ const DECISION_STATUS_DISPLAY: Record<
     },
 };
 
-
 const ASSIGNMENT_TYPE_LABELS: Record<string, string> = {
     system_auto: "系统派单",
     customer_designated: "客户指定",
@@ -747,7 +746,8 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                 return;
             }
             const conversation = await upsertChatConversation.mutateAsync({
-                peerUserId,
+                dto: { peerUserId },
+                clientRole: "service_personnel",
             });
             router.push(`/chat/${conversation.id}` as never);
         } catch (error) {
@@ -766,7 +766,8 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                 return;
             }
             const conversation = await upsertChatConversation.mutateAsync({
-                peerUserId,
+                dto: { peerUserId },
+                clientRole: "service_personnel",
             });
             router.push(
                 `/chat/${conversation.id}?draftOrderId=${encodeURIComponent(order.id)}` as never,
@@ -901,17 +902,6 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                             {upsertChatConversation.isPending
                                 ? "正在打开..."
                                 : "联系客户"}
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={styles.chatButton}
-                        onPress={handleSendOrderCardToCustomer}
-                        disabled={upsertChatConversation.isPending}
-                    >
-                        <Text style={styles.chatButtonText}>
-                            {upsertChatConversation.isPending
-                                ? "正在打开..."
-                                : "发送订单卡片"}
                         </Text>
                     </TouchableOpacity>
                 </View>

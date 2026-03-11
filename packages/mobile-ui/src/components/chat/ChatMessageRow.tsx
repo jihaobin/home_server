@@ -5,8 +5,8 @@ import { Play } from "lucide-react-native";
 import type { ChatMessage, OrderStatus } from "@repo/types";
 import { useFile } from "@repo/hooks/api/files";
 import { useOrderDetailQuery } from "@repo/hooks/api/order";
-import { Text } from "@repo/mobile-ui/components/ui/text";
 
+import { Text } from "../ui/text";
 import { useLocalVideoThumbnail } from "./use-local-video-thumbnail";
 
 export function ChatMessageRow(props: {
@@ -22,12 +22,10 @@ export function ChatMessageRow(props: {
         if (props.isOwn) {
             return (
                 <View className="max-w-[82%] rounded-2xl bg-primary px-3 py-2">
-                    <Text className="text-sm text-primary-foreground">
+                    <Text className="text-sm text-white">
                         {message.content.text}
                     </Text>
-                    <Text className="mt-1 text-xs text-primary-foreground">
-                        {timeText}
-                    </Text>
+                    <Text className="mt-1 text-xs text-white">{timeText}</Text>
                 </View>
             );
         }

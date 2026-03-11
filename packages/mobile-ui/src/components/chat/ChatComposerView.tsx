@@ -9,8 +9,8 @@ import {
     X,
 } from "lucide-react-native";
 
-import { Text } from "@repo/mobile-ui/components/ui/text";
-import { Icon } from "@repo/mobile-ui/components/ui/icon";
+import { Text } from "../ui/text";
+import { Icon } from "../ui/icon";
 
 export function ChatComposerView(props: {
     onSendText: (text: string) => void;

@@ -233,6 +233,12 @@ export class OrderRepository {
         statuses?: OrderStatus[];
         needsReviewOnly?: boolean;
     }) {
+        const workerAvatarByHash = alias(
+            files,
+            'order_cards_worker_avatar_hash',
+        );
+        const workerAvatarById = alias(files, 'order_cards_worker_avatar_id');
+
         const notExistsReviewSql = sql<boolean>`NOT EXISTS(
             select 1
             from ${reviews}
@@ -264,9 +270,15 @@ export class OrderRepository {
                     servicePersonnelId: orderAssignments.servicePersonnelId,
                     workerName: servicePersonnel.name,
                     workerAvatar: servicePersonnel.avatar,
-                    workerAvatarBucketName: files.bucketName,
-                    workerAvatarObjectPath: files.objectPath,
-                    workerAvatarBlurhash: files.blurhash,
+                    workerAvatarBucketName: sql<
+                        string | null
+                    >`COALESCE(${workerAvatarByHash.bucketName}, ${workerAvatarById.bucketName})`,
+                    workerAvatarObjectPath: sql<
+                        string | null
+                    >`COALESCE(${workerAvatarByHash.objectPath}, ${workerAvatarById.objectPath})`,
+                    workerAvatarBlurhash: sql<
+                        string | null
+                    >`COALESCE(${workerAvatarByHash.blurhash}, ${workerAvatarById.blurhash})`,
                     appointmentTime: orders.appointmentTime,
                     totalAmount: orders.totalAmount,
                     paymentExpiresAt: orders.paymentExpiresAt,
@@ -289,7 +301,14 @@ export class OrderRepository {
                         servicePersonnel.userId,
                     ),
                 )
-                .leftJoin(files, eq(files.fileHash, servicePersonnel.avatar))
+                .leftJoin(
+                    workerAvatarByHash,
+                    eq(workerAvatarByHash.fileHash, servicePersonnel.avatar),
+                )
+                .leftJoin(
+                    workerAvatarById,
+                    eq(workerAvatarById.id, servicePersonnel.avatar),
+                )
                 .where(whereClause)
                 .orderBy(desc(orders.createdAt))
                 .limit(limit)
@@ -503,9 +522,13 @@ export class OrderRepository {
         )`;
 
         const serviceImageFile = alias(files, 'order_detail_service_image');
-        const personnelAvatarFile = alias(
+        const personnelAvatarFileByHash = alias(
             files,
-            'order_detail_personnel_avatar',
+            'order_detail_personnel_avatar_hash',
+        );
+        const personnelAvatarFileById = alias(
+            files,
+            'order_detail_personnel_avatar_id',
         );
 
         const [orderRow] = await this.db
@@ -528,9 +551,15 @@ export class OrderRepository {
                 serviceImageBucketName: serviceImageFile.bucketName,
                 serviceImageObjectPath: serviceImageFile.objectPath,
                 serviceImageBlurhash: serviceImageFile.blurhash,
-                personnelAvatarBucketName: personnelAvatarFile.bucketName,
-                personnelAvatarObjectPath: personnelAvatarFile.objectPath,
-                personnelAvatarBlurhash: personnelAvatarFile.blurhash,
+                personnelAvatarBucketName: sql<
+                    string | null
+                >`COALESCE(${personnelAvatarFileByHash.bucketName}, ${personnelAvatarFileById.bucketName})`,
+                personnelAvatarObjectPath: sql<
+                    string | null
+                >`COALESCE(${personnelAvatarFileByHash.objectPath}, ${personnelAvatarFileById.objectPath})`,
+                personnelAvatarBlurhash: sql<
+                    string | null
+                >`COALESCE(${personnelAvatarFileByHash.blurhash}, ${personnelAvatarFileById.blurhash})`,
                 paymentsJson: sql<any>`(
                         SELECT COALESCE(json_agg(row_to_json(p.*)), '[]'::json)
                         FROM ${payments} p
@@ -583,8 +612,12 @@ export class OrderRepository {
                 ),
             )
             .leftJoin(
-                personnelAvatarFile,
-                eq(personnelAvatarFile.fileHash, servicePersonnel.avatar),
+                personnelAvatarFileByHash,
+                eq(personnelAvatarFileByHash.fileHash, servicePersonnel.avatar),
+            )
+            .leftJoin(
+                personnelAvatarFileById,
+                eq(personnelAvatarFileById.id, servicePersonnel.avatar),
             )
             .leftJoin(
                 servicePersonnelPricing,

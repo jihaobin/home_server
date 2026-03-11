@@ -5,6 +5,7 @@
 ## 文档列表
 
 - [故障排除指南](./troubleshooting.md) - 常见问题及解决方案
+- [RustFS 登录与旧桶 AccessDenied 恢复 Runbook](./rustfs-accessdenied-recovery-runbook.md) - RustFS 登录失败与旧桶权限异常的一体化迁移修复流程
 - [开发指南](./development.md) - 开发环境设置和最佳实践（待创建）
 - [部署指南](./deployment.md) - 生产环境部署说明（待创建）
 - [API 文档](./api.md) - 后端 API 接口文档（待创建）

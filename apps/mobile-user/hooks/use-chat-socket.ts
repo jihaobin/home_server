@@ -39,15 +39,73 @@ export type UseChatSocketResult = {
     lastError: string | null;
 };
 
+type ConversationCacheItem = {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    lastMessageAt: string | null;
+    lastMessagePreview?: {
+        type: string;
+        text: string;
+        messageId: string;
+        createdAt: string;
+        senderUserId: string;
+    } | null;
+    unreadCount?: number;
+    peerLastReadMessageId?: string | null;
+    peerLastReadAt?: string | null;
+};
+
 // 后端 REST 查询参数 limit 上限为 100（Zod 校验）。
 const AUTO_JOIN_LIMIT = 100;
+
+function buildConversationPreviewFromMessage(message: ChatMessage) {
+    if (message.content.type === "text") {
+        const normalized = message.content.text.trim();
+        return {
+            type: "text",
+            text:
+                normalized.length > 80
+                    ? `${normalized.slice(0, 80)}...`
+                    : normalized,
+            messageId: message.id,
+            createdAt: message.createdAt,
+            senderUserId: message.senderUserId,
+        };
+    }
+    if (message.content.type === "image") {
+        return {
+            type: "image",
+            text: "[图片]",
+            messageId: message.id,
+            createdAt: message.createdAt,
+            senderUserId: message.senderUserId,
+        };
+    }
+    if (message.content.type === "video") {
+        return {
+            type: "video",
+            text: "[视频]",
+            messageId: message.id,
+            createdAt: message.createdAt,
+            senderUserId: message.senderUserId,
+        };
+    }
+    return {
+        type: "order_card",
+        text: message.content.snapshot?.title ?? "[订单]",
+        messageId: message.id,
+        createdAt: message.createdAt,
+        senderUserId: message.senderUserId,
+    };
+}
 
 export function useChatSocket(
     options: { enabled?: boolean } = {},
 ): UseChatSocketResult {
     const { enabled = true } = options;
     const queryClient = useQueryClient();
-    const { getCookie } = useAuth();
+    const { getCookie, session } = useAuth();
     const [status, setStatus] = useState<ConnectionStatus>("idle");
     const [lastError, setLastError] = useState<string | null>(null);
     const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -60,12 +118,16 @@ export function useChatSocket(
                 .trim() ?? "",
         [getCookie],
     );
+    const currentUserId = session.session?.user?.id;
 
     const updateCachesWithIncomingMessage = useCallback(
         (conversationId: string, message: ChatMessage) => {
             // 1) 更新消息列表（第一页顶部，倒序）
             queryClient.setQueryData(
-                chatMessagesInfiniteQueryKey({ conversationId }),
+                chatMessagesInfiniteQueryKey({
+                    conversationId,
+                    clientRole: "customer",
+                }),
                 (current) => {
                     const data = current as
                         | InfiniteData<ChatMessageListResponse>
@@ -114,10 +176,14 @@ export function useChatSocket(
                 (current) => {
                     const data = current as
                         | {
-                              items: Array<{
+                              items: {
                                   id: string;
                                   lastMessageAt: string | null;
-                              }>;
+                                  lastMessagePreview?: ConversationCacheItem["lastMessagePreview"];
+                                  unreadCount?: number;
+                                  peerLastReadAt?: string | null;
+                                  peerLastReadMessageId?: string | null;
+                              }[];
                           }
                         | undefined;
                     if (!data?.items) {
@@ -134,6 +200,12 @@ export function useChatSocket(
                     const updated = {
                         ...nextItems[idx],
                         lastMessageAt: message.createdAt,
+                        lastMessagePreview:
+                            buildConversationPreviewFromMessage(message),
+                        unreadCount:
+                            message.senderUserId === currentUserId
+                                ? (nextItems[idx].unreadCount ?? 0)
+                                : (nextItems[idx].unreadCount ?? 0) + 1,
                     };
                     nextItems.splice(idx, 1);
                     nextItems.unshift(updated);
@@ -147,7 +219,7 @@ export function useChatSocket(
                 });
             }
         },
-        [queryClient],
+        [currentUserId, queryClient],
     );
 
     const joinAllConversations = useCallback(async () => {
@@ -155,12 +227,16 @@ export function useChatSocket(
             "/chat/conversations",
             {
                 query: {
+                    clientRole: "customer",
                     limit: AUTO_JOIN_LIMIT.toString(),
                 },
             },
         );
         queryClient.setQueryData(
-            chatConversationsQueryKey({ limit: AUTO_JOIN_LIMIT }),
+            chatConversationsQueryKey({
+                limit: AUTO_JOIN_LIMIT,
+                clientRole: "customer",
+            }),
             response.data,
         );
         response.data.items.forEach((c) => joinChatConversation(c.id));
@@ -168,20 +244,123 @@ export function useChatSocket(
 
     const handleServerMessage = useCallback(
         (message: ChatSocketServerMessage) => {
-            if (message.type === ChatSocketEventType.Error) {
+            const eventType = (message as { type: string }).type;
+
+            if (eventType === ChatSocketEventType.Error) {
+                const payload = message as { message: string };
                 setStatus("error");
-                setLastError(message.message);
+                setLastError(payload.message);
                 return;
             }
-            if (message.type === ChatSocketEventType.Message) {
-                joinChatConversation(message.conversationId);
+            if (eventType === ChatSocketEventType.Message) {
+                const payload = message as {
+                    conversationId: string;
+                    message: ChatMessage;
+                };
+                joinChatConversation(payload.conversationId);
                 updateCachesWithIncomingMessage(
-                    message.conversationId,
-                    message.message,
+                    payload.conversationId,
+                    payload.message,
+                );
+                return;
+            }
+            if (eventType === "conversation_updated") {
+                const payload = message as ChatSocketServerMessage & {
+                    conversationId: string;
+                    lastMessageAt: string;
+                    lastMessagePreview?: ConversationCacheItem["lastMessagePreview"];
+                    unreadCount?: number;
+                };
+                queryClient.setQueriesData(
+                    { queryKey: [CHAT_QUERY_KEY.CONVERSATIONS] },
+                    (current) => {
+                        const data = current as
+                            | { items: ConversationCacheItem[] }
+                            | undefined;
+                        if (!data?.items?.length) {
+                            return current;
+                        }
+                        const idx = data.items.findIndex(
+                            (item) => item.id === payload.conversationId,
+                        );
+                        if (idx < 0) {
+                            return current;
+                        }
+                        const nextItems = [...data.items];
+                        nextItems[idx] = {
+                            ...nextItems[idx],
+                            lastMessageAt: payload.lastMessageAt,
+                            lastMessagePreview:
+                                payload.lastMessagePreview ??
+                                nextItems[idx].lastMessagePreview ??
+                                null,
+                            unreadCount:
+                                typeof payload.unreadCount === "number"
+                                    ? payload.unreadCount
+                                    : nextItems[idx].unreadCount,
+                        };
+                        nextItems.sort((a, b) => {
+                            const aTime =
+                                a.lastMessageAt ?? a.updatedAt ?? a.createdAt;
+                            const bTime =
+                                b.lastMessageAt ?? b.updatedAt ?? b.createdAt;
+                            return (
+                                new Date(bTime).getTime() -
+                                new Date(aTime).getTime()
+                            );
+                        });
+                        return { ...data, items: nextItems };
+                    },
+                );
+                return;
+            }
+            if (eventType === "read_receipt") {
+                const payload = message as ChatSocketServerMessage & {
+                    conversationId: string;
+                    readerUserId: string;
+                    lastReadMessageId?: string;
+                    lastReadAt?: string;
+                };
+                queryClient.setQueriesData(
+                    { queryKey: [CHAT_QUERY_KEY.CONVERSATIONS] },
+                    (current) => {
+                        const data = current as
+                            | { items: ConversationCacheItem[] }
+                            | undefined;
+                        if (!data?.items?.length) {
+                            return current;
+                        }
+                        const idx = data.items.findIndex(
+                            (item) => item.id === payload.conversationId,
+                        );
+                        if (idx < 0) {
+                            return current;
+                        }
+                        const nextItems = [...data.items];
+                        nextItems[idx] = {
+                            ...nextItems[idx],
+                            peerLastReadMessageId:
+                                payload.lastReadMessageId &&
+                                payload.readerUserId !== currentUserId
+                                    ? payload.lastReadMessageId
+                                    : (nextItems[idx].peerLastReadMessageId ??
+                                      null),
+                            peerLastReadAt:
+                                payload.lastReadAt &&
+                                payload.readerUserId !== currentUserId
+                                    ? payload.lastReadAt
+                                    : (nextItems[idx].peerLastReadAt ?? null),
+                            unreadCount:
+                                payload.readerUserId === currentUserId
+                                    ? 0
+                                    : nextItems[idx].unreadCount,
+                        };
+                        return { ...data, items: nextItems };
+                    },
                 );
             }
         },
-        [updateCachesWithIncomingMessage],
+        [currentUserId, queryClient, updateCachesWithIncomingMessage],
     );
 
     const connect = useCallback(() => {
@@ -197,12 +376,19 @@ export function useChatSocket(
             return;
         }
         setStatus("connecting");
-        const socket = connectChatSocket({ endpoint, cookieHeader });
+        const socket = connectChatSocket({
+            endpoint,
+            cookieHeader,
+            clientRole: "customer",
+        });
 
         const onConnect = () => {
             hasConnectedOnceRef.current = true;
             setStatus("connected");
             setLastError(null);
+            queryClient.invalidateQueries({
+                queryKey: [CHAT_QUERY_KEY.CONVERSATIONS],
+            });
             void joinAllConversations().catch((error) => {
                 const msg =
                     error instanceof Error ? error.message : "会话自动加入失败";
@@ -229,7 +415,12 @@ export function useChatSocket(
             socket.off("disconnect", onDisconnect);
             socket.off("connect_error", onConnectError);
         };
-    }, [cookieHeader, joinAllConversations, resetJoinedChatConversations]);
+    }, [
+        cookieHeader,
+        joinAllConversations,
+        queryClient,
+        resetJoinedChatConversations,
+    ]);
 
     useEffect(() => {
         if (!enabled) {

@@ -55,7 +55,7 @@
     dotenvx run -f apps/backend/.env.production -- pnpm --filter backend db:migration
     ```
 
-6. systemd 服务单元（后端 + 管理端）
+6. systemd 服务单元（后端 + 管理端 + 营销站）
 
     - 后端服务：`/etc/systemd/system/home-server-backend.service`
     - 注意：`ExecStart=/usr/bin/node ...` 仅适用于系统包安装的 Node.js；如果你用 nvm 安装，请将 `ExecStart` 改为 `command -v node` 查到的绝对路径。
@@ -104,18 +104,46 @@
     WantedBy=multi-user.target
     ```
 
+    - 营销站服务：`/etc/systemd/system/home-server-marketing-web.service`
+    - 注意：如果使用 fnm，请把 `Environment=PATH=...` 中的 `<NODE_VERSION>` 替换为实际版本（可通过 `fnm list` 或 `command -v node` 查看）。
+    - 注意：同上，pnpm `node-linker=hoisted`，依赖在仓库根目录 `node_modules`。
+
+    ```ini
+    [Unit]
+    Description=home-server marketing web
+    After=network-online.target
+    Wants=network-online.target
+
+    [Service]
+    Type=simple
+    User=admin
+    WorkingDirectory=/home/admin/home_server/apps/marketing-web
+    EnvironmentFile=/home/admin/home_server/apps/marketing-web/.env.production
+    Environment=NODE_ENV=production
+    Environment=PORT=3010
+    Environment=PATH=/home/admin/.local/share/fnm/node-<NODE_VERSION>/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+    ExecStart=/usr/bin/env node /home/admin/home_server/node_modules/next/dist/bin/next start -p 3010
+    Restart=on-failure
+    RestartSec=3
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+
     - 启用并启动：
 
     ```bash
     sudo systemctl daemon-reload
-    sudo systemctl enable --now home-server-backend home-server-admin-web
+    sudo systemctl enable --now home-server-backend home-server-admin-web home-server-marketing-web
     ```
 
     - 查看状态/日志：
         - `sudo systemctl status home-server-backend -l`
         - `sudo systemctl status home-server-admin-web -l`
+        - `sudo systemctl status home-server-marketing-web -l`
         - `sudo journalctl -u home-server-backend -f`
         - `sudo journalctl -u home-server-admin-web -f`
+        - `sudo journalctl -u home-server-marketing-web -f`
 
 7. Nginx 反向代理与 HTTPS（待配置）
 

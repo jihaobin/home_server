@@ -33,6 +33,8 @@ import {
 import { ChatRepository } from './chat.repository';
 
 import type {
+    ChatClientRole,
+    ChatConversationListRow,
     ChatConversationRecord,
     ChatMessageRecord,
 } from './chat.repository';
@@ -94,33 +96,63 @@ export class ChatService {
         peerUserId: string;
         meRoles: UserRoleInDb[];
         peerRoles: UserRoleInDb[];
+        clientRole: ChatClientRole;
     }): { userId: string; workerUserId: string } {
         const meIsWorker = params.meRoles.includes('service_personnel');
         const peerIsWorker = params.peerRoles.includes('service_personnel');
         const meIsCustomer = params.meRoles.includes('customer');
         const peerIsCustomer = params.peerRoles.includes('customer');
 
-        if (meIsWorker === peerIsWorker) {
-            // 必须一方是 customer，一方是 service_personnel
-            throw new BadRequestException('会话参与者角色不符合 1v1 私聊要求');
+        if (params.clientRole === 'customer') {
+            if (!meIsCustomer) {
+                throw new ForbiddenException('当前账号不具备普通用户身份');
+            }
+            if (!peerIsWorker) {
+                throw new BadRequestException('只能与服务人员建立私聊');
+            }
+            return {
+                userId: params.meId,
+                workerUserId: params.peerUserId,
+            };
         }
 
-        // 仅允许 customer <-> service_personnel
-        if (meIsWorker && !peerIsCustomer) {
-            throw new BadRequestException('对方不是用户角色，无法创建会话');
+        if (!meIsWorker) {
+            throw new ForbiddenException('当前账号不具备服务人员身份');
         }
-        if (!meIsWorker && (!meIsCustomer || !peerIsWorker)) {
-            throw new BadRequestException('只能与服务人员建立私聊');
+        if (!peerIsCustomer) {
+            throw new BadRequestException('服务人员端只能与普通用户私聊');
         }
 
-        return meIsWorker
-            ? { userId: params.peerUserId, workerUserId: params.meId }
-            : { userId: params.meId, workerUserId: params.peerUserId };
+        return {
+            userId: params.peerUserId,
+            workerUserId: params.meId,
+        };
+    }
+
+    private ensureConversationRoleAccess(params: {
+        requesterId: string;
+        clientRole: ChatClientRole;
+        conversation: ChatConversationRecord;
+    }) {
+        if (
+            params.clientRole === 'customer' &&
+            params.conversation.userId !== params.requesterId
+        ) {
+            throw new ForbiddenException('当前会话不属于用户端身份');
+        }
+
+        if (
+            params.clientRole === 'service_personnel' &&
+            params.conversation.workerUserId !== params.requesterId
+        ) {
+            throw new ForbiddenException('当前会话不属于服务人员端身份');
+        }
     }
 
     async upsertConversation(params: {
         requesterId: string;
         peerUserId: string;
+        clientRole: ChatClientRole;
     }): Promise<ChatConversation> {
         if (params.requesterId === params.peerUserId) {
             throw new BadRequestException('不能与自己创建会话');
@@ -134,6 +166,7 @@ export class ChatService {
             peerUserId: params.peerUserId,
             meRoles: this.extractUserRoles(me),
             peerRoles: this.extractUserRoles(peer),
+            clientRole: params.clientRole,
         });
 
         const existing =
@@ -141,6 +174,15 @@ export class ChatService {
         const conversation = existing
             ? existing
             : await this.chatRepository.createConversation(pair);
+        const enriched = await this.chatRepository.getConversationForUser({
+            userId: params.requesterId,
+            conversationId: conversation.id,
+            clientRole: params.clientRole,
+        });
+
+        if (enriched) {
+            return this.toConversationDto(enriched);
+        }
 
         return this.toConversationDto(conversation);
     }
@@ -148,6 +190,7 @@ export class ChatService {
     async listConversations(params: {
         requesterId: string;
         limit?: number;
+        clientRole: ChatClientRole;
     }): Promise<ChatConversationListResponse> {
         const limit =
             typeof params.limit === 'number' && params.limit > 0
@@ -157,10 +200,27 @@ export class ChatService {
         const rows = await this.chatRepository.listConversationsForUser(
             params.requesterId,
             limit,
+            params.clientRole,
         );
         return {
             items: rows.map((row) => this.toConversationDto(row)),
         };
+    }
+
+    async getConversationDetail(params: {
+        requesterId: string;
+        conversationId: string;
+        clientRole: ChatClientRole;
+    }): Promise<ChatConversation> {
+        const row = await this.chatRepository.getConversationForUser({
+            userId: params.requesterId,
+            conversationId: params.conversationId,
+            clientRole: params.clientRole,
+        });
+        if (!row) {
+            throw new BadRequestException('会话不存在');
+        }
+        return this.toConversationDto(row);
     }
 
     /**
@@ -170,6 +230,7 @@ export class ChatService {
     async listConversationIdsForAutoJoin(params: {
         requesterId: string;
         limit?: number;
+        clientRole: ChatClientRole;
     }): Promise<string[]> {
         const limit =
             typeof params.limit === 'number' && params.limit > 0
@@ -179,18 +240,21 @@ export class ChatService {
         return await this.chatRepository.listConversationIdsForUser(
             params.requesterId,
             limit,
+            params.clientRole,
         );
     }
 
     async listMessages(params: {
         requesterId: string;
         conversationId: string;
+        clientRole: ChatClientRole;
         cursor?: string;
         limit?: number;
     }): Promise<ChatMessageListResponse> {
         const conversation = await this.requireConversationAccessible({
             requesterId: params.requesterId,
             conversationId: params.conversationId,
+            clientRole: params.clientRole,
         });
 
         const limit =
@@ -225,12 +289,14 @@ export class ChatService {
     async sendMessage(params: {
         requesterId: string;
         conversationId: string;
+        clientRole: ChatClientRole;
         content: ChatMessageContent;
         clientMsgId?: string;
     }): Promise<ChatMessage> {
         const conversation = await this.requireConversationAccessible({
             requesterId: params.requesterId,
             conversationId: params.conversationId,
+            clientRole: params.clientRole,
         });
 
         if (
@@ -288,11 +354,14 @@ export class ChatService {
         }
 
         try {
+            const previewText = this.getMessagePreviewText(validated);
             const record =
                 await this.chatRepository.createMessageAndTouchConversation({
                     conversationId: params.conversationId,
                     senderUserId: params.requesterId,
                     content: validated,
+                    messageType: validated.type,
+                    previewText,
                     clientMsgId: params.clientMsgId ?? null,
                 });
             return this.toMessageDto(record);
@@ -373,6 +442,7 @@ export class ChatService {
     async requireConversationAccessible(params: {
         requesterId: string;
         conversationId: string;
+        clientRole: ChatClientRole;
     }) {
         const conversation = await this.chatRepository.findConversationById(
             params.conversationId,
@@ -386,18 +456,65 @@ export class ChatService {
         if (!isParticipant) {
             throw new ForbiddenException('无权访问该会话');
         }
+
+        this.ensureConversationRoleAccess({
+            requesterId: params.requesterId,
+            clientRole: params.clientRole,
+            conversation,
+        });
         return conversation;
     }
 
     async requireConversationJoinable(params: {
         requesterId: string;
         conversationId: string;
+        clientRole: ChatClientRole;
     }) {
         // 拉黑不影响 join，只影响 send（由 sendMessage 统一拦截）
         return await this.requireConversationAccessible(params);
     }
 
-    private toConversationDto(row: ChatConversationRecord): ChatConversation {
+    async markConversationRead(params: {
+        requesterId: string;
+        conversationId: string;
+        clientRole: ChatClientRole;
+        lastReadMessageId: string;
+    }) {
+        await this.requireConversationAccessible({
+            requesterId: params.requesterId,
+            conversationId: params.conversationId,
+            clientRole: params.clientRole,
+        });
+
+        const message = await this.chatRepository.findMessageById(
+            params.lastReadMessageId,
+        );
+        if (!message || message.conversationId !== params.conversationId) {
+            throw new BadRequestException('lastReadMessageId 不属于当前会话');
+        }
+
+        return await this.chatRepository.markConversationRead({
+            conversationId: params.conversationId,
+            userId: params.requesterId,
+            lastReadMessageId: params.lastReadMessageId,
+        });
+    }
+
+    private toConversationDto(
+        row: ChatConversationRecord | ChatConversationListRow,
+    ): ChatConversation {
+        const listRow = row as Partial<ChatConversationListRow>;
+        const lastMessagePreview =
+            row.lastMessageId && row.lastMessageAt
+                ? {
+                      type: row.lastMessageType ?? 'text',
+                      text: row.lastMessagePreviewText ?? '暂无消息',
+                      messageId: row.lastMessageId,
+                      createdAt: new Date(row.lastMessageAt).toISOString(),
+                      senderUserId: row.lastMessageSenderUserId ?? '',
+                  }
+                : null;
+
         return {
             id: row.id,
             userId: row.userId,
@@ -405,9 +522,50 @@ export class ChatService {
             lastMessageAt: row.lastMessageAt
                 ? new Date(row.lastMessageAt).toISOString()
                 : null,
+            peerUserId: listRow.peerUserId,
+            peerUser: listRow.peerUserId
+                ? {
+                      id: listRow.peerUserId,
+                      name: listRow.peerUserName ?? '聊天对象',
+                      image: listRow.peerUserImage ?? null,
+                  }
+                : undefined,
+            lastMessagePreview,
+            unreadCount:
+                typeof listRow.myUnreadCount === 'number'
+                    ? listRow.myUnreadCount
+                    : undefined,
+            myLastReadMessageId: listRow.myLastReadMessageId,
+            myLastReadAt: listRow.myLastReadAt
+                ? new Date(listRow.myLastReadAt).toISOString()
+                : null,
+            peerLastReadMessageId: listRow.peerLastReadMessageId,
+            peerLastReadAt: listRow.peerLastReadAt
+                ? new Date(listRow.peerLastReadAt).toISOString()
+                : null,
             createdAt: new Date(row.createdAt).toISOString(),
             updatedAt: new Date(row.updatedAt).toISOString(),
         };
+    }
+
+    private getMessagePreviewText(content: ChatMessageContent): string {
+        if (content.type === 'text') {
+            const normalized = content.text.trim();
+            if (normalized.length <= 80) {
+                return normalized;
+            }
+            return `${normalized.slice(0, 80)}...`;
+        }
+        if (content.type === 'image') {
+            return '[图片]';
+        }
+        if (content.type === 'video') {
+            return '[视频]';
+        }
+        if (content.type === 'order_card') {
+            return content.snapshot?.title ?? '[订单]';
+        }
+        return '新消息';
     }
 
     private toMessageDto(row: ChatMessageRecord): ChatMessage {

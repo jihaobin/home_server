@@ -3,7 +3,7 @@ import {
     CHAT_SOCKET_CLIENT_EVENT,
     CHAT_SOCKET_SERVER_EVENT,
     ChatSocketClientEventType,
-    type ChatSocketClientMessage,
+    type ChatMessageContent,
     type ChatSocketServerMessage,
 } from "@repo/types";
 
@@ -20,6 +20,7 @@ export function getChatSocket(): Socket | null {
 export function connectChatSocket(params: {
     endpoint: string;
     cookieHeader: string;
+    clientRole: "customer" | "service_personnel";
 }) {
     if (socket && !socket.disconnected) {
         return socket;
@@ -34,6 +35,12 @@ export function connectChatSocket(params: {
         reconnectionDelayMax: 30_000,
         timeout: 10_000,
         withCredentials: true,
+        query: {
+            clientRole: params.clientRole,
+        },
+        auth: {
+            clientRole: params.clientRole,
+        },
         extraHeaders: {
             Cookie: params.cookieHeader,
         },
@@ -80,10 +87,20 @@ export function joinChatConversation(conversationId: string) {
     joinedConversationIds.add(conversationId);
     socket?.emit(CHAT_SOCKET_CLIENT_EVENT, {
         type: ChatSocketClientEventType.Join,
+        clientRole: "customer",
         conversationId,
-    } satisfies ChatSocketClientMessage);
+    });
 }
 
-export function sendChatClientMessage(message: ChatSocketClientMessage) {
-    socket?.emit(CHAT_SOCKET_CLIENT_EVENT, message);
+export function sendChatClientMessage(message: {
+    type: ChatSocketClientEventType.Send;
+    conversationId?: string;
+    peerUserId?: string;
+    content: ChatMessageContent;
+    clientMsgId?: string;
+}) {
+    socket?.emit(CHAT_SOCKET_CLIENT_EVENT, {
+        ...message,
+        clientRole: "customer",
+    });
 }

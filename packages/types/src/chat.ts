@@ -1,5 +1,14 @@
 import { z } from "zod/v4";
 
+export const ChatClientRoleSchema = z
+    .enum(["customer", "service_personnel"])
+    .meta({
+        title: "聊天客户端身份",
+        description: "用于明确当前会话访问身份（普通用户端/服务人员端）",
+    });
+
+export type ChatClientRole = z.infer<typeof ChatClientRoleSchema>;
+
 const ChatTextContentSchema = z
     .object({
         type: z.literal("text"),
@@ -97,12 +106,59 @@ export type ChatUpsertConversationDto = z.infer<
     typeof ChatUpsertConversationSchema
 >;
 
+export const ChatConversationPeerUserSchema = z
+    .object({
+        id: z.string().min(1),
+        name: z.string().min(1),
+        image: z.string().min(1).nullable(),
+    })
+    .meta({
+        title: "会话对端用户",
+        description: "会话列表可直接渲染的对端用户信息",
+    });
+
+export type ChatConversationPeerUser = z.infer<
+    typeof ChatConversationPeerUserSchema
+>;
+
+export const ChatConversationLastMessagePreviewSchema = z
+    .object({
+        type: z.string().min(1),
+        text: z.string().min(1),
+        messageId: z.string().min(1),
+        createdAt: z.iso.datetime({ offset: true, local: true }),
+        senderUserId: z.string().min(1),
+    })
+    .meta({
+        title: "会话最后消息预览",
+        description: "会话列表最后一条消息的可展示预览字段",
+    });
+
+export type ChatConversationLastMessagePreview = z.infer<
+    typeof ChatConversationLastMessagePreviewSchema
+>;
+
 export const ChatConversationSchema = z
     .object({
         id: z.string().min(1),
         userId: z.string().min(1),
         workerUserId: z.string().min(1),
         lastMessageAt: z.iso.datetime({ offset: true, local: true }).nullable(),
+        peerUserId: z.string().min(1).optional(),
+        peerUser: ChatConversationPeerUserSchema.nullable().optional(),
+        lastMessagePreview:
+            ChatConversationLastMessagePreviewSchema.nullable().optional(),
+        unreadCount: z.number().int().min(0).optional(),
+        myLastReadMessageId: z.string().min(1).nullable().optional(),
+        myLastReadAt: z.iso
+            .datetime({ offset: true, local: true })
+            .nullable()
+            .optional(),
+        peerLastReadMessageId: z.string().min(1).nullable().optional(),
+        peerLastReadAt: z.iso
+            .datetime({ offset: true, local: true })
+            .nullable()
+            .optional(),
         createdAt: z.iso.datetime({ offset: true, local: true }),
         updatedAt: z.iso.datetime({ offset: true, local: true }),
     })
@@ -116,6 +172,7 @@ export type ChatConversation = z.infer<typeof ChatConversationSchema>;
 export const ChatConversationListQuerySchema = z
     .object({
         limit: z.number().int().min(1).max(100).optional(),
+        clientRole: ChatClientRoleSchema,
     })
     .meta({
         title: "私聊会话列表查询",
@@ -139,6 +196,19 @@ export type ChatConversationListResponse = z.infer<
     typeof ChatConversationListResponseSchema
 >;
 
+export const ChatConversationReadSchema = z
+    .object({
+        lastReadMessageId: z.string().min(1).max(255),
+    })
+    .meta({
+        title: "会话已读上报",
+        description: "会话已读上报参数",
+    });
+
+export type ChatConversationReadDto = z.infer<
+    typeof ChatConversationReadSchema
+>;
+
 export const ChatMessageSchema = z
     .object({
         id: z.string().min(1),
@@ -160,6 +230,7 @@ export const ChatMessageListQuerySchema = z
         conversationId: z.string().min(1),
         cursor: z.string().min(1).optional(),
         limit: z.number().int().min(1).max(50).optional(),
+        clientRole: ChatClientRoleSchema,
     })
     .meta({
         title: "私聊消息分页查询",
@@ -212,6 +283,8 @@ export const CHAT_SOCKET_CLIENT_EVENT = "chat:client" as const;
 
 export enum ChatSocketEventType {
     Message = "message",
+    ConversationUpdated = "conversation_updated",
+    ReadReceipt = "read_receipt",
     Error = "error",
 }
 
@@ -223,18 +296,21 @@ export enum ChatSocketClientEventType {
 export type ChatSocketClientMessage =
     | {
           type: ChatSocketClientEventType.Send;
+          clientRole: ChatClientRole;
           conversationId: string;
           content: ChatMessageContent;
           clientMsgId?: string;
       }
     | {
           type: ChatSocketClientEventType.Send;
+          clientRole: ChatClientRole;
           peerUserId: string;
           content: ChatMessageContent;
           clientMsgId?: string;
       }
     | {
           type: ChatSocketClientEventType.Join;
+          clientRole: ChatClientRole;
           conversationId: string;
       };
 
@@ -243,6 +319,26 @@ export type ChatSocketServerMessage =
           type: ChatSocketEventType.Message;
           conversationId: string;
           message: ChatMessage;
+      }
+    | {
+          type: ChatSocketEventType.ConversationUpdated;
+          conversationId: string;
+          lastMessageAt: string;
+          lastMessagePreview?: {
+              type: string;
+              text: string;
+              messageId: string;
+              createdAt: string;
+              senderUserId: string;
+          };
+          unreadCount?: number;
+      }
+    | {
+          type: ChatSocketEventType.ReadReceipt;
+          conversationId: string;
+          readerUserId: string;
+          lastReadMessageId?: string;
+          lastReadAt?: string;
       }
     | {
           type: ChatSocketEventType.Error;

@@ -744,7 +744,13 @@ export class OrderService {
                       servicePersonnel: safeOrder.assignment.servicePersonnel
                           ? {
                                 ...safeOrder.assignment.servicePersonnel,
-                                avatarUrl: personnelAvatarUrl,
+                                avatarUrl:
+                                    personnelAvatarUrl ??
+                                    safeOrder.assignment.servicePersonnel
+                                        .avatarUrl ??
+                                    safeOrder.assignment.servicePersonnel
+                                        .avatar ??
+                                    null,
                                 avatarBlurhash: personnelAvatarBlurhash ?? null,
                             }
                           : safeOrder.assignment.servicePersonnel,

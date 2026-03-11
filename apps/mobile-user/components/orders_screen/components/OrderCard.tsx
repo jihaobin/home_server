@@ -5,7 +5,6 @@ import { useRouter } from "expo-router";
 import {
     ActivityIndicator,
     GestureResponderEvent,
-    Image,
     TouchableOpacity,
     View,
 } from "react-native";
@@ -15,6 +14,7 @@ import { formatCurrency, formatDateTime } from "../utils";
 import { useOrderActions } from "../hooks/useOrderActions";
 import { usePaymentCountdown } from "@/hooks/usePaymentCountdown";
 import { useQueryClient } from "@tanstack/react-query";
+import { OrderCardPreview } from "./OrderCardPreview";
 
 type ActionButtonProps = {
     label: string;
@@ -101,7 +101,10 @@ export function OrderCard({ order, section }: OrderCardProps) {
     }, [isPaymentCountdownExpired, order.id, order.status, queryClient]);
 
     const handleNavigateDetail = useCallback(() => {
-        router.push(`/order/${order.id}` as any);
+        router.push({
+            pathname: "/order/[id]",
+            params: { id: order.id },
+        });
     }, [router, order.id]);
 
     const handlePayOrder = useCallback(() => {
@@ -238,15 +241,19 @@ export function OrderCard({ order, section }: OrderCardProps) {
         <TouchableOpacity
             activeOpacity={0.7}
             onPress={handleNavigateDetail}
-            className={cn("mt-3 rounded-2xl border px-4 py-4", section.cardClassName)}
+            className={cn(
+                "mt-3 rounded-2xl border px-4 py-4",
+                section.cardClassName,
+            )}
         >
             {/* 顶部状态栏：订单状态和服务人员 */}
             <View className="flex-row items-center justify-between mb-3">
+                <Text className="text-sm text-foreground">{statusLabel}</Text>
                 <Text className="text-sm text-foreground">
-                    {statusLabel}
-                </Text>
-                <Text className="text-sm text-foreground">
-                    {(order.servicePersonnelName && order.servicePersonnelName.trim()) || "客服协调中"} {'>'}
+                    {(order.servicePersonnelName &&
+                        order.servicePersonnelName.trim()) ||
+                        "客服协调中"}{" "}
+                    {">"}
                 </Text>
             </View>
             {order.status === "pending_payment" ? (
@@ -273,43 +280,13 @@ export function OrderCard({ order, section }: OrderCardProps) {
                 </View>
             ) : null}
 
-            {/* 顶部：图片、服务名称、价格 */}
-            <View className="flex-row items-center gap-3">
-                {/* 服务人员图片 */}
-                <View className="w-20 h-20 rounded-lg overflow-hidden bg-muted shrink-0">
-                    {order.servicePersonnelImage ? (
-                        <Image
-                            source={{ uri: order.servicePersonnelImage }}
-                            className="w-full h-full"
-                            resizeMode="cover"
-                        />
-                    ) : (
-                        <View className="w-full h-full bg-muted items-center justify-center">
-                            <Text className="text-xs text-muted-foreground">暂无图片</Text>
-                        </View>
-                    )}
-                </View>
-
-                {/* 中间：服务名称和描述 */}
-                <View className="flex-1 justify-center">
-                    <Text className="text-base font-semibold text-foreground leading-5">
-                        {order.serviceName}
-                    </Text>
-                    <Text className="mt-1 text-xs text-muted-foreground leading-4">
-                        {order.serviceSpecifications || "暂无服务描述"}
-                    </Text>
-                </View>
-
-                {/* 右侧：价格和数量 */}
-                <View className="items-end justify-center shrink-0">
-                    <Text className="text-base font-semibold text-foreground">
-                        {formatCurrency(Number(order.totalAmount))}
-                    </Text>
-                    <Text className="mt-0.5 text-xs text-muted-foreground">
-                        ×1
-                    </Text>
-                </View>
-            </View>
+            <OrderCardPreview
+                title={order.serviceName}
+                subtitle={order.serviceSpecifications || "暂无服务描述"}
+                amountText={formatCurrency(Number(order.totalAmount))}
+                appointmentText={appointmentDisplay}
+                imageUrl={order.servicePersonnelImage || null}
+            />
 
             {/* 预约时间和实付款 */}
             <View className="mt-3 pt-3 border-t border-border/30 flex-row items-center justify-between">
@@ -334,7 +311,9 @@ export function OrderCard({ order, section }: OrderCardProps) {
             {/* 底部操作区 */}
             <View className="mt-3 pt-3 border-t border-border/30 flex-row items-center justify-between">
                 <View className="flex-row items-center gap-2">
-                    <Text className="text-xs text-muted-foreground">服务操作</Text>
+                    <Text className="text-xs text-muted-foreground">
+                        服务操作
+                    </Text>
                 </View>
                 <View className="flex-row items-center gap-2">
                     {actionButtons.map((button) => (

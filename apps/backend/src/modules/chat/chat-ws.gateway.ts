@@ -56,12 +56,69 @@ export class ChatWsGateway
 {
     private readonly logger = new Logger(ChatWsGateway.name);
 
+    private formatDebugValue(value: unknown): string {
+        if (Array.isArray(value)) {
+            const serialized = value.map((item) => this.formatDebugValue(item));
+            return `[${serialized.join(', ')}]`;
+        }
+        if (typeof value === 'string') {
+            return `"${value}"`;
+        }
+        if (value === null) {
+            return 'null';
+        }
+        if (value === undefined) {
+            return 'undefined';
+        }
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return String(value);
+        }
+    }
+
+    private toOptionalString(value: unknown): string | undefined {
+        const normalize = (input?: string): string | undefined => {
+            if (!input) {
+                return undefined;
+            }
+            const trimmed = input.trim();
+            if (!trimmed.length) {
+                return undefined;
+            }
+            const lowered = trimmed.toLowerCase();
+            if (lowered === 'undefined' || lowered === 'null') {
+                return undefined;
+            }
+            return lowered;
+        };
+
+        if (typeof value === 'string') {
+            return normalize(value);
+        }
+        if (Array.isArray(value) && value.length > 0) {
+            const [first] = value;
+            return typeof first === 'string' ? normalize(first) : undefined;
+        }
+        return undefined;
+    }
+
     constructor(
         private readonly chatService: ChatService,
         private readonly chatWsService: ChatWsService,
         @Inject(AUTH_INSTANCE_KEY)
         private readonly auth: Auth,
     ) {}
+
+    private parseClientRole(raw: unknown): 'customer' | 'service_personnel' {
+        const normalized = this.toOptionalString(raw);
+        if (normalized === 'customer' || normalized === 'service_personnel') {
+            return normalized;
+        }
+        throw new BadRequestException(
+            `clientRole 参数无效，必须为 customer 或 service_personnel；收到=${this.formatDebugValue(raw)}（type=${Array.isArray(raw) ? 'array' : typeof raw}）`,
+        );
+    }
 
     afterInit(server: Server) {
         this.chatWsService.setServer(server);
@@ -80,8 +137,22 @@ export class ChatWsGateway
                 );
                 return;
             }
+            const authRoleRaw =
+                client.handshake.auth &&
+                typeof client.handshake.auth === 'object' &&
+                'clientRole' in client.handshake.auth
+                    ? (client.handshake.auth as { clientRole?: unknown })
+                          .clientRole
+                    : undefined;
+            const queryRoleRaw = client.handshake.query?.clientRole;
+
+            const clientRole = this.parseClientRole(
+                authRoleRaw ?? queryRoleRaw,
+            );
+
             this.chatWsService.registerConnection(client, {
                 userId: session.user.id,
+                clientRole,
             });
 
             // 连接建立后：
@@ -93,6 +164,7 @@ export class ChatWsGateway
                     await this.chatService.listConversationIdsForAutoJoin({
                         requesterId: session.user.id,
                         limit: CHAT_AUTO_JOIN_CONVERSATIONS_LIMIT,
+                        clientRole,
                     });
                 await Promise.all(
                     conversationIds.map((conversationId) =>
@@ -134,13 +206,20 @@ export class ChatWsGateway
         if (!connection?.userId) {
             return;
         }
+        const bodyClientRole = this.parseClientRole(
+            (body as { clientRole?: unknown }).clientRole,
+        );
 
         switch (body.type) {
             case ChatSocketClientEventType.Join: {
                 try {
+                    if (bodyClientRole !== connection.clientRole) {
+                        throw new ForbiddenException('客户端身份不匹配');
+                    }
                     await this.chatService.requireConversationJoinable({
                         requesterId: connection.userId,
                         conversationId: body.conversationId,
+                        clientRole: connection.clientRole,
                     });
                     await client.join(
                         chatConversationRoom(body.conversationId),
@@ -158,6 +237,9 @@ export class ChatWsGateway
             }
             case ChatSocketClientEventType.Send: {
                 try {
+                    if (bodyClientRole !== connection.clientRole) {
+                        throw new ForbiddenException('客户端身份不匹配');
+                    }
                     const content = ChatMessageContentSchema.parse(
                         body.content,
                     );
@@ -186,6 +268,7 @@ export class ChatWsGateway
                             await this.chatService.upsertConversation({
                                 requesterId: connection.userId,
                                 peerUserId,
+                                clientRole: connection.clientRole,
                             });
                         conversationId = conversation.id;
                     }
@@ -199,6 +282,7 @@ export class ChatWsGateway
                     const message = await this.chatService.sendMessage({
                         requesterId: connection.userId,
                         conversationId,
+                        clientRole: connection.clientRole,
                         content,
                         clientMsgId: body.clientMsgId,
                     });
@@ -212,11 +296,17 @@ export class ChatWsGateway
                         await this.chatService.requireConversationAccessible({
                             requesterId: connection.userId,
                             conversationId,
+                            clientRole: connection.clientRole,
                         });
                     const peerUserId =
                         conversation.userId === connection.userId
                             ? conversation.workerUserId
                             : conversation.userId;
+
+                    this.chatWsService.joinUserToConversation({
+                        userId: peerUserId,
+                        conversationId,
+                    });
 
                     const server = this.chatWsService.getServer();
                     if (!server) {
@@ -224,15 +314,23 @@ export class ChatWsGateway
                     }
 
                     server
-                        .in(chatUserRoom(peerUserId))
-                        .socketsJoin(chatConversationRoom(conversationId));
-                    server
                         .to(chatConversationRoom(conversationId))
                         .emit(CHAT_SOCKET_SERVER_EVENT, {
                             type: ChatSocketEventType.Message,
                             conversationId,
                             message,
                         });
+
+                    const conversationDetail =
+                        await this.chatService.getConversationDetail({
+                            requesterId: connection.userId,
+                            conversationId,
+                            clientRole: connection.clientRole,
+                        });
+                    this.chatWsService.emitConversationUpdated({
+                        conversationId,
+                        conversation: conversationDetail,
+                    });
                 } catch (error) {
                     this.emitError(
                         client,

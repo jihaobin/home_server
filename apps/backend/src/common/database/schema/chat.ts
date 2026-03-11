@@ -1,6 +1,7 @@
 import { relations, sql } from 'drizzle-orm';
 import {
     index,
+    integer,
     jsonb,
     pgTable,
     timestamp,
@@ -27,6 +28,14 @@ export const chatConversations = pgTable(
             .notNull()
             .references(() => users.id, { onDelete: 'cascade' }),
         lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
+        lastMessageId: varchar('last_message_id', { length: 255 }),
+        lastMessageSenderUserId: varchar('last_message_sender_user_id', {
+            length: 255,
+        }).references(() => users.id, { onDelete: 'set null' }),
+        lastMessageType: varchar('last_message_type', { length: 64 }),
+        lastMessagePreviewText: varchar('last_message_preview_text', {
+            length: 512,
+        }),
         createdAt: timestamp('created_at', { withTimezone: true })
             .notNull()
             .defaultNow(),
@@ -50,6 +59,44 @@ export const chatConversations = pgTable(
             table.lastMessageAt.desc(),
             table.updatedAt.desc(),
         ),
+    ],
+);
+
+export const chatConversationUserStates = pgTable(
+    'chat_conversation_user_states',
+    {
+        id: varchar('id', { length: 255 })
+            .primaryKey()
+            .$default(() => createId())
+            .unique(),
+        conversationId: varchar('conversation_id', { length: 255 })
+            .notNull()
+            .references(() => chatConversations.id, { onDelete: 'cascade' }),
+        userId: varchar('user_id', { length: 255 })
+            .notNull()
+            .references(() => users.id, { onDelete: 'cascade' }),
+        lastReadMessageId: varchar('last_read_message_id', {
+            length: 255,
+        }).references(() => chatMessages.id, { onDelete: 'set null' }),
+        lastReadAt: timestamp('last_read_at', { withTimezone: true }),
+        unreadCount: integer('unread_count').notNull().default(0),
+        createdAt: timestamp('created_at', { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp('updated_at', { withTimezone: true })
+            .$onUpdateFn(() => new Date())
+            .defaultNow()
+            .notNull(),
+    },
+    (table) => [
+        uniqueIndex(
+            'chat_conversation_user_states_conversation_user_unique',
+        ).on(table.conversationId, table.userId),
+        index('idx_chat_state_user_updated').on(
+            table.userId,
+            table.updatedAt.desc(),
+        ),
+        index('idx_chat_state_conversation').on(table.conversationId),
     ],
 );
 
@@ -176,6 +223,7 @@ export const chatConversationsRelations = relations(
             references: [users.id],
         }),
         messages: many(chatMessages),
+        states: many(chatConversationUserStates),
     }),
 );
 
@@ -189,6 +237,24 @@ export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
         references: [users.id],
     }),
 }));
+
+export const chatConversationUserStatesRelations = relations(
+    chatConversationUserStates,
+    ({ one }) => ({
+        conversation: one(chatConversations, {
+            fields: [chatConversationUserStates.conversationId],
+            references: [chatConversations.id],
+        }),
+        user: one(users, {
+            fields: [chatConversationUserStates.userId],
+            references: [users.id],
+        }),
+        lastReadMessage: one(chatMessages, {
+            fields: [chatConversationUserStates.lastReadMessageId],
+            references: [chatMessages.id],
+        }),
+    }),
+);
 
 export const chatBlocksRelations = relations(chatBlocks, ({ one }) => ({
     blocker: one(users, {

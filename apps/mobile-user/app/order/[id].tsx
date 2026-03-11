@@ -5,33 +5,28 @@ import { Button } from "@repo/mobile-ui/components/ui/button";
 import { Textarea } from "@repo/mobile-ui/components/ui/textarea";
 import { BottomSheetModal } from "@repo/mobile-ui/components/ui/modal/BottomSheetModal";
 import { useOrderCheckin, useOrderDetail } from "@repo/hooks/api/order";
+import { useChatUpsertConversation } from "@repo/hooks/api/chat";
 import { useOrderReview } from "@repo/hooks/api/review";
 import { useCreateReview } from "@repo/hooks/api/review";
 import { useUploadFiles } from "@repo/hooks/api/files";
 import type { OrderStatus } from "@repo/types";
-import { ImageUploader, type ImageUploaderItem } from "../../components/image-uploader";
+import {
+    ImageUploader,
+    type ImageUploaderItem,
+} from "../../components/image-uploader";
 import { useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
     ChevronLeft,
     Headset,
+    MessageCircle,
     MoreHorizontal,
     QrCode,
     Star,
 } from "lucide-react-native";
-import {
-    Suspense,
-    useCallback,
-    useMemo,
-    useState,
-} from "react";
-import {
-    Image,
-    ScrollView,
-    TouchableOpacity,
-    View,
-} from "react-native";
+import { Suspense, useCallback, useMemo, useState } from "react";
+import { Image, ScrollView, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { toast } from "sonner-native";
 
@@ -253,8 +248,10 @@ function OrderDetailContent({
     orderId: string;
     onBack: () => void;
 }) {
+    const router = useRouter();
     const { data: order } = useOrderDetail(orderId);
     const queryClient = useQueryClient();
+    const upsertConversation = useChatUpsertConversation();
 
     const createReview = useCreateReview();
     const uploadFiles = useUploadFiles();
@@ -345,6 +342,39 @@ function OrderDetailContent({
         toast.info("已为你呼叫客服");
     }, []);
 
+    const handleOpenWorkerChat = useCallback(async () => {
+        const peerUserId = order.assignment?.servicePersonnel?.userId;
+        if (!peerUserId) {
+            toast.error("当前订单暂无可联系的服务人员");
+            return;
+        }
+
+        try {
+            const conversation = await upsertConversation.mutateAsync({
+                dto: { peerUserId },
+                clientRole: "customer",
+            });
+            router.push({
+                pathname: "/chat/[conversationId]",
+                params: {
+                    conversationId: conversation.id,
+                    peerName: workerName,
+                    draftOrderId: order.id,
+                },
+            });
+        } catch (error) {
+            toast.error(
+                error instanceof Error ? error.message : "发起私聊失败",
+            );
+        }
+    }, [
+        order.assignment?.servicePersonnel?.userId,
+        order.id,
+        router,
+        upsertConversation,
+        workerName,
+    ]);
+
     const handlePrimaryAction = useCallback(() => {
         if (canPay) {
             toast.info("立即支付（mock）");
@@ -379,8 +409,8 @@ function OrderDetailContent({
     const primaryButtonText = canPay
         ? "立即支付"
         : order.status === "completed" && needsReview
-            ? "评价"
-            : "再次预约";
+          ? "评价"
+          : "再次预约";
 
     const secondaryButtonText =
         order.status === "completed" && needsReview ? "再来一单" : "取消订单";
@@ -691,16 +721,35 @@ function OrderDetailContent({
 
             <View className="border-t border-border/50 bg-card px-4 py-3">
                 <View className="flex-row items-center justify-between">
-                    <TouchableOpacity
-                        activeOpacity={0.7}
-                        onPress={handleSupport}
-                        className="flex-row items-center"
-                    >
-                        <Headset size={18} className="text-muted-foreground" />
-                        <Text className="ml-2 text-sm font-puhui-regular text-muted-foreground">
-                            咨询客服
-                        </Text>
-                    </TouchableOpacity>
+                    <View className="flex-row items-center gap-5">
+                        <TouchableOpacity
+                            activeOpacity={0.7}
+                            onPress={handleSupport}
+                            className="flex-row items-center"
+                        >
+                            <Headset
+                                size={18}
+                                className="text-muted-foreground"
+                            />
+                            <Text className="ml-2 text-sm font-puhui-regular text-muted-foreground">
+                                咨询客服
+                            </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            activeOpacity={0.7}
+                            onPress={() => void handleOpenWorkerChat()}
+                            className="flex-row items-center"
+                        >
+                            <MessageCircle
+                                size={18}
+                                className="text-muted-foreground"
+                            />
+                            <Text className="ml-2 text-sm font-puhui-regular text-muted-foreground">
+                                联系服务人员
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
 
                     <View className="flex-row items-center gap-3">
                         {shouldShowSecondaryButton ? (
@@ -783,7 +832,8 @@ function OrderDetailContent({
                     <View className="mt-4">
                         <View className="flex-row items-center justify-between">
                             <Text className="text-sm font-puhui-medium text-foreground">
-                                图片（{reviewImageItems.length}/{MAX_REVIEW_IMAGES}）
+                                图片（{reviewImageItems.length}/
+                                {MAX_REVIEW_IMAGES}）
                             </Text>
                         </View>
                         <View className="mt-3">
@@ -796,11 +846,12 @@ function OrderDetailContent({
                                 disabled={createReview.isPending}
                                 onItemsChange={handleReviewItemsChange}
                                 onUploadMultiple={async (files) => {
-                                    const uploaded = await uploadFiles.mutateAsync({
-                                        files: files.map((file) => ({
-                                            file,
-                                        })),
-                                    });
+                                    const uploaded =
+                                        await uploadFiles.mutateAsync({
+                                            files: files.map((file) => ({
+                                                file,
+                                            })),
+                                        });
                                     return uploaded.map((item) => ({
                                         fileIdentifier: item.id,
                                         fileUrl: item.fileUrl,

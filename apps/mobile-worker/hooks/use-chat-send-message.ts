@@ -35,7 +35,10 @@ export function useChatSendMessage(params: { conversationId: string }) {
             };
 
             queryClient.setQueryData(
-                chatMessagesInfiniteQueryKey({ conversationId }),
+                chatMessagesInfiniteQueryKey({
+                    conversationId,
+                    clientRole: "service_personnel",
+                }),
                 (current) => {
                     const data = current as
                         | InfiniteData<ChatMessageListResponse>

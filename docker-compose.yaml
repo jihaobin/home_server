@@ -1,52 +1,62 @@
 services:
-  home_server_postgres_container:
-    # 使用自己构建的包含PostGIS和PGroonga的PostgreSQL镜像
-    build:
-      context: ./docker-images
-      dockerfile: Dockerfile
-    # 或者如果你已经构建好了镜像，可以直接使用镜像名
-    # image: postgres-pgroonga:latest
-    ports:
-      - "15432:5432"
-    volumes:
-      - /home/admin/home_server_date/datebase:/var/lib/postgresql/data
-      # 挂载初始化脚本，数据库启动时会自动执行
-      - ./docker-images/init-pgroonga.sql:/docker-entrypoint-initdb.d/init-pgroonga.sql
-    environment:
-      POSTGRES_DB: home_server
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: root
-  home_server_redis_container:
-    image: redis:latest
-    ports:
-      - "6379:6379"
-    volumes:
-      - /home/admin/home_server_date/redis:/data
-  home_server_rustfs_container:
-    image: rustfs/rustfs:latest
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - /home/admin/home_server_date/rustfs/data:/data
-      - /home/admin/home_server_date/rustfs/log:/app/logs
-    environment:
-      RUSTFS_ACCESS_KEY: root
-      RUSTFS_SECRET_KEY: G?cue>NY=D+p%QEuc#5g
-      RUSTFS_CONSOLE_ENABLE: true
-      RUSTFS_ADDRESS: 0.0.0.0:9000
-      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
-      RUSTFS_CORS_ALLOWED_ORIGINS: "*"
-      RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS: "*"
-      RUSTFS_OBS_LOGGER_LEVEL: info
-    restart: unless-stopped
+    home_server_postgres_container:
+        build:
+            context: ./docker-images
+            dockerfile: Dockerfile
+        ports:
+            - "15432:5432"
+        volumes:
+            #   - /home/admin/home_server_date/datebase:/var/lib/postgresql/data
+            - home_server_postgres_data:/var/lib/postgresql/data
+            - ./docker-images/init-pgroonga.sql:/docker-entrypoint-initdb.d/init-pgroonga.sql:ro
+        environment:
+            POSTGRES_DB: home_server
+            POSTGRES_USER: root
+            POSTGRES_PASSWORD: root
+        restart: unless-stopped
 
-# 暂时不需要引入全文搜索
-#   home_server_meilisearch_container:
-#     image: getmeili/meilisearch:latest
-#     ports:
-#       - "7700:7700"
-#     volumes:
-#       - D:\cow_course_meilisearch_data:/meili_data
-#     environment:
-#       MEILI_ENV: development
+    home_server_redis_container:
+        image: redis:latest
+        ports:
+            - "6379:6379"
+        volumes:
+            # - /home/admin/home_server_date/redis:/data
+            - home_server_redis_data:/data
+        restart: unless-stopped
+
+    home_server_rustfs_container:
+        image: rustfs/rustfs:1.0.0-alpha.85
+        # user: "0:0"  # 使用命名卷后不需要root用户，已注释
+        ports:
+            - "9000:9000"
+            - "9001:9001"
+        volumes:
+            - home_server_rustfs_data:/data
+            - home_server_rustfs_logs:/logs
+            # - /home/admin/home_server_date/rustfs/data:/data
+            # - /home/admin/home_server_date/rustfs/log:/app/logs
+        environment:
+            RUSTFS_ACCESS_KEY: root
+            RUSTFS_SECRET_KEY: G?cue>NY=D+p%QEuc#5g
+            RUSTFS_CONSOLE_ENABLE: true
+            # RUSTFS_ADDRESS: 0.0.0.0:9000
+            # RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+            # RUSTFS_CORS_ALLOWED_ORIGINS: "*"
+            # RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS: "*"
+            RUSTFS_OBS_LOGGER_LEVEL: info
+        restart: unless-stopped
+
+# # 命名卷声明 - 数据将持久化存储在Docker管理的卷中
+volumes:
+    home_server_postgres_data:
+        external: true
+        name: home_server_home_server_postgres_data
+    home_server_redis_data:
+        external: true
+        name: home_server_home_server_redis_data
+    home_server_rustfs_data:
+        external: true
+        name: home_server_home_server_rustfs_data
+    home_server_rustfs_logs:
+        external: true
+        name: home_server_home_server_rustfs_logs

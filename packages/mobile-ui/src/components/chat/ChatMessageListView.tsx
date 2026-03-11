@@ -2,8 +2,8 @@ import * as React from "react";
 import { FlatList, View } from "react-native";
 
 import type { ChatMessage } from "@repo/types";
-import { Text } from "@repo/mobile-ui/components/ui/text";
 
+import { Text } from "../ui/text";
 import { ChatMessageRow } from "./ChatMessageRow";
 
 type ChatTimelineRow =

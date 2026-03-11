@@ -15,10 +15,6 @@
             }
         },
         "android": {
-            // "adaptiveIcon": {
-            //     "foregroundImage": "./assets/images/adaptive-icon.png",
-            //     "backgroundColor": "#ffffff"
-            // },
             "edgeToEdgeEnabled": true,
             "softwareKeyboardLayoutMode": "resize",
             "permissions": [
@@ -99,8 +95,24 @@
                 "expo-build-properties",
                 {
                     "android": {
-                        "buildArchs": ["arm64-v8a"]
+                        "buildArchs": [
+                            "arm64-v8a"
+                        ]
                     }
+                }
+            ],
+            [
+                "expo-video",
+                {
+                    "supportsBackgroundPlayback": true,
+                    "supportsPictureInPicture": true
+                }
+            ],
+            [
+                "expo-camera",
+                {
+                    "cameraPermission": "为了拍摄照片和视频，请允许$(PRODUCT_NAME)访问你的相机",
+                    "microphonePermission": "为了录制视频声音，请允许$(PRODUCT_NAME)访问你的麦克风"
                 }
             ]
         ],

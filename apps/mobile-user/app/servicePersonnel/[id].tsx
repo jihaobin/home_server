@@ -24,6 +24,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 import { useServicePersonnelDetails } from "@repo/hooks/api/service-personnel";
+import { useChatUpsertConversation } from "@repo/hooks/api/chat";
+import { toast } from "sonner-native";
 
 const WEEKDAY_BY_DIGIT: Record<string, string> = {
     "1": "周一",
@@ -282,34 +284,65 @@ function ServiceDetailError({
 
 function ServiceDetailBottomBarContent() {
     const router = useRouter();
+    const upsertConversation = useChatUpsertConversation();
     const params = useLocalSearchParams<{
         id?: string | string[];
         serviceId?: string | string[];
         serviceName?: string | string[];
+        personnelName?: string | string[];
     }>();
 
     const personnelId = Array.isArray(params.id)
         ? params.id[0]
         : params.id
-            ? String(params.id)
-            : "";
+          ? String(params.id)
+          : "";
     const serviceId = Array.isArray(params.serviceId)
         ? params.serviceId[0]
         : params.serviceId
-            ? String(params.serviceId)
-            : "";
+          ? String(params.serviceId)
+          : "";
     const serviceName = Array.isArray(params.serviceName)
         ? params.serviceName[0]
         : params.serviceName
-            ? String(params.serviceName)
-            : "";
+          ? String(params.serviceName)
+          : "";
+    const personnelName = Array.isArray(params.personnelName)
+        ? params.personnelName[0]
+        : params.personnelName
+          ? String(params.personnelName)
+          : "服务人员";
+
+    const handleOpenPersonnelChat = async () => {
+        if (!personnelId) {
+            toast.error("缺少服务人员信息，无法发起私聊");
+            return;
+        }
+        try {
+            const conversation = await upsertConversation.mutateAsync({
+                dto: { peerUserId: personnelId },
+                clientRole: "customer",
+            });
+            router.push({
+                pathname: "/chat/[conversationId]",
+                params: {
+                    conversationId: conversation.id,
+                    peerName: personnelName,
+                },
+            });
+        } catch (error) {
+            toast.error(
+                error instanceof Error ? error.message : "发起私聊失败",
+            );
+        }
+    };
 
     return (
         <View className="px-4 py-2 flex-row items-center">
             <Pressable
                 className="w-[88px] h-[34px] flex-row items-center"
                 hitSlop={12}
-                onPress={() => { }}
+                onPress={() => {}}
             >
                 <Icon
                     as={MessageCircle}
@@ -324,7 +357,7 @@ function ServiceDetailBottomBarContent() {
             <Pressable
                 className="w-[88px] h-[34px] flex-row items-center"
                 hitSlop={12}
-                onPress={() => { }}
+                onPress={() => void handleOpenPersonnelChat()}
             >
                 <Icon
                     as={User}
@@ -332,7 +365,7 @@ function ServiceDetailBottomBarContent() {
                     className="text-foreground opacity-60"
                 />
                 <Text className="ml-1 text-xs font-puhui-regular text-foreground opacity-60">
-                    服务人员
+                    联系服务人员
                 </Text>
             </Pressable>
 
@@ -694,11 +727,11 @@ function ServiceDetailContent({
                                                         review.reviewerAvatar
                                                             .blurhash
                                                             ? {
-                                                                blurhash:
-                                                                    review
-                                                                        .reviewerAvatar
-                                                                        .blurhash,
-                                                            }
+                                                                  blurhash:
+                                                                      review
+                                                                          .reviewerAvatar
+                                                                          .blurhash,
+                                                              }
                                                             : undefined
                                                     }
                                                     contentFit="cover"
@@ -777,9 +810,9 @@ function ServiceDetailContent({
                                                                             placeholder={
                                                                                 img.blurhash
                                                                                     ? {
-                                                                                        blurhash:
-                                                                                            img.blurhash,
-                                                                                    }
+                                                                                          blurhash:
+                                                                                              img.blurhash,
+                                                                                      }
                                                                                     : undefined
                                                                             }
                                                                             contentFit="cover"
@@ -861,18 +894,18 @@ export default function ServiceDetailScreen() {
     const personnelId = Array.isArray(params.id)
         ? params.id[0]
         : params.id
-            ? String(params.id)
-            : "";
+          ? String(params.id)
+          : "";
     const serviceId = Array.isArray(params.serviceId)
         ? params.serviceId[0]
         : params.serviceId
-            ? String(params.serviceId)
-            : "";
+          ? String(params.serviceId)
+          : "";
     const serviceName = Array.isArray(params.serviceName)
         ? params.serviceName[0]
         : params.serviceName
-            ? String(params.serviceName)
-            : "";
+          ? String(params.serviceName)
+          : "";
 
     const goToAllReviews = () => {
         router.push({

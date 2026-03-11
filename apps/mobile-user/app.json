@@ -2,18 +2,16 @@
     "expo": {
         "name": "叮咚上门",
         "slug": "mobile-user",
-        "version": "1.0.2",
+        "version": "1.1.0",
         "orientation": "portrait",
         "icon": "./assets/images/icon.png",
         "scheme": "home-server-user",
         "userInterfaceStyle": "automatic",
-        "newArchEnabled": true,
         "ios": {
             "supportsTablet": true,
             "bundleIdentifier": "com.yixin.dingdong"
         },
         "android": {
-            "edgeToEdgeEnabled": true,
             "softwareKeyboardLayoutMode": "resize",
             "permissions": [
                 "android.permission.ACCESS_COARSE_LOCATION",
@@ -35,7 +33,10 @@
                             "pathPrefix": "/check-in"
                         }
                     ],
-                    "category": ["BROWSABLE", "DEFAULT"]
+                    "category": [
+                        "BROWSABLE",
+                        "DEFAULT"
+                    ]
                 }
             ],
             "jsEngine": "hermes"
@@ -94,8 +95,24 @@
                 "expo-build-properties",
                 {
                     "android": {
-                        "buildArchs": ["arm64-v8a"]
+                        "buildArchs": [
+                            "arm64-v8a"
+                        ]
                     }
+                }
+            ],
+            [
+                "expo-video",
+                {
+                    "supportsBackgroundPlayback": true,
+                    "supportsPictureInPicture": true
+                }
+            ],
+            [
+                "expo-camera",
+                {
+                    "cameraPermission": "为了拍摄照片和视频，请允许$(PRODUCT_NAME)访问你的相机",
+                    "microphonePermission": "为了录制视频声音，请允许$(PRODUCT_NAME)访问你的麦克风"
                 }
             ]
         ],

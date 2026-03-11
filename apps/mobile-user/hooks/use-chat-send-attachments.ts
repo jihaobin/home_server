@@ -21,7 +21,7 @@ export function useChatSendAttachments(params: { conversationId: string }) {
         }
 
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ["images"],
             quality: 1,
         });
         if (result.canceled || !result.assets?.length) {
@@ -55,7 +55,7 @@ export function useChatSendAttachments(params: { conversationId: string }) {
         }
 
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+            mediaTypes: ["videos"],
             quality: 1,
         });
         if (result.canceled || !result.assets?.length) {
@@ -77,9 +77,50 @@ export function useChatSendAttachments(params: { conversationId: string }) {
         });
     }, [send, uploadFile]);
 
+    const sendImageFromCamera = useCallback(
+        async (asset: { uri: string; width?: number; height?: number }) => {
+            const uploaded = await uploadFile.mutateAsync({
+                file: {
+                    uri: asset.uri,
+                    name: `chat_image_${Date.now()}.jpg`,
+                    type: "image/jpeg",
+                },
+            });
+
+            send({
+                type: "image",
+                fileId: uploaded.id,
+                blurhash: uploaded.blurhash,
+                width: asset.width,
+                height: asset.height,
+            });
+        },
+        [send, uploadFile],
+    );
+
+    const sendVideoFromCamera = useCallback(
+        async (asset: { uri: string }) => {
+            const uploaded = await uploadFile.mutateAsync({
+                file: {
+                    uri: asset.uri,
+                    name: `chat_video_${Date.now()}.mp4`,
+                    type: "video/mp4",
+                },
+            });
+
+            send({
+                type: "video",
+                fileId: uploaded.id,
+            });
+        },
+        [send, uploadFile],
+    );
+
     return {
         sendImageFromLibrary,
         sendVideoFromLibrary,
+        sendImageFromCamera,
+        sendVideoFromCamera,
         isUploading: uploadFile.isPending,
     };
 }
