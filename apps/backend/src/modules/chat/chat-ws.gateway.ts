@@ -256,9 +256,7 @@ export class ChatWsGateway
 
                     if (!conversationId) {
                         const peerUserId =
-                            'peerUserId' in body
-                                ? (body.peerUserId as string)
-                                : undefined;
+                            'peerUserId' in body ? body.peerUserId : undefined;
                         if (!peerUserId || typeof peerUserId !== 'string') {
                             throw new BadRequestException(
                                 '缺少 conversationId 或 peerUserId',

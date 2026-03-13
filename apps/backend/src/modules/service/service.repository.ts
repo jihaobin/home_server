@@ -13,7 +13,11 @@ import type {
 import { and, asc, count, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
-import { serviceCategories, services } from 'src/common/database/schema';
+import {
+    orders,
+    serviceCategories,
+    services,
+} from 'src/common/database/schema';
 
 @Injectable()
 export class ServiceRepository {
@@ -312,6 +316,16 @@ export class ServiceRepository {
         return result.rows[0].has_service;
     }
 
+    private async hasOrdersByServiceId(id: string): Promise<boolean> {
+        const [result] = await this.db
+            .select({ id: orders.id })
+            .from(orders)
+            .where(eq(orders.serviceId, id))
+            .limit(1);
+
+        return Boolean(result);
+    }
+
     /**
      * 获取服务项目列表（以分类为单位，支持分页和筛选）
      */
@@ -345,12 +359,7 @@ export class ServiceRepository {
             const [rootCategory] = await this.db
                 .select()
                 .from(serviceCategories)
-                .where(
-                    and(
-                        eq(serviceCategories.isActive, true),
-                        eq(serviceCategories.id, categoryId),
-                    ),
-                )
+                .where(eq(serviceCategories.id, categoryId))
                 .limit(1);
 
             if (!rootCategory) {
@@ -575,11 +584,47 @@ export class ServiceRepository {
             throw new BadRequestException('服务项目不存在');
         }
 
-        const result = await this.db
-            .delete(services)
-            .where(eq(services.id, id));
+        const hasRelatedOrders = await this.hasOrdersByServiceId(id);
 
-        return (result.rowCount ?? 0) > 0;
+        if (hasRelatedOrders) {
+            throw new BadRequestException('该服务已关联订单，无法删除');
+        }
+
+        try {
+            const result = await this.db
+                .delete(services)
+                .where(eq(services.id, id));
+
+            return (result.rowCount ?? 0) > 0;
+        } catch (error) {
+            if (
+                typeof error === 'object' &&
+                error !== null &&
+                'code' in error
+            ) {
+                const dbError = error as {
+                    code?: string;
+                    constraint?: string;
+                };
+
+                if (dbError.code === '23503') {
+                    if (
+                        dbError.constraint ===
+                        'orders_service_id_services_id_fk'
+                    ) {
+                        throw new BadRequestException(
+                            '该服务已关联订单，无法删除',
+                        );
+                    }
+
+                    throw new BadRequestException(
+                        '该服务已被其他业务数据引用，无法删除',
+                    );
+                }
+            }
+
+            throw error;
+        }
     }
 
     /**

@@ -1,7 +1,7 @@
-"use client"
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -11,10 +11,15 @@ import {
     AlertDialogFooter,
     AlertDialogHeader,
     AlertDialogTitle,
-} from "@repo/web-ui/components/alert-dialog"
-import { Badge } from "@repo/web-ui/components/badge"
-import { Button } from "@repo/web-ui/components/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@repo/web-ui/components/card"
+} from "@repo/web-ui/components/alert-dialog";
+import { Badge } from "@repo/web-ui/components/badge";
+import { Button } from "@repo/web-ui/components/button";
+import {
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
+} from "@repo/web-ui/components/card";
 import {
     Dialog,
     DialogContent,
@@ -22,43 +27,43 @@ import {
     DialogFooter,
     DialogHeader,
     DialogTitle,
-} from "@repo/web-ui/components/dialog"
-import { Input } from "@repo/web-ui/components/input"
-import { Label } from "@repo/web-ui/components/label"
-import { ScrollArea } from "@repo/web-ui/components/scroll-area"
+} from "@repo/web-ui/components/dialog";
+import { Input } from "@repo/web-ui/components/input";
+import { Label } from "@repo/web-ui/components/label";
+import { ScrollArea } from "@repo/web-ui/components/scroll-area";
 import {
     Select,
     SelectContent,
     SelectItem,
     SelectTrigger,
     SelectValue,
-} from "@repo/web-ui/components/select"
-import { Separator } from "@repo/web-ui/components/separator"
-import { Switch } from "@repo/web-ui/components/switch"
-import { Textarea } from "@repo/web-ui/components/textarea"
-import { UploadField, type UploadValue } from "@repo/web-ui/upload"
-import { cn } from "@repo/web-ui/lib/utils"
+} from "@repo/web-ui/components/select";
+import { Separator } from "@repo/web-ui/components/separator";
+import { Switch } from "@repo/web-ui/components/switch";
+import { Textarea } from "@repo/web-ui/components/textarea";
+import { UploadField, type UploadValue } from "@repo/web-ui/upload";
+import { cn } from "@repo/web-ui/lib/utils";
 import {
     useAdminServiceCategories,
     useCreateAdminServiceCategory,
     useUpdateAdminServiceCategory,
     useDeleteAdminServiceCategory,
-} from "@repo/hooks/api/ssr"
-import { useUploadFile } from "@repo/hooks/api/files"
+} from "@repo/hooks/api/ssr";
+import { useUploadFile } from "@repo/hooks/api/files";
 import {
     type AdminServiceCategory,
     type AdminServiceCategoryTree,
     type CategoryWithServices,
-} from "@repo/types"
+} from "@repo/types";
 import {
     useCreateService,
     useDeleteService,
     useUpdateService,
     useServiceListSinglePage,
-} from "@repo/hooks/api/service"
-import { useForm, type AnyFieldApi } from "@tanstack/react-form"
-import { z } from "zod/v4"
-import { toast } from "sonner"
+} from "@repo/hooks/api/service";
+import { useForm, type AnyFieldApi } from "@tanstack/react-form";
+import { z } from "zod/v4";
+import { toast } from "sonner";
 import {
     FolderTree,
     Loader2,
@@ -67,96 +72,101 @@ import {
     RefreshCcw,
     ShieldCheck,
     Sparkles,
+    ToggleLeft,
     Trash2,
-} from "lucide-react"
-import { PageHeader, PageHeaderToolbar } from "@/components/common"
-import { ApiClientError } from "@repo/utils/api-client"
-import { resolveFileUrl } from "@/lib/files"
-import Image from "next/image"
+} from "lucide-react";
+import { PageHeader, PageHeaderToolbar } from "@/components/common";
+import { ApiClientError } from "@repo/utils/api-client";
+import { resolveFileUrl } from "@/lib/files";
+import Image from "next/image";
 
 type DialogState =
     | { mode: "create"; parentId: string | null; open: boolean }
-    | { mode: "edit"; categoryId: string; open: boolean }
+    | { mode: "edit"; categoryId: string; open: boolean };
 
 type ServiceCategoryFormValues = {
-    name: string
-    description: string
-    parentId: string | null
-    sortOrder: string
-    isActive: boolean
-    icon: UploadValue | null
-}
+    name: string;
+    description: string;
+    parentId: string | null;
+    sortOrder: string;
+    isActive: boolean;
+    icon: UploadValue | null;
+};
 
 type ServiceDialogState =
     | { mode: "create"; categoryId: string | null; open: boolean }
-    | { mode: "edit"; service: ServiceListItem; open: boolean }
+    | { mode: "edit"; service: ServiceListItem; open: boolean };
 
 type ServiceFormValues = {
-    name: string
-    description: string
-    categoryId: string
-    isActive: boolean
-    image: UploadValue | null
-}
+    name: string;
+    description: string;
+    categoryId: string;
+    isActive: boolean;
+    image: UploadValue | null;
+};
 
-type ServiceListItem = CategoryWithServices["children"][number]
+type ServiceListItem = CategoryWithServices["children"][number];
 
-const ROOT_KEY = "__root__"
+const ROOT_KEY = "__root__";
 
 function normalizeIconUrl(value?: string | null) {
     if (!value) {
-        return null
+        return null;
     }
-    const trimmed = value.trim()
+    const trimmed = value.trim();
     if (!trimmed) {
-        return null
+        return null;
     }
     if (/^https?:\/\//i.test(trimmed)) {
-        return trimmed
+        return trimmed;
     }
-    return resolveFileUrl(trimmed) ?? null
+    return resolveFileUrl(trimmed) ?? null;
 }
 
 export function ServiceCategoriesPageContent() {
-    const { data, refetch, isFetching } = useAdminServiceCategories()
-    const queryClient = useQueryClient()
-    const createMutation = useCreateAdminServiceCategory()
-    const updateMutation = useUpdateAdminServiceCategory()
-    const deleteCategoryMutation = useDeleteAdminServiceCategory()
-    const createServiceMutation = useCreateService()
-    const updateServiceMutation = useUpdateService()
-    const deleteServiceMutation = useDeleteService()
-    const uploadFile = useUploadFile()
+    const { data, refetch, isFetching } = useAdminServiceCategories();
+    const queryClient = useQueryClient();
+    const createMutation = useCreateAdminServiceCategory();
+    const updateMutation = useUpdateAdminServiceCategory();
+    const deleteCategoryMutation = useDeleteAdminServiceCategory();
+    const createServiceMutation = useCreateService();
+    const updateServiceMutation = useUpdateService();
+    const deleteServiceMutation = useDeleteService();
+    const uploadFile = useUploadFile();
 
-    const [selectedCategoryIdState, setSelectedCategoryId] = useState<string | null>(
-        data.flat[0]?.id ?? null,
-    )
-    const [dialogState, setDialogState] = useState<DialogState | null>(null)
-    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+    const [selectedCategoryIdState, setSelectedCategoryId] = useState<
+        string | null
+    >(data.flat[0]?.id ?? null);
+    const [dialogState, setDialogState] = useState<DialogState | null>(null);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [serviceDialogState, setServiceDialogState] =
-        useState<ServiceDialogState | null>(null)
-    const [serviceToDelete, setServiceToDelete] = useState<ServiceListItem | null>(
+        useState<ServiceDialogState | null>(null);
+    const [serviceToDelete, setServiceToDelete] =
+        useState<ServiceListItem | null>(null);
+    const [togglingServiceId, setTogglingServiceId] = useState<string | null>(
         null,
-    )
+    );
 
     const selectedCategoryId = useMemo(() => {
         if (data.flat.length === 0) {
-            return null
+            return null;
         }
-        const fallbackId = data.flat[0]?.id ?? null
+        const fallbackId = data.flat[0]?.id ?? null;
         if (!selectedCategoryIdState) {
-            return fallbackId
+            return fallbackId;
         }
         const exists = data.flat.some(
             (category) => category.id === selectedCategoryIdState,
-        )
-        return exists ? selectedCategoryIdState : fallbackId
-    }, [data.flat, selectedCategoryIdState])
+        );
+        return exists ? selectedCategoryIdState : fallbackId;
+    }, [data.flat, selectedCategoryIdState]);
 
     const selectedCategory = useMemo(
-        () => data.flat.find((category) => category.id === selectedCategoryId) ?? null,
+        () =>
+            data.flat.find((category) => category.id === selectedCategoryId) ??
+            null,
         [data.flat, selectedCategoryId],
-    )
+    );
 
     const {
         data: serviceListResponse,
@@ -167,107 +177,106 @@ export function ServiceCategoriesPageContent() {
         page: 1,
         limit: 200,
         enabled: Boolean(selectedCategoryId),
-    })
+    });
 
     const serviceCategories: CategoryWithServices[] = useMemo(
         () => serviceListResponse?.items ?? [],
         [serviceListResponse],
-    )
+    );
 
     const services = useMemo(() => {
         if (!selectedCategoryId) {
-            return []
+            return [];
         }
         const matched = serviceCategories.find(
             (item) => item.id === selectedCategoryId,
-        )
-        return matched?.children ?? []
-    }, [selectedCategoryId, serviceCategories])
+        );
+        return matched?.children ?? [];
+    }, [selectedCategoryId, serviceCategories]);
 
     const parentsMap = useMemo(() => {
-        const map = new Map<string, AdminServiceCategory>()
+        const map = new Map<string, AdminServiceCategory>();
         data.flat.forEach((category) => {
-            map.set(category.id, category)
-        })
-        return map
-    }, [data.flat])
+            map.set(category.id, category);
+        });
+        return map;
+    }, [data.flat]);
 
     const rootCategories = useMemo(
         () => data.flat.filter((category) => category.dep === 1),
         [data.flat],
-    )
+    );
 
     const childCounts = useMemo(() => {
-        const map = new Map<string, number>()
+        const map = new Map<string, number>();
         data.flat.forEach((category) => {
-            if (!category.parentId) return
-            map.set(category.parentId, (map.get(category.parentId) ?? 0) + 1)
-        })
-        return map
-    }, [data.flat])
+            if (!category.parentId) return;
+            map.set(category.parentId, (map.get(category.parentId) ?? 0) + 1);
+        });
+        return map;
+    }, [data.flat]);
 
     const totals = useMemo(() => {
-        const total = data.flat.length
-        const level1 = rootCategories.length
-        const level2 = total - level1
-        return { total, level1, level2 }
-    }, [data.flat.length, rootCategories.length])
+        const total = data.flat.length;
+        const level1 = rootCategories.length;
+        const level2 = total - level1;
+        return { total, level1, level2 };
+    }, [data.flat.length, rootCategories.length]);
 
     const handleRefresh = useCallback(async () => {
         await Promise.all([
             refetch(),
             selectedCategoryId ? refetchServices() : Promise.resolve(),
-        ])
-        toast.success("已刷新分类与服务数据")
-    }, [refetch, refetchServices, selectedCategoryId])
+        ]);
+        toast.success("已刷新分类与服务数据");
+    }, [refetch, refetchServices, selectedCategoryId]);
 
-    const openCreateDialog = useCallback(
-        (parentId: string | null) => {
-            setDialogState({ mode: "create", parentId, open: true })
-        },
-        [],
-    )
+    const openCreateDialog = useCallback((parentId: string | null) => {
+        setDialogState({ mode: "create", parentId, open: true });
+    }, []);
 
     const openEditDialog = useCallback((categoryId: string) => {
-        setDialogState({ mode: "edit", categoryId, open: true })
-    }, [])
+        setDialogState({ mode: "edit", categoryId, open: true });
+    }, []);
 
     const closeDialog = useCallback(() => {
-        setDialogState(null)
-    }, [])
+        setDialogState(null);
+    }, []);
 
     const handleUploadIcon = useCallback(
         async (file: File) => {
-            const response = await uploadFile.mutateAsync({ file })
+            const response = await uploadFile.mutateAsync({ file });
             return {
                 id: response.id,
                 url: response.fileUrl,
                 name: response.originalName,
                 mimeType: response.mimeType,
-            }
+            };
         },
         [uploadFile],
-    )
+    );
 
     const handleCreateCategory = useCallback(
         async (values: ServiceCategoryFormValues) => {
             try {
                 await createMutation.mutateAsync({
                     name: values.name.trim(),
-                    description: values.description.trim() ? values.description.trim() : null,
+                    description: values.description.trim()
+                        ? values.description.trim()
+                        : null,
                     parentId: values.parentId,
                     sortOrder: Number(values.sortOrder) || 0,
                     isActive: values.isActive,
                     iconFileId: values.icon?.id ?? null,
-                })
-                toast.success("已创建分类")
-                closeDialog()
+                });
+                toast.success("已创建分类");
+                closeDialog();
             } catch (error) {
-                handleFormError(error, "创建分类失败")
+                handleFormError(error, "创建分类失败");
             }
         },
         [closeDialog, createMutation],
-    )
+    );
 
     const handleUpdateCategory = useCallback(
         async (categoryId: string, values: ServiceCategoryFormValues) => {
@@ -284,57 +293,81 @@ export function ServiceCategoriesPageContent() {
                         isActive: values.isActive,
                         iconFileId: values.icon?.id ?? null,
                     },
-                })
-                toast.success("已更新分类信息")
-                closeDialog()
+                });
+                toast.success("已更新分类信息");
+                closeDialog();
             } catch (error) {
-                handleFormError(error, "更新分类失败")
+                handleFormError(error, "更新分类失败");
             }
         },
         [closeDialog, updateMutation],
-    )
+    );
 
     const handleDeleteCategory = useCallback(async () => {
-        if (!selectedCategory) return
+        if (!selectedCategory) return;
         try {
-            await deleteCategoryMutation.mutateAsync(selectedCategory.id)
-            toast.success(`已删除分类「${selectedCategory.name}」`)
-            setDeleteDialogOpen(false)
+            await deleteCategoryMutation.mutateAsync(selectedCategory.id);
+            toast.success(`已删除分类「${selectedCategory.name}」`);
+            setDeleteDialogOpen(false);
         } catch (error) {
-            handleFormError(error, "删除分类失败")
+            handleFormError(error, "删除分类失败");
         }
-    }, [deleteCategoryMutation, selectedCategory])
+    }, [deleteCategoryMutation, selectedCategory]);
+
+    const handleToggleCategoryStatus = useCallback(async () => {
+        if (!selectedCategory) {
+            return;
+        }
+
+        const nextIsActive = !selectedCategory.isActive;
+
+        try {
+            await updateMutation.mutateAsync({
+                id: selectedCategory.id,
+                data: {
+                    isActive: nextIsActive,
+                },
+            });
+            toast.success(
+                `已${nextIsActive ? "启用" : "停用"}分类「${selectedCategory.name}」`,
+            );
+        } catch (error) {
+            handleFormError(error, "修改分类启用状态失败");
+        }
+    }, [selectedCategory, updateMutation]);
 
     const openCreateServiceDialog = useCallback(() => {
         if (!selectedCategoryId) {
-            toast.error("请选择左侧分类后再添加服务")
-            return
+            toast.error("请选择左侧分类后再添加服务");
+            return;
         }
         setServiceDialogState({
             mode: "create",
             categoryId: selectedCategoryId,
             open: true,
-        })
-    }, [selectedCategoryId])
+        });
+    }, [selectedCategoryId]);
 
     const openEditServiceDialog = useCallback((service: ServiceListItem) => {
-        setServiceDialogState({ mode: "edit", service, open: true })
-    }, [])
+        setServiceDialogState({ mode: "edit", service, open: true });
+    }, []);
 
     const closeServiceDialog = useCallback(() => {
-        setServiceDialogState(null)
-    }, [])
+        setServiceDialogState(null);
+    }, []);
 
     const refreshServices = useCallback(async () => {
         if (!selectedCategoryId) {
-            return
+            return;
         }
         await Promise.all([
             refetchServices(),
             queryClient.invalidateQueries({ queryKey: ["service-list"] }),
-            queryClient.invalidateQueries({ queryKey: ["service-list-single"] }),
-        ])
-    }, [queryClient, refetchServices, selectedCategoryId])
+            queryClient.invalidateQueries({
+                queryKey: ["service-list-single"],
+            }),
+        ]);
+    }, [queryClient, refetchServices, selectedCategoryId]);
 
     const handleCreateService = useCallback(
         async (values: ServiceFormValues) => {
@@ -347,16 +380,16 @@ export function ServiceCategoriesPageContent() {
                     categoryId: values.categoryId,
                     imageFileId: values.image?.id ?? null,
                     isActive: values.isActive,
-                })
-                toast.success("已创建服务")
-                closeServiceDialog()
-                await refreshServices()
+                });
+                toast.success("已创建服务");
+                closeServiceDialog();
+                await refreshServices();
             } catch (error) {
-                handleFormError(error, "创建服务失败")
+                handleFormError(error, "创建服务失败");
             }
         },
         [closeServiceDialog, createServiceMutation, refreshServices],
-    )
+    );
 
     const handleUpdateService = useCallback(
         async (serviceId: string, values: ServiceFormValues) => {
@@ -372,50 +405,79 @@ export function ServiceCategoriesPageContent() {
                         imageFileId: values.image?.id ?? null,
                         isActive: values.isActive,
                     },
-                })
-                toast.success("已更新服务信息")
-                closeServiceDialog()
-                await refreshServices()
+                });
+                toast.success("已更新服务信息");
+                closeServiceDialog();
+                await refreshServices();
             } catch (error) {
-                handleFormError(error, "更新服务失败")
+                handleFormError(error, "更新服务失败");
             }
         },
         [closeServiceDialog, refreshServices, updateServiceMutation],
-    )
+    );
 
     const handleDeleteService = useCallback(async () => {
         if (!serviceToDelete) {
-            return
+            return;
         }
         try {
-            await deleteServiceMutation.mutateAsync(serviceToDelete.id)
-            toast.success(`已删除服务「${serviceToDelete.name}」`)
-            setServiceToDelete(null)
-            await refreshServices()
+            await deleteServiceMutation.mutateAsync(serviceToDelete.id);
+            toast.success(`已删除服务「${serviceToDelete.name}」`);
+            setServiceToDelete(null);
+            await refreshServices();
         } catch (error) {
-            handleFormError(error, "删除服务失败")
+            handleFormError(error, "删除服务失败");
         }
-    }, [deleteServiceMutation, refreshServices, serviceToDelete])
+    }, [deleteServiceMutation, refreshServices, serviceToDelete]);
+
+    const handleToggleServiceStatus = useCallback(
+        async (service: ServiceListItem) => {
+            const nextIsActive = !service.isActive;
+
+            setTogglingServiceId(service.id);
+            try {
+                await updateServiceMutation.mutateAsync({
+                    id: service.id,
+                    data: {
+                        isActive: nextIsActive,
+                    },
+                });
+                toast.success(
+                    `已${nextIsActive ? "启用" : "停用"}服务「${service.name}」`,
+                );
+                await refreshServices();
+            } catch (error) {
+                handleFormError(error, "修改服务启用状态失败");
+            } finally {
+                setTogglingServiceId((current) =>
+                    current === service.id ? null : current,
+                );
+            }
+        },
+        [refreshServices, updateServiceMutation],
+    );
 
     const editingCategory =
         dialogState?.mode === "edit"
-            ? data.flat.find((category) => category.id === dialogState.categoryId) ?? null
-            : null
+            ? (data.flat.find(
+                  (category) => category.id === dialogState.categoryId,
+              ) ?? null)
+            : null;
 
     const suggestedSortOrder =
         (dialogState
             ? (dialogState.mode === "create"
-                ? data.flat.filter(
-                    (category) =>
-                        (category.parentId ?? ROOT_KEY) ===
-                        (dialogState.parentId ?? ROOT_KEY),
-                ).length
-                : data.flat.filter(
-                    (category) =>
-                        (category.parentId ?? ROOT_KEY) ===
-                        (editingCategory?.parentId ?? ROOT_KEY),
-                ).length) + 1
-            : 0) || 0
+                  ? data.flat.filter(
+                        (category) =>
+                            (category.parentId ?? ROOT_KEY) ===
+                            (dialogState.parentId ?? ROOT_KEY),
+                    ).length
+                  : data.flat.filter(
+                        (category) =>
+                            (category.parentId ?? ROOT_KEY) ===
+                            (editingCategory?.parentId ?? ROOT_KEY),
+                    ).length) + 1
+            : 0) || 0;
 
     return (
         <div className="space-y-6">
@@ -436,7 +498,10 @@ export function ServiceCategoriesPageContent() {
                             disabled={isFetching}
                         >
                             <RefreshCcw
-                                className={cn("size-4", isFetching && "animate-spin")}
+                                className={cn(
+                                    "size-4",
+                                    isFetching && "animate-spin",
+                                )}
                             />
                             刷新
                         </Button>
@@ -454,10 +519,14 @@ export function ServiceCategoriesPageContent() {
                             className="gap-1.5"
                             onClick={() =>
                                 openCreateDialog(
-                                    selectedCategory?.dep === 1 ? selectedCategory.id : null,
+                                    selectedCategory?.dep === 1
+                                        ? selectedCategory.id
+                                        : null,
                                 )
                             }
-                            disabled={!selectedCategory || selectedCategory.dep >= 2}
+                            disabled={
+                                !selectedCategory || selectedCategory.dep >= 2
+                            }
                         >
                             <Sparkles className="size-4" />
                             新增子分类
@@ -467,7 +536,8 @@ export function ServiceCategoriesPageContent() {
             >
                 <PageHeaderToolbar className="flex-wrap gap-3">
                     <span className="text-xs text-muted-foreground">
-                        共 {totals.total} 个分类（一级 {totals.level1}、二级 {totals.level2}）
+                        共 {totals.total} 个分类（一级 {totals.level1}、二级{" "}
+                        {totals.level2}）
                     </span>
                     <span className="text-xs text-muted-foreground">
                         图标上传复用 @repo/web-ui/upload，提交前请检查校验提示。
@@ -494,18 +564,27 @@ export function ServiceCategoriesPageContent() {
                             category={selectedCategory}
                             parent={
                                 selectedCategory?.parentId
-                                    ? parentsMap.get(selectedCategory.parentId) ?? null
+                                    ? (parentsMap.get(
+                                          selectedCategory.parentId,
+                                      ) ?? null)
                                     : null
                             }
                             childCount={
                                 selectedCategory
-                                    ? childCounts.get(selectedCategory.id) ?? 0
+                                    ? (childCounts.get(selectedCategory.id) ??
+                                      0)
                                     : 0
                             }
                             onEdit={() =>
-                                selectedCategory ? openEditDialog(selectedCategory.id) : undefined
+                                selectedCategory
+                                    ? openEditDialog(selectedCategory.id)
+                                    : undefined
+                            }
+                            onToggleStatus={() =>
+                                void handleToggleCategoryStatus()
                             }
                             onDelete={() => setDeleteDialogOpen(true)}
+                            isTogglingStatus={updateMutation.isPending}
                             isDeleting={deleteCategoryMutation.isPending}
                         />
                         <ServiceListPanel
@@ -514,7 +593,12 @@ export function ServiceCategoriesPageContent() {
                             isLoading={isServiceFetching}
                             onAddService={openCreateServiceDialog}
                             onEditService={openEditServiceDialog}
+                            onToggleServiceStatus={(service) =>
+                                void handleToggleServiceStatus(service)
+                            }
                             onDeleteService={setServiceToDelete}
+                            togglingServiceId={togglingServiceId}
+                            isUpdatingService={updateServiceMutation.isPending}
                         />
                     </div>
                 </CardContent>
@@ -525,25 +609,36 @@ export function ServiceCategoriesPageContent() {
                     open={dialogState.open}
                     mode={dialogState.mode}
                     category={editingCategory}
-                    parentId={dialogState.mode === "create" ? dialogState.parentId : null}
+                    parentId={
+                        dialogState.mode === "create"
+                            ? dialogState.parentId
+                            : null
+                    }
                     rootCategories={rootCategories}
                     disableParentChange={
-                        dialogState.mode === "edit" ? editingCategory?.dep !== 2 : false
+                        dialogState.mode === "edit"
+                            ? editingCategory?.dep !== 2
+                            : false
                     }
                     onClose={closeDialog}
                     onSubmit={async (values) => {
                         if (dialogState.mode === "create") {
-                            await handleCreateCategory(values)
+                            await handleCreateCategory(values);
                         } else if (editingCategory) {
-                            await handleUpdateCategory(editingCategory.id, values)
+                            await handleUpdateCategory(
+                                editingCategory.id,
+                                values,
+                            );
                         }
                     }}
-                    isSubmitting={createMutation.isPending || updateMutation.isPending}
+                    isSubmitting={
+                        createMutation.isPending || updateMutation.isPending
+                    }
                     uploadIcon={handleUploadIcon}
                     suggestedSortOrder={
                         dialogState.mode === "create"
                             ? suggestedSortOrder
-                            : editingCategory?.sortOrder ?? 0
+                            : (editingCategory?.sortOrder ?? 0)
                     }
                 />
             ) : null}
@@ -552,7 +647,11 @@ export function ServiceCategoriesPageContent() {
                 <ServiceFormDialog
                     open={serviceDialogState.open}
                     mode={serviceDialogState.mode}
-                    service={serviceDialogState.mode === "edit" ? serviceDialogState.service : null}
+                    service={
+                        serviceDialogState.mode === "edit"
+                            ? serviceDialogState.service
+                            : null
+                    }
                     categoryId={
                         serviceDialogState.mode === "create"
                             ? serviceDialogState.categoryId
@@ -563,32 +662,42 @@ export function ServiceCategoriesPageContent() {
                     uploadImage={handleUploadIcon}
                     onSubmit={async (values) => {
                         if (serviceDialogState.mode === "create") {
-                            await handleCreateService(values)
+                            await handleCreateService(values);
                         } else {
-                            await handleUpdateService(serviceDialogState.service.id, values)
+                            await handleUpdateService(
+                                serviceDialogState.service.id,
+                                values,
+                            );
                         }
                     }}
                     isSubmitting={
-                        createServiceMutation.isPending || updateServiceMutation.isPending
+                        createServiceMutation.isPending ||
+                        updateServiceMutation.isPending
                     }
                 />
             ) : null}
 
             <AlertDialog
                 open={Boolean(serviceToDelete)}
-                onOpenChange={(open) => (!open ? setServiceToDelete(null) : undefined)}
+                onOpenChange={(open) =>
+                    !open ? setServiceToDelete(null) : undefined
+                }
             >
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>确认删除服务</AlertDialogTitle>
                         <AlertDialogDescription>
                             删除后不可恢复，且可能影响服务人员配置。确定删除
-                            {serviceToDelete ? `「${serviceToDelete.name}」` : ""}
+                            {serviceToDelete
+                                ? `「${serviceToDelete.name}」`
+                                : ""}
                             吗？
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel disabled={deleteServiceMutation.isPending}>
+                        <AlertDialogCancel
+                            disabled={deleteServiceMutation.isPending}
+                        >
                             取消
                         </AlertDialogCancel>
                         <AlertDialogAction
@@ -596,13 +705,18 @@ export function ServiceCategoriesPageContent() {
                             onClick={() => void handleDeleteService()}
                             disabled={deleteServiceMutation.isPending}
                         >
-                            {deleteServiceMutation.isPending ? "删除中..." : "确认删除"}
+                            {deleteServiceMutation.isPending
+                                ? "删除中..."
+                                : "确认删除"}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
 
-            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialog
+                open={deleteDialogOpen}
+                onOpenChange={setDeleteDialogOpen}
+            >
                 <AlertDialogContent>
                     <AlertDialogHeader>
                         <AlertDialogTitle>确认删除</AlertDialogTitle>
@@ -611,7 +725,9 @@ export function ServiceCategoriesPageContent() {
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel disabled={deleteCategoryMutation.isPending}>
+                        <AlertDialogCancel
+                            disabled={deleteCategoryMutation.isPending}
+                        >
                             取消
                         </AlertDialogCancel>
                         <AlertDialogAction
@@ -619,13 +735,15 @@ export function ServiceCategoriesPageContent() {
                             onClick={() => void handleDeleteCategory()}
                             disabled={deleteCategoryMutation.isPending}
                         >
-                            {deleteCategoryMutation.isPending ? "删除中..." : "确认删除"}
+                            {deleteCategoryMutation.isPending
+                                ? "删除中..."
+                                : "确认删除"}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
         </div>
-    )
+    );
 }
 
 function CategoryTreePanel({
@@ -634,16 +752,18 @@ function CategoryTreePanel({
     onSelect,
     totals,
 }: {
-    tree: AdminServiceCategoryTree[]
-    selectedId: string | null
-    onSelect: (id: string) => void
-    totals: { total: number; level1: number; level2: number }
+    tree: AdminServiceCategoryTree[];
+    selectedId: string | null;
+    onSelect: (id: string) => void;
+    totals: { total: number; level1: number; level2: number };
 }) {
     return (
         <div className="rounded-xl border bg-card">
             <div className="flex items-center justify-between border-b px-4 py-3">
                 <div>
-                    <p className="text-sm font-semibold text-foreground">分类结构</p>
+                    <p className="text-sm font-semibold text-foreground">
+                        分类结构
+                    </p>
                     <p className="text-xs text-muted-foreground">
                         一级 {totals.level1} · 二级 {totals.level2}
                     </p>
@@ -669,7 +789,7 @@ function CategoryTreePanel({
                 )}
             </ScrollArea>
         </div>
-    )
+    );
 }
 
 function CategoryTreeNode({
@@ -678,12 +798,12 @@ function CategoryTreeNode({
     selectedId,
     onSelect,
 }: {
-    node: AdminServiceCategoryTree
-    depth: number
-    selectedId: string | null
-    onSelect: (id: string) => void
+    node: AdminServiceCategoryTree;
+    depth: number;
+    selectedId: string | null;
+    onSelect: (id: string) => void;
 }) {
-    const isSelected = node.id === selectedId
+    const isSelected = node.id === selectedId;
     return (
         <li>
             <button
@@ -700,19 +820,26 @@ function CategoryTreeNode({
                     <div
                         className={cn(
                             "flex size-6 items-center justify-center rounded-full text-xs font-semibold",
-                            depth === 0 ? "bg-primary/15 text-primary" : "bg-slate-200 text-slate-700",
+                            depth === 0
+                                ? "bg-primary/15 text-primary"
+                                : "bg-slate-200 text-slate-700",
                         )}
                     >
                         {depth + 1}
                     </div>
                     <div className="flex flex-col">
-                        <span className="text-sm font-medium leading-tight">{node.name}</span>
+                        <span className="text-sm font-medium leading-tight">
+                            {node.name}
+                        </span>
                         <span className="text-xs text-muted-foreground">
                             排序 {node.sortOrder}
                         </span>
                     </div>
                 </div>
-                <Badge variant={node.isActive ? "default" : "secondary"} className="text-xs">
+                <Badge
+                    variant={node.isActive ? "default" : "secondary"}
+                    className="text-xs"
+                >
                     {node.isActive ? "启用" : "停用"}
                 </Badge>
             </button>
@@ -730,7 +857,7 @@ function CategoryTreeNode({
                 </ul>
             ) : null}
         </li>
-    )
+    );
 }
 
 function CategoryDetailPanel({
@@ -738,33 +865,45 @@ function CategoryDetailPanel({
     parent,
     childCount,
     onEdit,
+    onToggleStatus,
     onDelete,
+    isTogglingStatus,
     isDeleting,
 }: {
-    category: AdminServiceCategory | null
-    parent: AdminServiceCategory | null
-    childCount: number
-    onEdit?: () => void
-    onDelete?: () => void
-    isDeleting: boolean
+    category: AdminServiceCategory | null;
+    parent: AdminServiceCategory | null;
+    childCount: number;
+    onEdit?: () => void;
+    onToggleStatus?: () => void;
+    onDelete?: () => void;
+    isTogglingStatus: boolean;
+    isDeleting: boolean;
 }) {
     if (!category) {
         return (
             <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed">
-                <p className="text-sm text-muted-foreground">请选择左侧分类以查看详情</p>
+                <p className="text-sm text-muted-foreground">
+                    请选择左侧分类以查看详情
+                </p>
             </div>
-        )
+        );
     }
 
-    const iconUrl = normalizeIconUrl(category.iconFileUrl)
+    const iconUrl = normalizeIconUrl(category.iconFileUrl);
 
     return (
         <div className="rounded-xl border bg-card p-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                     <div className="flex items-center gap-2">
-                        <h3 className="text-base font-semibold">{category.name}</h3>
-                        <Badge variant={category.isActive ? "default" : "secondary"}>
+                        <h3 className="text-base font-semibold">
+                            {category.name}
+                        </h3>
+                        <Badge
+                            variant={
+                                category.isActive ? "default" : "secondary"
+                            }
+                        >
                             {category.isActive ? "启用" : "停用"}
                         </Badge>
                     </div>
@@ -777,6 +916,15 @@ function CategoryDetailPanel({
                     <Button variant="outline" size="sm" onClick={onEdit}>
                         <PenSquare className="mr-1.5 size-4" />
                         编辑
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onToggleStatus}
+                        disabled={isTogglingStatus}
+                    >
+                        <ToggleLeft className="mr-1.5 size-4" />
+                        {category.isActive ? "停用" : "启用"}
                     </Button>
                     <Button
                         variant="ghost"
@@ -816,7 +964,9 @@ function CategoryDetailPanel({
             <Separator className="my-4" />
 
             <div className="space-y-2">
-                <p className="text-xs font-medium uppercase text-muted-foreground">图标</p>
+                <p className="text-xs font-medium uppercase text-muted-foreground">
+                    图标
+                </p>
             </div>
             <div className="flex items-center gap-3">
                 <div className="relative flex size-16 items-center justify-center overflow-hidden rounded-lg border bg-muted">
@@ -838,7 +988,7 @@ function CategoryDetailPanel({
                 </div>
             </div>
         </div>
-    )
+    );
 }
 
 function ServiceListPanel({
@@ -847,20 +997,28 @@ function ServiceListPanel({
     isLoading,
     onAddService,
     onEditService,
+    onToggleServiceStatus,
     onDeleteService,
+    togglingServiceId,
+    isUpdatingService,
 }: {
-    category: AdminServiceCategory | null
-    services: ServiceListItem[]
-    isLoading: boolean
-    onAddService: () => void
-    onEditService: (service: ServiceListItem) => void
-    onDeleteService: (service: ServiceListItem) => void
+    category: AdminServiceCategory | null;
+    services: ServiceListItem[];
+    isLoading: boolean;
+    onAddService: () => void;
+    onEditService: (service: ServiceListItem) => void;
+    onToggleServiceStatus: (service: ServiceListItem) => void;
+    onDeleteService: (service: ServiceListItem) => void;
+    togglingServiceId: string | null;
+    isUpdatingService: boolean;
 }) {
     return (
         <div className="rounded-xl border bg-card p-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div className="space-y-1">
-                    <p className="text-base font-semibold text-foreground">分类下的服务</p>
+                    <p className="text-base font-semibold text-foreground">
+                        分类下的服务
+                    </p>
                     <p className="text-xs text-muted-foreground">
                         {category
                             ? `已选分类：${category.name}`
@@ -891,7 +1049,9 @@ function ServiceListPanel({
                 </div>
             ) : services.length === 0 ? (
                 <div className="flex flex-col gap-3 rounded-lg border border-dashed p-4">
-                    <p className="text-sm text-muted-foreground">该分类暂无服务</p>
+                    <p className="text-sm text-muted-foreground">
+                        该分类暂无服务
+                    </p>
                     <Button
                         size="sm"
                         variant="secondary"
@@ -907,7 +1067,7 @@ function ServiceListPanel({
                     {services.map((service) => {
                         const imageUrl = normalizeIconUrl(
                             service.imageFileUrl ?? service.imageFileId ?? null,
-                        )
+                        );
                         return (
                             <div
                                 key={service.id}
@@ -936,9 +1096,15 @@ function ServiceListPanel({
                                                 {service.name}
                                             </p>
                                             <Badge
-                                                variant={service.isActive ? "default" : "secondary"}
+                                                variant={
+                                                    service.isActive
+                                                        ? "default"
+                                                        : "secondary"
+                                                }
                                             >
-                                                {service.isActive ? "启用" : "停用"}
+                                                {service.isActive
+                                                    ? "启用"
+                                                    : "停用"}
                                             </Badge>
                                         </div>
                                         <p className="text-xs text-muted-foreground">
@@ -959,6 +1125,20 @@ function ServiceListPanel({
                                         编辑
                                     </Button>
                                     <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() =>
+                                            onToggleServiceStatus(service)
+                                        }
+                                        disabled={
+                                            isUpdatingService &&
+                                            togglingServiceId === service.id
+                                        }
+                                    >
+                                        <ToggleLeft className="mr-1.5 size-4" />
+                                        {service.isActive ? "停用" : "启用"}
+                                    </Button>
+                                    <Button
                                         variant="ghost"
                                         size="sm"
                                         className="text-destructive hover:text-destructive"
@@ -969,12 +1149,12 @@ function ServiceListPanel({
                                     </Button>
                                 </div>
                             </div>
-                        )
+                        );
                     })}
                 </div>
             )}
         </div>
-    )
+    );
 }
 
 function ServiceCategoryFormDialog({
@@ -990,22 +1170,22 @@ function ServiceCategoryFormDialog({
     uploadIcon,
     suggestedSortOrder,
 }: {
-    open: boolean
-    mode: "create" | "edit"
-    category: AdminServiceCategory | null
-    parentId: string | null
-    rootCategories: AdminServiceCategory[]
-    disableParentChange?: boolean
-    onClose: () => void
-    onSubmit: (values: ServiceCategoryFormValues) => Promise<void>
-    isSubmitting: boolean
-    uploadIcon: (file: File) => Promise<UploadValue>
-    suggestedSortOrder: number
+    open: boolean;
+    mode: "create" | "edit";
+    category: AdminServiceCategory | null;
+    parentId: string | null;
+    rootCategories: AdminServiceCategory[];
+    disableParentChange?: boolean;
+    onClose: () => void;
+    onSubmit: (values: ServiceCategoryFormValues) => Promise<void>;
+    isSubmitting: boolean;
+    uploadIcon: (file: File) => Promise<UploadValue>;
+    suggestedSortOrder: number;
 }) {
     const defaultValues: ServiceCategoryFormValues = {
         name: category?.name ?? "",
         description: category?.description ?? "",
-        parentId: mode === "edit" ? category?.parentId ?? null : parentId,
+        parentId: mode === "edit" ? (category?.parentId ?? null) : parentId,
         isActive: category?.isActive ?? true,
         sortOrder:
             category?.sortOrder !== undefined
@@ -1013,24 +1193,24 @@ function ServiceCategoryFormDialog({
                 : String(suggestedSortOrder ?? 0),
         icon: category?.iconFileId
             ? {
-                id: category.iconFileId,
-                url: normalizeIconUrl(category.iconFileUrl) ?? "",
-            }
+                  id: category.iconFileId,
+                  url: normalizeIconUrl(category.iconFileUrl) ?? "",
+              }
             : null,
-    }
+    };
 
     const form = useForm({
         defaultValues,
         onSubmit: async ({ value }) => {
-            await onSubmit(value)
+            await onSubmit(value);
         },
-    })
+    });
 
     useEffect(() => {
         if (open) {
-            form.reset(defaultValues)
+            form.reset(defaultValues);
         }
-    }, [open, defaultValues, form])
+    }, [open, defaultValues, form]);
 
     const parentOptions = [
         { label: "无（一级分类）", value: ROOT_KEY },
@@ -1038,25 +1218,29 @@ function ServiceCategoryFormDialog({
             label: item.name,
             value: item.id,
         })),
-    ]
+    ];
 
     return (
-        <Dialog open={open} onOpenChange={(nextOpen) => (!nextOpen ? onClose() : undefined)}>
+        <Dialog
+            open={open}
+            onOpenChange={(nextOpen) => (!nextOpen ? onClose() : undefined)}
+        >
             <DialogContent className="max-w-2xl">
                 <DialogHeader>
                     <DialogTitle>
                         {mode === "create" ? "新增服务分类" : "编辑服务分类"}
                     </DialogTitle>
                     <DialogDescription>
-                        支持最多两级分类，排序值越小越靠前。表单校验由 TanStack Form + Zod 驱动。
+                        支持最多两级分类，排序值越小越靠前。表单校验由 TanStack
+                        Form + Zod 驱动。
                     </DialogDescription>
                 </DialogHeader>
 
                 <form
                     className="space-y-5"
                     onSubmit={(event) => {
-                        event.preventDefault()
-                        void form.handleSubmit()
+                        event.preventDefault();
+                        void form.handleSubmit();
                     }}
                 >
                     <div className="grid gap-4 md:grid-cols-2">
@@ -1074,7 +1258,11 @@ function ServiceCategoryFormDialog({
                                     <Label>分类名称</Label>
                                     <Input
                                         value={field.state.value}
-                                        onChange={(event) => field.handleChange(event.target.value)}
+                                        onChange={(event) =>
+                                            field.handleChange(
+                                                event.target.value,
+                                            )
+                                        }
                                         onBlur={field.handleBlur}
                                         placeholder="如 家庭保洁"
                                     />
@@ -1095,7 +1283,9 @@ function ServiceCategoryFormDialog({
                                         }
                                         onValueChange={(value) =>
                                             field.handleChange(
-                                                value === ROOT_KEY ? null : value,
+                                                value === ROOT_KEY
+                                                    ? null
+                                                    : value,
                                             )
                                         }
                                         disabled={disableParentChange}
@@ -1105,7 +1295,10 @@ function ServiceCategoryFormDialog({
                                         </SelectTrigger>
                                         <SelectContent>
                                             {parentOptions.map((option) => (
-                                                <SelectItem key={option.value} value={option.value}>
+                                                <SelectItem
+                                                    key={option.value}
+                                                    value={option.value}
+                                                >
                                                     {option.label}
                                                 </SelectItem>
                                             ))}
@@ -1122,9 +1315,7 @@ function ServiceCategoryFormDialog({
                     <form.Field
                         name="description"
                         validators={{
-                            onChange: z
-                                .string()
-                                .max(300, "描述不超过 300 字"),
+                            onChange: z.string().max(300, "描述不超过 300 字"),
                         }}
                     >
                         {(field) => (
@@ -1133,7 +1324,9 @@ function ServiceCategoryFormDialog({
                                 <Textarea
                                     placeholder="补充分类亮点、适用场景..."
                                     value={field.state.value}
-                                    onChange={(event) => field.handleChange(event.target.value)}
+                                    onChange={(event) =>
+                                        field.handleChange(event.target.value)
+                                    }
                                     onBlur={field.handleBlur}
                                     rows={3}
                                 />
@@ -1161,7 +1354,11 @@ function ServiceCategoryFormDialog({
                                         type="number"
                                         min={0}
                                         value={field.state.value}
-                                        onChange={(event) => field.handleChange(event.target.value)}
+                                        onChange={(event) =>
+                                            field.handleChange(
+                                                event.target.value,
+                                            )
+                                        }
                                         onBlur={field.handleBlur}
                                     />
                                     <FieldError field={field} />
@@ -1206,7 +1403,12 @@ function ServiceCategoryFormDialog({
                     </form.Field>
 
                     <DialogFooter>
-                        <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
+                        <form.Subscribe
+                            selector={(state) => [
+                                state.canSubmit,
+                                state.isSubmitting,
+                            ]}
+                        >
                             {([canSubmit, isFormSubmitting]) => (
                                 <>
                                     <Button
@@ -1219,9 +1421,15 @@ function ServiceCategoryFormDialog({
                                     </Button>
                                     <Button
                                         type="submit"
-                                        disabled={!canSubmit || isSubmitting || isFormSubmitting}
+                                        disabled={
+                                            !canSubmit ||
+                                            isSubmitting ||
+                                            isFormSubmitting
+                                        }
                                     >
-                                        {isSubmitting || isFormSubmitting ? "提交中..." : "保存"}
+                                        {isSubmitting || isFormSubmitting
+                                            ? "提交中..."
+                                            : "保存"}
                                     </Button>
                                 </>
                             )}
@@ -1230,7 +1438,7 @@ function ServiceCategoryFormDialog({
                 </form>
             </DialogContent>
         </Dialog>
-    )
+    );
 }
 
 function ServiceFormDialog({
@@ -1244,54 +1452,61 @@ function ServiceFormDialog({
     onSubmit,
     isSubmitting,
 }: {
-    open: boolean
-    mode: "create" | "edit"
-    service: ServiceListItem | null
-    categoryId: string | null
-    categories: AdminServiceCategory[]
-    onClose: () => void
-    uploadImage: (file: File) => Promise<UploadValue>
-    onSubmit: (values: ServiceFormValues) => Promise<void>
-    isSubmitting: boolean
+    open: boolean;
+    mode: "create" | "edit";
+    service: ServiceListItem | null;
+    categoryId: string | null;
+    categories: AdminServiceCategory[];
+    onClose: () => void;
+    uploadImage: (file: File) => Promise<UploadValue>;
+    onSubmit: (values: ServiceFormValues) => Promise<void>;
+    isSubmitting: boolean;
 }) {
     const defaultValues: ServiceFormValues = {
         name: service?.name ?? "",
         description: service?.description ?? "",
         categoryId: service?.categoryId ?? categoryId ?? "",
         isActive: service?.isActive ?? true,
-        image: service?.imageFileUrl || service?.imageFileId
-            ? {
-                id: service.imageFileId ?? "",
-                url:
-                    normalizeIconUrl(service.imageFileUrl ?? service.imageFileId) ??
-                    "",
-            }
-            : null,
-    }
+        image:
+            service?.imageFileUrl || service?.imageFileId
+                ? {
+                      id: service.imageFileId ?? "",
+                      url:
+                          normalizeIconUrl(
+                              service.imageFileUrl ?? service.imageFileId,
+                          ) ?? "",
+                  }
+                : null,
+    };
 
     const form = useForm({
         defaultValues,
         onSubmit: async ({ value }) => {
-            await onSubmit(value)
+            await onSubmit(value);
         },
-    })
+    });
 
     useEffect(() => {
         if (open) {
-            form.reset(defaultValues)
+            form.reset(defaultValues);
         }
-    }, [defaultValues, form, open])
+    }, [defaultValues, form, open]);
 
     const categoryOptions = categories.map((item) => ({
         label: `${item.dep === 2 ? "二级" : "一级"} · ${item.name}`,
         value: item.id,
-    }))
+    }));
 
     return (
-        <Dialog open={open} onOpenChange={(nextOpen) => (!nextOpen ? onClose() : undefined)}>
+        <Dialog
+            open={open}
+            onOpenChange={(nextOpen) => (!nextOpen ? onClose() : undefined)}
+        >
             <DialogContent className="max-w-2xl">
                 <DialogHeader>
-                    <DialogTitle>{mode === "create" ? "新增服务" : "编辑服务"}</DialogTitle>
+                    <DialogTitle>
+                        {mode === "create" ? "新增服务" : "编辑服务"}
+                    </DialogTitle>
                     <DialogDescription>
                         维护服务名称、描述、展示图片与所属分类，字段校验遵循后台服务接口要求。
                     </DialogDescription>
@@ -1300,8 +1515,8 @@ function ServiceFormDialog({
                 <form
                     className="space-y-5"
                     onSubmit={(event) => {
-                        event.preventDefault()
-                        void form.handleSubmit()
+                        event.preventDefault();
+                        void form.handleSubmit();
                     }}
                 >
                     <div className="grid gap-4 md:grid-cols-2">
@@ -1319,7 +1534,11 @@ function ServiceFormDialog({
                                     <Label>服务名称</Label>
                                     <Input
                                         value={field.state.value}
-                                        onChange={(event) => field.handleChange(event.target.value)}
+                                        onChange={(event) =>
+                                            field.handleChange(
+                                                event.target.value,
+                                            )
+                                        }
                                         onBlur={field.handleBlur}
                                         placeholder="如 房间收纳"
                                     />
@@ -1339,14 +1558,19 @@ function ServiceFormDialog({
                                     <Label>所属分类</Label>
                                     <Select
                                         value={field.state.value}
-                                        onValueChange={(value) => field.handleChange(value)}
+                                        onValueChange={(value) =>
+                                            field.handleChange(value)
+                                        }
                                     >
                                         <SelectTrigger>
                                             <SelectValue placeholder="选择分类" />
                                         </SelectTrigger>
                                         <SelectContent>
                                             {categoryOptions.map((option) => (
-                                                <SelectItem key={option.value} value={option.value}>
+                                                <SelectItem
+                                                    key={option.value}
+                                                    value={option.value}
+                                                >
                                                     {option.label}
                                                 </SelectItem>
                                             ))}
@@ -1372,7 +1596,9 @@ function ServiceFormDialog({
                                 <Textarea
                                     placeholder="服务亮点、范围说明等"
                                     value={field.state.value}
-                                    onChange={(event) => field.handleChange(event.target.value)}
+                                    onChange={(event) =>
+                                        field.handleChange(event.target.value)
+                                    }
                                     onBlur={field.handleBlur}
                                     rows={3}
                                 />
@@ -1399,7 +1625,9 @@ function ServiceFormDialog({
                         {(field) => (
                             <div className="flex items-center justify-between rounded-lg border px-3 py-2">
                                 <div>
-                                    <p className="text-sm font-medium text-foreground">启用状态</p>
+                                    <p className="text-sm font-medium text-foreground">
+                                        启用状态
+                                    </p>
                                     <p className="text-xs text-muted-foreground">
                                         关闭后前台不可选购
                                     </p>
@@ -1415,7 +1643,12 @@ function ServiceFormDialog({
                     </form.Field>
 
                     <DialogFooter>
-                        <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
+                        <form.Subscribe
+                            selector={(state) => [
+                                state.canSubmit,
+                                state.isSubmitting,
+                            ]}
+                        >
                             {([canSubmit, isFormSubmitting]) => (
                                 <>
                                     <Button
@@ -1428,9 +1661,15 @@ function ServiceFormDialog({
                                     </Button>
                                     <Button
                                         type="submit"
-                                        disabled={!canSubmit || isSubmitting || isFormSubmitting}
+                                        disabled={
+                                            !canSubmit ||
+                                            isSubmitting ||
+                                            isFormSubmitting
+                                        }
                                     >
-                                        {isSubmitting || isFormSubmitting ? "提交中..." : "保存"}
+                                        {isSubmitting || isFormSubmitting
+                                            ? "提交中..."
+                                            : "保存"}
                                     </Button>
                                 </>
                             )}
@@ -1439,24 +1678,24 @@ function ServiceFormDialog({
                 </form>
             </DialogContent>
         </Dialog>
-    )
+    );
 }
 
 function FieldError({ field }: { field: AnyFieldApi }) {
-    if (!field.state.meta.errors.length) return null
+    if (!field.state.meta.errors.length) return null;
     return (
         <p className="text-xs text-destructive">
             {String(field.state.meta.errors[0]?.message)}
         </p>
-    )
+    );
 }
 
 function handleFormError(error: unknown, fallbackMessage: string) {
     if (error instanceof ApiClientError) {
-        toast.error(error.message)
+        toast.error(error.message);
     } else if (error instanceof Error) {
-        toast.error(error.message ?? fallbackMessage)
+        toast.error(error.message ?? fallbackMessage);
     } else {
-        toast.error(fallbackMessage)
+        toast.error(fallbackMessage);
     }
 }
