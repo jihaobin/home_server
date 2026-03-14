@@ -1,7 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+    type ComponentProps,
+    type ReactNode,
+    Fragment,
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import {
+    DragDropProvider,
+    DragOverlay,
+    useDraggable,
+    useDroppable,
+} from "@dnd-kit/react";
+import {
+    type ColumnDef,
+    type ExpandedState,
+    flexRender,
+    getCoreRowModel,
+    getExpandedRowModel,
+    useReactTable,
+} from "@tanstack/react-table";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -30,16 +52,15 @@ import {
 } from "@repo/web-ui/components/dialog";
 import { Input } from "@repo/web-ui/components/input";
 import { Label } from "@repo/web-ui/components/label";
-import { ScrollArea } from "@repo/web-ui/components/scroll-area";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@repo/web-ui/components/select";
-import { Separator } from "@repo/web-ui/components/separator";
 import { Switch } from "@repo/web-ui/components/switch";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@repo/web-ui/components/table";
 import { Textarea } from "@repo/web-ui/components/textarea";
 import { UploadField, type UploadValue } from "@repo/web-ui/upload";
 import { cn } from "@repo/web-ui/lib/utils";
@@ -52,7 +73,6 @@ import {
 import { useUploadFile } from "@repo/hooks/api/files";
 import {
     type AdminServiceCategory,
-    type AdminServiceCategoryTree,
     type CategoryWithServices,
 } from "@repo/types";
 import {
@@ -65,29 +85,27 @@ import { useForm, type AnyFieldApi } from "@tanstack/react-form";
 import { z } from "zod/v4";
 import { toast } from "sonner";
 import {
+    ChevronDown,
+    ChevronRight,
     FolderTree,
-    Loader2,
+    GripVertical,
     PenSquare,
     PlusCircle,
     RefreshCcw,
-    ShieldCheck,
-    Sparkles,
     ToggleLeft,
     Trash2,
 } from "lucide-react";
 import { PageHeader, PageHeaderToolbar } from "@/components/common";
 import { ApiClientError } from "@repo/utils/api-client";
 import { resolveFileUrl } from "@/lib/files";
-import Image from "next/image";
 
 type DialogState =
-    | { mode: "create"; parentId: string | null; open: boolean }
+    | { mode: "create"; open: boolean }
     | { mode: "edit"; categoryId: string; open: boolean };
 
 type ServiceCategoryFormValues = {
     name: string;
     description: string;
-    parentId: string | null;
     sortOrder: string;
     isActive: boolean;
     icon: UploadValue | null;
@@ -107,7 +125,27 @@ type ServiceFormValues = {
 
 type ServiceListItem = CategoryWithServices["children"][number];
 
-const ROOT_KEY = "__root__";
+type ParentServiceItem = {
+    service: ServiceListItem;
+    category: AdminServiceCategory | null;
+};
+
+type ParentCategoryRow = {
+    id: string;
+    category: AdminServiceCategory;
+    services: ParentServiceItem[];
+};
+
+type MoveServiceCategoryInput = {
+    serviceId: string;
+    targetCategoryId: string;
+};
+
+type DragServiceMeta = {
+    serviceId: string;
+    serviceName: string;
+    sourceCategoryId: string;
+};
 
 function normalizeIconUrl(value?: string | null) {
     if (!value) {
@@ -143,6 +181,9 @@ export function ServiceCategoriesPageContent() {
         useState<ServiceDialogState | null>(null);
     const [serviceToDelete, setServiceToDelete] =
         useState<ServiceListItem | null>(null);
+    const [togglingCategoryId, setTogglingCategoryId] = useState<string | null>(
+        null,
+    );
     const [togglingServiceId, setTogglingServiceId] = useState<string | null>(
         null,
     );
@@ -173,26 +214,14 @@ export function ServiceCategoriesPageContent() {
         isFetching: isServiceFetching,
         refetch: refetchServices,
     } = useServiceListSinglePage({
-        categoryId: selectedCategoryId ?? undefined,
         page: 1,
-        limit: 200,
-        enabled: Boolean(selectedCategoryId),
+        limit: 500,
     });
 
     const serviceCategories: CategoryWithServices[] = useMemo(
         () => serviceListResponse?.items ?? [],
         [serviceListResponse],
     );
-
-    const services = useMemo(() => {
-        if (!selectedCategoryId) {
-            return [];
-        }
-        const matched = serviceCategories.find(
-            (item) => item.id === selectedCategoryId,
-        );
-        return matched?.children ?? [];
-    }, [selectedCategoryId, serviceCategories]);
 
     const parentsMap = useMemo(() => {
         const map = new Map<string, AdminServiceCategory>();
@@ -202,37 +231,67 @@ export function ServiceCategoriesPageContent() {
         return map;
     }, [data.flat]);
 
-    const rootCategories = useMemo(
-        () => data.flat.filter((category) => category.dep === 1),
+    const servicesByCategoryId = useMemo(() => {
+        const map = new Map<string, ServiceListItem[]>();
+        serviceCategories.forEach((category) => {
+            map.set(category.id, category.children ?? []);
+        });
+        return map;
+    }, [serviceCategories]);
+
+    const servicesById = useMemo(() => {
+        const map = new Map<string, ServiceListItem>();
+        serviceCategories.forEach((category) => {
+            (category.children ?? []).forEach((service) => {
+                map.set(service.id, service);
+            });
+        });
+        return map;
+    }, [serviceCategories]);
+
+    const categories = useMemo(
+        () =>
+            [...data.flat].sort(
+                (left, right) =>
+                    left.sortOrder - right.sortOrder ||
+                    left.name.localeCompare(right.name, "zh-CN"),
+            ),
         [data.flat],
     );
 
-    const childCounts = useMemo(() => {
-        const map = new Map<string, number>();
-        data.flat.forEach((category) => {
-            if (!category.parentId) return;
-            map.set(category.parentId, (map.get(category.parentId) ?? 0) + 1);
+    const parentCategoryRows = useMemo<ParentCategoryRow[]>(() => {
+        return categories.map((category) => {
+            const services = (servicesByCategoryId.get(category.id) ?? [])
+                .map((service) => ({
+                    service,
+                    category: parentsMap.get(service.categoryId) ?? null,
+                }))
+                .sort((left, right) =>
+                    left.service.name.localeCompare(
+                        right.service.name,
+                        "zh-CN",
+                    ),
+                );
+
+            return {
+                id: category.id,
+                category,
+                services,
+            };
         });
-        return map;
-    }, [data.flat]);
+    }, [categories, parentsMap, servicesByCategoryId]);
 
     const totals = useMemo(() => {
-        const total = data.flat.length;
-        const level1 = rootCategories.length;
-        const level2 = total - level1;
-        return { total, level1, level2 };
-    }, [data.flat.length, rootCategories.length]);
+        return { total: categories.length };
+    }, [categories.length]);
 
     const handleRefresh = useCallback(async () => {
-        await Promise.all([
-            refetch(),
-            selectedCategoryId ? refetchServices() : Promise.resolve(),
-        ]);
+        await Promise.all([refetch(), refetchServices()]);
         toast.success("已刷新分类与服务数据");
-    }, [refetch, refetchServices, selectedCategoryId]);
+    }, [refetch, refetchServices]);
 
-    const openCreateDialog = useCallback((parentId: string | null) => {
-        setDialogState({ mode: "create", parentId, open: true });
+    const openCreateDialog = useCallback(() => {
+        setDialogState({ mode: "create", open: true });
     }, []);
 
     const openEditDialog = useCallback((categoryId: string) => {
@@ -264,7 +323,7 @@ export function ServiceCategoriesPageContent() {
                     description: values.description.trim()
                         ? values.description.trim()
                         : null,
-                    parentId: values.parentId,
+                    parentId: null,
                     sortOrder: Number(values.sortOrder) || 0,
                     isActive: values.isActive,
                     iconFileId: values.icon?.id ?? null,
@@ -288,7 +347,7 @@ export function ServiceCategoriesPageContent() {
                         description: values.description.trim()
                             ? values.description.trim()
                             : null,
-                        parentId: values.parentId,
+                        parentId: null,
                         sortOrder: Number(values.sortOrder) || 0,
                         isActive: values.isActive,
                         iconFileId: values.icon?.id ?? null,
@@ -314,39 +373,59 @@ export function ServiceCategoriesPageContent() {
         }
     }, [deleteCategoryMutation, selectedCategory]);
 
-    const handleToggleCategoryStatus = useCallback(async () => {
-        if (!selectedCategory) {
-            return;
-        }
+    const handleToggleCategoryStatus = useCallback(
+        async (category: AdminServiceCategory) => {
+            const nextIsActive = !category.isActive;
 
-        const nextIsActive = !selectedCategory.isActive;
+            setTogglingCategoryId(category.id);
+            try {
+                await updateMutation.mutateAsync({
+                    id: category.id,
+                    data: {
+                        isActive: nextIsActive,
+                    },
+                });
+                toast.success(
+                    `已${nextIsActive ? "启用" : "停用"}分类「${category.name}」`,
+                );
+            } catch (error) {
+                handleFormError(error, "修改分类启用状态失败");
+            } finally {
+                setTogglingCategoryId((current) =>
+                    current === category.id ? null : current,
+                );
+            }
+        },
+        [updateMutation],
+    );
 
-        try {
-            await updateMutation.mutateAsync({
-                id: selectedCategory.id,
-                data: {
-                    isActive: nextIsActive,
-                },
+    const handleRequestDeleteCategory = useCallback(
+        (category: AdminServiceCategory) => {
+            setSelectedCategoryId(category.id);
+            setDeleteDialogOpen(true);
+        },
+        [],
+    );
+
+    const openCreateServiceDialog = useCallback(
+        (preferredCategoryId?: string | null) => {
+            const defaultCategoryId = categories[0]?.id ?? null;
+            const resolvedCategoryId =
+                preferredCategoryId ?? selectedCategoryId ?? defaultCategoryId;
+
+            if (!resolvedCategoryId) {
+                toast.error("请先创建分类后再新增服务");
+                return;
+            }
+
+            setServiceDialogState({
+                mode: "create",
+                categoryId: resolvedCategoryId,
+                open: true,
             });
-            toast.success(
-                `已${nextIsActive ? "启用" : "停用"}分类「${selectedCategory.name}」`,
-            );
-        } catch (error) {
-            handleFormError(error, "修改分类启用状态失败");
-        }
-    }, [selectedCategory, updateMutation]);
-
-    const openCreateServiceDialog = useCallback(() => {
-        if (!selectedCategoryId) {
-            toast.error("请选择左侧分类后再添加服务");
-            return;
-        }
-        setServiceDialogState({
-            mode: "create",
-            categoryId: selectedCategoryId,
-            open: true,
-        });
-    }, [selectedCategoryId]);
+        },
+        [categories, selectedCategoryId],
+    );
 
     const openEditServiceDialog = useCallback((service: ServiceListItem) => {
         setServiceDialogState({ mode: "edit", service, open: true });
@@ -357,9 +436,6 @@ export function ServiceCategoriesPageContent() {
     }, []);
 
     const refreshServices = useCallback(async () => {
-        if (!selectedCategoryId) {
-            return;
-        }
         await Promise.all([
             refetchServices(),
             queryClient.invalidateQueries({ queryKey: ["service-list"] }),
@@ -367,7 +443,7 @@ export function ServiceCategoriesPageContent() {
                 queryKey: ["service-list-single"],
             }),
         ]);
-    }, [queryClient, refetchServices, selectedCategoryId]);
+    }, [queryClient, refetchServices]);
 
     const handleCreateService = useCallback(
         async (values: ServiceFormValues) => {
@@ -457,6 +533,37 @@ export function ServiceCategoriesPageContent() {
         [refreshServices, updateServiceMutation],
     );
 
+    const handleMoveServiceCategory = useCallback(
+        async ({ serviceId, targetCategoryId }: MoveServiceCategoryInput) => {
+            const service = servicesById.get(serviceId);
+            const targetCategory = parentsMap.get(targetCategoryId);
+
+            if (!service || !targetCategory) {
+                return;
+            }
+
+            if (service.categoryId === targetCategoryId) {
+                return;
+            }
+
+            try {
+                await updateServiceMutation.mutateAsync({
+                    id: service.id,
+                    data: {
+                        categoryId: targetCategoryId,
+                    },
+                });
+                toast.success(
+                    `已将服务「${service.name}」移动到分类「${targetCategory.name}」`,
+                );
+                await refreshServices();
+            } catch (error) {
+                handleFormError(error, "移动服务分类失败");
+            }
+        },
+        [parentsMap, refreshServices, servicesById, updateServiceMutation],
+    );
+
     const editingCategory =
         dialogState?.mode === "edit"
             ? (data.flat.find(
@@ -467,23 +574,15 @@ export function ServiceCategoriesPageContent() {
     const suggestedSortOrder =
         (dialogState
             ? (dialogState.mode === "create"
-                  ? data.flat.filter(
-                        (category) =>
-                            (category.parentId ?? ROOT_KEY) ===
-                            (dialogState.parentId ?? ROOT_KEY),
-                    ).length
-                  : data.flat.filter(
-                        (category) =>
-                            (category.parentId ?? ROOT_KEY) ===
-                            (editingCategory?.parentId ?? ROOT_KEY),
-                    ).length) + 1
+                  ? categories.length
+                  : (editingCategory?.sortOrder ?? categories.length)) + 1
             : 0) || 0;
 
     return (
         <div className="space-y-6">
             <PageHeader
                 title="服务分类管理"
-                description="维护两级分类树、排序、启用状态与图标。"
+                description="通过分类展开查看服务，减少来回切换。"
                 breadcrumbItems={[
                     { label: "运营管理", href: "/service-categories" },
                     { label: "服务分类管理" },
@@ -508,36 +607,17 @@ export function ServiceCategoriesPageContent() {
                         <Button
                             size="sm"
                             className="gap-1.5"
-                            onClick={() => openCreateDialog(null)}
+                            onClick={openCreateDialog}
                         >
                             <PlusCircle className="size-4" />
-                            新增一级分类
-                        </Button>
-                        <Button
-                            size="sm"
-                            variant="secondary"
-                            className="gap-1.5"
-                            onClick={() =>
-                                openCreateDialog(
-                                    selectedCategory?.dep === 1
-                                        ? selectedCategory.id
-                                        : null,
-                                )
-                            }
-                            disabled={
-                                !selectedCategory || selectedCategory.dep >= 2
-                            }
-                        >
-                            <Sparkles className="size-4" />
-                            新增子分类
+                            新增分类
                         </Button>
                     </div>
                 }
             >
                 <PageHeaderToolbar className="flex-wrap gap-3">
                     <span className="text-xs text-muted-foreground">
-                        共 {totals.total} 个分类（一级 {totals.level1}、二级{" "}
-                        {totals.level2}）
+                        共 {totals.total} 个分类
                     </span>
                     <span className="text-xs text-muted-foreground">
                         图标上传复用 @repo/web-ui/upload，提交前请检查校验提示。
@@ -549,58 +629,38 @@ export function ServiceCategoriesPageContent() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <FolderTree className="size-5 text-primary" />
-                        分类树与详情
+                        分类与服务总览
                     </CardTitle>
                 </CardHeader>
-                <CardContent className="grid gap-6 lg:grid-cols-[320px_1fr]">
-                    <CategoryTreePanel
-                        tree={data.tree}
-                        selectedId={selectedCategory?.id ?? null}
-                        onSelect={setSelectedCategoryId}
-                        totals={totals}
+                <CardContent className="space-y-4">
+                    <CategoryServiceTablePanel
+                        rows={parentCategoryRows}
+                        isLoading={isServiceFetching}
+                        onEditCategory={(category) => {
+                            setSelectedCategoryId(category.id);
+                            openEditDialog(category.id);
+                        }}
+                        onToggleCategoryStatus={(category) =>
+                            void handleToggleCategoryStatus(category)
+                        }
+                        onDeleteCategory={handleRequestDeleteCategory}
+                        onAddService={(categoryId) =>
+                            openCreateServiceDialog(categoryId)
+                        }
+                        onEditService={openEditServiceDialog}
+                        onToggleServiceStatus={(service) =>
+                            void handleToggleServiceStatus(service)
+                        }
+                        onDeleteService={setServiceToDelete}
+                        onMoveServiceCategory={(
+                            input: MoveServiceCategoryInput,
+                        ) => void handleMoveServiceCategory(input)}
+                        togglingCategoryId={togglingCategoryId}
+                        togglingServiceId={togglingServiceId}
+                        isUpdatingService={updateServiceMutation.isPending}
+                        isUpdatingCategory={updateMutation.isPending}
+                        isDeletingCategory={deleteCategoryMutation.isPending}
                     />
-                    <div className="space-y-4">
-                        <CategoryDetailPanel
-                            category={selectedCategory}
-                            parent={
-                                selectedCategory?.parentId
-                                    ? (parentsMap.get(
-                                          selectedCategory.parentId,
-                                      ) ?? null)
-                                    : null
-                            }
-                            childCount={
-                                selectedCategory
-                                    ? (childCounts.get(selectedCategory.id) ??
-                                      0)
-                                    : 0
-                            }
-                            onEdit={() =>
-                                selectedCategory
-                                    ? openEditDialog(selectedCategory.id)
-                                    : undefined
-                            }
-                            onToggleStatus={() =>
-                                void handleToggleCategoryStatus()
-                            }
-                            onDelete={() => setDeleteDialogOpen(true)}
-                            isTogglingStatus={updateMutation.isPending}
-                            isDeleting={deleteCategoryMutation.isPending}
-                        />
-                        <ServiceListPanel
-                            category={selectedCategory}
-                            services={services}
-                            isLoading={isServiceFetching}
-                            onAddService={openCreateServiceDialog}
-                            onEditService={openEditServiceDialog}
-                            onToggleServiceStatus={(service) =>
-                                void handleToggleServiceStatus(service)
-                            }
-                            onDeleteService={setServiceToDelete}
-                            togglingServiceId={togglingServiceId}
-                            isUpdatingService={updateServiceMutation.isPending}
-                        />
-                    </div>
                 </CardContent>
             </Card>
 
@@ -609,17 +669,6 @@ export function ServiceCategoriesPageContent() {
                     open={dialogState.open}
                     mode={dialogState.mode}
                     category={editingCategory}
-                    parentId={
-                        dialogState.mode === "create"
-                            ? dialogState.parentId
-                            : null
-                    }
-                    rootCategories={rootCategories}
-                    disableParentChange={
-                        dialogState.mode === "edit"
-                            ? editingCategory?.dep !== 2
-                            : false
-                    }
                     onClose={closeDialog}
                     onSubmit={async (values) => {
                         if (dialogState.mode === "create") {
@@ -657,16 +706,29 @@ export function ServiceCategoriesPageContent() {
                             ? serviceDialogState.categoryId
                             : serviceDialogState.service.categoryId
                     }
-                    categories={data.flat}
+                    categories={categories}
                     onClose={closeServiceDialog}
                     uploadImage={handleUploadIcon}
                     onSubmit={async (values) => {
+                        const lockedCategoryId =
+                            serviceDialogState.mode === "create"
+                                ? serviceDialogState.categoryId
+                                : serviceDialogState.service.categoryId;
+
                         if (serviceDialogState.mode === "create") {
-                            await handleCreateService(values);
+                            await handleCreateService({
+                                ...values,
+                                categoryId:
+                                    lockedCategoryId ?? values.categoryId,
+                            });
                         } else {
                             await handleUpdateService(
                                 serviceDialogState.service.id,
-                                values,
+                                {
+                                    ...values,
+                                    categoryId:
+                                        lockedCategoryId ?? values.categoryId,
+                                },
                             );
                         }
                     }}
@@ -721,7 +783,11 @@ export function ServiceCategoriesPageContent() {
                     <AlertDialogHeader>
                         <AlertDialogTitle>确认删除</AlertDialogTitle>
                         <AlertDialogDescription>
-                            删除后将无法恢复，且需确保该分类没有子分类或关联服务。确定继续吗？
+                            删除后将无法恢复，且需确保该分类没有关联服务。确定删除
+                            {selectedCategory
+                                ? `「${selectedCategory.name}」`
+                                : "该分类"}
+                            吗？
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -746,255 +812,491 @@ export function ServiceCategoriesPageContent() {
     );
 }
 
-function CategoryTreePanel({
-    tree,
-    selectedId,
-    onSelect,
-    totals,
+function CategoryServiceTablePanel({
+    rows,
+    isLoading,
+    onEditCategory,
+    onToggleCategoryStatus,
+    onDeleteCategory,
+    onAddService,
+    onEditService,
+    onToggleServiceStatus,
+    onDeleteService,
+    onMoveServiceCategory,
+    togglingCategoryId,
+    togglingServiceId,
+    isUpdatingService,
+    isUpdatingCategory,
+    isDeletingCategory,
 }: {
-    tree: AdminServiceCategoryTree[];
-    selectedId: string | null;
-    onSelect: (id: string) => void;
-    totals: { total: number; level1: number; level2: number };
+    rows: ParentCategoryRow[];
+    isLoading: boolean;
+    onEditCategory: (category: AdminServiceCategory) => void;
+    onToggleCategoryStatus: (category: AdminServiceCategory) => void;
+    onDeleteCategory: (category: AdminServiceCategory) => void;
+    onAddService: (categoryId: string | null) => void;
+    onEditService: (service: ServiceListItem) => void;
+    onToggleServiceStatus: (service: ServiceListItem) => void;
+    onDeleteService: (service: ServiceListItem) => void;
+    onMoveServiceCategory: (input: MoveServiceCategoryInput) => void;
+    togglingCategoryId: string | null;
+    togglingServiceId: string | null;
+    isUpdatingService: boolean;
+    isUpdatingCategory: boolean;
+    isDeletingCategory: boolean;
 }) {
-    return (
-        <div className="rounded-xl border bg-card">
-            <div className="flex items-center justify-between border-b px-4 py-3">
-                <div>
-                    <p className="text-sm font-semibold text-foreground">
-                        分类结构
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                        一级 {totals.level1} · 二级 {totals.level2}
-                    </p>
-                </div>
-            </div>
-            <ScrollArea className="max-h-[420px] px-2 py-3">
-                {tree.length === 0 ? (
-                    <div className="text-center text-sm text-muted-foreground">
-                        暂无分类，请先新增一级分类
-                    </div>
-                ) : (
-                    <ul className="space-y-1.5">
-                        {tree.map((node) => (
-                            <CategoryTreeNode
-                                key={node.id}
-                                node={node}
-                                depth={0}
-                                selectedId={selectedId}
-                                onSelect={onSelect}
-                            />
-                        ))}
-                    </ul>
-                )}
-            </ScrollArea>
-        </div>
-    );
-}
+    const [expanded, setExpanded] = useState<ExpandedState>({});
+    const [activeDragService, setActiveDragService] =
+        useState<DragServiceMeta | null>(null);
 
-function CategoryTreeNode({
-    node,
-    depth,
-    selectedId,
-    onSelect,
-}: {
-    node: AdminServiceCategoryTree;
-    depth: number;
-    selectedId: string | null;
-    onSelect: (id: string) => void;
-}) {
-    const isSelected = node.id === selectedId;
-    return (
-        <li>
-            <button
-                type="button"
-                onClick={() => onSelect(node.id)}
-                className={cn(
-                    "flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition-colors",
-                    isSelected
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-transparent hover:border-border hover:bg-muted/60",
-                )}
-            >
-                <div className="flex items-center gap-2">
-                    <div
-                        className={cn(
-                            "flex size-6 items-center justify-center rounded-full text-xs font-semibold",
-                            depth === 0
-                                ? "bg-primary/15 text-primary"
-                                : "bg-slate-200 text-slate-700",
-                        )}
+    const columns = useMemo<ColumnDef<ParentCategoryRow>[]>(
+        () => [
+            {
+                id: "expander",
+                header: () => <span className="sr-only">展开</span>,
+                cell: ({ row }) => (
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-7"
+                        onClick={row.getToggleExpandedHandler()}
+                        disabled={!row.getCanExpand()}
+                        aria-label={
+                            row.getIsExpanded()
+                                ? `收起${row.original.category.name}`
+                                : `展开${row.original.category.name}`
+                        }
                     >
-                        {depth + 1}
+                        {row.getIsExpanded() ? (
+                            <ChevronDown className="size-4" />
+                        ) : (
+                            <ChevronRight className="size-4" />
+                        )}
+                    </Button>
+                ),
+            },
+            {
+                id: "category",
+                header: "分类",
+                cell: ({ row }) => (
+                    <div className="space-y-1">
+                        <p className="text-sm font-semibold text-foreground">
+                            {row.original.category.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                            {row.original.category.description || "暂无描述"}
+                        </p>
                     </div>
-                    <div className="flex flex-col">
-                        <span className="text-sm font-medium leading-tight">
-                            {node.name}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                            排序 {node.sortOrder}
-                        </span>
-                    </div>
-                </div>
-                <Badge
-                    variant={node.isActive ? "default" : "secondary"}
-                    className="text-xs"
-                >
-                    {node.isActive ? "启用" : "停用"}
-                </Badge>
-            </button>
-            {Array.isArray(node.children) && node.children.length > 0 ? (
-                <ul className="ml-4 mt-1 space-y-1 border-l border-dashed border-border pl-3">
-                    {node.children.map((child: AdminServiceCategoryTree) => (
-                        <CategoryTreeNode
-                            key={child.id}
-                            node={child}
-                            depth={depth + 1}
-                            selectedId={selectedId}
-                            onSelect={onSelect}
-                        />
-                    ))}
-                </ul>
-            ) : null}
-        </li>
-    );
-}
+                ),
+            },
+            {
+                id: "services",
+                header: "服务数",
+                cell: ({ row }) => {
+                    const activeCount = row.original.services.filter(
+                        (item) => item.service.isActive,
+                    ).length;
+                    return (
+                        <div className="text-xs text-muted-foreground">
+                            {activeCount} / {row.original.services.length} 启用
+                        </div>
+                    );
+                },
+            },
+            {
+                id: "status",
+                header: "状态",
+                cell: ({ row }) => (
+                    <Badge
+                        variant={
+                            row.original.category.isActive
+                                ? "default"
+                                : "secondary"
+                        }
+                    >
+                        {row.original.category.isActive ? "启用" : "停用"}
+                    </Badge>
+                ),
+            },
+            {
+                id: "actions",
+                header: "操作",
+                cell: ({ row }) => {
+                    const isCategoryToggling =
+                        isUpdatingCategory &&
+                        togglingCategoryId === row.original.category.id;
 
-function CategoryDetailPanel({
-    category,
-    parent,
-    childCount,
-    onEdit,
-    onToggleStatus,
-    onDelete,
-    isTogglingStatus,
-    isDeleting,
-}: {
-    category: AdminServiceCategory | null;
-    parent: AdminServiceCategory | null;
-    childCount: number;
-    onEdit?: () => void;
-    onToggleStatus?: () => void;
-    onDelete?: () => void;
-    isTogglingStatus: boolean;
-    isDeleting: boolean;
-}) {
-    if (!category) {
+                    return (
+                        <div className="flex flex-wrap gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                    onEditCategory(row.original.category)
+                                }
+                            >
+                                编辑
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                    onAddService(row.original.category.id)
+                                }
+                            >
+                                新增服务
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={isCategoryToggling}
+                                onClick={() =>
+                                    onToggleCategoryStatus(
+                                        row.original.category,
+                                    )
+                                }
+                            >
+                                {isCategoryToggling
+                                    ? "处理中..."
+                                    : row.original.category.isActive
+                                      ? "停用"
+                                      : "启用"}
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                                disabled={isDeletingCategory}
+                                onClick={() =>
+                                    onDeleteCategory(row.original.category)
+                                }
+                            >
+                                删除
+                            </Button>
+                        </div>
+                    );
+                },
+            },
+        ],
+        [
+            isDeletingCategory,
+            isUpdatingCategory,
+            onAddService,
+            onDeleteCategory,
+            onEditCategory,
+            onToggleCategoryStatus,
+            togglingCategoryId,
+        ],
+    );
+
+    const table = useReactTable({
+        data: rows,
+        columns,
+        state: {
+            expanded,
+        },
+        getRowCanExpand: (row) => row.original.services.length > 0,
+        getRowId: (row) => row.id,
+        onExpandedChange: setExpanded,
+        getCoreRowModel: getCoreRowModel(),
+        getExpandedRowModel: getExpandedRowModel(),
+    });
+
+    const handleDragEnd = useCallback(
+        (
+            event: Parameters<
+                NonNullable<
+                    ComponentProps<typeof DragDropProvider>["onDragEnd"]
+                >
+            >[0],
+        ) => {
+            setActiveDragService(null);
+
+            if (event.canceled) {
+                return;
+            }
+
+            const sourceData = (event.operation.source?.data ??
+                null) as DragServiceMeta | null;
+            const targetData = (event.operation.target?.data ?? null) as {
+                categoryId?: string;
+            } | null;
+
+            const serviceId = sourceData?.serviceId;
+            const sourceCategoryId = sourceData?.sourceCategoryId;
+            const targetCategoryId = targetData?.categoryId;
+
+            if (!serviceId || !targetCategoryId) {
+                return;
+            }
+
+            if (sourceCategoryId === targetCategoryId) {
+                return;
+            }
+
+            onMoveServiceCategory({ serviceId, targetCategoryId });
+        },
+        [onMoveServiceCategory],
+    );
+
+    const handleDragStart = useCallback(
+        (
+            event: Parameters<
+                NonNullable<
+                    ComponentProps<typeof DragDropProvider>["onDragStart"]
+                >
+            >[0],
+        ) => {
+            const sourceData = (event.operation.source?.data ??
+                null) as DragServiceMeta | null;
+            if (!sourceData?.serviceId) {
+                return;
+            }
+            setActiveDragService(sourceData);
+        },
+        [],
+    );
+
+    if (rows.length === 0 && !isLoading) {
         return (
-            <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed">
-                <p className="text-sm text-muted-foreground">
-                    请选择左侧分类以查看详情
-                </p>
+            <div className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+                暂无分类数据，请先新增分类。
             </div>
         );
     }
 
-    const iconUrl = normalizeIconUrl(category.iconFileUrl);
+    return (
+        <DragDropProvider
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+        >
+            <div className="rounded-xl border">
+                <Table>
+                    <TableHeader>
+                        {table.getHeaderGroups().map((headerGroup) => (
+                            <TableRow key={headerGroup.id}>
+                                {headerGroup.headers.map((header) => (
+                                    <TableHead key={header.id}>
+                                        {header.isPlaceholder
+                                            ? null
+                                            : flexRender(
+                                                  header.column.columnDef
+                                                      .header,
+                                                  header.getContext(),
+                                              )}
+                                    </TableHead>
+                                ))}
+                            </TableRow>
+                        ))}
+                    </TableHeader>
+                    <TableBody>
+                        {isLoading
+                            ? Array.from({ length: 3 }).map((_, index) => (
+                                  <TableRow key={`loading-${index}`}>
+                                      <TableCell
+                                          colSpan={columns.length}
+                                          className="py-6 text-sm text-muted-foreground"
+                                      >
+                                          服务数据加载中...
+                                      </TableCell>
+                                  </TableRow>
+                              ))
+                            : table.getRowModel().rows.map((row) => (
+                                  <Fragment key={row.id}>
+                                      <DroppableCategoryRow
+                                          categoryId={row.original.category.id}
+                                      >
+                                          {row.getVisibleCells().map((cell) => (
+                                              <TableCell key={cell.id}>
+                                                  {flexRender(
+                                                      cell.column.columnDef
+                                                          .cell,
+                                                      cell.getContext(),
+                                                  )}
+                                              </TableCell>
+                                          ))}
+                                      </DroppableCategoryRow>
+                                      {row.getIsExpanded() ? (
+                                          <TableRow className="bg-muted/25 hover:bg-muted/25">
+                                              <TableCell
+                                                  colSpan={
+                                                      row.getVisibleCells()
+                                                          .length
+                                                  }
+                                              >
+                                                  <ParentCategoryExpandedPanel
+                                                      row={row.original}
+                                                      onAddService={
+                                                          onAddService
+                                                      }
+                                                      onEditService={
+                                                          onEditService
+                                                      }
+                                                      onToggleServiceStatus={
+                                                          onToggleServiceStatus
+                                                      }
+                                                      onDeleteService={
+                                                          onDeleteService
+                                                      }
+                                                      togglingServiceId={
+                                                          togglingServiceId
+                                                      }
+                                                      isUpdatingService={
+                                                          isUpdatingService
+                                                      }
+                                                  />
+                                              </TableCell>
+                                          </TableRow>
+                                      ) : null}
+                                  </Fragment>
+                              ))}
+                    </TableBody>
+                </Table>
+            </div>
+            <DragOverlay>
+                {activeDragService ? (
+                    <div className="rounded-md border bg-background px-3 py-2 text-sm font-medium shadow-md">
+                        {activeDragService.serviceName}
+                    </div>
+                ) : null}
+            </DragOverlay>
+        </DragDropProvider>
+    );
+}
+
+function DroppableCategoryRow({
+    categoryId,
+    children,
+}: {
+    categoryId: string;
+    children: ReactNode;
+}) {
+    const { ref, isDropTarget } = useDroppable({
+        id: `category-drop-${categoryId}`,
+        data: {
+            categoryId,
+        },
+    });
 
     return (
-        <div className="rounded-xl border bg-card p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                    <div className="flex items-center gap-2">
-                        <h3 className="text-base font-semibold">
-                            {category.name}
-                        </h3>
-                        <Badge
-                            variant={
-                                category.isActive ? "default" : "secondary"
-                            }
-                        >
-                            {category.isActive ? "启用" : "停用"}
-                        </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                        {category.dep === 1 ? "一级分类" : "二级分类"}
-                        {parent ? ` · 上级：${parent.name}` : null}
-                    </p>
-                </div>
-                <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={onEdit}>
+        <tr
+            ref={ref}
+            className={cn(
+                "hover:bg-muted/50 border-b transition-colors",
+                isDropTarget && "bg-primary/10 ring-1 ring-primary/30",
+            )}
+        >
+            {children}
+        </tr>
+    );
+}
+
+function DraggableServiceTableRow({
+    item,
+    onEditService,
+    onToggleServiceStatus,
+    onDeleteService,
+    togglingServiceId,
+    isUpdatingService,
+}: {
+    item: ParentServiceItem;
+    onEditService: (service: ServiceListItem) => void;
+    onToggleServiceStatus: (service: ServiceListItem) => void;
+    onDeleteService: (service: ServiceListItem) => void;
+    togglingServiceId: string | null;
+    isUpdatingService: boolean;
+}) {
+    const { ref, handleRef, isDragging } = useDraggable({
+        id: `service-drag-${item.service.id}`,
+        data: {
+            serviceId: item.service.id,
+            serviceName: item.service.name,
+            sourceCategoryId: item.service.categoryId,
+        } satisfies DragServiceMeta,
+    });
+
+    return (
+        <tr
+            ref={ref}
+            className={cn(
+                "hover:bg-muted/50 border-b transition-colors",
+                isDragging && "bg-primary/5 opacity-60",
+            )}
+        >
+            <TableCell>
+                <Button
+                    ref={handleRef}
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 cursor-grab active:cursor-grabbing"
+                    aria-label={`拖拽移动服务 ${item.service.name}`}
+                >
+                    <GripVertical className="size-4 text-muted-foreground" />
+                </Button>
+            </TableCell>
+            <TableCell>
+                <p className="text-sm font-medium text-foreground">
+                    {item.service.name}
+                </p>
+            </TableCell>
+            <TableCell>
+                <span className="text-xs text-muted-foreground">
+                    {item.category?.name ?? "未分类"}
+                </span>
+            </TableCell>
+            <TableCell>
+                <Badge
+                    variant={item.service.isActive ? "default" : "secondary"}
+                >
+                    {item.service.isActive ? "启用" : "停用"}
+                </Badge>
+            </TableCell>
+            <TableCell>
+                <span className="text-xs text-muted-foreground">
+                    {item.service.description || "暂无描述"}
+                </span>
+            </TableCell>
+            <TableCell>
+                <div className="flex flex-wrap gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onEditService(item.service)}
+                    >
                         <PenSquare className="mr-1.5 size-4" />
                         编辑
                     </Button>
                     <Button
                         variant="outline"
                         size="sm"
-                        onClick={onToggleStatus}
-                        disabled={isTogglingStatus}
+                        disabled={
+                            isUpdatingService &&
+                            togglingServiceId === item.service.id
+                        }
+                        onClick={() => onToggleServiceStatus(item.service)}
                     >
                         <ToggleLeft className="mr-1.5 size-4" />
-                        {category.isActive ? "停用" : "启用"}
+                        {item.service.isActive ? "停用" : "启用"}
                     </Button>
                     <Button
                         variant="ghost"
-                        className="text-destructive hover:text-destructive"
                         size="sm"
-                        onClick={onDelete}
-                        disabled={isDeleting}
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => onDeleteService(item.service)}
                     >
                         <Trash2 className="mr-1.5 size-4" />
                         删除
                     </Button>
                 </div>
-            </div>
-
-            <Separator className="my-4" />
-
-            <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                    <p className="text-xs font-medium uppercase text-muted-foreground">
-                        描述
-                    </p>
-                    <p className="mt-1 text-sm text-foreground">
-                        {category.description || "暂无描述"}
-                    </p>
-                </div>
-                <div className="space-y-1">
-                    <p className="text-xs font-medium uppercase text-muted-foreground">
-                        元信息
-                    </p>
-                    <div className="text-sm text-foreground">
-                        <p>排序值：{category.sortOrder}</p>
-                        <p>子分类：{childCount}</p>
-                    </div>
-                </div>
-            </div>
-
-            <Separator className="my-4" />
-
-            <div className="space-y-2">
-                <p className="text-xs font-medium uppercase text-muted-foreground">
-                    图标
-                </p>
-            </div>
-            <div className="flex items-center gap-3">
-                <div className="relative flex size-16 items-center justify-center overflow-hidden rounded-lg border bg-muted">
-                    {iconUrl ? (
-                        <Image
-                            src={iconUrl}
-                            alt={`${category.name} 图标`}
-                            className="size-full object-cover"
-                            width={200}
-                            height={200}
-                            unoptimized
-                        />
-                    ) : (
-                        <ShieldCheck className="size-6 text-muted-foreground" />
-                    )}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                    {iconUrl ? "点击编辑可替换图标" : "暂未上传图标"}
-                </div>
-            </div>
-        </div>
+            </TableCell>
+        </tr>
     );
 }
 
-function ServiceListPanel({
-    category,
-    services,
-    isLoading,
+function ParentCategoryExpandedPanel({
+    row,
     onAddService,
     onEditService,
     onToggleServiceStatus,
@@ -1002,10 +1304,8 @@ function ServiceListPanel({
     togglingServiceId,
     isUpdatingService,
 }: {
-    category: AdminServiceCategory | null;
-    services: ServiceListItem[];
-    isLoading: boolean;
-    onAddService: () => void;
+    row: ParentCategoryRow;
+    onAddService: (categoryId: string | null) => void;
     onEditService: (service: ServiceListItem) => void;
     onToggleServiceStatus: (service: ServiceListItem) => void;
     onDeleteService: (service: ServiceListItem) => void;
@@ -1013,146 +1313,66 @@ function ServiceListPanel({
     isUpdatingService: boolean;
 }) {
     return (
-        <div className="rounded-xl border bg-card p-4">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div className="space-y-1">
-                    <p className="text-base font-semibold text-foreground">
-                        分类下的服务
+        <div className="space-y-4 rounded-lg border bg-background p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                    <p className="text-sm font-semibold text-foreground">
+                        {row.category.name} · 服务列表
                     </p>
                     <p className="text-xs text-muted-foreground">
-                        {category
-                            ? `已选分类：${category.name}`
-                            : "请选择左侧分类以查看服务列表"}
+                        服务 {row.services.length} 个
                     </p>
                 </div>
                 <Button
                     size="sm"
                     className="gap-1.5"
-                    onClick={onAddService}
-                    disabled={!category}
+                    onClick={() => onAddService(row.category.id)}
                 >
                     <PlusCircle className="size-4" />
-                    新增服务
+                    在该分类下新增服务
                 </Button>
             </div>
 
-            <Separator className="my-3" />
-
-            {!category ? (
-                <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
-                    请选择分类后进行服务维护
-                </div>
-            ) : isLoading ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" />
-                    <span>服务加载中...</span>
-                </div>
-            ) : services.length === 0 ? (
-                <div className="flex flex-col gap-3 rounded-lg border border-dashed p-4">
-                    <p className="text-sm text-muted-foreground">
-                        该分类暂无服务
-                    </p>
-                    <Button
-                        size="sm"
-                        variant="secondary"
-                        className="w-fit gap-1.5"
-                        onClick={onAddService}
-                    >
-                        <PlusCircle className="size-4" />
-                        立即添加
-                    </Button>
-                </div>
-            ) : (
-                <div className="space-y-3">
-                    {services.map((service) => {
-                        const imageUrl = normalizeIconUrl(
-                            service.imageFileUrl ?? service.imageFileId ?? null,
-                        );
-                        return (
-                            <div
-                                key={service.id}
-                                className="flex flex-col gap-3 rounded-lg border px-3 py-2 md:flex-row md:items-center md:justify-between"
-                            >
-                                <div className="flex gap-3">
-                                    <div className="relative h-16 w-16 overflow-hidden rounded-md border bg-muted">
-                                        {imageUrl ? (
-                                            <Image
-                                                src={imageUrl}
-                                                alt={service.name}
-                                                className="h-full w-full object-cover"
-                                                width={160}
-                                                height={160}
-                                                unoptimized
-                                            />
-                                        ) : (
-                                            <div className="flex h-full w-full items-center justify-center text-muted-foreground">
-                                                <Sparkles className="size-5" />
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="space-y-1">
-                                        <div className="flex items-center gap-2">
-                                            <p className="text-sm font-semibold leading-tight">
-                                                {service.name}
-                                            </p>
-                                            <Badge
-                                                variant={
-                                                    service.isActive
-                                                        ? "default"
-                                                        : "secondary"
-                                                }
-                                            >
-                                                {service.isActive
-                                                    ? "启用"
-                                                    : "停用"}
-                                            </Badge>
-                                        </div>
-                                        <p className="text-xs text-muted-foreground">
-                                            {service.description || "暂无描述"}
-                                        </p>
-                                        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                                            <span>ID {service.id}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => onEditService(service)}
-                                    >
-                                        <PenSquare className="mr-1.5 size-4" />
-                                        编辑
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() =>
-                                            onToggleServiceStatus(service)
-                                        }
-                                        disabled={
-                                            isUpdatingService &&
-                                            togglingServiceId === service.id
-                                        }
-                                    >
-                                        <ToggleLeft className="mr-1.5 size-4" />
-                                        {service.isActive ? "停用" : "启用"}
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-destructive hover:text-destructive"
-                                        onClick={() => onDeleteService(service)}
-                                    >
-                                        <Trash2 className="mr-1.5 size-4" />
-                                        删除
-                                    </Button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
+            <div className="rounded-md border">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="w-12">拖拽</TableHead>
+                            <TableHead>服务名称</TableHead>
+                            <TableHead>所属分类</TableHead>
+                            <TableHead>状态</TableHead>
+                            <TableHead>描述</TableHead>
+                            <TableHead>操作</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {row.services.length === 0 ? (
+                            <TableRow>
+                                <TableCell
+                                    colSpan={6}
+                                    className="py-5 text-sm text-muted-foreground"
+                                >
+                                    该分类下暂无服务，点击上方按钮可快速新增。
+                                </TableCell>
+                            </TableRow>
+                        ) : (
+                            row.services.map((item) => (
+                                <DraggableServiceTableRow
+                                    key={item.service.id}
+                                    item={item}
+                                    onEditService={onEditService}
+                                    onToggleServiceStatus={
+                                        onToggleServiceStatus
+                                    }
+                                    onDeleteService={onDeleteService}
+                                    togglingServiceId={togglingServiceId}
+                                    isUpdatingService={isUpdatingService}
+                                />
+                            ))
+                        )}
+                    </TableBody>
+                </Table>
+            </div>
         </div>
     );
 }
@@ -1161,9 +1381,6 @@ function ServiceCategoryFormDialog({
     open,
     mode,
     category,
-    parentId,
-    rootCategories,
-    disableParentChange,
     onClose,
     onSubmit,
     isSubmitting,
@@ -1173,9 +1390,6 @@ function ServiceCategoryFormDialog({
     open: boolean;
     mode: "create" | "edit";
     category: AdminServiceCategory | null;
-    parentId: string | null;
-    rootCategories: AdminServiceCategory[];
-    disableParentChange?: boolean;
     onClose: () => void;
     onSubmit: (values: ServiceCategoryFormValues) => Promise<void>;
     isSubmitting: boolean;
@@ -1185,7 +1399,6 @@ function ServiceCategoryFormDialog({
     const defaultValues: ServiceCategoryFormValues = {
         name: category?.name ?? "",
         description: category?.description ?? "",
-        parentId: mode === "edit" ? (category?.parentId ?? null) : parentId,
         isActive: category?.isActive ?? true,
         sortOrder:
             category?.sortOrder !== undefined
@@ -1212,14 +1425,6 @@ function ServiceCategoryFormDialog({
         }
     }, [open, defaultValues, form]);
 
-    const parentOptions = [
-        { label: "无（一级分类）", value: ROOT_KEY },
-        ...rootCategories.map((item) => ({
-            label: item.name,
-            value: item.id,
-        })),
-    ];
-
     return (
         <Dialog
             open={open}
@@ -1231,8 +1436,7 @@ function ServiceCategoryFormDialog({
                         {mode === "create" ? "新增服务分类" : "编辑服务分类"}
                     </DialogTitle>
                     <DialogDescription>
-                        支持最多两级分类，排序值越小越靠前。表单校验由 TanStack
-                        Form + Zod 驱动。
+                        维护分类名称、排序、状态与图标。排序值越小越靠前。
                     </DialogDescription>
                 </DialogHeader>
 
@@ -1267,46 +1471,6 @@ function ServiceCategoryFormDialog({
                                         placeholder="如 家庭保洁"
                                     />
                                     <FieldError field={field} />
-                                </div>
-                            )}
-                        </form.Field>
-
-                        <form.Field name="parentId">
-                            {(field) => (
-                                <div className="space-y-2">
-                                    <Label>所属层级</Label>
-                                    <Select
-                                        value={
-                                            field.state.value
-                                                ? field.state.value
-                                                : ROOT_KEY
-                                        }
-                                        onValueChange={(value) =>
-                                            field.handleChange(
-                                                value === ROOT_KEY
-                                                    ? null
-                                                    : value,
-                                            )
-                                        }
-                                        disabled={disableParentChange}
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="选择所属层级" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {parentOptions.map((option) => (
-                                                <SelectItem
-                                                    key={option.value}
-                                                    value={option.value}
-                                                >
-                                                    {option.label}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <p className="text-xs text-muted-foreground">
-                                        仅允许二级分类挂载在一级节点下
-                                    </p>
                                 </div>
                             )}
                         </form.Field>
@@ -1492,10 +1656,9 @@ function ServiceFormDialog({
         }
     }, [defaultValues, form, open]);
 
-    const categoryOptions = categories.map((item) => ({
-        label: `${item.dep === 2 ? "二级" : "一级"} · ${item.name}`,
-        value: item.id,
-    }));
+    const fixedCategoryLabel =
+        categories.find((item) => item.id === defaultValues.categoryId)?.name ??
+        "未匹配分类";
 
     return (
         <Dialog
@@ -1508,7 +1671,7 @@ function ServiceFormDialog({
                         {mode === "create" ? "新增服务" : "编辑服务"}
                     </DialogTitle>
                     <DialogDescription>
-                        维护服务名称、描述、展示图片与所属分类，字段校验遵循后台服务接口要求。
+                        维护服务名称、描述与展示图片。服务归属分类由入口决定，如需调整请在列表中拖拽服务到目标分类。
                     </DialogDescription>
                 </DialogHeader>
 
@@ -1546,42 +1709,15 @@ function ServiceFormDialog({
                                 </div>
                             )}
                         </form.Field>
-
-                        <form.Field
-                            name="categoryId"
-                            validators={{
-                                onChange: z.string().min(1, "请选择所属分类"),
-                            }}
-                        >
-                            {(field) => (
-                                <div className="space-y-2">
-                                    <Label>所属分类</Label>
-                                    <Select
-                                        value={field.state.value}
-                                        onValueChange={(value) =>
-                                            field.handleChange(value)
-                                        }
-                                    >
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="选择分类" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {categoryOptions.map((option) => (
-                                                <SelectItem
-                                                    key={option.value}
-                                                    value={option.value}
-                                                >
-                                                    {option.label}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <p className="text-xs text-muted-foreground">
-                                        建议在叶子节点维护服务，便于前台检索展示。
-                                    </p>
-                                </div>
-                            )}
-                        </form.Field>
+                        <div className="space-y-2">
+                            <Label>所属分类</Label>
+                            <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm font-medium text-foreground">
+                                {fixedCategoryLabel}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                新增/编辑时分类不可在弹窗中修改，可在列表中拖拽服务调整分类。
+                            </p>
+                        </div>
                     </div>
 
                     <form.Field
