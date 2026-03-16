@@ -22,29 +22,14 @@ export default function ContactPage() {
                 如需帮助，建议优先使用 App 内的入口以便我们更准确定位问题。
             </p>
 
-            <div className="mt-8 grid gap-4 md:grid-cols-2">
+            <div className="mt-8 grid ">
                 <Card className="p-8">
                     <div className="text-lg font-extrabold">官方客服</div>
                     <p className="mt-3 text-sm text-muted-foreground">
-                        打开 App → 进入“我的/个人中心” → 点击“官方客服”。
-                    </p>
-                </Card>
-
-                <Card className="p-8">
-                    <div className="text-lg font-extrabold">投诉/售后</div>
-                    <p className="mt-3 text-sm text-muted-foreground">
-                        打开 App → 进入“我的/个人中心” →
-                        点击“投诉/售后”，提交问题与相关信息。
+                        微信号：jpq1199。
                     </p>
                 </Card>
             </div>
-
-            <Card className="mt-10 p-8">
-                <div className="text-lg font-extrabold">站点说明（占位）</div>
-                <p className="mt-3 text-sm text-muted-foreground">
-                    本页面为营销站点的联系入口示例。若你需要“表单提交并落到工单/邮件”，可以在后续接入后端接口或第三方表单服务。
-                </p>
-            </Card>
 
             <Card className="mt-10 p-8">
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">

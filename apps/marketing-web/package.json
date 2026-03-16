@@ -3,8 +3,8 @@
     "version": "0.1.0",
     "private": true,
     "scripts": {
-        "dev": "node scripts/generate-blog.mjs && dotenvx run -f .env.development -- next dev --turbopack",
-        "build": "node scripts/generate-blog.mjs && dotenvx run -f .env.production -- next build",
+        "dev": "node scripts/generate-blog.mjs && node scripts/generate-legal.mjs && dotenvx run -f .env.development -- next dev --turbopack",
+        "build": "node scripts/generate-blog.mjs && node scripts/generate-legal.mjs && dotenvx run -f .env.production -- next build",
         "start": "dotenvx run -f .env.production -- next start",
         "lint": "eslint . --max-warnings 0",
         "type-check": "tsc -p tsconfig.json --noEmit"

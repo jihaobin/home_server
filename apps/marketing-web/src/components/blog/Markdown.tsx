@@ -13,7 +13,10 @@ export function Markdown({
 }) {
     return (
         <article
-            className={cn("text-[15px] leading-7 text-foreground", className)}
+            className={cn(
+                "min-w-0 text-[15px] leading-7 text-foreground",
+                className,
+            )}
         >
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
@@ -36,7 +39,7 @@ const markdownComponents: Components = {
             href={href}
             rel={href?.startsWith("http") ? "noreferrer" : undefined}
             target={href?.startsWith("http") ? "_blank" : undefined}
-            className="text-primary underline underline-offset-4 hover:no-underline"
+            className="break-words [overflow-wrap:anywhere] text-primary underline underline-offset-4 hover:no-underline"
         />
     ),
     h2: ({ children, ...props }) => (
