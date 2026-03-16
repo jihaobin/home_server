@@ -17,6 +17,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { executeContactCustomerAction } from "@repo/mobile-ui/lib/contact-customer-action";
 import {
     ChevronLeft,
     Headset,
@@ -26,9 +27,16 @@ import {
     Star,
 } from "lucide-react-native";
 import { Suspense, useCallback, useMemo, useState } from "react";
-import { Image, ScrollView, TouchableOpacity, View } from "react-native";
+import {
+    Image,
+    RefreshControl,
+    ScrollView,
+    TouchableOpacity,
+    View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { toast } from "sonner-native";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
 
@@ -249,7 +257,8 @@ function OrderDetailContent({
     onBack: () => void;
 }) {
     const router = useRouter();
-    const { data: order } = useOrderDetail(orderId);
+    const orderDetailQuery = useOrderDetail(orderId);
+    const order = orderDetailQuery.data;
     const queryClient = useQueryClient();
     const upsertConversation = useChatUpsertConversation();
 
@@ -277,6 +286,38 @@ function OrderDetailContent({
         order.status === "completed" && !needsReview ? order.id : undefined,
     );
     const review = reviewQuery.data;
+    const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: async () => {
+            const tasks: Array<Promise<unknown>> = [
+                orderDetailQuery.refetch({
+                    throwOnError: false,
+                }),
+            ];
+
+            if (showQrCode) {
+                tasks.push(
+                    checkinQuery.refetch({
+                        throwOnError: false,
+                    }),
+                );
+            }
+
+            if (order.status === "completed" && !needsReview) {
+                tasks.push(
+                    reviewQuery.refetch({
+                        throwOnError: false,
+                    }),
+                );
+            }
+
+            await Promise.all(tasks);
+        },
+    });
+
+    if (showPageLoading) {
+        return <OrderDetailSkeleton />;
+    }
 
     const canPay = Boolean(order.canPay);
     const canCancel = Boolean(order.canCancel);
@@ -339,7 +380,7 @@ function OrderDetailContent({
     }, [order.orderSerial]);
 
     const handleSupport = useCallback(() => {
-        toast.info("已为你呼叫客服");
+        executeContactCustomerAction();
     }, []);
 
     const handleOpenWorkerChat = useCallback(async () => {
@@ -505,7 +546,18 @@ function OrderDetailContent({
                 </TouchableOpacity>
             </View>
 
-            <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+            <ScrollView
+                className="flex-1"
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
+                    />
+                }
+            >
                 <OrderStatusCard status={order.status} />
 
                 <View className="mx-4 mt-3 rounded-lg bg-card px-4 py-4 shadow-xs">

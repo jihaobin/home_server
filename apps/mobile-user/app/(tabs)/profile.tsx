@@ -3,6 +3,7 @@ import {
     ActivityIndicator,
     Alert,
     Pressable,
+    RefreshControl,
     ScrollView,
     View,
 } from "react-native";
@@ -23,9 +24,11 @@ import {
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { useAppUpdate } from "@repo/mobile-ui/app-update/AppUpdateProvider";
+import { executeContactCustomerAction } from "@repo/mobile-ui/lib/contact-customer-action";
 import { useFile, useUploadFile } from "@repo/hooks/api/files";
 import { authClient } from "@repo/lib/auth-client";
 import type { OrderCardsTab } from "@repo/types";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 
 type OrderQuickAction = {
     id: "unpaid" | "pending" | "verifying" | "review";
@@ -72,6 +75,21 @@ function ModeSwitch({ checked }: { checked: boolean }) {
     );
 }
 
+function ProfileRefreshSkeleton() {
+    return (
+        <View className="flex-1 bg-background">
+            <SafeAreaView edges={["top"]} className="flex-1">
+                <View className="flex-1 items-center justify-center px-6">
+                    <ActivityIndicator size="large" />
+                    <Text className="mt-4 text-sm font-puhui-regular text-muted-foreground">
+                        个人页刷新中...
+                    </Text>
+                </View>
+            </SafeAreaView>
+        </View>
+    );
+}
+
 export default function Profile() {
     const router = useRouter();
     const { session, refetch: refetchSession } = useSession();
@@ -95,6 +113,13 @@ export default function Profile() {
     const uploadFile = useUploadFile();
     const { data: avatarFileData } = useFile(avatarFileHash);
     const avatarUrl = avatarFileData?.fileUrl || null;
+    const avatarImageSource = useMemo(
+        () =>
+            avatarUrl
+                ? { uri: avatarUrl }
+                : require("@/assets/images/promo-1.png"),
+        [avatarUrl],
+    );
 
     const displayName = useMemo(() => user?.name ?? "未命名用户", [user?.name]);
     const phoneMasked = useMemo(() => {
@@ -222,12 +247,30 @@ export default function Profile() {
         ]);
     }, [refetchSession, router]);
 
+    const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh();
+
+    if (showPageLoading) {
+        return (
+            <RequireAuth>
+                <ProfileRefreshSkeleton />
+            </RequireAuth>
+        );
+    }
+
     return (
         <RequireAuth>
             <View className="flex-1 bg-background">
                 <ScrollView
                     showsVerticalScrollIndicator={false}
                     contentContainerStyle={{ paddingBottom: 32 }}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={() => {
+                                void onRefresh();
+                            }}
+                        />
+                    }
                 >
                     {/* Header (Figma: 179px) */}
                     <View className="relative h-[179px] bg-primary">
@@ -250,11 +293,7 @@ export default function Profile() {
                                             className="h-[60px] w-[60px]"
                                         >
                                             <AvatarImage
-                                                source={
-                                                    avatarUrl
-                                                        ? { uri: avatarUrl }
-                                                        : require("@/assets/images/promo-1.png")
-                                                }
+                                                source={avatarImageSource}
                                             />
                                             <AvatarFallback>
                                                 <Text className="text-sm font-puhui-medium text-foreground">
@@ -273,7 +312,7 @@ export default function Profile() {
                                         <Text className="text-base font-puhui-medium text-foreground">
                                             {displayName}
                                         </Text>
-                                        <Text className="mt-2 text-xs font-puhui-regular text-zinc-500">
+                                        <Text className="mt-2 text-xs font-puhui-regular text-foreground">
                                             {phoneMasked}
                                         </Text>
                                     </View>
@@ -281,7 +320,7 @@ export default function Profile() {
                             </View>
                         </SafeAreaView>
 
-                        {/* Mode row (Figma: y=156, h=44, w=343) */}
+                        {/* Mode row */}
                         <Pressable
                             className="absolute left-4 right-4 top-[156px] h-11 flex-row items-center rounded-lg bg-neutral-800 px-3"
                             onPress={() => {
@@ -381,6 +420,13 @@ export default function Profile() {
                                             router.push(
                                                 "/address/service-address",
                                             );
+                                            return;
+                                        }
+                                        if (
+                                            item.id === "customer-service" ||
+                                            item.id === "complaint"
+                                        ) {
+                                            executeContactCustomerAction();
                                             return;
                                         }
                                         if (item.id === "check-update") {

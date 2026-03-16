@@ -11,6 +11,7 @@ import {
     Pressable,
     View,
 } from "react-native";
+import { useMemo } from "react";
 
 export interface ServiceItem {
     id: string;
@@ -37,9 +38,20 @@ function ServiceProviderCard({
     onDetail?: (provider: MatchedPersonnel) => void;
 }) {
     const avatarIdentifier = provider.avatarUrl?.trim() || null;
-    const isDirectAvatarUrl = Boolean(avatarIdentifier && /^https?:\/\//i.test(avatarIdentifier));
-    const { data: avatarFileData } = useFile(!isDirectAvatarUrl ? avatarIdentifier : null);
-    const avatarUrl = (isDirectAvatarUrl && avatarIdentifier) || avatarFileData?.fileUrl || null;
+    const isDirectAvatarUrl = Boolean(
+        avatarIdentifier && /^https?:\/\//i.test(avatarIdentifier),
+    );
+    const { data: avatarFileData } = useFile(
+        !isDirectAvatarUrl ? avatarIdentifier : null,
+    );
+    const avatarUrl =
+        (isDirectAvatarUrl && avatarIdentifier) ||
+        avatarFileData?.fileUrl ||
+        null;
+    const avatarSource = useMemo(
+        () => (avatarUrl ? { uri: avatarUrl } : null),
+        [avatarUrl],
+    );
 
     // 格式化距离显示
     const formatDistance = () => {
@@ -50,7 +62,8 @@ function ServiceProviderCard({
             const meters = Math.round(distKm * 1000);
             return `${meters}m`;
         }
-        const kmStr = distKm < 10 ? distKm.toFixed(1) : Math.round(distKm).toString();
+        const kmStr =
+            distKm < 10 ? distKm.toFixed(1) : Math.round(distKm).toString();
         return `${kmStr}km`;
     };
 
@@ -59,7 +72,9 @@ function ServiceProviderCard({
         if (!provider.workStartTime || !provider.workEndTime) return null;
 
         const formatTime = (time: string) => {
-            return time.length > 5 && time.includes(':') ? time.substring(0, 5) : time;
+            return time.length > 5 && time.includes(":")
+                ? time.substring(0, 5)
+                : time;
         };
 
         return `${formatTime(provider.workStartTime)}-${formatTime(provider.workEndTime)}`;
@@ -69,18 +84,19 @@ function ServiceProviderCard({
     const formatWorkDays = () => {
         if (!provider.workDays) return null;
 
-        const dayNames = ['一', '二', '三', '四', '五', '六', '日'];
+        const dayNames = ["一", "二", "三", "四", "五", "六", "日"];
         return provider.workDays
-            .split('')
-            .map(d => {
+            .split("")
+            .map((d) => {
                 const dayNum = Number.parseInt(d, 10);
                 return `周${dayNames[dayNum - 1]}`;
             })
-            .join('、');
+            .join("、");
     };
 
     // 简介
-    const bio = provider.bio || `专业服务人员，拥有${provider.yearsOfExperience}年经验`;
+    const bio =
+        provider.bio || `专业服务人员，拥有${provider.yearsOfExperience}年经验`;
     const experience = bio.length > 50 ? `${bio.slice(0, 50)}...` : bio;
 
     // 格式化好评率
@@ -97,15 +113,13 @@ function ServiceProviderCard({
     const workDays = formatWorkDays();
 
     return (
-        <View
-            className="mb-3 rounded-2xl border border-border bg-card p-4 shadow-2xl flex flex-col gap-2"
-        >
+        <View className="mb-3 rounded-2xl border border-border bg-card p-4 shadow-2xl flex flex-col gap-2">
             {/* 头部：头像、姓名、经验 */}
             <View className="flex-row items-start">
                 <View className="mr-3 h-16 w-16 items-center justify-center rounded-full bg-primary/10 dark:bg-primary/20">
-                    {avatarUrl ? (
+                    {avatarSource ? (
                         <Image
-                            source={{ uri: avatarUrl }}
+                            source={avatarSource}
                             style={{
                                 width: 64,
                                 height: 64,
@@ -157,7 +171,6 @@ function ServiceProviderCard({
                 </View>
             </View>
 
-
             {/* 信息区域：距离、位置、工作时间 */}
             <View className="flex-col gap-1">
                 {/* 距离和位置 */}
@@ -168,12 +181,20 @@ function ServiceProviderCard({
                             size={14}
                             className="text-muted-foreground mr-1.5"
                         />
-                        <Text className="text-sm text-foreground flex-1" numberOfLines={1}>
+                        <Text
+                            className="text-sm text-foreground flex-1"
+                            numberOfLines={1}
+                        >
                             {distance && (
-                                <Text className="font-medium text-primary">{distance}</Text>
+                                <Text className="font-medium text-primary">
+                                    {distance}
+                                </Text>
                             )}
                             {distance && provider.detailedAddress && (
-                                <Text className="text-muted-foreground"> · </Text>
+                                <Text className="text-muted-foreground">
+                                    {" "}
+                                    ·{" "}
+                                </Text>
                             )}
                             {provider.detailedAddress && (
                                 <Text className="text-muted-foreground">
@@ -206,11 +227,12 @@ function ServiceProviderCard({
                             size={14}
                             className="text-muted-foreground mr-1.5"
                         />
-                        <Text className="text-sm text-muted-foreground">{workDays}</Text>
+                        <Text className="text-sm text-muted-foreground">
+                            {workDays}
+                        </Text>
                     </View>
                 )}
             </View>
-
 
             {/* 底部：价格和操作按钮 */}
             <View className="flex-row items-center justify-between">
@@ -218,7 +240,9 @@ function ServiceProviderCard({
                     <Text className="text-2xl font-bold text-primary">
                         ¥{provider.price}
                     </Text>
-                    <Text className="ml-1 text-xs text-muted-foreground">/次</Text>
+                    <Text className="ml-1 text-xs text-muted-foreground">
+                        /次
+                    </Text>
                 </View>
 
                 <View className="flex-row gap-2">
@@ -226,7 +250,9 @@ function ServiceProviderCard({
                         className="items-center justify-center rounded-lg border border-primary bg-primary/5 px-4 py-2"
                         onPress={() => onDetail?.(provider)}
                     >
-                        <Text className="text-sm font-medium text-primary">详情</Text>
+                        <Text className="text-sm font-medium text-primary">
+                            详情
+                        </Text>
                     </Button>
                 </View>
             </View>
@@ -278,7 +304,11 @@ export function ServiceProviderSheet({
                         className="h-9 w-9 items-center justify-center rounded-full bg-muted/80 active:bg-muted"
                         hitSlop={8}
                     >
-                        <Icon as={ICON_MAP.X} size={20} className="text-muted-foreground" />
+                        <Icon
+                            as={ICON_MAP.X}
+                            size={20}
+                            className="text-muted-foreground"
+                        />
                     </Pressable>
                 </View>
             </View>
@@ -289,7 +319,11 @@ export function ServiceProviderSheet({
                 </Text>
                 <Pressable className="flex-row items-center">
                     <Text className="text-sm text-primary">综合排序</Text>
-                    <Icon as={ICON_MAP.ChevronDown} size={16} className="ml-1 text-primary" />
+                    <Icon
+                        as={ICON_MAP.ChevronDown}
+                        size={16}
+                        className="ml-1 text-primary"
+                    />
                 </Pressable>
             </View>
         </View>
@@ -297,8 +331,14 @@ export function ServiceProviderSheet({
 
     const emptyComponent = (
         <View className="items-center justify-center py-12">
-            <Icon as={ICON_MAP.Users} size={48} className="text-muted-foreground/40" />
-            <Text className="mt-4 text-base font-medium text-muted-foreground">暂无服务人员</Text>
+            <Icon
+                as={ICON_MAP.Users}
+                size={48}
+                className="text-muted-foreground/40"
+            />
+            <Text className="mt-4 text-base font-medium text-muted-foreground">
+                暂无服务人员
+            </Text>
             <Text className="mt-2 text-xs text-muted-foreground">
                 该服务正在招募服务人员,敬请期待
             </Text>

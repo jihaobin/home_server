@@ -1,414 +1,877 @@
 import * as Location from "expo-location";
 import {
-	addLocationErrorListener,
-	addLocationListener,
-	addStatusUpdateListener,
-	getApiKey,
-	type LocationChangedEvent,
-	type LocationErrorEvent,
-	LocationMode,
-	type LocationRequest,
-	type LocationStatusEvent,
-	RequestLevel,
-	removeAllLocationListeners,
-	setDeviceID,
-	setUserAgreePrivacy,
-	startLocationUpdates,
-	stopLocationUpdates,
+    addLocationErrorListener,
+    addLocationListener,
+    addStatusUpdateListener,
+    getApiKey,
+    type LocationChangedEvent,
+    type LocationErrorEvent,
+    LocationMode,
+    type LocationRequest,
+    type LocationStatusEvent,
+    RequestLevel,
+    setDeviceID,
+    setUserAgreePrivacy,
+    startLocationUpdates,
+    stopLocationUpdates,
 } from "expo-qq-location";
-import { useCallback, useEffect, useReducer, useRef } from "react";
-import { Platform } from "react-native";
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { AppState, type AppStateStatus, Platform } from "react-native";
 import { toast } from "sonner-native";
 
-/**
- * 请求位置权限
- */
-async function requestPermissions(): Promise<boolean> {
-	try {
-		// 请求前台权限
-		const { status: foregroundStatus } =
-			await Location.requestForegroundPermissionsAsync();
+type ExtendedLocationRequest = LocationRequest & {
+    allowCache?: boolean;
+};
 
-		if (foregroundStatus !== "granted") {
-			console.warn("前台位置权限被拒绝");
-			return false;
-		}
-
-		// 如果是Android，尝试请求后台权限以获得更好的定位
-		if (Platform.OS === "android") {
-			try {
-				const { status: backgroundStatus } =
-					await Location.requestBackgroundPermissionsAsync();
-				if (backgroundStatus === "granted") {
-				}
-			} catch (error) {
-				console.log("后台权限请求失败，但前台权限足够基本使用");
-			}
-		}
-
-		// 启用网络定位提供程序
-		try {
-			await Location.enableNetworkProviderAsync();
-		} catch (error) {
-			console.log("网络定位提供程序启用失败，但不影响基本功能");
-		}
-
-		return true;
-	} catch (error) {
-		console.error("请求位置权限失败:", error);
-		return false;
-	}
-}
-
-let cacheLocation: LocationChangedEvent | null = null;
+type UseLocationOptions = ExtendedLocationRequest & {
+    enabled?: boolean;
+    deviceId?: string;
+    source?: string;
+    onSuccess?: (event: LocationChangedEvent) => void;
+    onError?: (event: LocationErrorEvent) => void;
+    onUpdate?: (event: LocationStatusEvent) => void;
+};
 
 interface LocationState {
-	location: LocationChangedEvent | null;
-	isLocating: boolean;
-	locationStatus: string;
-	error: string | null;
-	apiKey: string;
+    location: LocationChangedEvent | null;
+    isLocating: boolean;
+    locationStatus: string;
+    error: string | null;
+    apiKey: string;
 }
 
 type LocationAction =
-	| { type: "SET_LOCATION"; payload: LocationChangedEvent | null }
-	| { type: "SET_IS_LOCATING"; payload: boolean }
-	| { type: "SET_LOCATION_STATUS"; payload: string }
-	| { type: "SET_ERROR"; payload: string | null }
-	| { type: "SET_API_KEY"; payload: string }
-	| { type: "RESET_STATE" };
-
-function locationReducer(
-	state: LocationState,
-	action: LocationAction,
-): LocationState {
-	switch (action.type) {
-		case "SET_LOCATION":
-			return { ...state, location: action.payload };
-		case "SET_IS_LOCATING":
-			return { ...state, isLocating: action.payload };
-		case "SET_LOCATION_STATUS":
-			return { ...state, locationStatus: action.payload };
-		case "SET_ERROR":
-			return { ...state, error: action.payload };
-		case "SET_API_KEY":
-			return { ...state, apiKey: action.payload };
-		case "RESET_STATE":
-			return {
-				location: null,
-				isLocating: false,
-				locationStatus: "未开始定位",
-				error: null,
-				apiKey: "",
-			};
-		default:
-			return state;
-	}
-}
+    | { type: "SET_LOCATION"; payload: LocationChangedEvent | null }
+    | { type: "SET_IS_LOCATING"; payload: boolean }
+    | { type: "SET_LOCATION_STATUS"; payload: string }
+    | { type: "SET_ERROR"; payload: string | null }
+    | { type: "SET_API_KEY"; payload: string };
 
 const initialState: LocationState = {
-	location: null,
-	isLocating: false,
-	locationStatus: "未开始定位",
-	error: null,
-	apiKey: "",
+    location: null,
+    isLocating: false,
+    locationStatus: "未开始定位",
+    error: null,
+    apiKey: "",
 };
 
-export default function useLocation(
-	options = {
-		interval: 10 * 1000, // 10秒间隔
-		requestLevel: RequestLevel.REQUEST_LEVEL_ADMIN_AREA,
-		allowGPS: true,
-		allowDirection: true,
-		indoorLocationMode: true,
-		locMode: LocationMode.HIGH_ACCURACY_MODE,
-		gpsFirst: false,
-		gpsTimeOut: 8000,
-	} as LocationRequest & {
-		onSuccess?: (event: LocationChangedEvent) => void;
-		onError?: (event: LocationErrorEvent) => void;
-		onUpdate?: (event: LocationStatusEvent) => void;
-	},
+const defaultRequestOptions: ExtendedLocationRequest = {
+    interval: 10 * 1000,
+    requestLevel: RequestLevel.REQUEST_LEVEL_ADMIN_AREA,
+    allowGPS: true,
+    allowDirection: true,
+    indoorLocationMode: true,
+    locMode: LocationMode.HIGH_ACCURACY_MODE,
+    gpsFirst: false,
+    gpsTimeOut: 8000,
+    allowCache: true,
+};
+
+const DEVICE_ID_STORAGE_KEY = "repo_location_device_id_v1";
+const CONTINUOUS_LOCATION_CACHE_MAX_AGE_MS = 30 * 1000;
+
+type NativeSubscription = {
+    remove: () => void;
+};
+
+interface Subscriber {
+    source: string;
+    onLocation: (event: LocationChangedEvent) => void;
+    onError: (event: LocationErrorEvent) => void;
+    onStatus: (event: LocationStatusEvent) => void;
+    onStatePatch: (patch: Partial<LocationState>) => void;
+}
+
+let nextSubscriberId = 1;
+const subscribers = new Map<number, Subscriber>();
+const activeSubscribers = new Set<number>();
+
+let sharedLocation: LocationChangedEvent | null = null;
+let sharedLocationUpdatedAt = 0;
+let sharedApiKey = "";
+let sharedError: string | null = null;
+let sharedStatus = "未开始定位";
+let isServiceRunning = false;
+let startInFlight: Promise<void> | null = null;
+let latestRequestOptions: ExtendedLocationRequest = {
+    ...defaultRequestOptions,
+};
+
+let nativeSubscriptions: {
+    location?: NativeSubscription;
+    error?: NativeSubscription;
+    status?: NativeSubscription;
+} = {};
+
+let appStateListener: NativeSubscription | null = null;
+let currentAppState: AppStateStatus = AppState.currentState;
+let pausedByAppState = false;
+let delayedRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+let initializationDone = false;
+let lastConfiguredDeviceId: string | null = null;
+let deviceIdCache: string | null = null;
+let deviceIdLoadingPromise: Promise<string> | null = null;
+let continuousLocationInvocationCount = 0;
+
+function logContinuousLocationInvocation(params: {
+    count: number;
+    source: string;
+    provider: "cache" | "tencent";
+}) {
+    // console.log(
+    //     `[location][continuous] 第${params.count}次调用 | 来源=${params.source} | 数据来源=${params.provider === "cache" ? "缓存" : "腾讯地图"}`,
+    // );
+}
+
+function clearDelayedRefreshTimer() {
+    if (delayedRefreshTimer) {
+        clearTimeout(delayedRefreshTimer);
+        delayedRefreshTimer = null;
+    }
+}
+
+function getSharedLocationAgeMs(): number {
+    if (!sharedLocation || !sharedLocationUpdatedAt) {
+        return Number.POSITIVE_INFINITY;
+    }
+
+    return Date.now() - sharedLocationUpdatedAt;
+}
+
+function locationReducer(
+    state: LocationState,
+    action: LocationAction,
+): LocationState {
+    switch (action.type) {
+        case "SET_LOCATION":
+            return { ...state, location: action.payload };
+        case "SET_IS_LOCATING":
+            return { ...state, isLocating: action.payload };
+        case "SET_LOCATION_STATUS":
+            return { ...state, locationStatus: action.payload };
+        case "SET_ERROR":
+            return { ...state, error: action.payload };
+        case "SET_API_KEY":
+            return { ...state, apiKey: action.payload };
+        default:
+            return state;
+    }
+}
+
+function sanitizeDeviceId(value: string): string {
+    const sanitized = value.replace(/[^A-Za-z0-9_]/g, "_").slice(0, 63);
+    return sanitized || `location_${Date.now()}`;
+}
+
+async function resolveDeviceId(explicitDeviceId?: string): Promise<string> {
+    if (explicitDeviceId) {
+        return sanitizeDeviceId(explicitDeviceId);
+    }
+
+    if (deviceIdCache) {
+        return deviceIdCache;
+    }
+
+    if (deviceIdLoadingPromise) {
+        return deviceIdLoadingPromise;
+    }
+
+    deviceIdLoadingPromise = (async () => {
+        const fallback = sanitizeDeviceId(
+            `location_${Platform.OS}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+        );
+
+        try {
+            const SecureStore = await import("expo-secure-store");
+            const existing = await SecureStore.getItemAsync(
+                DEVICE_ID_STORAGE_KEY,
+            );
+            if (existing) {
+                deviceIdCache = sanitizeDeviceId(existing);
+                return deviceIdCache;
+            }
+
+            await SecureStore.setItemAsync(DEVICE_ID_STORAGE_KEY, fallback);
+            deviceIdCache = fallback;
+            return fallback;
+        } catch {
+            deviceIdCache = fallback;
+            return fallback;
+        }
+    })();
+
+    const resolved = await deviceIdLoadingPromise;
+    deviceIdLoadingPromise = null;
+    return resolved;
+}
+
+function mergeRequestOptions(
+    options: UseLocationOptions,
+): ExtendedLocationRequest {
+    return {
+        ...defaultRequestOptions,
+        ...(options.interval !== undefined
+            ? { interval: options.interval }
+            : {}),
+        ...(options.requestLevel !== undefined
+            ? { requestLevel: options.requestLevel }
+            : {}),
+        ...(options.allowGPS !== undefined
+            ? { allowGPS: options.allowGPS }
+            : {}),
+        ...(options.allowDirection !== undefined
+            ? { allowDirection: options.allowDirection }
+            : {}),
+        ...(options.indoorLocationMode !== undefined
+            ? { indoorLocationMode: options.indoorLocationMode }
+            : {}),
+        ...(options.locMode !== undefined ? { locMode: options.locMode } : {}),
+        ...(options.gpsFirst !== undefined
+            ? { gpsFirst: options.gpsFirst }
+            : {}),
+        ...(options.gpsTimeOut !== undefined
+            ? { gpsTimeOut: options.gpsTimeOut }
+            : {}),
+        ...(options.allowCache !== undefined
+            ? { allowCache: options.allowCache }
+            : {}),
+    };
+}
+
+function broadcastStatePatch(patch: Partial<LocationState>) {
+    for (const subscriber of subscribers.values()) {
+        subscriber.onStatePatch(patch);
+    }
+}
+
+function attachNativeListeners() {
+    if (
+        nativeSubscriptions.location &&
+        nativeSubscriptions.error &&
+        nativeSubscriptions.status
+    ) {
+        return;
+    }
+
+    nativeSubscriptions.location = addLocationListener((event) => {
+        sharedLocation = event;
+        sharedLocationUpdatedAt = Date.now();
+        sharedError = null;
+        sharedStatus = "定位成功";
+
+        broadcastStatePatch({
+            location: event,
+            error: null,
+            locationStatus: sharedStatus,
+            isLocating: isServiceRunning,
+        });
+
+        for (const subscriber of subscribers.values()) {
+            continuousLocationInvocationCount += 1;
+            logContinuousLocationInvocation({
+                count: continuousLocationInvocationCount,
+                source: subscriber.source,
+                provider: "tencent",
+            });
+            subscriber.onLocation(event);
+        }
+    });
+
+    nativeSubscriptions.error = addLocationErrorListener((event) => {
+        sharedError = `定位错误: ${event.reason || JSON.stringify(event)}`;
+        sharedStatus = "定位失败";
+
+        broadcastStatePatch({
+            error: sharedError,
+            locationStatus: sharedStatus,
+            isLocating: false,
+        });
+
+        for (const subscriber of subscribers.values()) {
+            subscriber.onError(event);
+        }
+    });
+
+    nativeSubscriptions.status = addStatusUpdateListener((event) => {
+        sharedStatus = `状态更新: ${JSON.stringify(event)}`;
+
+        broadcastStatePatch({
+            locationStatus: sharedStatus,
+        });
+
+        for (const subscriber of subscribers.values()) {
+            subscriber.onStatus(event);
+        }
+    });
+}
+
+function detachNativeListeners() {
+    nativeSubscriptions.location?.remove();
+    nativeSubscriptions.error?.remove();
+    nativeSubscriptions.status?.remove();
+    nativeSubscriptions = {};
+}
+
+function stopSharedLocationService(status = "定位已暂停") {
+    if (!isServiceRunning) {
+        broadcastStatePatch({
+            isLocating: false,
+            locationStatus: status,
+        });
+        return;
+    }
+
+    try {
+        stopLocationUpdates();
+    } catch {}
+
+    isServiceRunning = false;
+    sharedStatus = status;
+
+    broadcastStatePatch({
+        isLocating: false,
+        locationStatus: status,
+    });
+}
+
+async function requestPermissions(): Promise<boolean> {
+    try {
+        const { status: foregroundStatus } =
+            await Location.requestForegroundPermissionsAsync();
+
+        if (foregroundStatus !== "granted") {
+            return false;
+        }
+
+        if (Platform.OS === "android") {
+            try {
+                await Location.requestBackgroundPermissionsAsync();
+            } catch {}
+        }
+
+        try {
+            await Location.enableNetworkProviderAsync();
+        } catch {}
+
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+async function ensureBaseInitialization(options: UseLocationOptions) {
+    if (!initializationDone) {
+        setUserAgreePrivacy(true);
+        sharedApiKey = getApiKey();
+        initializationDone = true;
+    }
+
+    const resolvedDeviceId = await resolveDeviceId(options.deviceId);
+    if (resolvedDeviceId !== lastConfiguredDeviceId) {
+        setDeviceID(resolvedDeviceId);
+        lastConfiguredDeviceId = resolvedDeviceId;
+    }
+}
+
+async function startSharedLocationService(
+    requestOptions: ExtendedLocationRequest,
 ) {
-	const [state, dispatch] = useReducer(locationReducer, initialState);
+    clearDelayedRefreshTimer();
+    latestRequestOptions = requestOptions;
 
-	// 使用 ref 来避免闭包问题
-	const isInitializedRef = useRef(false);
-	const listenersRef = useRef<{
-		location?: any;
-		error?: any;
-		status?: any;
-	}>({});
-	const lastLocationRef = useRef<LocationChangedEvent | null>(null);
-	const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const isMountedRef = useRef(true);
+    if (isServiceRunning) {
+        broadcastStatePatch({
+            isLocating: true,
+            locationStatus: sharedStatus,
+            error: sharedError,
+        });
+        return;
+    }
 
-	// 使用 ref 来保存最新的 options 和回调
-	const optionsRef = useRef(options);
-	optionsRef.current = options;
+    if (startInFlight) {
+        await startInFlight;
+        return;
+    }
 
-	const callbacksRef = useRef({
-		onSuccess: options.onSuccess,
-		onError: options.onError,
-		onUpdate: options.onUpdate,
-	});
-	callbacksRef.current = {
-		onSuccess: options.onSuccess,
-		onError: options.onError,
-		onUpdate: options.onUpdate,
-	};
+    startInFlight = (async () => {
+        const permissionGranted = await requestPermissions();
+        if (!permissionGranted) {
+            sharedError = "请在设置中授予定位权限";
+            sharedStatus = "权限被拒绝";
+            broadcastStatePatch({
+                isLocating: false,
+                error: sharedError,
+                locationStatus: sharedStatus,
+            });
+            toast.error(sharedError);
+            return;
+        }
 
-	// 防抖更新位置信息
-	const debouncedUpdateLocation = useCallback((event: LocationChangedEvent) => {
-		if (debounceTimerRef.current) {
-			clearTimeout(debounceTimerRef.current);
-		}
+        sharedError = null;
+        sharedStatus = "启动定位中...";
+        broadcastStatePatch({
+            isLocating: true,
+            error: null,
+            locationStatus: sharedStatus,
+        });
 
-		debounceTimerRef.current = setTimeout(() => {
-			// 检查位置是否有显著变化
-			const lastLocation = lastLocationRef.current;
-			if (lastLocation) {
-				const latDiff = Math.abs(event.latitude - lastLocation.latitude);
-				const lngDiff = Math.abs(event.longitude - lastLocation.longitude);
+        if (activeSubscribers.size === 0) {
+            sharedStatus = "定位已暂停";
+            broadcastStatePatch({
+                isLocating: false,
+                locationStatus: sharedStatus,
+            });
+            return;
+        }
 
-				// 如果位置变化很小（小于10米），则不更新状态
-				if (latDiff < 0.001 && lngDiff < 0.001) {
-					callbacksRef.current.onSuccess?.(event);
-					return;
-				}
-			}
+        try {
+            const result = await startLocationUpdates(
+                requestOptions as LocationRequest,
+            );
+            if (result === 0) {
+                if (activeSubscribers.size === 0) {
+                    try {
+                        stopLocationUpdates();
+                    } catch {}
 
-			cacheLocation = event;
-			lastLocationRef.current = event;
+                    isServiceRunning = false;
+                    sharedStatus = "定位已暂停";
+                    broadcastStatePatch({
+                        isLocating: false,
+                        locationStatus: sharedStatus,
+                    });
+                    return;
+                }
 
-			if (isMountedRef.current) {
-				dispatch({ type: "SET_LOCATION", payload: event });
-				dispatch({ type: "SET_ERROR", payload: null });
+                isServiceRunning = true;
+                sharedStatus = "定位已启动";
+                broadcastStatePatch({
+                    isLocating: true,
+                    error: null,
+                    locationStatus: sharedStatus,
+                    apiKey: sharedApiKey,
+                });
+                return;
+            }
 
-				// 只在首次定位成功时更新状态文本
-				dispatch({ type: "SET_LOCATION_STATUS", payload: "定位成功" });
-			}
+            sharedError = `启动定位失败，错误码: ${result}`;
+            sharedStatus = "启动失败";
+            isServiceRunning = false;
+            broadcastStatePatch({
+                isLocating: false,
+                error: sharedError,
+                locationStatus: sharedStatus,
+            });
+            toast.error("启动定位失败");
+        } catch (error) {
+            sharedError = `启动定位异常: ${error instanceof Error ? error.message : "未知错误"}`;
+            sharedStatus = "启动异常";
+            isServiceRunning = false;
+            broadcastStatePatch({
+                isLocating: false,
+                error: sharedError,
+                locationStatus: sharedStatus,
+            });
+            toast.error("启动定位失败");
+        }
+    })();
 
-			callbacksRef.current.onSuccess?.(event);
-		}, 500); // 500ms 防抖
-	}, []);
+    try {
+        await startInFlight;
+    } finally {
+        startInFlight = null;
+    }
+}
 
-	// 优化错误处理
-	const handleLocationError = useCallback((event: LocationErrorEvent) => {
-		const errorMessage = `定位错误: ${event.reason || JSON.stringify(event)}`;
+function ensureAppStateListener() {
+    if (appStateListener) {
+        return;
+    }
 
-		if (isMountedRef.current) {
-			dispatch({ type: "SET_ERROR", payload: errorMessage });
-			dispatch({ type: "SET_LOCATION_STATUS", payload: "定位失败" });
-			dispatch({ type: "SET_IS_LOCATING", payload: false });
-		}
+    appStateListener = AppState.addEventListener("change", (nextState) => {
+        const wasActive = currentAppState === "active";
+        currentAppState = nextState;
 
-		callbacksRef.current.onError?.(event);
-	}, []);
+        if (wasActive && nextState !== "active" && isServiceRunning) {
+            pausedByAppState = true;
+            stopSharedLocationService("应用后台已暂停定位");
+            return;
+        }
 
-	// 优化状态更新处理
-	const handleStatusUpdate = useCallback((event: LocationStatusEvent) => {
-		const statusText = `状态更新: ${JSON.stringify(event)}`;
+        if (
+            nextState === "active" &&
+            pausedByAppState &&
+            activeSubscribers.size > 0
+        ) {
+            pausedByAppState = false;
+            void startSharedLocationService(latestRequestOptions);
+        }
+    });
+}
 
-		if (isMountedRef.current) {
-			dispatch({ type: "SET_LOCATION_STATUS", payload: statusText });
-		}
+function teardownGlobalIfIdle() {
+    if (subscribers.size > 0) {
+        return;
+    }
 
-		callbacksRef.current.onUpdate?.(event);
-	}, []);
+    activeSubscribers.clear();
+    clearDelayedRefreshTimer();
+    stopSharedLocationService("定位已停止");
+    detachNativeListeners();
+    appStateListener?.remove();
+    appStateListener = null;
+    pausedByAppState = false;
+}
 
-	const handleStartContinuousLocation = useCallback(async () => {
-		if (isInitializedRef.current) {
-			console.log("定位服务已经启动，跳过重复初始化");
-			return;
-		}
+function registerSubscriber(subscriber: Subscriber): number {
+    const id = nextSubscriberId++;
+    subscribers.set(id, subscriber);
+    return id;
+}
 
-		try {
-			// 清除之前的错误状态
-			dispatch({ type: "SET_ERROR", payload: null });
-			dispatch({ type: "SET_LOCATION_STATUS", payload: "检查权限中..." });
+function unregisterSubscriber(id: number) {
+    subscribers.delete(id);
+    activeSubscribers.delete(id);
+    if (activeSubscribers.size === 0) {
+        stopSharedLocationService("定位已暂停");
+    }
+    teardownGlobalIfIdle();
+}
 
-			// 尝试请求权限
-			const permissionGranted = await requestPermissions();
-			if (!permissionGranted) {
-				const errorMsg = "请在设置中授予定位权限";
+async function activateSubscriber(id: number, options: UseLocationOptions) {
+    activeSubscribers.add(id);
+    attachNativeListeners();
+    ensureAppStateListener();
+    await ensureBaseInitialization(options);
+    broadcastStatePatch({ apiKey: sharedApiKey });
 
-				if (isMountedRef.current) {
-					dispatch({ type: "SET_ERROR", payload: errorMsg });
-					dispatch({ type: "SET_LOCATION_STATUS", payload: "权限被拒绝" });
-				}
+    const sharedLocationAgeMs = getSharedLocationAgeMs();
+    const canUseFreshCache =
+        sharedLocation &&
+        sharedLocationAgeMs <= CONTINUOUS_LOCATION_CACHE_MAX_AGE_MS;
 
-				toast.error(errorMsg);
-				return;
-			}
+    if (canUseFreshCache && sharedLocation) {
+        const subscriber = subscribers.get(id);
+        if (subscriber) {
+            continuousLocationInvocationCount += 1;
+            logContinuousLocationInvocation({
+                count: continuousLocationInvocationCount,
+                source: subscriber.source,
+                provider: "cache",
+            });
+            subscriber.onLocation(sharedLocation);
+        }
 
-			dispatch({ type: "SET_LOCATION_STATUS", payload: "启动定位中..." });
-			dispatch({ type: "SET_IS_LOCATING", payload: true });
+        if (!isServiceRunning) {
+            clearDelayedRefreshTimer();
+            delayedRefreshTimer = setTimeout(
+                () => {
+                    delayedRefreshTimer = null;
+                    if (activeSubscribers.size > 0 && !isServiceRunning) {
+                        void startSharedLocationService(latestRequestOptions);
+                    }
+                },
+                Math.max(
+                    0,
+                    CONTINUOUS_LOCATION_CACHE_MAX_AGE_MS - sharedLocationAgeMs,
+                ),
+            );
+        }
 
-			// 开始连续定位
-			const result = await startLocationUpdates(optionsRef.current);
+        return;
+    }
 
-			if (result === 0) {
-				if (isMountedRef.current) {
-					dispatch({ type: "SET_LOCATION_STATUS", payload: "定位已启动" });
-				}
-				isInitializedRef.current = true;
-			} else {
-				const errorMsg = `启动定位失败，错误码: ${result}`;
+    await startSharedLocationService(mergeRequestOptions(options));
+}
 
-				if (isMountedRef.current) {
-					dispatch({ type: "SET_IS_LOCATING", payload: false });
-					dispatch({ type: "SET_ERROR", payload: errorMsg });
-					dispatch({ type: "SET_LOCATION_STATUS", payload: "启动失败" });
-				}
+function deactivateSubscriber(id: number, status = "定位已暂停") {
+    activeSubscribers.delete(id);
+    if (activeSubscribers.size === 0) {
+        clearDelayedRefreshTimer();
+        stopSharedLocationService(status);
+    }
+}
 
-				toast.error("启动定位失败");
-			}
-		} catch (error) {
-			const errorMsg = `启动定位异常: ${error instanceof Error ? error.message : "未知错误"}`;
+function calculateDistanceMeters(
+    from: LocationChangedEvent,
+    to: LocationChangedEvent,
+): number {
+    const toRadians = (degree: number) => (degree * Math.PI) / 180;
+    const earthRadius = 6371000;
 
-			if (isMountedRef.current) {
-				dispatch({ type: "SET_IS_LOCATING", payload: false });
-				dispatch({ type: "SET_ERROR", payload: errorMsg });
-				dispatch({ type: "SET_LOCATION_STATUS", payload: "启动异常" });
-			}
+    const lat1 = toRadians(from.latitude);
+    const lat2 = toRadians(to.latitude);
+    const dLat = lat2 - lat1;
+    const dLng = toRadians(to.longitude - from.longitude);
 
-			toast.error("启动定位失败");
-		}
-	}, []);
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1) *
+            Math.cos(lat2) *
+            Math.sin(dLng / 2) *
+            Math.sin(dLng / 2);
 
-	useEffect(() => {
-		isMountedRef.current = true;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadius * c;
+}
 
-		// 避免重复初始化
-		if (isInitializedRef.current) {
-			return;
-		}
+export default function useLocation(rawOptions?: UseLocationOptions) {
+    const options = rawOptions ?? {};
+    const enabled = rawOptions?.enabled ?? true;
+    const [state, dispatch] = useReducer(locationReducer, {
+        ...initialState,
+        apiKey: sharedApiKey,
+        location: sharedLocation,
+        error: sharedError,
+        locationStatus: sharedStatus,
+        isLocating: isServiceRunning,
+    });
 
-		// 设置用户同意隐私协议（必须）
-		setUserAgreePrivacy(true);
+    const isMountedRef = useRef(true);
+    const subscriberIdRef = useRef<number | null>(null);
+    const lastLocationRef = useRef<LocationChangedEvent | null>(sharedLocation);
+    const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const enabledRef = useRef(enabled);
+    const manuallyStoppedRef = useRef(false);
+    const optionsRef = useRef(options);
+    optionsRef.current = options;
 
-		// 获取API Key - 只获取一次
-		const key = getApiKey();
-		dispatch({ type: "SET_API_KEY", payload: key });
+    const callbacksRef = useRef({
+        onSuccess: options.onSuccess,
+        onError: options.onError,
+        onUpdate: options.onUpdate,
+    });
 
-		// 设置设备ID（可选）
-		setDeviceID("unLoginUser");
+    callbacksRef.current = {
+        onSuccess: options.onSuccess,
+        onError: options.onError,
+        onUpdate: options.onUpdate,
+    };
 
-		// 添加定位成功监听器
-		const locationSubscription = addLocationListener(debouncedUpdateLocation);
-		listenersRef.current.location = locationSubscription;
+    const activationKey = useMemo(
+        () =>
+            JSON.stringify({
+                enabled,
+                deviceId: options.deviceId,
+                source: options.source,
+                interval: options.interval,
+                requestLevel: options.requestLevel,
+                allowGPS: options.allowGPS,
+                allowDirection: options.allowDirection,
+                indoorLocationMode: options.indoorLocationMode,
+                locMode: options.locMode,
+                gpsFirst: options.gpsFirst,
+                gpsTimeOut: options.gpsTimeOut,
+                allowCache: options.allowCache,
+            }),
+        [
+            enabled,
+            options.deviceId,
+            options.source,
+            options.interval,
+            options.requestLevel,
+            options.allowGPS,
+            options.allowDirection,
+            options.indoorLocationMode,
+            options.locMode,
+            options.gpsFirst,
+            options.gpsTimeOut,
+            options.allowCache,
+        ],
+    );
 
-		// 添加定位错误监听器
-		const errorSubscription = addLocationErrorListener(handleLocationError);
-		listenersRef.current.error = errorSubscription;
+    const debouncedUpdateLocation = useCallback(
+        (event: LocationChangedEvent) => {
+            if (!enabledRef.current || !isMountedRef.current) {
+                return;
+            }
 
-		// 添加状态监听器
-		const statusSubscription = addStatusUpdateListener(handleStatusUpdate);
-		listenersRef.current.status = statusSubscription;
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+            }
 
-		// 延迟启动定位，确保监听器已经完全设置
-		const timeoutId = setTimeout(() => {
-			handleStartContinuousLocation();
-		}, 100);
+            debounceTimerRef.current = setTimeout(() => {
+                const lastLocation = lastLocationRef.current;
+                if (lastLocation) {
+                    const distance = calculateDistanceMeters(
+                        lastLocation,
+                        event,
+                    );
+                    if (distance < 10) {
+                        callbacksRef.current.onSuccess?.(event);
+                        return;
+                    }
+                }
 
-		return () => {
-			isMountedRef.current = false;
+                lastLocationRef.current = event;
+                dispatch({ type: "SET_LOCATION", payload: event });
+                dispatch({ type: "SET_ERROR", payload: null });
+                dispatch({ type: "SET_LOCATION_STATUS", payload: "定位成功" });
+                callbacksRef.current.onSuccess?.(event);
+            }, 500);
+        },
+        [],
+    );
 
-			// 清理定时器
-			clearTimeout(timeoutId);
+    const handleLocationError = useCallback((event: LocationErrorEvent) => {
+        if (!enabledRef.current || !isMountedRef.current) {
+            return;
+        }
 
-			// 清理防抖定时器
-			if (debounceTimerRef.current) {
-				clearTimeout(debounceTimerRef.current);
-				debounceTimerRef.current = null;
-			}
+        dispatch({
+            type: "SET_ERROR",
+            payload: `定位错误: ${event.reason || JSON.stringify(event)}`,
+        });
+        dispatch({ type: "SET_LOCATION_STATUS", payload: "定位失败" });
+        dispatch({ type: "SET_IS_LOCATING", payload: false });
+        callbacksRef.current.onError?.(event);
+    }, []);
 
-			// 清理监听器
-			if (listenersRef.current.location) {
-				listenersRef.current.location.remove();
-			}
-			if (listenersRef.current.error) {
-				listenersRef.current.error.remove();
-			}
-			if (listenersRef.current.status) {
-				listenersRef.current.status.remove();
-			}
+    const handleStatusUpdate = useCallback((event: LocationStatusEvent) => {
+        if (!enabledRef.current || !isMountedRef.current) {
+            return;
+        }
 
-			// 停止定位
-			if (isInitializedRef.current) {
-				stopLocationUpdates();
-				removeAllLocationListeners();
-				isInitializedRef.current = false;
-			}
-		};
-	}, [
-		debouncedUpdateLocation,
-		handleLocationError,
-		handleStatusUpdate,
-		handleStartContinuousLocation,
-	]);
+        dispatch({
+            type: "SET_LOCATION_STATUS",
+            payload: `状态更新: ${JSON.stringify(event)}`,
+        });
+        callbacksRef.current.onUpdate?.(event);
+    }, []);
 
-	const handleStopLocation = useCallback(() => {
-		try {
-			dispatch({ type: "SET_IS_LOCATING", payload: false });
-			dispatch({ type: "SET_LOCATION_STATUS", payload: "定位已停止" });
-			dispatch({ type: "SET_ERROR", payload: null }); // 清除错误状态
+    useEffect(() => {
+        isMountedRef.current = true;
 
-			// 清理防抖定时器
-			if (debounceTimerRef.current) {
-				clearTimeout(debounceTimerRef.current);
-				debounceTimerRef.current = null;
-			}
+        const subscriberId = registerSubscriber({
+            source: options.source ?? "unknown-continuous-source",
+            onLocation: debouncedUpdateLocation,
+            onError: handleLocationError,
+            onStatus: handleStatusUpdate,
+            onStatePatch: (patch) => {
+                if (!isMountedRef.current) {
+                    return;
+                }
 
-			// 停止定位
-			if (isInitializedRef.current) {
-				stopLocationUpdates();
-				removeAllLocationListeners();
-				isInitializedRef.current = false;
-			}
-		} catch (error) {
-			const errorMsg = `停止定位失败: ${error instanceof Error ? error.message : "未知错误"}`;
+                if (patch.location !== undefined) {
+                    dispatch({ type: "SET_LOCATION", payload: patch.location });
+                }
+                if (patch.error !== undefined) {
+                    dispatch({
+                        type: "SET_ERROR",
+                        payload: patch.error ?? null,
+                    });
+                }
+                if (patch.locationStatus !== undefined) {
+                    dispatch({
+                        type: "SET_LOCATION_STATUS",
+                        payload: patch.locationStatus,
+                    });
+                }
+                if (patch.isLocating !== undefined) {
+                    dispatch({
+                        type: "SET_IS_LOCATING",
+                        payload: patch.isLocating,
+                    });
+                }
+                if (patch.apiKey !== undefined) {
+                    dispatch({ type: "SET_API_KEY", payload: patch.apiKey });
+                }
+            },
+        });
 
-			if (isMountedRef.current) {
-				dispatch({ type: "SET_ERROR", payload: errorMsg });
-				dispatch({ type: "SET_LOCATION_STATUS", payload: "停止失败" });
-			}
+        subscriberIdRef.current = subscriberId;
 
-			toast.error("停止定位失败");
-		}
-	}, []);
+        if (sharedApiKey) {
+            dispatch({ type: "SET_API_KEY", payload: sharedApiKey });
+        }
 
-	const handleRestartLocation = useCallback(async () => {
-		try {
-			dispatch({ type: "SET_ERROR", payload: null });
-			dispatch({ type: "SET_LOCATION_STATUS", payload: "重新定位中..." });
+        return () => {
+            isMountedRef.current = false;
+            const id = subscriberIdRef.current;
+            if (id !== null) {
+                deactivateSubscriber(id, "定位已暂停");
+                unregisterSubscriber(id);
+            }
 
-			if (isInitializedRef.current) {
-				stopLocationUpdates();
-				isInitializedRef.current = false;
-			}
+            subscriberIdRef.current = null;
 
-			await handleStartContinuousLocation();
-		} catch (error) {
-			const errorMsg = `重新定位失败: ${error instanceof Error ? error.message : "未知错误"}`;
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+                debounceTimerRef.current = null;
+            }
+        };
+    }, [debouncedUpdateLocation, handleLocationError, handleStatusUpdate]);
 
-			if (isMountedRef.current) {
-				dispatch({ type: "SET_ERROR", payload: errorMsg });
-				dispatch({ type: "SET_LOCATION_STATUS", payload: "重新定位失败" });
-			}
+    useEffect(() => {
+        enabledRef.current = enabled;
+        const id = subscriberIdRef.current;
+        if (id === null) {
+            return;
+        }
 
-			toast.error("重新定位失败");
-		}
-	}, [handleStartContinuousLocation]);
+        if (!enabled) {
+            manuallyStoppedRef.current = false;
+            deactivateSubscriber(id, "定位已暂停");
+            dispatch({ type: "SET_IS_LOCATING", payload: false });
+            dispatch({ type: "SET_LOCATION_STATUS", payload: "定位已暂停" });
+            return;
+        }
 
-	return {
-		location: state.location || cacheLocation,
-		isLocating: state.isLocating,
-		locationStatus: state.locationStatus,
-		error: state.error,
-		apiKey: state.apiKey,
-		handleStopLocation,
-		handleRestartLocation,
-	};
+        if (manuallyStoppedRef.current) {
+            dispatch({ type: "SET_IS_LOCATING", payload: false });
+            dispatch({
+                type: "SET_LOCATION_STATUS",
+                payload: "定位已手动停止",
+            });
+            return;
+        }
+
+        void activateSubscriber(id, optionsRef.current);
+    }, [activationKey, enabled]);
+
+    const handleStopLocation = useCallback(() => {
+        const id = subscriberIdRef.current;
+        if (id === null) {
+            return;
+        }
+
+        manuallyStoppedRef.current = true;
+        deactivateSubscriber(id, "定位已手动停止");
+        dispatch({ type: "SET_IS_LOCATING", payload: false });
+        dispatch({ type: "SET_LOCATION_STATUS", payload: "定位已手动停止" });
+        dispatch({ type: "SET_ERROR", payload: null });
+    }, []);
+
+    const handleRestartLocation = useCallback(async () => {
+        const id = subscriberIdRef.current;
+        if (id === null) {
+            return;
+        }
+
+        if (!enabledRef.current) {
+            const errorMessage = "当前页面未激活定位，无法重新定位";
+            dispatch({ type: "SET_ERROR", payload: errorMessage });
+            dispatch({ type: "SET_LOCATION_STATUS", payload: "重新定位失败" });
+            toast.error(errorMessage);
+            return;
+        }
+
+        manuallyStoppedRef.current = false;
+        dispatch({ type: "SET_ERROR", payload: null });
+        dispatch({ type: "SET_LOCATION_STATUS", payload: "重新定位中..." });
+
+        deactivateSubscriber(id, "重新定位中...");
+        await activateSubscriber(id, optionsRef.current);
+    }, []);
+
+    return {
+        location: state.location ?? sharedLocation,
+        isLocating: state.isLocating,
+        locationStatus: state.locationStatus,
+        error: state.error,
+        apiKey: state.apiKey,
+        handleStopLocation,
+        handleRestartLocation,
+    };
 }

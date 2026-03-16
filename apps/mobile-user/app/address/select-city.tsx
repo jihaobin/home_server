@@ -26,7 +26,11 @@ import {
     useCitySearchSuspense,
 } from "@repo/hooks/api/address";
 import { useDebounce } from "@repo/hooks/useDebounceThrottle";
-import { useAddressEditStore, type SelectLocation } from "@/stores/address-store";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
+import {
+    useAddressEditStore,
+    type SelectLocation,
+} from "@/stores/address-store";
 import { useHomeLocationStore } from "@/stores/home-location-store";
 
 // 字母索引
@@ -59,16 +63,91 @@ const ALPHABET = [
     "Z",
 ];
 
+function CitySelectionSkeleton() {
+    return (
+        <View className="flex-1">
+            <View className="px-4 py-3 border-b border-border/50 bg-card">
+                <View className="relative">
+                    <Search
+                        size={20}
+                        color="#9CA3AF"
+                        style={{
+                            position: "absolute",
+                            left: 12,
+                            top: 12,
+                            zIndex: 1,
+                        }}
+                    />
+                    <Input
+                        placeholder="搜索城市"
+                        className="pl-10 rounded-xl bg-muted/30"
+                        editable={false}
+                    />
+                </View>
+            </View>
+
+            <View className="px-4 py-3.5 border-b border-border/50 bg-card">
+                <View className="h-3 w-16 bg-muted/50 rounded mb-2" />
+                <View className="flex-row items-center justify-between py-2">
+                    <View className="flex-row items-center">
+                        <View className="w-9 h-9 bg-muted/50 rounded-full mr-2" />
+                        <View className="h-4 w-12 bg-muted/50 rounded" />
+                    </View>
+                </View>
+            </View>
+
+            <View className="px-4 py-3.5 border-b border-border/50 bg-background">
+                <View className="h-3 w-16 bg-muted/50 rounded mb-3" />
+                <View className="flex-row gap-2 mb-2">
+                    {[1, 2, 3].map((i) => (
+                        <View
+                            key={i}
+                            className="flex-1 h-10 bg-muted/50 rounded-xl"
+                        />
+                    ))}
+                </View>
+            </View>
+
+            <View className="flex-1 px-4 pt-2">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                    <View
+                        key={i}
+                        className="flex-row items-center py-3.5 border-b border-border/30"
+                    >
+                        <View className="h-4 w-16 bg-muted/50 rounded" />
+                    </View>
+                ))}
+            </View>
+
+            <View className="absolute right-2 top-1/3">
+                <View className="bg-card/90 rounded-xl shadow-lg py-2 px-1 border border-border/50">
+                    {Array.from({ length: 8 }, (_, i) => (
+                        <View
+                            key={i}
+                            className="w-7 h-7 items-center justify-center mb-1"
+                        >
+                            <View className="w-2 h-3 bg-muted/50 rounded" />
+                        </View>
+                    ))}
+                </View>
+            </View>
+        </View>
+    );
+}
+
 // 城市搜索结果项组件
 function CitySearchItem({
     district,
     onPress,
 }: {
-        district: DistrictData;
-        onPress: () => void;
+    district: DistrictData;
+    onPress: () => void;
 }) {
     return (
-        <Pressable onPress={onPress} className="py-3.5 px-4 border-b border-border/50 active:bg-muted/30">
+        <Pressable
+            onPress={onPress}
+            className="py-3.5 px-4 border-b border-border/50 active:bg-muted/30"
+        >
             <View className="flex-row items-start">
                 <View className="bg-primary/10 rounded-full p-2 mr-3 mt-0.5">
                     <MapPin size={18} className="text-primary" />
@@ -77,7 +156,10 @@ function CitySearchItem({
                     <Text className="text-base font-semibold text-foreground">
                         {district.name || district.fullname}
                     </Text>
-                    <Text className="text-sm text-muted-foreground mt-0.5 leading-5" numberOfLines={1}>
+                    <Text
+                        className="text-sm text-muted-foreground mt-0.5 leading-5"
+                        numberOfLines={1}
+                    >
                         {district.address || district.fullname}
                     </Text>
                 </View>
@@ -95,25 +177,47 @@ const SearchSuggestionsContent = memo(
         searchQuery: string;
         onSelectDistrict: (district: DistrictData) => void;
     }) => {
-        const { data: searchResults, refetch: refetchSearch } = useCitySearchSuspense(searchQuery);
-        const [isRefreshing, setIsRefreshing] = useState(false);
-
-        const handleRefresh = useCallback(async () => {
-            setIsRefreshing(true);
-            try {
-                await refetchSearch({
-                    throwOnError: false,
-                });
-            } finally {
-                setIsRefreshing(false);
-            }
-        }, [refetchSearch]);
+        const { data: searchResults, refetch: refetchSearch } =
+            useCitySearchSuspense(searchQuery);
+        const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh(
+            {
+                refetchActiveQueries: false,
+                extraRefresh: () =>
+                    refetchSearch({
+                        throwOnError: false,
+                    }),
+            },
+        );
 
         // 渲染搜索建议项
         const renderSuggestionItem = ({ item }: { item: DistrictData }) => (
-            <CitySearchItem district={item} onPress={() => onSelectDistrict(item)} />
+            <CitySearchItem
+                district={item}
+                onPress={() => onSelectDistrict(item)}
+            />
         );
-        debugger;
+
+        if (showPageLoading) {
+            return (
+                <View className="h-full">
+                    <View className="bg-card absolute z-10 w-full h-full">
+                        <View className="bg-primary/5 px-4 py-2.5 border-b border-border/50">
+                            <Text className="text-sm text-primary font-medium">
+                                刷新中...
+                            </Text>
+                        </View>
+                        <View className="flex-1 px-4 py-4">
+                            {[1, 2, 3, 4, 5].map((i) => (
+                                <View
+                                    key={i}
+                                    className="h-16 bg-muted/30 rounded-xl mb-3"
+                                />
+                            ))}
+                        </View>
+                    </View>
+                </View>
+            );
+        }
 
         return (
             <View className="h-full">
@@ -129,8 +233,10 @@ const SearchSuggestionsContent = memo(
                         keyExtractor={(item) => `search-${item.id}`}
                         style={{ flex: 1 }}
                         showsVerticalScrollIndicator={true}
-                        refreshing={isRefreshing}
-                        onRefresh={handleRefresh}
+                        refreshing={refreshing}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
                     />
                 </View>
             </View>
@@ -164,7 +270,9 @@ const HotCityItem: React.FC<HotCityItemProps> = memo(({ city, onPress }) => (
         onPress={() => onPress(city)}
         className="bg-muted/50 border-2 border-border/50 rounded-xl px-4 py-3 flex-1 mx-1 my-1 active:bg-primary/10 active:border-primary"
     >
-        <Text className="text-center text-sm font-medium text-foreground">{city.name}</Text>
+        <Text className="text-center text-sm font-medium text-foreground">
+            {city.name}
+        </Text>
     </Pressable>
 ));
 HotCityItem.displayName = "HotCityItem";
@@ -227,11 +335,7 @@ const CitySelectionContent = memo(() => {
     );
 
     // 使用 TanStack Query 获取城市数据
-    const {
-        data: allCities = [],
-        refetch: refetchCities,
-        isFetching: isFetchingCities,
-    } = useChinaCity({
+    const { data: allCities = [], refetch: refetchCities } = useChinaCity({
         filter: "city",
     });
     const { data: cityParendInfo } = useCityParentInfo(selectCity?.name);
@@ -251,8 +355,8 @@ const CitySelectionContent = memo(() => {
     // 热门城市ID列表
     const HOT_CITY_IDS = useMemo(
         () => [
-            1101, 310000, 440100, 440300, 330100, 320100, 610100, 510100, 420100,
-            120000, 500000, 320500,
+            1101, 310000, 440100, 440300, 330100, 320100, 610100, 510100,
+            420100, 120000, 500000, 320500,
         ],
         [],
     );
@@ -322,7 +426,11 @@ const CitySelectionContent = memo(() => {
 
     // 处理搜索结果选择
     const handleDistrictSelect = (district: DistrictData) => {
-        const address = district.address.split(",");
+        const address = (
+            district.address?.trim()
+                ? district.address
+                : district.fullname || ""
+        ).split(",");
 
         updateSelectedAddress({
             province: address[0] || "",
@@ -338,7 +446,8 @@ const CitySelectionContent = memo(() => {
     // 为FlashList准备扁平化数据结构
     const flatListData = useMemo(() => {
         const sections: Array<
-            { type: "header"; letter: string } | { type: "city"; city: ChinaCity }
+            | { type: "header"; letter: string }
+            | { type: "city"; city: ChinaCity }
         > = [];
 
         ALPHABET.forEach((letter) => {
@@ -378,11 +487,21 @@ const CitySelectionContent = memo(() => {
             rows.push(
                 <View key={i} className="flex-row mb-2">
                     {rowCities.map((city) => (
-                        <HotCityItem key={city.id} city={city} onPress={handleCitySelect} />
+                        <HotCityItem
+                            key={city.id}
+                            city={city}
+                            onPress={handleCitySelect}
+                        />
                     ))}
-                    {Array.from({ length: 3 - rowCities.length }, (_, index) => (
-                        <View key={`empty-${index}`} className="flex-1 mx-1" />
-                    ))}
+                    {Array.from(
+                        { length: 3 - rowCities.length },
+                        (_, index) => (
+                            <View
+                                key={`empty-${index}`}
+                                className="flex-1 mx-1"
+                            />
+                        ),
+                    )}
                 </View>,
             );
         }
@@ -409,18 +528,13 @@ const CitySelectionContent = memo(() => {
         return item.type;
     };
 
-    const [isRefreshing, setIsRefreshing] = useState(false);
-
-    const handleRefresh = useCallback(async () => {
-        setIsRefreshing(true);
-        try {
-            await refetchCities({
+    const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: () =>
+            refetchCities({
                 throwOnError: false,
-            });
-        } finally {
-            setIsRefreshing(false);
-        }
-    }, [refetchCities]);
+            }),
+    });
 
     return (
         <View className="flex-1 bg-background">
@@ -430,7 +544,12 @@ const CitySelectionContent = memo(() => {
                     <Search
                         size={20}
                         color="#9CA3AF"
-                        style={{ position: "absolute", left: 12, top: 12, zIndex: 1 }}
+                        style={{
+                            position: "absolute",
+                            left: 12,
+                            top: 12,
+                            zIndex: 1,
+                        }}
                     />
                     <Input
                         placeholder="搜索城市"
@@ -473,69 +592,92 @@ const CitySelectionContent = memo(() => {
                 </CitySearchErrorBoundary>
             ) : (
                 <View className="flex-1">
-                    {/* 当前城市 */}
-                        <View className="px-4 py-3.5 border-b border-border/50 bg-card">
-                            <Text className="text-xs text-muted-foreground mb-2 font-medium">当前城市</Text>
-                            <View className="flex-row items-center">
-                                <View className="bg-primary/10 rounded-full p-2 mr-2">
-                                    <MapPin size={18} className="text-primary" />
-                                </View>
-                                <Text className="text-base font-semibold text-foreground">
-                                    {selectedAddress?.district || selectedAddress?.city || "北京"}
+                    {showPageLoading ? (
+                        <CitySelectionSkeleton />
+                    ) : (
+                        <>
+                            {/* 当前城市 */}
+                            <View className="px-4 py-3.5 border-b border-border/50 bg-card">
+                                <Text className="text-xs text-muted-foreground mb-2 font-medium">
+                                    当前城市
                                 </Text>
+                                <View className="flex-row items-center">
+                                    <View className="bg-primary/10 rounded-full p-2 mr-2">
+                                        <MapPin
+                                            size={18}
+                                            className="text-primary"
+                                        />
+                                    </View>
+                                    <Text className="text-base font-semibold text-foreground">
+                                        {selectedAddress?.district ||
+                                            selectedAddress?.city ||
+                                            "北京"}
+                                    </Text>
+                                </View>
                             </View>
-                        </View>
 
-                        {/* 热门城市 */}
-                        <View className="px-4 py-3.5 border-b border-border/50 bg-background">
-                            <Text className="text-xs text-muted-foreground mb-3 font-medium">热门城市</Text>
-                            {renderHotCities()}
-                        </View>
+                            {/* 热门城市 */}
+                            <View className="px-4 py-3.5 border-b border-border/50 bg-background">
+                                <Text className="text-xs text-muted-foreground mb-3 font-medium">
+                                    热门城市
+                                </Text>
+                                {renderHotCities()}
+                            </View>
 
-                        {/* 字母分组的城市列表 */}
-                        <View className="flex-1">
-                            <FlashList
-                                ref={flashListRef}
-                                data={flatListData}
-                                renderItem={renderListItem}
-                                keyExtractor={(item) =>
-                                    item.type === "header"
-                                        ? `header-${item.letter}`
-                                        : `city-${item.city.id}`
-                                }
-                                getItemType={getItemType}
-                                showsVerticalScrollIndicator={false}
-                                refreshing={isRefreshing || isFetchingCities}
-                                onRefresh={handleRefresh}
-                            />
-                    </View>
+                            {/* 字母分组的城市列表 */}
+                            <View className="flex-1">
+                                <FlashList
+                                    ref={flashListRef}
+                                    data={flatListData}
+                                    renderItem={renderListItem}
+                                    keyExtractor={(item) =>
+                                        item.type === "header"
+                                            ? `header-${item.letter}`
+                                            : `city-${item.city.id}`
+                                    }
+                                    getItemType={getItemType}
+                                    showsVerticalScrollIndicator={false}
+                                    refreshing={refreshing}
+                                    onRefresh={() => {
+                                        void onRefresh();
+                                    }}
+                                />
+                            </View>
+                        </>
+                    )}
                 </View>
             )}
 
             {/* 右侧字母索引 */}
-            {!debouncedSearchText.trim() && (
+            {!debouncedSearchText.trim() && !showPageLoading && (
                 <View className="absolute right-2 top-1/2 -translate-y-[45%]">
                     <View className="bg-card/90 backdrop-blur-sm rounded-xl shadow-lg py-2 px-1 border border-border/50">
                         {ALPHABET.map((letter) => {
-                            if (!groupedCities[letter]) return null
+                            if (!groupedCities[letter]) return null;
 
-                            return <Pressable
-                                key={letter}
-                                className={`w-7 h-7 items-center justify-center rounded-lg ${groupedCities[letter]
-                                    ? "active:bg-primary/20"
-                                    : "opacity-30"
+                            return (
+                                <Pressable
+                                    key={letter}
+                                    className={`w-7 h-7 items-center justify-center rounded-lg ${
+                                        groupedCities[letter]
+                                            ? "active:bg-primary/20"
+                                            : "opacity-30"
                                     }`}
-                                disabled={!groupedCities[letter]}
-                                onPress={() => handleLetterPress(letter)}
-                            >
-                                <Text className={`text-xs font-bold ${groupedCities[letter] ? "text-primary" : "text-muted-foreground"
-                                    }`}>
-                                    {letter}
-                                </Text>
-                            </Pressable>
-                        }
-
-                        )}
+                                    disabled={!groupedCities[letter]}
+                                    onPress={() => handleLetterPress(letter)}
+                                >
+                                    <Text
+                                        className={`text-xs font-bold ${
+                                            groupedCities[letter]
+                                                ? "text-primary"
+                                                : "text-muted-foreground"
+                                        }`}
+                                    >
+                                        {letter}
+                                    </Text>
+                                </Pressable>
+                            );
+                        })}
                     </View>
                 </View>
             )}
@@ -550,79 +692,7 @@ export default function SelectCityScreen() {
         <View className="flex-1 bg-background">
             {/* 使用Suspense包裹实际内容 */}
             <MainContentErrorBoundary>
-                <Suspense
-                    fallback={
-                        <View className="flex-1">
-                            <View className="px-4 py-3 border-b border-border/50 bg-card">
-                                <View className="relative">
-                                    <Search
-                                        size={20}
-                                        color="#9CA3AF"
-                                        style={{
-                                            position: "absolute",
-                                            left: 12,
-                                            top: 12,
-                                            zIndex: 1,
-                                        }}
-                                    />
-                                    <Input
-                                        placeholder="搜索城市"
-                                        className="pl-10 rounded-xl bg-muted/30"
-                                        editable={false} // 暂时禁用，等内容加载完成
-                                    />
-                                </View>
-                            </View>
-
-                            {/* 骨架屏*/}
-                            <View className="px-4 py-3.5 border-b border-border/50 bg-card">
-                                <View className="h-3 w-16 bg-muted/50 rounded mb-2" />
-                                <View className="flex-row items-center justify-between py-2">
-                                    <View className="flex-row items-center">
-                                        <View className="w-9 h-9 bg-muted/50 rounded-full mr-2" />
-                                        <View className="h-4 w-12 bg-muted/50 rounded" />
-                                    </View>
-                                </View>
-                            </View>
-
-                            <View className="px-4 py-3.5 border-b border-border/50 bg-background">
-                                <View className="h-3 w-16 bg-muted/50 rounded mb-3" />
-                                <View className="flex-row gap-2 mb-2">
-                                    {[1, 2, 3].map((i) => (
-                                        <View
-                                            key={i}
-                                            className="flex-1 h-10 bg-muted/50 rounded-xl"
-                                        />
-                                    ))}
-                                </View>
-                            </View>
-
-                            <View className="flex-1 px-4 pt-2">
-                                {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                                    <View
-                                        key={i}
-                                        className="flex-row items-center py-3.5 border-b border-border/30"
-                                    >
-                                        <View className="h-4 w-16 bg-muted/50 rounded" />
-                                    </View>
-                                ))}
-                            </View>
-
-                            {/* 字母索引骨架 */}
-                            <View className="absolute right-2 top-1/3">
-                                <View className="bg-card/90 rounded-xl shadow-lg py-2 px-1 border border-border/50">
-                                    {Array.from({ length: 8 }, (_, i) => (
-                                        <View
-                                            key={i}
-                                            className="w-7 h-7 items-center justify-center mb-1"
-                                        >
-                                            <View className="w-2 h-3 bg-muted/50 rounded" />
-                                        </View>
-                                    ))}
-                                </View>
-                            </View>
-                        </View>
-                    }
-                >
+                <Suspense fallback={<CitySelectionSkeleton />}>
                     <CitySelectionContent />
                 </Suspense>
             </MainContentErrorBoundary>

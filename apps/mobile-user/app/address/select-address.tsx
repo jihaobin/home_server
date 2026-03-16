@@ -3,7 +3,12 @@ import { Text } from "@repo/mobile-ui/components/ui/text";
 import { ChevronDown } from "@repo/mobile-ui/lib/icons/ChevronDown";
 import { MapPin } from "@repo/mobile-ui/lib/icons/MapPin";
 import type { SuggestionData } from "@repo/types";
-import { Link, router, useLocalSearchParams } from "expo-router";
+import {
+    Link,
+    router,
+    useFocusEffect,
+    useLocalSearchParams,
+} from "expo-router";
 import React, { Suspense, useCallback, useMemo, useState } from "react";
 import {
     FlatList,
@@ -12,6 +17,7 @@ import {
     ScrollView,
     View,
 } from "react-native";
+import { toast } from "sonner-native";
 import { useShallow } from "zustand/react/shallow";
 import { AddressSuggestionErrorBoundary } from "@repo/mobile-ui/components/error-boundaries";
 import {
@@ -21,12 +27,16 @@ import {
 } from "@repo/hooks/api/address";
 import { useDebounce } from "@repo/hooks/useDebounceThrottle";
 import {
+    getSingleLocationErrorMessage,
+    requestSingleLocation,
+} from "@repo/hooks/location-single";
+import {
     type SelectLocation,
     useAddressEditStore,
 } from "@/stores/address-store";
-import useLocation from "@repo/hooks/useLocation";
 import { LocationChangedEvent } from "expo-qq-location";
 import { useHomeLocationStore } from "@/stores/home-location-store";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 
 // 地址项组件
 function AddressItem({
@@ -58,14 +68,16 @@ function AddressItem({
                         </Text>
                         {tag && (
                             <View
-                                className={`px-2 py-0.5 rounded-full ${isCurrent ? "bg-primary" : "bg-accent"
-                                    }`}
+                                className={`px-2 py-0.5 rounded-full ${
+                                    isCurrent ? "bg-primary" : "bg-accent"
+                                }`}
                             >
                                 <Text
-                                    className={`text-xs font-medium ${isCurrent
-                                        ? "text-primary-foreground"
-                                        : "text-accent-foreground"
-                                        }`}
+                                    className={`text-xs font-medium ${
+                                        isCurrent
+                                            ? "text-primary-foreground"
+                                            : "text-accent-foreground"
+                                    }`}
                                 >
                                     {tag}
                                 </Text>
@@ -112,22 +124,19 @@ const AddressSuggestionsContent = React.memo(
                 selectedAddress?.city ||
                 selectedAddress?.province,
         });
-        const [isRefreshing, setIsRefreshing] = useState(false);
+        const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh(
+            {
+                refetchActiveQueries: false,
+                extraRefresh: () =>
+                    refetch({
+                        throwOnError: false,
+                    }),
+            },
+        );
 
         // 将所有页面的数据平铺为一个数组
         const allSuggestions =
             addressSuggestionData?.pages?.flatMap((page) => page.data) || [];
-
-        const handleRefresh = useCallback(async () => {
-            setIsRefreshing(true);
-            try {
-                await refetch({
-                    throwOnError: false,
-                });
-            } finally {
-                setIsRefreshing(false);
-            }
-        }, [refetch]);
 
         // 加载更多数据的回调
         const handleLoadMore = useCallback(() => {
@@ -135,6 +144,28 @@ const AddressSuggestionsContent = React.memo(
                 fetchNextPage();
             }
         }, [hasNextPage, isFetchingNextPage, isFetching, fetchNextPage]);
+
+        if (showPageLoading) {
+            return (
+                <View className="h-full">
+                    <View className="bg-card absolute z-10 w-full h-full">
+                        <View className="bg-primary/5 px-4 py-2.5 border-b border-border/50">
+                            <Text className="text-sm text-primary font-medium">
+                                刷新中...
+                            </Text>
+                        </View>
+                        <View className="flex-1 px-4 py-4">
+                            {[1, 2, 3, 4, 5].map((i) => (
+                                <View
+                                    key={i}
+                                    className="h-16 bg-muted/30 rounded-xl mb-3"
+                                />
+                            ))}
+                        </View>
+                    </View>
+                </View>
+            );
+        }
 
         // 将 SuggestionData 转换为 selectAddress
         const convertToSelectedLocation = useCallback(
@@ -215,8 +246,10 @@ const AddressSuggestionsContent = React.memo(
                         ListFooterComponent={renderFooter}
                         style={{ flex: 1 }}
                         showsVerticalScrollIndicator={true}
-                        refreshing={isRefreshing || isFetching}
-                        onRefresh={handleRefresh}
+                        refreshing={refreshing}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
                     />
                 </View>
             </View>
@@ -254,8 +287,21 @@ const DefaultAddressContent = React.memo(
             lat: location.latitude,
             lng: location.longitude,
         });
-        const [isRefreshing, setIsRefreshing] = useState(false);
         const [isRelocating, setIsRelocating] = useState(false);
+        const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh(
+            {
+                refetchActiveQueries: false,
+                extraRefresh: () =>
+                    Promise.all([
+                        refetchUserAddresses({
+                            throwOnError: false,
+                        }),
+                        refetchLocationDetail({
+                            throwOnError: false,
+                        }),
+                    ]),
+            },
+        );
 
         // 统计地址使用频率并去重，取前3个
         const frequentAddresses = useMemo(() => {
@@ -357,22 +403,6 @@ const DefaultAddressContent = React.memo(
             [locationDetail, onSelectAddress],
         );
 
-        const handleRefresh = useCallback(async () => {
-            setIsRefreshing(true);
-            try {
-                await Promise.all([
-                    refetchUserAddresses({
-                        throwOnError: false,
-                    }),
-                    refetchLocationDetail({
-                        throwOnError: false,
-                    }),
-                ]);
-            } finally {
-                setIsRefreshing(false);
-            }
-        }, [refetchLocationDetail, refetchUserAddresses]);
-
         const handleRelocate = useCallback(async () => {
             setIsRelocating(true);
             try {
@@ -392,23 +422,36 @@ const DefaultAddressContent = React.memo(
             location.city ||
             location.province ||
             "定位中...";
-        const selectedAddressLabel = selectedAddress?.detailedAddress || currentLocationLabel || "未选择地址";
+        const selectedAddressLabel =
+            selectedAddress?.detailedAddress ||
+            currentLocationLabel ||
+            "未选择地址";
+
+        if (showPageLoading) {
+            return (
+                <View className="flex-1 items-center justify-center px-6">
+                    <View className="bg-primary/10 rounded-full p-4 mb-4">
+                        <MapPin size={32} className="text-primary" />
+                    </View>
+                    <Text className="text-sm text-muted-foreground">
+                        正在刷新地址信息...
+                    </Text>
+                </View>
+            );
+        }
 
         return (
             <ScrollView
                 className="flex-1"
                 refreshControl={
                     <RefreshControl
-                        refreshing={
-                            isRefreshing ||
-                            isFetchingAddresses ||
-                            isFetchingLocation
-                        }
-                        onRefresh={handleRefresh}
+                        refreshing={refreshing}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
                     />
                 }
             >
-
                 <View className="mx-2 my-3 rounded-xl border border-border/50 bg-card px-4 py-3 shadow-sm">
                     <Text className="text-xs text-muted-foreground font-medium">
                         当前选择：{selectedAddressLabel}
@@ -495,8 +538,6 @@ const DefaultAddressContent = React.memo(
                     </>
                 )}
 
-
-
                 {/* 附近地址 */}
                 {nearbyPois.length > 0 && (
                     <>
@@ -547,10 +588,44 @@ DefaultAddressContent.displayName = "DefaultAddressContent";
 
 export default function SelectAddressScreen() {
     const [searchText, setSearchText] = useState("");
+    const [locationDetail, setLocationDetail] =
+        useState<LocationChangedEvent | null>(null);
+    const [isLocating, setIsLocating] = useState(false);
+    const [locationFailedMessage, setLocationFailedMessage] = useState<
+        string | null
+    >(null);
     const params = useLocalSearchParams<{ scene?: string }>();
     const isHomeMode = params.scene === "home";
 
-    const { location: locationDetail, handleRestartLocation } = useLocation();
+    const fetchSingleLocation = useCallback(async () => {
+        setIsLocating(true);
+        setLocationFailedMessage(null);
+
+        try {
+            const latestLocation = await requestSingleLocation(
+                undefined,
+                undefined,
+                "mobile-user/select-address",
+            );
+            setLocationDetail(latestLocation);
+        } catch (error) {
+            const message = getSingleLocationErrorMessage(error);
+            if (message.includes("页面已离开")) {
+                return;
+            }
+
+            setLocationFailedMessage(message);
+            toast.error(message);
+        } finally {
+            setIsLocating(false);
+        }
+    }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            void fetchSingleLocation();
+        }, [fetchSingleLocation]),
+    );
 
     // 使用防抖处理搜索文本，300ms延迟
     const debouncedSearchText = useDebounce(searchText, 300);
@@ -602,7 +677,10 @@ export default function SelectAddressScreen() {
     };
 
     const selectCityHref = isHomeMode
-        ? ({ pathname: "/address/select-city", params: { scene: "home" } } as const)
+        ? ({
+              pathname: "/address/select-city",
+              params: { scene: "home" },
+          } as const)
         : ("/address/select-city" as const);
 
     return (
@@ -688,9 +766,36 @@ export default function SelectAddressScreen() {
                         onSelectAddress={handleSelectAddress}
                         location={locationDetail}
                         selectedAddress={selectedAddress}
-                        onRelocate={handleRestartLocation}
+                        onRelocate={fetchSingleLocation}
                     />
                 </Suspense>
+            )}
+
+            {!debouncedSearchText && !locationDetail && (
+                <View className="flex-1 items-center justify-center px-6">
+                    <View className="bg-primary/10 rounded-full p-4 mb-4">
+                        <MapPin size={32} className="text-primary" />
+                    </View>
+                    <Text className="text-foreground font-semibold text-base mb-2">
+                        {isLocating ? "定位中..." : "暂未获取到当前位置"}
+                    </Text>
+                    <Text className="text-sm text-muted-foreground text-center mb-4">
+                        {locationFailedMessage || "可点击下方按钮重新定位"}
+                    </Text>
+                    <Pressable
+                        onPress={() => {
+                            void fetchSingleLocation();
+                        }}
+                        disabled={isLocating}
+                        className={`px-4 py-2 rounded-xl ${isLocating ? "bg-muted" : "bg-primary"}`}
+                    >
+                        <Text
+                            className={`text-sm font-medium ${isLocating ? "text-muted-foreground" : "text-primary-foreground"}`}
+                        >
+                            {isLocating ? "定位中..." : "重新定位"}
+                        </Text>
+                    </Pressable>
+                </View>
             )}
         </View>
     );

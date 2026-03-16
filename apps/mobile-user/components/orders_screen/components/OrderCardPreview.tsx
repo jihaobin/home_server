@@ -1,4 +1,5 @@
 import { Image } from "expo-image";
+import { useMemo } from "react";
 import { View } from "react-native";
 
 import { Text } from "@repo/mobile-ui/components/ui/text";
@@ -13,18 +14,24 @@ type OrderCardPreviewProps = {
 };
 
 export function OrderCardPreview(props: OrderCardPreviewProps) {
+    const imageSource = useMemo(
+        () => (props.imageUrl ? { uri: props.imageUrl } : null),
+        [props.imageUrl],
+    );
+    const imagePlaceholder = useMemo(
+        () =>
+            props.imageBlurhash ? { blurhash: props.imageBlurhash } : undefined,
+        [props.imageBlurhash],
+    );
+
     return (
         <View>
             <View className="flex-row items-center gap-3">
                 <View className="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-muted">
-                    {props.imageUrl ? (
+                    {imageSource ? (
                         <Image
-                            source={{ uri: props.imageUrl }}
-                            placeholder={
-                                props.imageBlurhash
-                                    ? { blurhash: props.imageBlurhash }
-                                    : undefined
-                            }
+                            source={imageSource}
+                            placeholder={imagePlaceholder}
                             className="h-full w-full"
                             contentFit="cover"
                         />

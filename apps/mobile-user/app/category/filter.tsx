@@ -1,9 +1,9 @@
 import type React from "react";
 import { Image as ExpoImage } from "expo-image";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { cssInterop, useColorScheme } from "nativewind";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
@@ -126,23 +126,26 @@ function PriceTag({ price }: { price: number }) {
 }
 
 function WorkerCard({ item }: { item: WorkerCardItem }) {
+    const avatarSource = useMemo<ImageSource>(
+        () =>
+            item.avatarUrl
+                ? ({ uri: item.avatarUrl } satisfies ImageSource)
+                : require("@/assets/images/promo-1.png"),
+        [item.avatarUrl],
+    );
+    const avatarPlaceholder = useMemo(
+        () =>
+            item.avatarBlurhash ? { blurhash: item.avatarBlurhash } : undefined,
+        [item.avatarBlurhash],
+    );
+
     return (
         <View className="mx-4 mb-3 overflow-hidden rounded-xl bg-card shadow-sm">
             <View className="flex-row p-3">
                 <View className="h-[100px] w-[100px] overflow-hidden rounded-md bg-muted">
                     <Image
-                        source={
-                            item.avatarUrl
-                                ? ({
-                                      uri: item.avatarUrl,
-                                  } satisfies ImageSource)
-                                : require("@/assets/images/promo-1.png")
-                        }
-                        placeholder={
-                            item.avatarBlurhash
-                                ? { blurhash: item.avatarBlurhash }
-                                : undefined
-                        }
+                        source={avatarSource}
+                        placeholder={avatarPlaceholder}
                         contentFit="cover"
                         transition={200}
                         className="h-[100px] w-[100px]"
@@ -359,7 +362,20 @@ export default function CategoryFilterScreen() {
     const selectedHomeLocation = useHomeLocationStore(
         (state) => state.selectedLocation,
     );
-    const { location } = useLocation();
+    const [isScreenFocused, setIsScreenFocused] = useState(false);
+    const { location } = useLocation({
+        enabled: isScreenFocused,
+        source: "mobile-user/category-filter",
+    });
+
+    useFocusEffect(
+        useCallback(() => {
+            setIsScreenFocused(true);
+            return () => {
+                setIsScreenFocused(false);
+            };
+        }, []),
+    );
 
     const resolvedCoords = useMemo(() => {
         if (
@@ -578,7 +594,13 @@ export default function CategoryFilterScreen() {
                     listRef.current = ref;
                 }}
                 data={workers as WorkerCardItem[]}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item, index) =>
+                    item.pricingId
+                        ? `${item.id}-${item.pricingId}`
+                        : item.serviceId
+                          ? `${item.id}-${item.serviceId}`
+                          : `${item.id}-${index}`
+                }
                 renderItem={({ item }) => <WorkerCard item={item} />}
                 contentContainerStyle={{ paddingTop: 12, paddingBottom: 24 }}
                 showsVerticalScrollIndicator={false}
@@ -614,7 +636,9 @@ export default function CategoryFilterScreen() {
                     }
                     if (
                         recommendationsQuery.hasNextPage &&
-                        !recommendationsQuery.isFetchingNextPage
+                        !recommendationsQuery.isFetchingNextPage &&
+                        !recommendationsQuery.isFetching &&
+                        !recommendationsQuery.isPlaceholderData
                     ) {
                         recommendationsQuery.fetchNextPage();
                     }

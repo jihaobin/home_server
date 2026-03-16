@@ -16,11 +16,35 @@ import { MapPin } from "@repo/mobile-ui/lib/icons/MapPin";
 import { X } from "@repo/mobile-ui/lib/icons/X";
 import type { UserAddresses } from "@repo/types";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { toast } from "sonner-native";
 import { useDeleteAddress, useUserAddresses } from "@repo/hooks/api/address";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import { useAddressEditStore } from "@/stores/address-store";
+
+function ServiceAddressListSkeleton() {
+    return (
+        <View className="py-4">
+            {Array.from({ length: 4 }, (_, index) => (
+                <Card
+                    key={index}
+                    className="mx-4 mb-3 bg-card rounded-2xl border border-border/50 overflow-hidden"
+                >
+                    <CardContent className="p-4">
+                        <View className="flex-row items-start">
+                            <View className="mr-3 mt-1 h-9 w-9 rounded-full bg-muted/40" />
+                            <View className="flex-1">
+                                <View className="mb-2 h-5 w-32 rounded bg-muted/40" />
+                                <View className="mb-2 h-4 w-40 rounded bg-muted/30" />
+                                <View className="h-4 w-full rounded bg-muted/30" />
+                            </View>
+                        </View>
+                    </CardContent>
+                </Card>
+            ))}
+        </View>
+    );
+}
 
 // 服务地址项组件
 const ServiceAddressItem = ({
@@ -30,11 +54,11 @@ const ServiceAddressItem = ({
     onSelect,
     selectable = false,
 }: {
-        address: UserAddresses;
-        onEdit: (address: UserAddresses) => void;
-        onDelete?: (address: UserAddresses) => void;
-        onSelect?: (address: UserAddresses) => void;
-        selectable?: boolean;
+    address: UserAddresses;
+    onEdit: (address: UserAddresses) => void;
+    onDelete?: (address: UserAddresses) => void;
+    onSelect?: (address: UserAddresses) => void;
+    selectable?: boolean;
 }) => {
     return (
         <Card className="mx-4 mb-3 bg-card rounded-2xl shadow-sm border border-border/50 overflow-hidden relative p-0">
@@ -48,19 +72,31 @@ const ServiceAddressItem = ({
                     </DialogTrigger>
                     <DialogContent className="bg-card rounded-2xl shadow-xl w-80 border border-border">
                         <DialogHeader>
-                            <DialogTitle className="text-foreground">删除地址</DialogTitle>
+                            <DialogTitle className="text-foreground">
+                                删除地址
+                            </DialogTitle>
                             <DialogDescription className="text-muted-foreground">
                                 确认删除此地址吗?删除后将无法恢复。
                             </DialogDescription>
                         </DialogHeader>
                         <DialogFooter className="flex-row gap-2">
                             <DialogClose asChild>
-                                <Button variant="outline" className="flex-1 rounded-xl">
-                                    <Text className="text-foreground">取消</Text>
+                                <Button
+                                    variant="outline"
+                                    className="flex-1 rounded-xl"
+                                >
+                                    <Text className="text-foreground">
+                                        取消
+                                    </Text>
                                 </Button>
                             </DialogClose>
-                            <Button onPress={() => onDelete(address)} className="flex-1 rounded-xl bg-destructive">
-                                <Text className="text-destructive-foreground">确认删除</Text>
+                            <Button
+                                onPress={() => onDelete(address)}
+                                className="flex-1 rounded-xl bg-destructive"
+                            >
+                                <Text className="text-destructive-foreground">
+                                    确认删除
+                                </Text>
                             </Button>
                         </DialogFooter>
                     </DialogContent>
@@ -69,7 +105,9 @@ const ServiceAddressItem = ({
             <Pressable
                 onPress={() => selectable && onSelect?.(address)}
                 disabled={!selectable}
-                className={selectable ? "active:opacity-70 active:scale-[0.98]" : ""}
+                className={
+                    selectable ? "active:opacity-70 active:scale-[0.98]" : ""
+                }
             >
                 <CardContent className="p-0">
                     <View className="relative p-4 pr-16">
@@ -88,7 +126,9 @@ const ServiceAddressItem = ({
                                     </Text>
                                     {address.isDefault && (
                                         <View className="bg-primary/15 px-2 py-0.5 rounded-full mr-2">
-                                            <Text className="text-xs font-medium text-primary">默认</Text>
+                                            <Text className="text-xs font-medium text-primary">
+                                                默认
+                                            </Text>
                                         </View>
                                     )}
                                     <View className="bg-accent/80 px-2 py-0.5 rounded-full mr-2">
@@ -104,7 +144,10 @@ const ServiceAddressItem = ({
                                 </Text>
 
                                 {/* 地址行 */}
-                                <Text className="text-sm text-foreground/80 leading-5" numberOfLines={2}>
+                                <Text
+                                    className="text-sm text-foreground/80 leading-5"
+                                    numberOfLines={2}
+                                >
                                     {address.detailedAddress}
                                 </Text>
                             </View>
@@ -116,7 +159,10 @@ const ServiceAddressItem = ({
                                 onPress={() => onEdit(address)}
                                 className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-muted/50 rounded-full active:bg-muted"
                             >
-                                <Edit size={16} className="text-muted-foreground" />
+                                <Edit
+                                    size={16}
+                                    className="text-muted-foreground"
+                                />
                             </Pressable>
                         )}
                     </View>
@@ -141,16 +187,16 @@ export default function ServiceAddressScreen() {
     const { setSelectedAddress } = useAddressEditStore();
     const params = useLocalSearchParams<{ mode?: string }>();
 
-    const {
-        data,
-        refetch: refetchAddresses,
-        isFetching: isFetchingAddresses,
-    } = useUserAddresses();
+    const { data = [], refetch: refetchAddresses } = useUserAddresses();
 
     // 判断是否为选择模式（从订单确认页跳转过来）
     const isSelectMode = params.mode === "select";
 
     const handleEditAddress = (address: UserAddresses) => {
+        if (!address.geom || address.geom.length < 2) {
+            toast.error("地址缺少坐标，暂时无法编辑");
+            return;
+        }
         // 导航到编辑地址页面，传递地址ID
         setSelectedAddress({
             ...address,
@@ -163,6 +209,10 @@ export default function ServiceAddressScreen() {
     };
 
     const handleSelectAddress = (address: UserAddresses) => {
+        if (!address.geom || address.geom.length < 2) {
+            toast.error("地址缺少坐标，暂时无法选择");
+            return;
+        }
         // 选择地址模式：保存选中的地址并返回
         setSelectedAddress({
             ...address,
@@ -188,20 +238,13 @@ export default function ServiceAddressScreen() {
         router.push("./edit-address");
     };
 
-    const [isRefreshing, setIsRefreshing] = useState(false);
-
-    const handleRefresh = useCallback(async () => {
-        setIsRefreshing(true);
-        try {
-            await refetchAddresses({
+    const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: () =>
+            refetchAddresses({
                 throwOnError: false,
-            });
-        } finally {
-            setIsRefreshing(false);
-        }
-    }, [refetchAddresses]);
-
-    const refreshingState = isRefreshing || isFetchingAddresses;
+            }),
+    });
 
     return (
         <View className="flex-1 bg-background">
@@ -220,41 +263,62 @@ export default function ServiceAddressScreen() {
                 showsVerticalScrollIndicator={false}
                 refreshControl={
                     <RefreshControl
-                        refreshing={refreshingState}
-                        onRefresh={handleRefresh}
+                        refreshing={refreshing}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
                     />
                 }
             >
-                <View className="py-4">
-                    {data.length > 0 ? (
-                        data
-                            .sort((a, b) =>
-                                a.isDefault === b.isDefault ? 0 : a.isDefault ? -1 : 1
-                            )
-                            .map((address) => (
-                                <ServiceAddressItem
-                                    key={address.id}
-                                    address={address}
-                                    onEdit={handleEditAddress}
-                                    onDelete={isSelectMode ? undefined : handleDeleteAddress}
-                                    onSelect={isSelectMode ? handleSelectAddress : undefined}
-                                    selectable={isSelectMode}
-                                />
-                            ))
-                    ) : (
-                        <View className="flex-1 items-center justify-center py-20 px-6">
-                            <View className="bg-muted/30 rounded-full p-6 mb-4">
-                                <MapPin size={48} className="text-muted-foreground" />
+                {showPageLoading ? (
+                    <ServiceAddressListSkeleton />
+                ) : (
+                    <View className="py-4">
+                        {data.length > 0 ? (
+                            data
+                                .sort((a, b) =>
+                                    a.isDefault === b.isDefault
+                                        ? 0
+                                        : a.isDefault
+                                          ? -1
+                                          : 1,
+                                )
+                                .map((address) => (
+                                    <ServiceAddressItem
+                                        key={address.id}
+                                        address={address}
+                                        onEdit={handleEditAddress}
+                                        onDelete={
+                                            isSelectMode
+                                                ? undefined
+                                                : handleDeleteAddress
+                                        }
+                                        onSelect={
+                                            isSelectMode
+                                                ? handleSelectAddress
+                                                : undefined
+                                        }
+                                        selectable={isSelectMode}
+                                    />
+                                ))
+                        ) : (
+                            <View className="flex-1 items-center justify-center py-20 px-6">
+                                <View className="bg-muted/30 rounded-full p-6 mb-4">
+                                    <MapPin
+                                        size={48}
+                                        className="text-muted-foreground"
+                                    />
+                                </View>
+                                <Text className="text-foreground text-lg font-semibold mb-2">
+                                    还没有服务地址
+                                </Text>
+                                <Text className="text-muted-foreground text-sm text-center">
+                                    点击下方按钮添加您的第一个服务地址
+                                </Text>
                             </View>
-                            <Text className="text-foreground text-lg font-semibold mb-2">
-                                还没有服务地址
-                            </Text>
-                            <Text className="text-muted-foreground text-sm text-center">
-                                点击下方按钮添加您的第一个服务地址
-                            </Text>
-                        </View>
-                    )}
-                </View>
+                        )}
+                    </View>
+                )}
 
                 {/* 底部安全区域 */}
                 <View className="h-20" />

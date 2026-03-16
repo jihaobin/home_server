@@ -2,6 +2,7 @@ import { Icon } from "@repo/mobile-ui/components/ui/icon";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { Image } from "expo-image";
 import { icons as lucideIconRegistry } from "lucide-react-native";
+import { useMemo } from "react";
 import { Pressable, View } from "react-native";
 import type { SimilarService } from "./types";
 
@@ -11,6 +12,60 @@ interface SimilarServicesProps {
     services: SimilarService[];
     onServicePress?: (serviceId: string) => void;
     onViewMorePress?: () => void;
+}
+
+function SimilarServiceCard({
+    service,
+    onServicePress,
+}: {
+    service: SimilarService;
+    onServicePress?: (serviceId: string) => void;
+}) {
+    const imageSource = useMemo(
+        () => ({ uri: service.image }),
+        [service.image],
+    );
+
+    return (
+        <View className="w-1/3 px-2 mb-4">
+            <Pressable
+                className="rounded-xl border border-border bg-card overflow-hidden"
+                onPress={() => onServicePress?.(service.id)}
+            >
+                <Image
+                    source={imageSource}
+                    style={{
+                        width: "100%",
+                        height: 100,
+                    }}
+                    contentFit="cover"
+                />
+                <View className="p-2">
+                    <Text
+                        className="text-sm font-medium text-foreground"
+                        numberOfLines={2}
+                    >
+                        {service.name}
+                    </Text>
+                    <View className="mt-1 flex-row items-baseline">
+                        <Text className="text-base font-bold text-primary">
+                            {service.price}
+                        </Text>
+                        <Text className="ml-1 text-xs text-muted-foreground">
+                            元/{service.unit}
+                        </Text>
+                    </View>
+                    {service.tag && (
+                        <View className="mt-1 self-start rounded-full bg-primary/10 px-2 py-0.5">
+                            <Text className="text-xs text-primary">
+                                {service.tag}
+                            </Text>
+                        </View>
+                    )}
+                </View>
+            </Pressable>
+        </View>
+    );
 }
 
 export function SimilarServices({
@@ -28,7 +83,10 @@ export function SimilarServices({
                 <Text className="text-lg font-bold text-foreground">
                     相似服务
                 </Text>
-                <Pressable className="flex-row items-center" onPress={onViewMorePress}>
+                <Pressable
+                    className="flex-row items-center"
+                    onPress={onViewMorePress}
+                >
                     <Text className="text-sm text-primary">查看更多</Text>
                     <Icon
                         as={ICON_MAP.ChevronRight}
@@ -40,44 +98,11 @@ export function SimilarServices({
 
             <View className="flex-row flex-wrap -mx-2">
                 {services.map((service) => (
-                    <View key={service.id} className="w-1/3 px-2 mb-4">
-                        <Pressable
-                            className="rounded-xl border border-border bg-card overflow-hidden"
-                            onPress={() => onServicePress?.(service.id)}
-                        >
-                            <Image
-                                source={{ uri: service.image }}
-                                style={{
-                                    width: "100%",
-                                    height: 100,
-                                }}
-                                contentFit="cover"
-                            />
-                            <View className="p-2">
-                                <Text
-                                    className="text-sm font-medium text-foreground"
-                                    numberOfLines={2}
-                                >
-                                    {service.name}
-                                </Text>
-                                <View className="mt-1 flex-row items-baseline">
-                                    <Text className="text-base font-bold text-primary">
-                                        {service.price}
-                                    </Text>
-                                    <Text className="ml-1 text-xs text-muted-foreground">
-                                        元/{service.unit}
-                                    </Text>
-                                </View>
-                                {service.tag && (
-                                    <View className="mt-1 self-start rounded-full bg-primary/10 px-2 py-0.5">
-                                        <Text className="text-xs text-primary">
-                                            {service.tag}
-                                        </Text>
-                                    </View>
-                                )}
-                            </View>
-                        </Pressable>
-                    </View>
+                    <SimilarServiceCard
+                        key={service.id}
+                        service={service}
+                        onServicePress={onServicePress}
+                    />
                 ))}
             </View>
         </View>

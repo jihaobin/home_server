@@ -9,6 +9,7 @@ import type {
     UpdateServicePersonnelProfileRequest,
 } from "@repo/types";
 import {
+    keepPreviousData,
     useMutation,
     useQuery,
     useQueryClient,
@@ -141,6 +142,7 @@ export const useServicePersonnelSearchQuery = (
             return response.data;
         },
         enabled,
+        placeholderData: keepPreviousData,
         meta: {
             errorMessage: "服务人员筛选失败",
         },

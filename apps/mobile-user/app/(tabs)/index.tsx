@@ -1,7 +1,7 @@
 import type React from "react";
 import { Image as ExpoImage } from "expo-image";
 import { cssInterop, useColorScheme } from "nativewind";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import {
     Suspense,
     useCallback,
@@ -10,7 +10,13 @@ import {
     useRef,
     useState,
 } from "react";
-import { Platform, Pressable, ScrollView, View } from "react-native";
+import {
+    Platform,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    View,
+} from "react-native";
 import {
     SafeAreaView,
     useSafeAreaInsets,
@@ -30,6 +36,7 @@ import { useHomeLocationStore } from "@/stores/home-location-store";
 import type { SelectLocation } from "@/stores/address-store";
 import type { HomeRecommendedPersonnel } from "@repo/types";
 import { MoreServicesBottomSheet } from "@/components/more-services/MoreServicesBottomSheet";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 
 // Enable NativeWind `className` on expo-image.
 cssInterop(ExpoImage, { className: { target: "style" } });
@@ -190,16 +197,22 @@ type RemotePromoCardItem = {
 };
 
 function RemotePromoCard({ item }: { item: RemotePromoCardItem }) {
+    const imageSource = useMemo<ImageSource | null>(
+        () => (item.imageUrl ? { uri: item.imageUrl } : null),
+        [item.imageUrl],
+    );
+    const imagePlaceholder = useMemo(
+        () =>
+            item.imageBlurhash ? { blurhash: item.imageBlurhash } : undefined,
+        [item.imageBlurhash],
+    );
+
     return (
         <View className="h-[150px] w-[123px] overflow-hidden rounded-lg border border-border bg-card">
-            {item.imageUrl ? (
+            {imageSource ? (
                 <Image
-                    source={{ uri: item.imageUrl }}
-                    placeholder={
-                        item.imageBlurhash
-                            ? { blurhash: item.imageBlurhash }
-                            : undefined
-                    }
+                    source={imageSource}
+                    placeholder={imagePlaceholder}
                     contentFit="cover"
                     transition={200}
                     className="w-32 h-20"
@@ -245,18 +258,44 @@ function RemoteProviderCard({
         avatarBlurhash?: string | null;
     };
 }) {
+    const avatarSource = useMemo<ImageSource | null>(
+        () => (item.avatarUrl ? { uri: item.avatarUrl } : null),
+        [item.avatarUrl],
+    );
+    const avatarPlaceholder = useMemo(
+        () =>
+            item.avatarBlurhash ? { blurhash: item.avatarBlurhash } : undefined,
+        [item.avatarBlurhash],
+    );
     const showDistance = Boolean(item.distanceText);
+    const handleNavigateToServiceDetail = useCallback(() => {
+        router.push({
+            pathname: "/servicePersonnel/[id]",
+            params: {
+                id: item.id,
+                ...(item.serviceId ? { serviceId: item.serviceId } : {}),
+                ...(item.pricingId ? { pricingId: item.pricingId } : {}),
+                ...(item.serviceName
+                    ? { serviceName: item.serviceName }
+                    : { serviceName: item.tag }),
+            },
+        });
+    }, [item.id, item.pricingId, item.serviceId, item.serviceName, item.tag]);
 
     return (
-        <View className="h-[298px] w-[158px] overflow-hidden rounded-xl border border-border bg-card">
-            {item.avatarUrl ? (
+        <Pressable
+            className="h-[298px] w-[158px] overflow-hidden rounded-xl border border-border bg-card"
+            onPress={handleNavigateToServiceDetail}
+            style={({ pressed }) =>
+                pressed
+                    ? { opacity: 0.92, transform: [{ scale: 0.98 }] }
+                    : undefined
+            }
+        >
+            {avatarSource ? (
                 <Image
-                    source={{ uri: item.avatarUrl }}
-                    placeholder={
-                        item.avatarBlurhash
-                            ? { blurhash: item.avatarBlurhash }
-                            : undefined
-                    }
+                    source={avatarSource}
+                    placeholder={avatarPlaceholder}
                     contentFit="cover"
                     transition={200}
                     className="h-[170px] w-[158px]"
@@ -335,33 +374,14 @@ function RemoteProviderCard({
 
                 <View className="mt-auto flex-row items-end justify-between pb-1.5">
                     <PriceTag price={item.price} />
-                    <Pressable
-                        className="h-5 w-16 items-center justify-center rounded-full bg-primary"
-                        onPress={() =>
-                            router.push({
-                                pathname: "/servicePersonnel/[id]",
-                                params: {
-                                    id: item.id,
-                                    ...(item.serviceId
-                                        ? { serviceId: item.serviceId }
-                                        : {}),
-                                    ...(item.pricingId
-                                        ? { pricingId: item.pricingId }
-                                        : {}),
-                                    ...(item.serviceName
-                                        ? { serviceName: item.serviceName }
-                                        : { serviceName: item.tag }),
-                                },
-                            })
-                        }
-                    >
+                    <View className="h-5 w-16 items-center justify-center rounded-full bg-primary">
                         <Text className="text-xs text-primary-foreground font-puhui-medium">
                             立即预约
                         </Text>
-                    </Pressable>
+                    </View>
                 </View>
             </View>
-        </View>
+        </Pressable>
     );
 }
 
@@ -453,6 +473,20 @@ function HomeBaseContent({
 }) {
     const homeBase = useHomeBase();
     const data = homeBase.data;
+    const bannerImageSource = useMemo<ImageSource | null>(
+        () =>
+            data.banners[0]?.imageUrl
+                ? { uri: data.banners[0].imageUrl }
+                : null,
+        [data.banners],
+    );
+    const bannerPlaceholder = useMemo(
+        () =>
+            data.banners[0]?.imageBlurhash
+                ? { blurhash: data.banners[0].imageBlurhash }
+                : undefined,
+        [data.banners],
+    );
 
     const categoryItems = data.categories.map((c) => ({
         id: c.id,
@@ -481,14 +515,10 @@ function HomeBaseContent({
     return (
         <>
             <View className="mx-4 mt-2 h-[81px] w-[343px] overflow-hidden rounded-xl shadow-lg">
-                {data.banners[0]?.imageUrl ? (
+                {bannerImageSource ? (
                     <Image
-                        source={{ uri: data.banners[0].imageUrl }}
-                        placeholder={
-                            data.banners[0].imageBlurhash
-                                ? { blurhash: data.banners[0].imageBlurhash }
-                                : undefined
-                        }
+                        source={bannerImageSource}
+                        placeholder={bannerPlaceholder}
                         contentFit="cover"
                         transition={200}
                         className="h-full w-full"
@@ -644,7 +674,13 @@ function HomeRecommendationsContent({
             <FlashList
                 data={items}
                 numColumns={2}
-                keyExtractor={(item) => item.personnelId}
+                keyExtractor={(item, index) =>
+                    item.pricingId
+                        ? `${item.personnelId}-${item.pricingId}`
+                        : item.serviceId
+                          ? `${item.personnelId}-${item.serviceId}`
+                          : `${item.personnelId}-${index}`
+                }
                 renderItem={({ item }) => (
                     <View className="mb-[9px]">
                         <RemoteProviderCard
@@ -685,11 +721,13 @@ function HomeRecommendationsSection({
     location,
     locationError,
     selectedLocation,
+    manualLoading,
     onReachedPageEnd,
 }: {
     location: HomeLocationState["location"];
     locationError: HomeLocationState["error"];
     selectedLocation: HomeSelectedLocation;
+    manualLoading: boolean;
     onReachedPageEnd: (fn: () => void) => void;
 }) {
     const hasManualLocation = Boolean(selectedLocation);
@@ -724,7 +762,12 @@ function HomeRecommendationsSection({
 
     // 将“加载下一页”的回调交给父级 ScrollView 的 onScroll 触发，避免嵌套滚动。
     const loadMore = useCallback(() => {
-        if (rec.hasNextPage && !rec.isFetchingNextPage) {
+        if (
+            rec.hasNextPage &&
+            !rec.isFetchingNextPage &&
+            !rec.isFetching &&
+            !rec.isPlaceholderData
+        ) {
             rec.fetchNextPage();
         }
     }, [rec]);
@@ -736,7 +779,7 @@ function HomeRecommendationsSection({
     return (
         <HomeRecommendationsContent
             items={items}
-            isInitialLoading={rec.isLoading && !rec.data}
+            isInitialLoading={manualLoading || (rec.isLoading && !rec.data)}
             isFetchingNextPage={rec.isFetchingNextPage}
         />
     );
@@ -744,7 +787,11 @@ function HomeRecommendationsSection({
 
 export default function HomeScreen() {
     const { colorScheme } = useColorScheme();
-    const { location, error: locationError } = useLocation();
+    const [isScreenFocused, setIsScreenFocused] = useState(false);
+    const { location, error: locationError } = useLocation({
+        enabled: isScreenFocused,
+        source: "mobile-user/home",
+    });
     const selectedLocation = useHomeLocationStore(
         (state) => state.selectedLocation,
     );
@@ -768,6 +815,16 @@ export default function HomeScreen() {
     }, []);
 
     const [moreServicesVisible, setMoreServicesVisible] = useState(false);
+    const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh();
+
+    useFocusEffect(
+        useCallback(() => {
+            setIsScreenFocused(true);
+            return () => {
+                setIsScreenFocused(false);
+            };
+        }, []),
+    );
 
     // 无改动外层结构：通过外层 ScrollView 的滚动触底判断触发推荐列表拉取下一页。
     const handleScroll = useCallback((event: any) => {
@@ -793,6 +850,14 @@ export default function HomeScreen() {
             <ScrollView
                 className="flex-1"
                 showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
+                    />
+                }
                 onScroll={handleScroll}
                 scrollEventThrottle={16}
             >
@@ -841,17 +906,21 @@ export default function HomeScreen() {
                         </SafeAreaView>
                     </View>
 
-                    <Suspense fallback={<HomeBaseSkeleton />}>
-                        <HomeBaseContent
-                            onOpenMoreServices={() =>
-                                setMoreServicesVisible(true)
-                            }
-                            moreServicesVisible={moreServicesVisible}
-                            onCloseMoreServices={() =>
-                                setMoreServicesVisible(false)
-                            }
-                        />
-                    </Suspense>
+                    {showPageLoading ? (
+                        <HomeBaseSkeleton />
+                    ) : (
+                        <Suspense fallback={<HomeBaseSkeleton />}>
+                            <HomeBaseContent
+                                onOpenMoreServices={() =>
+                                    setMoreServicesVisible(true)
+                                }
+                                moreServicesVisible={moreServicesVisible}
+                                onCloseMoreServices={() =>
+                                    setMoreServicesVisible(false)
+                                }
+                            />
+                        </Suspense>
+                    )}
 
                     <Text className="mx-4 mt-3 text-base text-foreground font-puhui-medium">
                         推荐
@@ -861,6 +930,7 @@ export default function HomeScreen() {
                         location={location}
                         locationError={locationError}
                         selectedLocation={selectedLocation}
+                        manualLoading={showPageLoading}
                         onReachedPageEnd={setLoadMore}
                     />
                 </View>

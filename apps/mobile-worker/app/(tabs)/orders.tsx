@@ -1,8 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useStaffOrdersList } from "@repo/hooks/api/order";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import type { StaffOrderListResponse } from "@repo/types";
 import { useRouter } from "expo-router";
-import React, { Suspense, useCallback, useMemo, useState } from "react";
+import React, { Suspense, useMemo, useState } from "react";
 import {
     FlatList,
     RefreshControl,
@@ -149,7 +150,6 @@ function OrdersList({
     decisionStatusFilter?: StaffOrder["decisionStatus"];
 }) {
     const router = useRouter();
-    const [refreshing, setRefreshing] = useState(false);
 
     const { data, refetch, isFetching } = useStaffOrdersList({
         page: 1,
@@ -157,15 +157,13 @@ function OrdersList({
         status,
         sortOrder: "asc",
     });
-
-    const handleRefresh = useCallback(async () => {
-        setRefreshing(true);
-        try {
-            await refetch();
-        } finally {
-            setRefreshing(false);
-        }
-    }, [refetch]);
+    const { refreshing, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: () =>
+            refetch({
+                throwOnError: false,
+            }),
+    });
 
     const orders = useMemo(() => data?.items ?? [], [data]);
 
@@ -289,7 +287,9 @@ function OrdersList({
             refreshControl={
                 <RefreshControl
                     refreshing={refreshing || isFetching}
-                    onRefresh={handleRefresh}
+                    onRefresh={() => {
+                        void onRefresh();
+                    }}
                     tintColor="#2196F3"
                 />
             }

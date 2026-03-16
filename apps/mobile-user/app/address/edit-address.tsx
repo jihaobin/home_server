@@ -7,26 +7,31 @@ import { ChevronRight } from "@repo/mobile-ui/lib/icons/ChevronRight";
 import { MapPin } from "@repo/mobile-ui/lib/icons/MapPin";
 import { CreateUserAddressSchema, UpdateUserAddressSchema } from "@repo/types";
 import { router, useFocusEffect, useNavigation } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { toast } from "sonner-native";
 import { useShallow } from "zustand/react/shallow";
 import { UseCreateAddress } from "@repo/hooks/api/address";
-import useLocation from "@repo/hooks/useLocation";
+import {
+    getSingleLocationErrorMessage,
+    requestSingleLocation,
+} from "@repo/hooks/location-single";
+import type { LocationChangedEvent } from "expo-qq-location";
 import {
     type SelectAddress,
     useAddressEditStore,
 } from "@/stores/address-store";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 
 // 性别选择组件 - 使用RadioGroup但保持原有按钮样式
 function GenderSelection({
     value,
     onValueChange,
 }: {
-        value: boolean;
-        onValueChange: (value: boolean) => void;
+    value: boolean;
+    onValueChange: (value: boolean) => void;
 }) {
     return (
         <RadioGroup
@@ -54,9 +59,9 @@ function GenderButton({
     currentValue,
     onPress,
 }: {
-        value: string;
-        currentValue: string;
-        onPress: () => void;
+    value: string;
+    currentValue: string;
+    onPress: () => void;
 }) {
     const label = value === "male" ? "先生" : "女士";
     const isSelected = value === currentValue;
@@ -64,8 +69,11 @@ function GenderButton({
     return (
         <Pressable
             onPress={onPress}
-            className={`px-5 py-2 rounded-full ${isSelected ? "bg-primary shadow-sm" : "border-2 border-border bg-background"
-                }`}
+            className={`px-5 py-2 rounded-full ${
+                isSelected
+                    ? "bg-primary shadow-sm"
+                    : "border-2 border-border bg-background"
+            }`}
         >
             <Text
                 className={`text-sm font-medium ${isSelected ? "text-primary-foreground" : "text-muted-foreground"}`}
@@ -92,14 +100,25 @@ export default function EditAddressScreen() {
     const isEditMode = useRef<boolean>(!!selectedAddress);
 
     const navigation = useNavigation();
-    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [location, setLocation] = useState<LocationChangedEvent | null>(null);
 
-    // 获取用户当前定位
-    const { location, handleStopLocation } = useLocation({
-        onError: (error) => {
-            console.error("定位失败:", error);
-        },
-    });
+    const fetchSingleLocation = useCallback(async () => {
+        try {
+            const latestLocation = await requestSingleLocation(
+                undefined,
+                undefined,
+                "mobile-user/edit-address",
+            );
+            setLocation(latestLocation);
+        } catch (error) {
+            const message = getSingleLocationErrorMessage(error);
+            if (message.includes("页面已离开")) {
+                return;
+            }
+
+            toast.error(message);
+        }
+    }, []);
 
     // 地址显示文本
     const currentAddressText =
@@ -181,8 +200,11 @@ export default function EditAddressScreen() {
         router.push("./select-address");
     };
 
-    const handleRefresh = () => {
-        setIsRefreshing(true);
+    const handleRefresh = useCallback(async () => {
+        if (!isEditMode.current) {
+            await fetchSingleLocation();
+        }
+
         if (!isEditMode.current && location && isManualSelect === false) {
             setSelectedAddress({
                 lng: location.longitude || 0,
@@ -203,8 +225,19 @@ export default function EditAddressScreen() {
         Object.entries(defaults).forEach(([key, value]) => {
             setValue(key as keyof SelectAddress, value);
         });
-        setTimeout(() => setIsRefreshing(false), 300);
-    };
+    }, [
+        fetchSingleLocation,
+        getFormDefaults,
+        isManualSelect,
+        location,
+        setSelectedAddress,
+        setValue,
+    ]);
+
+    const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: handleRefresh,
+    });
 
     const onSubmit = async (data: any) => {
         console.log("创建地址:", data);
@@ -231,12 +264,33 @@ export default function EditAddressScreen() {
         }
     };
 
-    useFocusEffect(() => {
-        navigation.setOptions({
-            title: isEditMode.current ? "编辑地址" : "添加地址",
-            headerShown: true,
-        });
-    });
+    useFocusEffect(
+        useCallback(() => {
+            navigation.setOptions({
+                title: isEditMode.current ? "编辑地址" : "添加地址",
+                headerShown: true,
+            });
+
+            if (!isEditMode.current) {
+                void fetchSingleLocation();
+            }
+
+            return undefined;
+        }, [fetchSingleLocation, navigation]),
+    );
+
+    if (showPageLoading) {
+        return (
+            <View className="flex-1 bg-background items-center justify-center px-6">
+                <View className="bg-primary/10 rounded-full p-4 mb-4">
+                    <MapPin size={32} className="text-primary" />
+                </View>
+                <Text className="text-sm text-muted-foreground">
+                    正在刷新地址表单...
+                </Text>
+            </View>
+        );
+    }
 
     return (
         <View className="flex-1 bg-background">
@@ -244,7 +298,12 @@ export default function EditAddressScreen() {
                 className="flex-1"
                 showsVerticalScrollIndicator={false}
                 refreshControl={
-                    <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
+                    />
                 }
             >
                 <View className="py-6 space-y-1 px-4">
@@ -255,24 +314,32 @@ export default function EditAddressScreen() {
                             <View className="flex-row items-center justify-between p-4 border-b border-border/50 bg-background/50">
                                 <View className="flex-row items-center flex-1">
                                     <View className="bg-primary/10 rounded-full p-2 mr-3">
-                                        <MapPin size={18} className="text-primary" />
+                                        <MapPin
+                                            size={18}
+                                            className="text-primary"
+                                        />
                                     </View>
                                     <View className="flex-1">
                                         <Text className="text-xs text-muted-foreground mb-1 font-medium">
                                             服务地址
                                         </Text>
                                         <Text
-                                            className={`text-sm ${currentAddressText === "请选择服务地址"
-                                                ? "text-muted-foreground"
-                                                : "text-foreground font-medium"
-                                                }`}
+                                            className={`text-sm ${
+                                                currentAddressText ===
+                                                "请选择服务地址"
+                                                    ? "text-muted-foreground"
+                                                    : "text-foreground font-medium"
+                                            }`}
                                             numberOfLines={1}
                                         >
                                             {currentAddressText}
                                         </Text>
                                     </View>
                                 </View>
-                                <ChevronRight size={20} className="text-muted-foreground ml-2" />
+                                <ChevronRight
+                                    size={20}
+                                    className="text-muted-foreground ml-2"
+                                />
                             </View>
                         </Pressable>
 
@@ -284,7 +351,9 @@ export default function EditAddressScreen() {
                             <Controller
                                 control={control}
                                 name="homeNumber"
-                                render={({ field: { onChange, onBlur, value } }) => (
+                                render={({
+                                    field: { onChange, onBlur, value },
+                                }) => (
                                     <Input
                                         placeholder="详细地址，例如：A座102室"
                                         value={value || ""}
@@ -298,7 +367,8 @@ export default function EditAddressScreen() {
                                 <Text className="text-destructive text-xs mt-1 ml-1">
                                     {typeof errors.homeNumber === "string"
                                         ? errors.homeNumber
-                                        : (errors.homeNumber as any)?.message || "输入有误"}
+                                        : (errors.homeNumber as any)?.message ||
+                                          "输入有误"}
                                 </Text>
                             )}
                         </View>
@@ -316,7 +386,9 @@ export default function EditAddressScreen() {
                                     <Controller
                                         control={control}
                                         name="recipientName"
-                                        render={({ field: { onChange, onBlur, value } }) => (
+                                        render={({
+                                            field: { onChange, onBlur, value },
+                                        }) => (
                                             <Input
                                                 placeholder="收件人姓名"
                                                 value={value || ""}
@@ -330,7 +402,9 @@ export default function EditAddressScreen() {
                                 <Controller
                                     control={control}
                                     name="sex"
-                                    render={({ field: { onChange, value } }) => (
+                                    render={({
+                                        field: { onChange, value },
+                                    }) => (
                                         <GenderSelection
                                             value={value ?? true}
                                             onValueChange={onChange}
@@ -342,7 +416,8 @@ export default function EditAddressScreen() {
                                 <Text className="text-destructive text-xs mt-1 ml-1">
                                     {typeof errors.recipientName === "string"
                                         ? errors.recipientName
-                                        : (errors.recipientName as any)?.message || "输入有误"}
+                                        : (errors.recipientName as any)
+                                              ?.message || "输入有误"}
                                 </Text>
                             )}
                         </View>
@@ -357,7 +432,9 @@ export default function EditAddressScreen() {
                                     <Controller
                                         control={control}
                                         name="recipientPhone"
-                                        render={({ field: { onChange, onBlur, value } }) => (
+                                        render={({
+                                            field: { onChange, onBlur, value },
+                                        }) => (
                                             <Input
                                                 placeholder="手机号码"
                                                 value={value || ""}
@@ -370,14 +447,17 @@ export default function EditAddressScreen() {
                                     />
                                 </View>
                                 <Pressable className="px-4 py-2.5 border-2 border-border rounded-xl bg-background active:bg-muted">
-                                    <Text className="text-sm font-medium text-foreground">通讯录</Text>
+                                    <Text className="text-sm font-medium text-foreground">
+                                        通讯录
+                                    </Text>
                                 </Pressable>
                             </View>
                             {errors.recipientPhone && (
                                 <Text className="text-destructive text-xs mt-1 ml-1">
                                     {typeof errors.recipientPhone === "string"
                                         ? errors.recipientPhone
-                                        : (errors.recipientPhone as any)?.message || "输入有误"}
+                                        : (errors.recipientPhone as any)
+                                              ?.message || "输入有误"}
                                 </Text>
                             )}
                         </View>
@@ -400,12 +480,16 @@ export default function EditAddressScreen() {
                                 render={({ field: { onChange, value } }) => (
                                     <Pressable
                                         onPress={() => onChange(!value)}
-                                        className={`w-14 h-8 rounded-full ${value ? "bg-primary" : "bg-muted"
-                                            } flex-row items-center px-1 shadow-sm`}
+                                        className={`w-14 h-8 rounded-full ${
+                                            value ? "bg-primary" : "bg-muted"
+                                        } flex-row items-center px-1 shadow-sm`}
                                     >
                                         <View
-                                            className={`w-6 h-6 rounded-full bg-card shadow-md transition-transform ${value ? "translate-x-6" : "translate-x-0"
-                                                }`}
+                                            className={`w-6 h-6 rounded-full bg-card shadow-md transition-transform ${
+                                                value
+                                                    ? "translate-x-6"
+                                                    : "translate-x-0"
+                                            }`}
                                         />
                                     </Pressable>
                                 )}

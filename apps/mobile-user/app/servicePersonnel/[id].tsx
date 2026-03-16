@@ -22,10 +22,18 @@ import {
     User,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
+import {
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    useWindowDimensions,
+    View,
+} from "react-native";
 import { useServicePersonnelDetails } from "@repo/hooks/api/service-personnel";
 import { useChatUpsertConversation } from "@repo/hooks/api/chat";
+import { executeContactCustomerAction } from "@repo/mobile-ui/lib/contact-customer-action";
 import { toast } from "sonner-native";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 
 const WEEKDAY_BY_DIGIT: Record<string, string> = {
     "1": "周一",
@@ -83,7 +91,13 @@ function formatPublishedAt(value: unknown): string {
     return `发布于${y}年${m}月${d}日`;
 }
 
-function ServiceDetailSkeleton({ bottomInset }: { bottomInset: number }) {
+function ServiceDetailSkeleton({
+    bottomInset,
+    includeBottomBar = true,
+}: {
+    bottomInset: number;
+    includeBottomBar?: boolean;
+}) {
     return (
         <>
             <ScrollView
@@ -218,25 +232,26 @@ function ServiceDetailSkeleton({ bottomInset }: { bottomInset: number }) {
                 </View>
             </ScrollView>
 
-            {/* 底部操作栏（固定） */}
-            <View
-                className="absolute bottom-0 left-0 right-0 bg-card border-t border-border"
-                style={{ paddingBottom: bottomInset }}
-            >
-                <View className="px-4 py-2 flex-row items-center">
-                    <View className="w-[88px] h-[34px] flex-row items-center">
-                        <Skeleton className="h-5 w-5 rounded-full" />
-                        <Skeleton className="ml-2 h-3 w-12 rounded" />
-                    </View>
-                    <View className="w-[88px] h-[34px] flex-row items-center">
-                        <Skeleton className="h-5 w-5 rounded-full" />
-                        <Skeleton className="ml-2 h-3 w-12 rounded" />
-                    </View>
-                    <View className="flex-1 items-end">
-                        <Skeleton className="h-[34px] w-[120px] rounded-full" />
+            {includeBottomBar ? (
+                <View
+                    className="absolute bottom-0 left-0 right-0 bg-card border-t border-border"
+                    style={{ paddingBottom: bottomInset }}
+                >
+                    <View className="px-4 py-2 flex-row items-center">
+                        <View className="w-[88px] h-[34px] flex-row items-center">
+                            <Skeleton className="h-5 w-5 rounded-full" />
+                            <Skeleton className="ml-2 h-3 w-12 rounded" />
+                        </View>
+                        <View className="w-[88px] h-[34px] flex-row items-center">
+                            <Skeleton className="h-5 w-5 rounded-full" />
+                            <Skeleton className="ml-2 h-3 w-12 rounded" />
+                        </View>
+                        <View className="flex-1 items-end">
+                            <Skeleton className="h-[34px] w-[120px] rounded-full" />
+                        </View>
                     </View>
                 </View>
-            </View>
+            ) : null}
         </>
     );
 }
@@ -342,7 +357,7 @@ function ServiceDetailBottomBarContent() {
             <Pressable
                 className="w-[88px] h-[34px] flex-row items-center"
                 hitSlop={12}
-                onPress={() => {}}
+                onPress={executeContactCustomerAction}
             >
                 <Icon
                     as={MessageCircle}
@@ -443,10 +458,20 @@ function ServiceDetailContent({
         });
     };
 
-    const details = useServicePersonnelDetails({
+    const detailsQuery = useServicePersonnelDetails({
         personnelId,
         serviceId,
-    }).data;
+    });
+    const details = detailsQuery.data;
+    const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: () =>
+            detailsQuery.refetch({
+                throwOnError: false,
+            }),
+    });
+
+
 
     const view = useMemo(() => {
         const headerImages = (details?.gallery ?? []).filter((image) =>
@@ -508,6 +533,13 @@ function ServiceDetailContent({
         };
     }, [details, serviceName]);
 
+
+    if (showPageLoading) {
+        return (
+            <ServiceDetailSkeleton bottomInset={0} includeBottomBar={false} />
+        );
+    }
+
     const renderStars = (rating: number) => {
         return (
             <View className="flex-row items-center">
@@ -536,6 +568,14 @@ function ServiceDetailContent({
             className="flex-1"
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 120 }}
+            refreshControl={
+                <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={() => {
+                        void onRefresh();
+                    }}
+                />
+            }
         >
             {/* 顶部图片 */}
             {view.headerImages.length ? (

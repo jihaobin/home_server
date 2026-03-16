@@ -5,13 +5,14 @@ import { ChevronLeft, Star } from "lucide-react-native";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Suspense, useMemo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import {
     useReviewStats,
     useTargetReviewsInfinite,
 } from "@repo/hooks/api/review";
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 
 type ReviewImage = {
     url: string;
@@ -77,6 +78,22 @@ function ReviewItem({
         .slice(0, 4);
     const publishedAtText = formatPublishedAt(review.createdAt);
     const reviewerName = review.reviewerName || "用户";
+    const reviewerAvatarSource = useMemo(
+        () =>
+            review.reviewerAvatar?.url
+                ? { uri: review.reviewerAvatar.url }
+                : DEFAULT_AVATAR,
+        [review.reviewerAvatar?.url],
+    );
+    const reviewerAvatarPlaceholder = useMemo(
+        () =>
+            review.reviewerAvatar?.blurhash
+                ? {
+                      blurhash: review.reviewerAvatar.blurhash,
+                  }
+                : undefined,
+        [review.reviewerAvatar?.blurhash],
+    );
 
     return (
         <View>
@@ -85,20 +102,8 @@ function ReviewItem({
                     <View className="flex-row items-start">
                         <View className="h-[42px] w-[42px] rounded-full overflow-hidden bg-muted">
                             <Image
-                                source={
-                                    review.reviewerAvatar?.url
-                                        ? { uri: review.reviewerAvatar.url }
-                                        : DEFAULT_AVATAR
-                                }
-                                placeholder={
-                                    review.reviewerAvatar?.blurhash
-                                        ? {
-                                              blurhash:
-                                                  review.reviewerAvatar
-                                                      .blurhash,
-                                          }
-                                        : undefined
-                                }
+                                source={reviewerAvatarSource}
+                                placeholder={reviewerAvatarPlaceholder}
                                 contentFit="cover"
                                 style={{ width: "100%", height: "100%" }}
                             />
@@ -132,16 +137,7 @@ function ReviewItem({
                                 key={`${review.id}-img-${idx}`}
                                 className="h-[77px] w-[77px] rounded-[8px] overflow-hidden bg-muted"
                             >
-                                <Image
-                                    source={{ uri: img.url }}
-                                    placeholder={
-                                        img.blurhash
-                                            ? { blurhash: img.blurhash }
-                                            : undefined
-                                    }
-                                    contentFit="cover"
-                                    style={{ width: "100%", height: "100%" }}
-                                />
+                                <ReviewImageThumb img={img} />
                             </View>
                         ))}
                     </View>
@@ -156,6 +152,23 @@ function ReviewItem({
 
             {showDivider ? <View className="h-px bg-border mx-4" /> : null}
         </View>
+    );
+}
+
+function ReviewImageThumb({ img }: { img: ReviewImage }) {
+    const imageSource = useMemo(() => ({ uri: img.url }), [img.url]);
+    const imagePlaceholder = useMemo(
+        () => (img.blurhash ? { blurhash: img.blurhash } : undefined),
+        [img.blurhash],
+    );
+
+    return (
+        <Image
+            source={imageSource}
+            placeholder={imagePlaceholder}
+            contentFit="cover"
+            style={{ width: "100%", height: "100%" }}
+        />
     );
 }
 
@@ -280,7 +293,8 @@ function ReviewsContent({
         key: "all" | "latest" | "photos" | "positive" | "negative",
     ) => void;
 }) {
-    const stats = useReviewStats("personnel", personnelId, serviceId).data;
+    const statsQuery = useReviewStats("personnel", personnelId, serviceId);
+    const stats = statsQuery.data;
 
     const tabs = useMemo(() => {
         const total = stats?.totalCount ?? 0;
@@ -310,6 +324,23 @@ function ReviewsContent({
         personnelId,
         listParams,
     );
+    const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: async () => {
+            await Promise.all([
+                statsQuery.refetch({
+                    throwOnError: false,
+                }),
+                reviewsQuery.refetch({
+                    throwOnError: false,
+                }),
+            ]);
+        },
+    });
+
+    if (showPageLoading) {
+        return <ReviewsSkeleton />;
+    }
 
     const reviewItems = useMemo(() => {
         const pages = reviewsQuery.data?.pages ?? [];
@@ -360,6 +391,14 @@ function ReviewsContent({
                 className="flex-1 bg-card"
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: 24 }}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
+                    />
+                }
             >
                 <View className="h-px bg-border mx-4" />
 

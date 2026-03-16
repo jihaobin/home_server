@@ -6,6 +6,7 @@ import {
     useInfiniteWorkerEarningsRecords,
     useWorkerAlipayBindingStatus,
 } from "@repo/hooks/api/pay";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -33,7 +34,8 @@ function WithdrawContent() {
     const [amount, setAmount] = useState("");
     const [remark, setRemark] = useState("");
     const { data: overview, refetch: refetchOverview } = useEarningsOverview();
-    const { mutateAsync: submitWithdraw, isPending: isWithdrawing } = useWithdraw();
+    const { mutateAsync: submitWithdraw, isPending: isWithdrawing } =
+        useWithdraw();
     const {
         data: bindingStatus,
         isLoading: isBindingStatusLoading,
@@ -52,7 +54,15 @@ function WithdrawContent() {
         refetch: refetchWithdrawalRecords,
     } = useInfiniteWorkerEarningsRecords(withdrawalQueryParams);
     const [hasSubmitted, setHasSubmitted] = useState(false);
-    const [refreshing, setRefreshing] = useState(false);
+    const { refreshing, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: () =>
+            Promise.allSettled([
+                refetchOverview(),
+                refetchWithdrawalRecords(),
+                refetchBindingStatus(),
+            ]),
+    });
 
     const maxWithdraw = 5000;
 
@@ -117,22 +127,12 @@ function WithdrawContent() {
         router.push("/profile/account-binding" as never);
     };
 
-    const handleRefresh = useCallback(async () => {
-        setRefreshing(true);
-        try {
-            await Promise.allSettled([
-                refetchOverview(),
-                refetchWithdrawalRecords(),
-                refetchBindingStatus(),
-            ]);
-        } finally {
-            setRefreshing(false);
-        }
-    }, [refetchOverview, refetchWithdrawalRecords, refetchBindingStatus]);
-
     const handleWithdraw = () => {
         if (hasPendingReview) {
-            Alert.alert("提示", "当前有提现申请正在审核，请等待审核完成后再试。");
+            Alert.alert(
+                "提示",
+                "当前有提现申请正在审核，请等待审核完成后再试。",
+            );
             return;
         }
         if (isBindingStatusLoading) {
@@ -212,12 +212,16 @@ function WithdrawContent() {
                 refetchBindingStatus(),
             ]);
             setRemark("");
-            Alert.alert("提现申请已提交", "后台正在进行审核，预计 1-3 个工作日内完成，请关注提现记录更新。", [
-                {
-                    text: "确定",
-                    onPress: () => router.back(),
-                },
-            ]);
+            Alert.alert(
+                "提现申请已提交",
+                "后台正在进行审核，预计 1-3 个工作日内完成，请关注提现记录更新。",
+                [
+                    {
+                        text: "确定",
+                        onPress: () => router.back(),
+                    },
+                ],
+            );
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : "提现失败，请稍后重试";
@@ -244,14 +248,18 @@ function WithdrawContent() {
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing || withdrawalRecordsLoading}
-                        onRefresh={handleRefresh}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
                         tintColor="#4CAF50"
                     />
                 }
             >
                 {/* 余额显示 */}
                 <View style={styles.balanceCard}>
-                    <Text style={styles.balanceLabel}>账户余额（含审核中）</Text>
+                    <Text style={styles.balanceLabel}>
+                        账户余额（含审核中）
+                    </Text>
                     <Text style={styles.balanceAmount}>
                         ¥{formatCurrency(totalBalance)}
                     </Text>
@@ -279,7 +287,10 @@ function WithdrawContent() {
                             keyboardType="decimal-pad"
                             maxLength={10}
                         />
-                        <TouchableOpacity style={styles.allButton} onPress={handleAll}>
+                        <TouchableOpacity
+                            style={styles.allButton}
+                            onPress={handleAll}
+                        >
                             <Text style={styles.allButtonText}>全部</Text>
                         </TouchableOpacity>
                     </View>
@@ -294,7 +305,8 @@ function WithdrawContent() {
                                 key={value}
                                 style={[
                                     styles.quickButton,
-                                    amount === value.toString() && styles.quickButtonActive,
+                                    amount === value.toString() &&
+                                        styles.quickButtonActive,
                                 ]}
                                 onPress={() => handleQuickSelect(value)}
                             >
@@ -302,7 +314,7 @@ function WithdrawContent() {
                                     style={[
                                         styles.quickButtonText,
                                         amount === value.toString() &&
-                                        styles.quickButtonTextActive,
+                                            styles.quickButtonTextActive,
                                     ]}
                                 >
                                     ¥{value}
@@ -322,13 +334,16 @@ function WithdrawContent() {
                                 提现需后台审核
                             </Text>
                             <Text style={styles.reviewNoticeText}>
-                                申请提交后由财务审核，预计 1-3 个工作日内打款。可随时在提现记录中查看审核进展。
+                                申请提交后由财务审核，预计 1-3
+                                个工作日内打款。可随时在提现记录中查看审核进展。
                             </Text>
                             <TouchableOpacity
                                 onPress={handleOpenRecords}
                                 style={styles.reviewNoticeLink}
                             >
-                                <Text style={styles.reviewNoticeLinkText}>查看提现记录</Text>
+                                <Text style={styles.reviewNoticeLinkText}>
+                                    查看提现记录
+                                </Text>
                                 <Ionicons
                                     name="arrow-forward"
                                     size={16}
@@ -416,7 +431,8 @@ function WithdrawContent() {
                                 >
                                     <View style={styles.historyRow}>
                                         <Text style={styles.historyAmount}>
-                                            ¥{formatCurrency(
+                                            ¥
+                                            {formatCurrency(
                                                 Math.abs(record.amount),
                                             )}
                                         </Text>
@@ -457,9 +473,16 @@ function WithdrawContent() {
                     >
                         <View style={styles.accountLeft}>
                             <View
-                                style={[styles.accountIcon, { backgroundColor: "#1677FF" }]}
+                                style={[
+                                    styles.accountIcon,
+                                    { backgroundColor: "#1677FF" },
+                                ]}
                             >
-                                <Ionicons name="logo-alipay" size={24} color="white" />
+                                <Ionicons
+                                    name="logo-alipay"
+                                    size={24}
+                                    color="white"
+                                />
                             </View>
                             <View style={styles.accountInfo}>
                                 <Text style={styles.accountType}>支付宝</Text>
@@ -467,8 +490,8 @@ function WithdrawContent() {
                                     {isBindingStatusLoading
                                         ? "加载中..."
                                         : bindingStatus?.bound
-                                            ? `已绑定 ${bindingStatus.alipayUserId || bindingStatus.alipayOpenId || ""}`
-                                            : "未绑定，绑定后才能提交提现"}
+                                          ? `已绑定 ${bindingStatus.alipayUserId || bindingStatus.alipayOpenId || ""}`
+                                          : "未绑定，绑定后才能提交提现"}
                                 </Text>
                             </View>
                         </View>
@@ -506,7 +529,11 @@ function WithdrawContent() {
                         </Text>
                     </View>
                     <View style={styles.tipItem}>
-                        <Ionicons name="shield-checkmark-outline" size={16} color="#666" />
+                        <Ionicons
+                            name="shield-checkmark-outline"
+                            size={16}
+                            color="#666"
+                        />
                         <Text style={styles.tipText}>提现免手续费</Text>
                     </View>
                 </View>
@@ -517,7 +544,8 @@ function WithdrawContent() {
                 <TouchableOpacity
                     style={[
                         styles.withdrawButton,
-                        isWithdrawButtonDisabled && styles.withdrawButtonDisabled,
+                        isWithdrawButtonDisabled &&
+                            styles.withdrawButtonDisabled,
                     ]}
                     onPress={handleWithdraw}
                     disabled={isWithdrawButtonDisabled}
@@ -526,8 +554,8 @@ function WithdrawContent() {
                         {hasPendingReview || hasSubmitted
                             ? "申请已提交，等待审核"
                             : isWithdrawing
-                                ? "提现申请提交中..."
-                                : `提交提现申请${amount ? ` ¥${amount}` : ""}`}
+                              ? "提现申请提交中..."
+                              : `提交提现申请${amount ? ` ¥${amount}` : ""}`}
                     </Text>
                 </TouchableOpacity>
                 <Text style={styles.footerHint}>
@@ -537,7 +565,7 @@ function WithdrawContent() {
                     style={[
                         styles.footerHint,
                         (hasPendingReview || hasSubmitted) &&
-                        styles.footerHintWarning,
+                            styles.footerHintWarning,
                     ]}
                 >
                     审核期间不可重复申请，请关注提现记录更新
@@ -563,10 +591,9 @@ function formatTransactionTime(value: string | Date) {
         now.getMonth(),
         now.getDate() - 1,
     );
-    let dayLabel = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-        2,
-        "0",
-    )}-${String(date.getDate()).padStart(2, "0")}`;
+    let dayLabel = `${date.getFullYear()}-${String(
+        date.getMonth() + 1,
+    ).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
     if (sameDay) {
         dayLabel = "今天";
     } else if (date.toDateString() === yesterday.toDateString()) {
@@ -578,12 +605,13 @@ function formatTransactionTime(value: string | Date) {
     return `${dayLabel} ${timeLabel}`;
 }
 
-const WITHDRAWAL_STATUS_META: Record<string, { label: string; color: string }> = {
-    pending: { label: "待审核", color: "#FF9800" },
-    approved: { label: "审核通过，待打款", color: "#2196F3" },
-    completed: { label: "已打款", color: "#4CAF50" },
-    rejected: { label: "已驳回", color: "#FF5722" },
-};
+const WITHDRAWAL_STATUS_META: Record<string, { label: string; color: string }> =
+    {
+        pending: { label: "待审核", color: "#FF9800" },
+        approved: { label: "审核通过，待打款", color: "#2196F3" },
+        completed: { label: "已打款", color: "#4CAF50" },
+        rejected: { label: "已驳回", color: "#FF5722" },
+    };
 
 function getWithdrawalStatusMeta(status?: string | null) {
     if (!status) {

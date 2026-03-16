@@ -9,7 +9,13 @@ import { ChevronRight } from "@repo/mobile-ui/lib/icons/ChevronRight";
 import { MapPin } from "@repo/mobile-ui/lib/icons/MapPin";
 import { X } from "@repo/mobile-ui/lib/icons/X";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Image, Pressable, ScrollView, View } from "react-native";
+import {
+    Image,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    View,
+} from "react-native";
 import * as React from "react";
 import { toast } from "sonner-native";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
@@ -18,6 +24,7 @@ import { useAddressEditStore } from "@/stores/address-store";
 import useServiceStore from "@/stores/service";
 import { PaySheet } from "@/components/pay/paySheet";
 import { ServiceTimePickerSheet } from "@/components/service-personnel/ServiceTimePickerSheet";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 
 export default function OrderConfirmScreen() {
     const router = useRouter();
@@ -65,6 +72,7 @@ export default function OrderConfirmScreen() {
     const [remarkDraft, setRemarkDraft] = React.useState("");
     const [isServiceTimeSheetVisible, setIsServiceTimeSheetVisible] =
         React.useState(false);
+    const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh();
 
     const appointmentTime = selectedServiceTime
         ? selectedServiceTime.toISOString()
@@ -129,6 +137,29 @@ export default function OrderConfirmScreen() {
 
     const warmTip =
         "温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案。";
+
+    if (showPageLoading) {
+        return (
+            <View className="flex-1 bg-background">
+                <View className="bg-card pb-3 pt-12">
+                    <View className="flex-row items-center">
+                        <View className="w-[78px]" />
+                        <View className="flex-1 items-center">
+                            <Text className="text-base font-puhui-medium text-foreground">
+                                确认订单
+                            </Text>
+                        </View>
+                        <View className="w-[78px]" />
+                    </View>
+                </View>
+                <View className="flex-1 items-center justify-center px-6">
+                    <Text className="text-sm font-puhui-regular text-muted-foreground">
+                        正在刷新订单信息...
+                    </Text>
+                </View>
+            </View>
+        );
+    }
 
     const serviceTimeLabel = React.useMemo(() => {
         if (!selectedServiceTime) {
@@ -221,6 +252,14 @@ export default function OrderConfirmScreen() {
                 className="flex-1"
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: 120 }}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
+                    />
+                }
             >
                 {/* 主卡片（地址 + 服务 + 规格 + 时间 + 备注） */}
                 <View className="mx-4 mt-3 overflow-hidden rounded-xl bg-card">

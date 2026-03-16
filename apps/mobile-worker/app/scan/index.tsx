@@ -12,16 +12,20 @@ import {
     View,
 } from "react-native";
 import { useVerifyCheckIn } from "@repo/hooks/api/order";
-import useLocation from "@repo/hooks/useLocation";
+import {
+    getSingleLocationErrorMessage,
+    requestSingleLocation,
+} from "@repo/hooks/location-single";
 
 export default function ScanQRScreen() {
     const [facing, setFacing] = useState<"front" | "back">("back");
     const [permission, requestPermission] = useCameraPermissions();
     const router = useRouter();
     const [hasScanned, setHasScanned] = useState(false);
-    const { location, isLocating, locationStatus, error: locationError } = useLocation();
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
-    const [statusType, setStatusType] = useState<"info" | "success" | "error">("info");
+    const [statusType, setStatusType] = useState<"info" | "success" | "error">(
+        "info",
+    );
     const verifyMutation = useVerifyCheckIn();
     const isVerifying = verifyMutation.isPending;
 
@@ -34,7 +38,9 @@ export default function ScanQRScreen() {
     useFocusEffect(
         useCallback(() => {
             setHasScanned(false);
-            return () => setHasScanned(false);
+            return () => {
+                setHasScanned(false);
+            };
         }, []),
     );
 
@@ -97,8 +103,15 @@ export default function ScanQRScreen() {
                 return;
             }
 
-            if (!location) {
-                const message = locationError || (isLocating ? "定位中，请稍后再试" : "未能获取定位信息");
+            let currentLocation;
+            try {
+                currentLocation = await requestSingleLocation(
+                    undefined,
+                    undefined,
+                    "mobile-worker/scan",
+                );
+            } catch (error) {
+                const message = getSingleLocationErrorMessage(error);
                 setStatusType("error");
                 setStatusMessage(message);
                 showBlockingAlert("定位未就绪", message);
@@ -111,15 +124,18 @@ export default function ScanQRScreen() {
                 const response = await verifyMutation.mutateAsync({
                     orderId: payload.orderId,
                     token: payload.token,
-                    latitude: location.latitude,
-                    longitude: location.longitude,
+                    latitude: currentLocation.latitude,
+                    longitude: currentLocation.longitude,
                 });
-                const successMessage = (response as { message?: string } | undefined)?.message || "核验成功";
+                const successMessage =
+                    (response as { message?: string } | undefined)?.message ||
+                    "核验成功";
                 setStatusType("success");
                 setStatusMessage(successMessage);
                 showBlockingAlert("核验成功", successMessage);
             } catch (error) {
-                const message = error instanceof Error ? error.message : "核验失败，请重试";
+                const message =
+                    error instanceof Error ? error.message : "核验失败，请重试";
                 setStatusType("error");
                 setStatusMessage(message);
                 showBlockingAlert("核验失败", message);
@@ -127,7 +143,13 @@ export default function ScanQRScreen() {
                 // 保持扫码锁定，直至用户关闭弹窗
             }
         },
-        [hasScanned, isVerifying, parsePayload, location, locationError, isLocating, verifyMutation, showBlockingAlert],
+        [
+            hasScanned,
+            isVerifying,
+            parsePayload,
+            verifyMutation,
+            showBlockingAlert,
+        ],
     );
 
     const toggleCameraFacing = () => {
@@ -142,7 +164,9 @@ export default function ScanQRScreen() {
         return (
             <View style={styles.container}>
                 <Text style={styles.title}>需要摄像头权限</Text>
-                <Text style={styles.message}>应用需要摄像头权限用于扫码核验</Text>
+                <Text style={styles.message}>
+                    应用需要摄像头权限用于扫码核验
+                </Text>
                 <Button title="授予权限" onPress={requestPermission} />
             </View>
         );
@@ -171,8 +195,12 @@ export default function ScanQRScreen() {
                     <View style={styles.scanFrame}>
                         <View style={[styles.corner, styles.cornerTopLeft]} />
                         <View style={[styles.corner, styles.cornerTopRight]} />
-                        <View style={[styles.corner, styles.cornerBottomLeft]} />
-                        <View style={[styles.corner, styles.cornerBottomRight]} />
+                        <View
+                            style={[styles.corner, styles.cornerBottomLeft]}
+                        />
+                        <View
+                            style={[styles.corner, styles.cornerBottomRight]}
+                        />
                     </View>
                     {isVerifying ? (
                         <View style={styles.processing}>
@@ -185,20 +213,28 @@ export default function ScanQRScreen() {
                 </View>
 
                 <View style={styles.controls}>
-                    <Text style={styles.instruction}>将二维码置于框内，系统会自动核验</Text>
+                    <Text style={styles.instruction}>
+                        将二维码置于框内，系统会自动核验
+                    </Text>
                     {hasScanned && !isVerifying ? (
                         <TouchableOpacity
                             style={styles.rescanButton}
                             onPress={handleResetScan}
                         >
-                            <Text style={styles.rescanButtonText}>继续扫码</Text>
+                            <Text style={styles.rescanButtonText}>
+                                继续扫码
+                            </Text>
                         </TouchableOpacity>
                     ) : null}
                     <TouchableOpacity
                         style={styles.flipButton}
                         onPress={toggleCameraFacing}
                     >
-                        <Ionicons name="camera-reverse" size={30} color="white" />
+                        <Ionicons
+                            name="camera-reverse"
+                            size={30}
+                            color="white"
+                        />
                     </TouchableOpacity>
                 </View>
             </View>

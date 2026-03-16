@@ -3,7 +3,9 @@ import { useEffect } from 'react';
 import { useSession } from './SessionProvider';
 import { useFonts } from 'expo-font';
 
-SplashScreen.preventAutoHideAsync();
+void SplashScreen.preventAutoHideAsync().catch(() => {
+    // 避免在极少数重复调用场景下打断启动流程
+});
 
 const FONTS = {
     puHuiRegular: "AlibabaPuHuiTi-Regular",
@@ -22,10 +24,16 @@ export function SplashScreenController() {
     });
 
     useEffect(() => {
-        if (!isLoading && loaded && !error) {
-            SplashScreen.hide();
+        if (error) {
+            console.error("字体加载失败，继续启动应用:", error);
+            void SplashScreen.hideAsync().catch(() => {});
+            return;
         }
-    }, [isLoading]);
+
+        if (!isLoading && loaded) {
+            void SplashScreen.hideAsync().catch(() => {});
+        }
+    }, [isLoading, loaded, error]);
 
     return null;
 }

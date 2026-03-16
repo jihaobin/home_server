@@ -7,6 +7,7 @@ import {
     useRescheduleOrder,
 } from "@repo/hooks/api/order";
 import { useChatUpsertConversation } from "@repo/hooks/api/chat";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import type { AssignmentDecisionStatus } from "@repo/types";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { Suspense, useState } from "react";
@@ -16,6 +17,7 @@ import {
     KeyboardAvoidingView,
     Modal,
     Platform,
+    RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
@@ -26,6 +28,7 @@ import {
 import { ErrorBoundary } from "react-error-boundary";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { DateTimePicker } from "@repo/mobile-ui/components/ui/date-time-picker";
+import { executeContactCustomerAction } from "@repo/mobile-ui/lib/contact-customer-action";
 
 const SERVICE_TIME_WINDOW_STEP_MINUTES = 120;
 const SERVICE_TIME_WINDOW_MS = 2 * 60 * 60 * 1000;
@@ -361,7 +364,15 @@ export default function OrderDetailScreen() {
 
 function OrderDetailContent({ orderId }: { orderId: string }) {
     const router = useRouter();
-    const { data: order } = useOrderDetail(orderId);
+    const { data: order, refetch: refetchOrderDetail } =
+        useOrderDetail(orderId);
+    const { refreshing, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: () =>
+            refetchOrderDetail({
+                throwOnError: false,
+            }),
+    });
     const upsertChatConversation = useChatUpsertConversation();
     const cancelOrder = useCancelOrder();
     const acceptOrder = useAcceptOrder();
@@ -738,24 +749,8 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
         }
     };
 
-    const handleChatWithCustomer = async () => {
-        try {
-            const peerUserId = (order as { customerId?: string }).customerId;
-            if (!peerUserId) {
-                Alert.alert("无法发起聊天", "未找到客户账号信息");
-                return;
-            }
-            const conversation = await upsertChatConversation.mutateAsync({
-                dto: { peerUserId },
-                clientRole: "service_personnel",
-            });
-            router.push(`/chat/${conversation.id}` as never);
-        } catch (error) {
-            Alert.alert(
-                "发起聊天失败",
-                (error as Error)?.message ?? "请稍后再试",
-            );
-        }
+    const handleChatWithCustomer = () => {
+        executeContactCustomerAction();
     };
 
     const handleSendOrderCardToCustomer = async () => {
@@ -778,7 +773,18 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
     };
     return (
         <SafeAreaView style={styles.container}>
-            <ScrollView contentContainerStyle={styles.scrollContent}>
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
+                        tintColor="#2196F3"
+                    />
+                }
+            >
                 <View style={styles.card}>
                     <View style={styles.orderHeader}>
                         <View style={{ flex: 1 }}>
@@ -896,13 +902,8 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                     <TouchableOpacity
                         style={styles.chatButton}
                         onPress={handleChatWithCustomer}
-                        disabled={upsertChatConversation.isPending}
                     >
-                        <Text style={styles.chatButtonText}>
-                            {upsertChatConversation.isPending
-                                ? "正在打开..."
-                                : "联系客户"}
-                        </Text>
+                        <Text style={styles.chatButtonText}>联系客户</Text>
                     </TouchableOpacity>
                 </View>
 

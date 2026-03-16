@@ -13,9 +13,13 @@ import {
 } from "react-native";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import { useUserRealNameProfile } from "@repo/hooks/api/user";
 import { useFile } from "@repo/hooks/api/files";
-import { useServicePersonnelProfile, useServicePersonnelDashboardStats } from "@repo/hooks/api/service-personnel";
+import {
+    useServicePersonnelProfile,
+    useServicePersonnelDashboardStats,
+} from "@repo/hooks/api/service-personnel";
 import { signOutWithCleanup } from "../../lib/auth";
 
 type MenuItem = {
@@ -26,10 +30,22 @@ type MenuItem = {
 
 const MENU_ITEMS: MenuItem[] = [
     { icon: "person-outline", title: "个人信息", route: "/profile/edit" },
-    { icon: "construct-outline", title: "服务设置", route: "/profile/service-settings" },
-    { icon: "location-outline", title: "服务区域", route: "/profile/service-area" },
+    {
+        icon: "construct-outline",
+        title: "服务设置",
+        route: "/profile/service-settings",
+    },
+    {
+        icon: "location-outline",
+        title: "服务区域",
+        route: "/profile/service-area",
+    },
     { icon: "card-outline", title: "实名认证", route: "/verification/id-card" },
-    { icon: "wallet-outline", title: "账号绑定", route: "/profile/account-binding" },
+    {
+        icon: "wallet-outline",
+        title: "账号绑定",
+        route: "/profile/account-binding",
+    },
     // { icon: "settings-outline", title: "设置", route: "/profile/settings" },
 ];
 
@@ -76,23 +92,48 @@ function ProfileContent() {
     const router = useRouter();
     const { session, refetch: refetchSession } = useSession();
     const userId = session?.user?.id;
-    const { data: realNameProfile, isFetching: isProfileFetching, refetch: refetchProfile } = useUserRealNameProfile(userId);
-    const { data: personnelProfile, isFetching: isPersonnelProfileFetching, refetch: refetchPersonnelProfile } =
-        useServicePersonnelProfile(userId);
+    const {
+        data: realNameProfile,
+        isFetching: isProfileFetching,
+        refetch: refetchProfile,
+    } = useUserRealNameProfile(userId);
+    const {
+        data: personnelProfile,
+        isFetching: isPersonnelProfileFetching,
+        refetch: refetchPersonnelProfile,
+    } = useServicePersonnelProfile(userId);
     const {
         data: dashboardStats,
         isFetching: isDashboardStatsFetching,
         refetch: refetchDashboardStats,
     } = useServicePersonnelDashboardStats(userId);
-    const [refreshing, setRefreshing] = useState(false);
+    const { refreshing, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: () =>
+            Promise.allSettled([
+                Promise.resolve(refetchSession()),
+                userId ? refetchProfile() : Promise.resolve(),
+                userId ? refetchPersonnelProfile() : Promise.resolve(),
+                userId ? refetchDashboardStats() : Promise.resolve(),
+            ]),
+    });
 
-    const workerMeta = (session?.user?.metadata as Record<string, any> | undefined) ?? {};
+    const workerMeta =
+        (session?.user?.metadata as Record<string, any> | undefined) ?? {};
     const displayName = personnelProfile?.name ?? "未命名服务者";
-    const rawPhone = workerMeta.phone ?? session?.user?.phoneNumber ?? session?.user?.phone ?? "";
+    const rawPhone =
+        workerMeta.phone ??
+        session?.user?.phoneNumber ??
+        session?.user?.phone ??
+        "";
     const maskedPhone =
-        personnelProfile?.maskedPhoneNumber ?? (rawPhone ? maskPhone(rawPhone) : "未绑定手机号");
+        personnelProfile?.maskedPhoneNumber ??
+        (rawPhone ? maskPhone(rawPhone) : "未绑定手机号");
     const workYears =
-        personnelProfile?.yearsOfExperience ?? workerMeta.workYears ?? workerMeta.yearsOfExperience ?? null;
+        personnelProfile?.yearsOfExperience ??
+        workerMeta.workYears ??
+        workerMeta.yearsOfExperience ??
+        null;
 
     const stats = useMemo(() => {
         if (dashboardStats) {
@@ -107,15 +148,20 @@ function ProfileContent() {
             typeof workerMeta.stats?.rating === "number"
                 ? workerMeta.stats.rating
                 : typeof workerMeta.rating === "number"
-                    ? workerMeta.rating
-                    : undefined;
-        const rawServiceCount = workerMeta.stats?.serviceCount ?? workerMeta.serviceCount ?? 0;
+                  ? workerMeta.rating
+                  : undefined;
+        const rawServiceCount =
+            workerMeta.stats?.serviceCount ?? workerMeta.serviceCount ?? 0;
         const fallbackServiceCount =
-            typeof rawServiceCount === "number" ? rawServiceCount : Number(rawServiceCount) || 0;
+            typeof rawServiceCount === "number"
+                ? rawServiceCount
+                : Number(rawServiceCount) || 0;
         const rawTotalEarnings =
             workerMeta.stats?.totalEarnings ?? workerMeta.totalEarnings ?? 0;
         const fallbackTotalEarnings =
-            typeof rawTotalEarnings === "number" ? rawTotalEarnings : Number(rawTotalEarnings) || 0;
+            typeof rawTotalEarnings === "number"
+                ? rawTotalEarnings
+                : Number(rawTotalEarnings) || 0;
         return {
             serviceCount: fallbackServiceCount,
             ratingValue: fallbackRating ?? 5,
@@ -123,10 +169,10 @@ function ProfileContent() {
                 typeof fallbackRating === "number"
                     ? fallbackRating.toFixed(1)
                     : typeof workerMeta.stats?.rating === "string"
-                        ? workerMeta.stats.rating
-                        : typeof workerMeta.rating === "string"
-                            ? workerMeta.rating
-                            : "5.0",
+                      ? workerMeta.stats.rating
+                      : typeof workerMeta.rating === "string"
+                        ? workerMeta.rating
+                        : "5.0",
             totalEarnings: fallbackTotalEarnings,
         };
     }, [dashboardStats, workerMeta]);
@@ -167,7 +213,8 @@ function ProfileContent() {
     const trimmedAvatarIdentifier =
         typeof avatarIdentifier === "string" ? avatarIdentifier.trim() : "";
     const isDirectAvatarUrl = Boolean(
-        trimmedAvatarIdentifier && /^https?:\/\//i.test(trimmedAvatarIdentifier),
+        trimmedAvatarIdentifier &&
+        /^https?:\/\//i.test(trimmedAvatarIdentifier),
     );
     const { data: avatarFileData } = useFile(
         !isDirectAvatarUrl && trimmedAvatarIdentifier
@@ -190,22 +237,13 @@ function ProfileContent() {
                 refetchPersonnelProfile(),
                 refetchDashboardStats(),
             ]);
-        }, [refetchProfile, refetchPersonnelProfile, refetchDashboardStats, userId]),
+        }, [
+            refetchProfile,
+            refetchPersonnelProfile,
+            refetchDashboardStats,
+            userId,
+        ]),
     );
-
-    const handleRefresh = useCallback(async () => {
-        setRefreshing(true);
-        try {
-            await Promise.allSettled([
-                Promise.resolve(refetchSession()),
-                userId ? refetchProfile() : Promise.resolve(),
-                userId ? refetchPersonnelProfile() : Promise.resolve(),
-                userId ? refetchDashboardStats() : Promise.resolve(),
-            ]);
-        } finally {
-            setRefreshing(false);
-        }
-    }, [refetchSession, refetchProfile, refetchPersonnelProfile, refetchDashboardStats, userId]);
 
     const handleLogout = async () => {
         Alert.alert("确认退出", "您确定要退出登录吗？", [
@@ -217,7 +255,10 @@ function ProfileContent() {
                     try {
                         const { error } = await signOutWithCleanup();
                         if (error) {
-                            Alert.alert("退出登录失败", error.message || "登录时发生错误");
+                            Alert.alert(
+                                "退出登录失败",
+                                error.message || "登录时发生错误",
+                            );
                             return;
                         }
                         refetchSession();
@@ -230,13 +271,19 @@ function ProfileContent() {
         ]);
     };
 
-    const isRefreshingState = refreshing || isProfileFetching || isPersonnelProfileFetching || isDashboardStatsFetching;
+    const isRefreshingState =
+        refreshing ||
+        isProfileFetching ||
+        isPersonnelProfileFetching ||
+        isDashboardStatsFetching;
 
     return (
         <View style={styles.container}>
             <View style={styles.header}>
                 <Text style={styles.title}>个人中心</Text>
-                <Text style={styles.subtitle}>查看资料、认证状态与账号安全</Text>
+                <Text style={styles.subtitle}>
+                    查看资料、认证状态与账号安全
+                </Text>
             </View>
 
             <ScrollView
@@ -245,7 +292,9 @@ function ProfileContent() {
                 refreshControl={
                     <RefreshControl
                         refreshing={isRefreshingState}
-                        onRefresh={handleRefresh}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
                         tintColor="#4CAF50"
                     />
                 }
@@ -256,33 +305,56 @@ function ProfileContent() {
                         onPress={() => router.push("/profile/edit" as never)}
                     >
                         {avatarUri ? (
-                            <Image source={{ uri: avatarUri }} style={styles.avatar} />
+                            <Image
+                                source={{ uri: avatarUri }}
+                                style={styles.avatar}
+                            />
                         ) : (
-                            <View style={[styles.avatar, styles.avatarFallback]}>
-                                <Text style={styles.avatarInitial}>{displayName.slice(0, 1)}</Text>
+                            <View
+                                style={[styles.avatar, styles.avatarFallback]}
+                            >
+                                <Text style={styles.avatarInitial}>
+                                    {displayName.slice(0, 1)}
+                                </Text>
                             </View>
                         )}
                         <View style={styles.userDetails}>
                             <View style={styles.nameRow}>
-                                <Text style={styles.userName}>{displayName}</Text>
+                                <Text style={styles.userName}>
+                                    {displayName}
+                                </Text>
                                 {isVerified && (
                                     <View style={styles.verifiedBadge}>
-                                        <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
-                                        <Text style={styles.verifiedText}>已认证</Text>
+                                        <Ionicons
+                                            name="checkmark-circle"
+                                            size={16}
+                                            color="#4CAF50"
+                                        />
+                                        <Text style={styles.verifiedText}>
+                                            已认证
+                                        </Text>
                                     </View>
                                 )}
                             </View>
                             <Text style={styles.userPhone}>{maskedPhone}</Text>
                             <Text style={styles.workYears}>
-                                {workYears ? `工作经验 ${workYears} 年` : "完善工作年限信息"}
+                                {workYears
+                                    ? `工作经验 ${workYears} 年`
+                                    : "完善工作年限信息"}
                             </Text>
                         </View>
-                        <Ionicons name="chevron-forward" size={24} color="#999" />
+                        <Ionicons
+                            name="chevron-forward"
+                            size={24}
+                            color="#999"
+                        />
                     </TouchableOpacity>
 
                     <View style={styles.statsRow}>
                         <View style={styles.statItem}>
-                            <Text style={styles.statValue}>{stats.serviceCount}</Text>
+                            <Text style={styles.statValue}>
+                                {stats.serviceCount}
+                            </Text>
                             <Text style={styles.statLabel}>服务次数</Text>
                         </View>
                         <View style={styles.statDivider} />
@@ -292,7 +364,9 @@ function ProfileContent() {
                         </View>
                         <View style={styles.statDivider} />
                         <View style={styles.statItem}>
-                            <Text style={styles.statValue}>¥{stats.totalEarnings.toFixed(2)}</Text>
+                            <Text style={styles.statValue}>
+                                ¥{stats.totalEarnings.toFixed(2)}
+                            </Text>
                             <Text style={styles.statLabel}>总收益</Text>
                         </View>
                     </View>
@@ -303,15 +377,21 @@ function ProfileContent() {
                         <Text style={styles.sectionTitle}>服务资料</Text>
                         <View style={styles.infoRow}>
                             <Text style={styles.infoLabel}>服务区域</Text>
-                            <Text style={styles.infoValue}>{serviceRegionLabel}</Text>
+                            <Text style={styles.infoValue}>
+                                {serviceRegionLabel}
+                            </Text>
                         </View>
                         <View style={styles.infoRow}>
                             <Text style={styles.infoLabel}>可服务时间</Text>
-                            <Text style={styles.infoValue}>{workScheduleLabel}</Text>
+                            <Text style={styles.infoValue}>
+                                {workScheduleLabel}
+                            </Text>
                         </View>
                         <View style={styles.infoRow}>
                             <Text style={styles.infoLabel}>工作日</Text>
-                            <Text style={styles.infoValue}>{workDaysLabel}</Text>
+                            <Text style={styles.infoValue}>
+                                {workDaysLabel}
+                            </Text>
                         </View>
                     </View>
                 )}
@@ -321,21 +401,41 @@ function ProfileContent() {
                         <Text style={styles.sectionTitle}>提供的服务</Text>
                         {services.map((service) => {
                             const pricePrefix = "¥";
-                            const specs = (service as any)?.specifications ?? [];
+                            const specs =
+                                (service as any)?.specifications ?? [];
                             return (
-                                <View key={service.serviceId} style={styles.serviceItem}>
+                                <View
+                                    key={service.serviceId}
+                                    style={styles.serviceItem}
+                                >
                                     <View style={styles.serviceHeader}>
                                         <View style={styles.serviceIcon}>
-                                            <Ionicons name="sparkles-outline" size={16} color="#FF9F43" />
+                                            <Ionicons
+                                                name="sparkles-outline"
+                                                size={16}
+                                                color="#FF9F43"
+                                            />
                                         </View>
                                         <View style={styles.serviceInfo}>
-                                            <Text style={styles.serviceName}>{service.serviceName}</Text>
+                                            <Text style={styles.serviceName}>
+                                                {service.serviceName}
+                                            </Text>
                                             {service.personnelDescription ? (
-                                                <Text style={styles.serviceDescription}>
-                                                    {service.personnelDescription}
+                                                <Text
+                                                    style={
+                                                        styles.serviceDescription
+                                                    }
+                                                >
+                                                    {
+                                                        service.personnelDescription
+                                                    }
                                                 </Text>
                                             ) : service.serviceDescription ? (
-                                                <Text style={styles.serviceDescription}>
+                                                <Text
+                                                    style={
+                                                        styles.serviceDescription
+                                                    }
+                                                >
                                                     {service.serviceDescription}
                                                 </Text>
                                             ) : null}
@@ -343,21 +443,58 @@ function ProfileContent() {
                                     </View>
                                     {specs.length === 0 ? (
                                         <View style={styles.specEmpty}>
-                                            <Ionicons name="alert-circle-outline" size={16} color="#94a3b8" />
-                                            <Text style={styles.specEmptyText}>尚未配置具体规格</Text>
+                                            <Ionicons
+                                                name="alert-circle-outline"
+                                                size={16}
+                                                color="#94a3b8"
+                                            />
+                                            <Text style={styles.specEmptyText}>
+                                                尚未配置具体规格
+                                            </Text>
                                         </View>
                                     ) : (
                                         <View style={styles.specList}>
                                             {specs.map((spec: any) => (
-                                                <View key={spec.id} style={styles.specCard}>
-                                                    <View style={styles.specHeader}>
-                                                        <Text style={styles.specPrice}>{`${pricePrefix} ${spec.price}`}</Text>
-                                                        {spec.name ? <Text style={styles.specTag}>{spec.name}</Text> : null}
+                                                <View
+                                                    key={spec.id}
+                                                    style={styles.specCard}
+                                                >
+                                                    <View
+                                                        style={
+                                                            styles.specHeader
+                                                        }
+                                                    >
+                                                        <Text
+                                                            style={
+                                                                styles.specPrice
+                                                            }
+                                                        >{`${pricePrefix} ${spec.price}`}</Text>
+                                                        {spec.name ? (
+                                                            <Text
+                                                                style={
+                                                                    styles.specTag
+                                                                }
+                                                            >
+                                                                {spec.name}
+                                                            </Text>
+                                                        ) : null}
                                                     </View>
                                                     {spec.estimatedDurationMinutes ? (
-                                                        <View style={styles.specMeta}>
-                                                            <Ionicons name="time-outline" size={14} color="#94a3b8" />
-                                                            <Text style={styles.specMetaText}>
+                                                        <View
+                                                            style={
+                                                                styles.specMeta
+                                                            }
+                                                        >
+                                                            <Ionicons
+                                                                name="time-outline"
+                                                                size={14}
+                                                                color="#94a3b8"
+                                                            />
+                                                            <Text
+                                                                style={
+                                                                    styles.specMetaText
+                                                                }
+                                                            >
                                                                 {`约 ${spec.estimatedDurationMinutes} 分钟`}
                                                             </Text>
                                                         </View>
@@ -396,21 +533,40 @@ function ProfileContent() {
                     {MENU_ITEMS.map((item, index) => (
                         <TouchableOpacity
                             key={item.route}
-                            style={[styles.menuItem, index === MENU_ITEMS.length - 1 && styles.menuItemLast]}
+                            style={[
+                                styles.menuItem,
+                                index === MENU_ITEMS.length - 1 &&
+                                    styles.menuItemLast,
+                            ]}
                             onPress={() => router.push(item.route as never)}
                         >
                             <View style={styles.menuLeft}>
-                                <Ionicons name={item.icon} size={24} color="#333" />
-                                <Text style={styles.menuTitle}>{item.title}</Text>
+                                <Ionicons
+                                    name={item.icon}
+                                    size={24}
+                                    color="#333"
+                                />
+                                <Text style={styles.menuTitle}>
+                                    {item.title}
+                                </Text>
                             </View>
-                            <Ionicons name="chevron-forward" size={20} color="#999" />
+                            <Ionicons
+                                name="chevron-forward"
+                                size={20}
+                                color="#999"
+                            />
                         </TouchableOpacity>
                     ))}
                 </View>
 
-                <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+                <TouchableOpacity
+                    style={styles.logoutButton}
+                    onPress={handleLogout}
+                >
                     <Text style={styles.logoutText}>退出登录</Text>
-                    <Text style={styles.logoutDesc}>若遇到账号遗失，请立即联系客服冻结</Text>
+                    <Text style={styles.logoutDesc}>
+                        若遇到账号遗失，请立即联系客服冻结
+                    </Text>
                 </TouchableOpacity>
             </ScrollView>
         </View>

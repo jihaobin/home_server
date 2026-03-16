@@ -9,6 +9,7 @@ import {
 } from "@repo/mobile-ui/components/chat/ChatConversationListView";
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import { Text } from "@repo/mobile-ui/components/ui/text";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 
 type ConversationApiItem = {
     id: string;
@@ -30,6 +31,13 @@ export default function ChatConversationListScreen() {
     const { data, isPending, isError, refetch } = useChatConversationsQuery({
         limit: 50,
         clientRole: "customer",
+    });
+    const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: () =>
+            refetch({
+                throwOnError: false,
+            }),
     });
 
     const items = (data?.items ?? []).map((item) => {
@@ -78,9 +86,20 @@ export default function ChatConversationListScreen() {
                             </Text>
                         </Pressable>
                     </View>
+                ) : showPageLoading ? (
+                    <View className="flex-1 items-center justify-center">
+                        <ActivityIndicator size="small" />
+                        <Text className="mt-3 text-sm text-muted-foreground font-puhui-regular">
+                            正在刷新会话...
+                        </Text>
+                    </View>
                 ) : (
                     <ChatConversationListView
                         items={items}
+                        refreshing={refreshing}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
                         emptyText="暂无私聊会话"
                         onPressConversation={(conversationId) => {
                             const target = items.find(

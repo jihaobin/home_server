@@ -1,6 +1,7 @@
 import type React from "react";
 import { Image as ExpoImage } from "expo-image";
 import { cssInterop } from "nativewind";
+import { useMemo } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
@@ -95,12 +96,14 @@ function ServiceGridItem({
     label: string;
     imageUrl?: string | null;
 }) {
+    const imageSource = useMemo(() => resolveImageSource(imageUrl), [imageUrl]);
+
     return (
         <View className="w-11 items-center">
             <View className="h-11 w-11 items-center justify-center">
                 <View className="h-[38px] w-[38px] overflow-hidden rounded-full border border-primary">
                     <Image
-                        source={resolveImageSource(imageUrl)}
+                        source={imageSource}
                         contentFit="cover"
                         className="h-[38px] w-[38px]"
                     />

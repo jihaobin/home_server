@@ -5,6 +5,7 @@ import {
     useWorkerEarningsRecords,
     useWorkerWithdrawalRecords,
 } from "@repo/hooks/api/pay";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import type { WorkerEarningsRecordListResponse } from "@repo/types";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -24,15 +25,13 @@ type TabFilter = "all" | "income" | "withdrawal";
 type TransactionItem = WorkerEarningsRecordListResponse["items"][number];
 type WithdrawalItem = TransactionItem;
 
-const WITHDRAWAL_STATUS_META: Record<
-    string,
-    { label: string; color: string }
-> = {
-    pending: { label: "待审核", color: "#FF9800" },
-    approved: { label: "审核通过，待打款", color: "#2196F3" },
-    completed: { label: "已打款", color: "#4CAF50" },
-    rejected: { label: "已驳回", color: "#FF5722" },
-};
+const WITHDRAWAL_STATUS_META: Record<string, { label: string; color: string }> =
+    {
+        pending: { label: "待审核", color: "#FF9800" },
+        approved: { label: "审核通过，待打款", color: "#2196F3" },
+        completed: { label: "已打款", color: "#4CAF50" },
+        rejected: { label: "已驳回", color: "#FF5722" },
+    };
 
 export default function EarningsScreen() {
     return (
@@ -55,8 +54,6 @@ function EarningsContent() {
             setSelectedTab(tabParam);
         }
     }, [params.tab]);
-    const [refreshing, setRefreshing] = useState(false);
-
     const recordCategory = useMemo(
         () => mapTabToCategory(selectedTab),
         [selectedTab],
@@ -99,29 +96,18 @@ function EarningsContent() {
         hasNextPage: hasMoreWithdrawals,
         isFetchingNextPage: isFetchingNextWithdrawalPage,
         refetch: refetchWithdrawalRecords,
-    } = useWorkerWithdrawalRecords(
-        { limit: 20 },
-        { enabled: isWithdrawalTab },
-    );
+    } = useWorkerWithdrawalRecords({ limit: 20 }, { enabled: isWithdrawalTab });
 
-    const handleRefresh = useCallback(async () => {
-        setRefreshing(true);
-        try {
-            await Promise.allSettled([
+    const { refreshing, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: () =>
+            Promise.allSettled([
                 refetchOverview(),
                 isWithdrawalTab
                     ? refetchWithdrawalRecords()
                     : refetchTransactions(),
-            ]);
-        } finally {
-            setRefreshing(false);
-        }
-    }, [
-        refetchOverview,
-        refetchTransactions,
-        refetchWithdrawalRecords,
-        isWithdrawalTab,
-    ]);
+            ]),
+    });
 
     const handleLoadMoreWithdrawals = useCallback(() => {
         if (
@@ -175,9 +161,7 @@ function EarningsContent() {
     const isRefreshing =
         refreshing ||
         overviewFetching ||
-        (isWithdrawalTab
-            ? withdrawalRecordsFetching
-            : transactionsFetching);
+        (isWithdrawalTab ? withdrawalRecordsFetching : transactionsFetching);
     const activeError =
         overviewError ||
         (isWithdrawalTab
@@ -257,9 +241,11 @@ function EarningsContent() {
                         </Text>
                     ) : null}
                 </View>
-                <Text style={[styles.transactionAmount, { color: amountColor }]}>
-                    {isIncome ? "+" : "-"}
-                    ¥{formatCurrency(Math.abs(item.amount))}
+                <Text
+                    style={[styles.transactionAmount, { color: amountColor }]}
+                >
+                    {isIncome ? "+" : "-"}¥
+                    {formatCurrency(Math.abs(item.amount))}
                 </Text>
             </View>
         );
@@ -297,7 +283,9 @@ function EarningsContent() {
                         </Text>
                     ) : null}
                 </View>
-                <Text style={[styles.transactionAmount, { color: amountColor }]}>
+                <Text
+                    style={[styles.transactionAmount, { color: amountColor }]}
+                >
                     -¥{formatCurrency(Math.abs(item.amount))}
                 </Text>
             </View>
@@ -329,7 +317,10 @@ function EarningsContent() {
                             : transactionsError?.message) ||
                         "请稍后重试"}
                 </Text>
-                <TouchableOpacity style={styles.retryButton} onPress={retryFetch}>
+                <TouchableOpacity
+                    style={styles.retryButton}
+                    onPress={retryFetch}
+                >
                     <Text style={styles.retryText}>重新加载</Text>
                 </TouchableOpacity>
             </View>
@@ -344,7 +335,9 @@ function EarningsContent() {
                 refreshControl={
                     <RefreshControl
                         refreshing={isRefreshing}
-                        onRefresh={handleRefresh}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
                         tintColor="#2196F3"
                     />
                 }
@@ -359,13 +352,16 @@ function EarningsContent() {
                 <View style={styles.infoBanner}>
                     <Text style={styles.infoTitle}>收益分成说明</Text>
                     <Text style={styles.infoText}>
-                        平台抽取 30%，服务人员实际到账 70%（按订单实付金额计算）。
+                        平台抽取 30%，服务人员实际到账
+                        70%（按订单实付金额计算）。
                     </Text>
                 </View>
 
                 <View style={styles.accountCard}>
                     <View style={styles.balanceSection}>
-                        <Text style={styles.balanceLabel}>账户余额（含审核中）</Text>
+                        <Text style={styles.balanceLabel}>
+                            账户余额（含审核中）
+                        </Text>
                         <Text style={styles.balanceAmount}>
                             ¥{formatCurrency(accountBalance)}
                         </Text>
@@ -380,9 +376,15 @@ function EarningsContent() {
                         </View>
                         <TouchableOpacity
                             style={styles.withdrawButton}
-                            onPress={() => router.push("/earnings/withdraw" as any)}
+                            onPress={() =>
+                                router.push("/earnings/withdraw" as any)
+                            }
                         >
-                            <Ionicons name="wallet-outline" size={20} color="white" />
+                            <Ionicons
+                                name="wallet-outline"
+                                size={20}
+                                color="white"
+                            />
                             <Text style={styles.withdrawText}>立即提现</Text>
                         </TouchableOpacity>
                     </View>
@@ -439,7 +441,10 @@ function EarningsContent() {
                                     />
                                 )
                             ) : transactionsFetching ? (
-                                <ActivityIndicator size="small" color="#2196F3" />
+                                <ActivityIndicator
+                                    size="small"
+                                    color="#2196F3"
+                                />
                             ) : (
                                 <Ionicons
                                     name="receipt-outline"
@@ -769,10 +774,9 @@ function formatTransactionTime(value: string | Date) {
         now.getMonth(),
         now.getDate() - 1,
     );
-    let dayLabel = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
-        2,
-        "0",
-    )}-${String(date.getDate()).padStart(2, "0")}`;
+    let dayLabel = `${date.getFullYear()}-${String(
+        date.getMonth() + 1,
+    ).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
     if (sameDay) {
         dayLabel = "今天";
     } else if (date.toDateString() === yesterday.toDateString()) {
@@ -804,7 +808,9 @@ function getTransactionDescription(item: TransactionItem) {
     }
 }
 
-function isValidTabFilter(value?: string | string[] | null): value is TabFilter {
+function isValidTabFilter(
+    value?: string | string[] | null,
+): value is TabFilter {
     if (Array.isArray(value)) {
         return isValidTabFilter(value[0]);
     }

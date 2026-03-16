@@ -6,6 +6,7 @@ import type {
     ServiceCategoryTree,
 } from "@repo/types";
 import {
+    keepPreviousData,
     useInfiniteQuery,
     useQuery,
     useSuspenseQuery,
@@ -179,6 +180,7 @@ export const useHomeRecommendationsInfinite = (
         },
         getNextPageParam: (lastPage) => lastPage.nextPage ?? undefined,
         enabled: options.enabled,
+        placeholderData: keepPreviousData,
         meta: {
             errorMessage: "首页推荐数据获取失败",
         },

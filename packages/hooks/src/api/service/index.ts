@@ -1,365 +1,390 @@
 import type {
-	CreateService,
-	CreateServiceCategory,
-	ServiceCategory,
-	ServiceCategoryRequest,
-	ServiceCategoryTree,
-	ServiceDetail,
-	ServiceListRequest,
-	ServiceListResponse,
-	ServiceStats,
-	UpdateService,
-	UpdateServiceCategory,
+    CreateService,
+    CreateServiceCategory,
+    ServiceCategory,
+    ServiceCategoryRequest,
+    ServiceCategoryTree,
+    ServiceDetail,
+    ServiceListRequest,
+    ServiceListResponse,
+    ServiceStats,
+    UpdateService,
+    UpdateServiceCategory,
 } from "@repo/types";
 import {
-	useMutation,
-	useQueryClient,
-	useQuery,
-	useSuspenseInfiniteQuery,
-	useSuspenseQuery,
+    keepPreviousData,
+    useMutation,
+    useQueryClient,
+    useQuery,
+    useSuspenseInfiniteQuery,
+    useSuspenseQuery,
 } from "@tanstack/react-query";
 import { apiClient } from "@repo/lib/http-client";
 
 type ServiceCategoryListResult = ServiceCategoryTree[];
 
 type DeleteResult = {
-	success: boolean;
-	message: string;
+    success: boolean;
+    message: string;
 };
 
 /**
  * 获取服务分类（支持层级与关键字筛选）
  */
 export const useServiceCategories = (params: ServiceCategoryRequest = {}) =>
-	useSuspenseQuery({
-		queryKey: ["service-categories", params],
-		queryFn: async () => {
-			const response = await apiClient.get<ServiceCategoryListResult>(
-				"/service/getCategories",
-				{
-					query: {
-						...(params.dep ? { dep: params.dep } : {}),
-						...(params.keyword ? { keyword: params.keyword } : {}),
-					},
-				},
-			);
-			return response.data;
-		},
-		meta: {
-			errorMessage: "服务分类获取失败",
-		},
-	});
+    useSuspenseQuery({
+        queryKey: ["service-categories", params],
+        queryFn: async () => {
+            const response = await apiClient.get<ServiceCategoryListResult>(
+                "/service/getCategories",
+                {
+                    query: {
+                        ...(params.dep ? { dep: params.dep } : {}),
+                        ...(params.keyword ? { keyword: params.keyword } : {}),
+                    },
+                },
+            );
+            return response.data;
+        },
+        meta: {
+            errorMessage: "服务分类获取失败",
+        },
+    });
 
 /**
  * 获取单个服务分类详情
  */
 export const useServiceCategoryDetail = (categoryId: string) =>
-	useSuspenseQuery({
-		queryKey: ["service-category", categoryId],
-		queryFn: async () => {
-			const response = await apiClient.get<ServiceCategory>(
-				`/service/categories/${categoryId}`,
-			);
-			return response.data;
-		},
-		meta: {
-			errorMessage: "服务分类详情获取失败",
-		},
-	});
+    useSuspenseQuery({
+        queryKey: ["service-category", categoryId],
+        queryFn: async () => {
+            const response = await apiClient.get<ServiceCategory>(
+                `/service/categories/${categoryId}`,
+            );
+            return response.data;
+        },
+        meta: {
+            errorMessage: "服务分类详情获取失败",
+        },
+    });
 
 /**
  * 创建服务分类
  */
 export const useCreateServiceCategory = () => {
-	const queryClient = useQueryClient();
+    const queryClient = useQueryClient();
 
-	return useMutation({
-		mutationFn: (payload: CreateServiceCategory) => {
-			return apiClient.post<ServiceCategory>("/service/categories", payload);
-		},
-		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: ["service-categories"],
-			});
-		},
-		scope: {
-			id: "createServiceCategory",
-		},
-	});
+    return useMutation({
+        mutationFn: (payload: CreateServiceCategory) => {
+            return apiClient.post<ServiceCategory>(
+                "/service/categories",
+                payload,
+            );
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: ["service-categories"],
+            });
+        },
+        scope: {
+            id: "createServiceCategory",
+        },
+    });
 };
 
 /**
  * 更新服务分类
  */
 export const useUpdateServiceCategory = () => {
-	const queryClient = useQueryClient();
+    const queryClient = useQueryClient();
 
-	return useMutation({
-		mutationFn: ({
-			id,
-			data,
-		}: {
-			id: string;
-			data: Partial<UpdateServiceCategory>;
-		}) => {
-			return apiClient.put<ServiceCategory>(`/service/categories/${id}`, data);
-		},
-		onSuccess: (_result, variables) => {
-			queryClient.invalidateQueries({
-				queryKey: ["service-categories"],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["service-category", variables.id],
-			});
-		},
-		scope: {
-			id: "updateServiceCategory",
-		},
-	});
+    return useMutation({
+        mutationFn: ({
+            id,
+            data,
+        }: {
+            id: string;
+            data: Partial<UpdateServiceCategory>;
+        }) => {
+            return apiClient.put<ServiceCategory>(
+                `/service/categories/${id}`,
+                data,
+            );
+        },
+        onSuccess: (_result, variables) => {
+            queryClient.invalidateQueries({
+                queryKey: ["service-categories"],
+            });
+            queryClient.invalidateQueries({
+                queryKey: ["service-category", variables.id],
+            });
+        },
+        scope: {
+            id: "updateServiceCategory",
+        },
+    });
 };
 
 /**
  * 删除服务分类
  */
 export const useDeleteServiceCategory = () => {
-	const queryClient = useQueryClient();
+    const queryClient = useQueryClient();
 
-	return useMutation({
-		mutationFn: (id: string) => {
-			return apiClient.delete<DeleteResult>(`/service/categories/${id}`);
-		},
-		onSuccess: (_result, id) => {
-			queryClient.invalidateQueries({
-				queryKey: ["service-categories"],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["service-category", id],
-			});
-		},
-		scope: {
-			id: "deleteServiceCategory",
-		},
-	});
+    return useMutation({
+        mutationFn: (id: string) => {
+            return apiClient.delete<DeleteResult>(`/service/categories/${id}`);
+        },
+        onSuccess: (_result, id) => {
+            queryClient.invalidateQueries({
+                queryKey: ["service-categories"],
+            });
+            queryClient.invalidateQueries({
+                queryKey: ["service-category", id],
+            });
+        },
+        scope: {
+            id: "deleteServiceCategory",
+        },
+    });
 };
 
 /**
  * 获取服务项目列表（无限滚动版本）
  */
 export const useServiceList = (params: Omit<ServiceListRequest, "page">) =>
-	useSuspenseInfiniteQuery({
-		queryKey: ["service-list", params],
-		queryFn: async ({ pageParam = 1 }) => {
-			const response = await apiClient.get<ServiceListResponse>(
-				"/service/services",
-				{
-					query: {
-						page: pageParam.toString(),
-						...(params.limit ? { limit: params.limit.toString() } : {}),
-						...(params.categoryId ? { categoryId: params.categoryId } : {}),
-						...(params.keyword ? { keyword: params.keyword } : {}),
-						...(params.minPrice !== undefined
-							? { minPrice: params.minPrice.toString() }
-							: {}),
-						...(params.maxPrice !== undefined
-							? { maxPrice: params.maxPrice.toString() }
-							: {}),
-						...(params.isActive !== undefined
-							? { isActive: params.isActive.toString() }
-							: {}),
-						...(params.search ? { search: params.search } : {}),
-						...(params.sortBy ? { sortBy: params.sortBy } : {}),
-						...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
-					},
-				},
-			);
-			return response.data;
-		},
-		getNextPageParam: (lastPage) => {
-			// 如果当前页有数据且未达到总页数，返回下一页页码
-			const { page, totalPages } = lastPage.meta;
-			return page < totalPages ? page + 1 : undefined;
-		},
-		initialPageParam: 1,
-		meta: {
-			errorMessage: "服务项目列表获取失败",
-		},
-	});
+    useSuspenseInfiniteQuery({
+        queryKey: ["service-list", params],
+        queryFn: async ({ pageParam = 1 }) => {
+            const response = await apiClient.get<ServiceListResponse>(
+                "/service/services",
+                {
+                    query: {
+                        page: pageParam.toString(),
+                        ...(params.limit
+                            ? { limit: params.limit.toString() }
+                            : {}),
+                        ...(params.categoryId
+                            ? { categoryId: params.categoryId }
+                            : {}),
+                        ...(params.keyword ? { keyword: params.keyword } : {}),
+                        ...(params.minPrice !== undefined
+                            ? { minPrice: params.minPrice.toString() }
+                            : {}),
+                        ...(params.maxPrice !== undefined
+                            ? { maxPrice: params.maxPrice.toString() }
+                            : {}),
+                        ...(params.isActive !== undefined
+                            ? { isActive: params.isActive.toString() }
+                            : {}),
+                        ...(params.search ? { search: params.search } : {}),
+                        ...(params.sortBy ? { sortBy: params.sortBy } : {}),
+                        ...(params.sortOrder
+                            ? { sortOrder: params.sortOrder }
+                            : {}),
+                    },
+                },
+            );
+            return response.data;
+        },
+        getNextPageParam: (lastPage) => {
+            // 如果当前页有数据且未达到总页数，返回下一页页码
+            const { page, totalPages } = lastPage.meta;
+            return page < totalPages ? page + 1 : undefined;
+        },
+        initialPageParam: 1,
+        meta: {
+            errorMessage: "服务项目列表获取失败",
+        },
+    });
 
 type ServiceListSinglePageParams = Partial<ServiceListRequest> & {
-	page?: number;
-	enabled?: boolean;
+    page?: number;
+    enabled?: boolean;
 };
 
 /**
  * 获取服务项目列表（单页版，便于管理端等一次性取完整列表）
  */
-export const useServiceListSinglePage = (params: ServiceListSinglePageParams) => {
-	const { enabled = true, page = 1, ...restParams } = params;
+export const useServiceListSinglePage = (
+    params: ServiceListSinglePageParams,
+) => {
+    const { enabled = true, page = 1, ...restParams } = params;
 
-	return useQuery({
-		queryKey: ["service-list-single", { ...restParams, page }],
-		queryFn: async () => {
-			const response = await apiClient.get<ServiceListResponse>(
-				"/service/services",
-				{
-					query: {
-						page: page.toString(),
-						...(restParams.limit
-							? { limit: restParams.limit.toString() }
-							: {}),
-						...(restParams.categoryId
-							? { categoryId: restParams.categoryId }
-							: {}),
-						...(restParams.keyword ? { keyword: restParams.keyword } : {}),
-						...(restParams.minPrice !== undefined
-							? { minPrice: restParams.minPrice.toString() }
-							: {}),
-						...(restParams.maxPrice !== undefined
-							? { maxPrice: restParams.maxPrice.toString() }
-							: {}),
-						...(restParams.isActive !== undefined
-							? { isActive: restParams.isActive.toString() }
-							: {}),
-						...(restParams.search ? { search: restParams.search } : {}),
-						...(restParams.sortBy ? { sortBy: restParams.sortBy } : {}),
-						...(restParams.sortOrder
-							? { sortOrder: restParams.sortOrder }
-							: {}),
-					},
-				},
-			);
-			return response.data;
-		},
-		enabled,
-		meta: {
-			errorMessage: "服务项目列表获取失败",
-		},
-	});
+    return useQuery({
+        queryKey: ["service-list-single", { ...restParams, page }],
+        queryFn: async () => {
+            const response = await apiClient.get<ServiceListResponse>(
+                "/service/services",
+                {
+                    query: {
+                        page: page.toString(),
+                        ...(restParams.limit
+                            ? { limit: restParams.limit.toString() }
+                            : {}),
+                        ...(restParams.categoryId
+                            ? { categoryId: restParams.categoryId }
+                            : {}),
+                        ...(restParams.keyword
+                            ? { keyword: restParams.keyword }
+                            : {}),
+                        ...(restParams.minPrice !== undefined
+                            ? { minPrice: restParams.minPrice.toString() }
+                            : {}),
+                        ...(restParams.maxPrice !== undefined
+                            ? { maxPrice: restParams.maxPrice.toString() }
+                            : {}),
+                        ...(restParams.isActive !== undefined
+                            ? { isActive: restParams.isActive.toString() }
+                            : {}),
+                        ...(restParams.search
+                            ? { search: restParams.search }
+                            : {}),
+                        ...(restParams.sortBy
+                            ? { sortBy: restParams.sortBy }
+                            : {}),
+                        ...(restParams.sortOrder
+                            ? { sortOrder: restParams.sortOrder }
+                            : {}),
+                    },
+                },
+            );
+            return response.data;
+        },
+        enabled,
+        placeholderData: keepPreviousData,
+        meta: {
+            errorMessage: "服务项目列表获取失败",
+        },
+    });
 };
 
 /**
  * 获取服务项目详情
  */
 export const useServiceDetail = (serviceId: string) =>
-	useSuspenseQuery({
-		queryKey: ["service-detail", serviceId],
-		queryFn: async () => {
-			const response = await apiClient.get<ServiceDetail>(
-				`/service/services/${serviceId}`,
-			);
-			return response.data;
-		},
-		meta: {
-			errorMessage: "服务项目详情获取失败",
-		},
-	});
+    useSuspenseQuery({
+        queryKey: ["service-detail", serviceId],
+        queryFn: async () => {
+            const response = await apiClient.get<ServiceDetail>(
+                `/service/services/${serviceId}`,
+            );
+            return response.data;
+        },
+        meta: {
+            errorMessage: "服务项目详情获取失败",
+        },
+    });
 
 /**
  * 获取服务统计信息
  */
 export const useServiceStats = () =>
-	useSuspenseQuery({
-		queryKey: ["service-stats"],
-		queryFn: async () => {
-			const response = await apiClient.get<ServiceStats>(
-				"/service/services/stats",
-			);
-			return response.data;
-		},
-		meta: {
-			errorMessage: "服务统计信息获取失败",
-		},
-	});
+    useSuspenseQuery({
+        queryKey: ["service-stats"],
+        queryFn: async () => {
+            const response = await apiClient.get<ServiceStats>(
+                "/service/services/stats",
+            );
+            return response.data;
+        },
+        meta: {
+            errorMessage: "服务统计信息获取失败",
+        },
+    });
 
 /**
  * 创建服务项目
  */
 export const useCreateService = () => {
-	const queryClient = useQueryClient();
+    const queryClient = useQueryClient();
 
-	return useMutation({
-		mutationFn: (payload: CreateService) => {
-			return apiClient.post<ServiceDetail>("/service/services", payload);
-		},
-		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: ["service-list"],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["service-list-single"],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["service-stats"],
-			});
-		},
-		scope: {
-			id: "createService",
-		},
-	});
+    return useMutation({
+        mutationFn: (payload: CreateService) => {
+            return apiClient.post<ServiceDetail>("/service/services", payload);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({
+                queryKey: ["service-list"],
+            });
+            queryClient.invalidateQueries({
+                queryKey: ["service-list-single"],
+            });
+            queryClient.invalidateQueries({
+                queryKey: ["service-stats"],
+            });
+        },
+        scope: {
+            id: "createService",
+        },
+    });
 };
 
 /**
  * 更新服务项目
  */
 export const useUpdateService = () => {
-	const queryClient = useQueryClient();
+    const queryClient = useQueryClient();
 
-	return useMutation({
-		mutationFn: ({
-			id,
-			data,
-		}: {
-			id: string;
-			data: Partial<UpdateService>;
-		}) => {
-			return apiClient.put<ServiceDetail>(`/service/services/${id}`, data);
-		},
-		onSuccess: (_result, variables) => {
-			queryClient.invalidateQueries({
-				queryKey: ["service-list"],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["service-list-single"],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["service-detail", variables.id],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["service-stats"],
-			});
-		},
-		scope: {
-			id: "updateService",
-		},
-	});
+    return useMutation({
+        mutationFn: ({
+            id,
+            data,
+        }: {
+            id: string;
+            data: Partial<UpdateService>;
+        }) => {
+            return apiClient.put<ServiceDetail>(
+                `/service/services/${id}`,
+                data,
+            );
+        },
+        onSuccess: (_result, variables) => {
+            queryClient.invalidateQueries({
+                queryKey: ["service-list"],
+            });
+            queryClient.invalidateQueries({
+                queryKey: ["service-list-single"],
+            });
+            queryClient.invalidateQueries({
+                queryKey: ["service-detail", variables.id],
+            });
+            queryClient.invalidateQueries({
+                queryKey: ["service-stats"],
+            });
+        },
+        scope: {
+            id: "updateService",
+        },
+    });
 };
 
 /**
  * 删除服务项目
  */
 export const useDeleteService = () => {
-	const queryClient = useQueryClient();
+    const queryClient = useQueryClient();
 
-	return useMutation({
-		mutationFn: (id: string) => {
-			return apiClient.delete<DeleteResult>(`/service/services/${id}`);
-		},
-		onSuccess: (_result, id) => {
-			queryClient.invalidateQueries({
-				queryKey: ["service-list"],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["service-list-single"],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["service-detail", id],
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["service-stats"],
-			});
-		},
-		scope: {
-			id: "deleteService",
-		},
-	});
+    return useMutation({
+        mutationFn: (id: string) => {
+            return apiClient.delete<DeleteResult>(`/service/services/${id}`);
+        },
+        onSuccess: (_result, id) => {
+            queryClient.invalidateQueries({
+                queryKey: ["service-list"],
+            });
+            queryClient.invalidateQueries({
+                queryKey: ["service-list-single"],
+            });
+            queryClient.invalidateQueries({
+                queryKey: ["service-detail", id],
+            });
+            queryClient.invalidateQueries({
+                queryKey: ["service-stats"],
+            });
+        },
+        scope: {
+            id: "deleteService",
+        },
+    });
 };

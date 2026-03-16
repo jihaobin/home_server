@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import {
     ActivityIndicator,
     Alert,
+    RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
@@ -16,6 +17,7 @@ import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { useServicePersonnelProfile } from "@repo/hooks/api/service-personnel";
 import { useUpdateServiceOfferings } from "@repo/hooks/api/work-skill";
 import { useUploadFile } from "@repo/hooks/api/files";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import { useQuery } from "@tanstack/react-query";
 import type { FileDownloadUrlResponse, ServiceListResponse } from "@repo/types";
 import { apiClient } from "@repo/lib/http-client";
@@ -58,13 +60,19 @@ export default function ServiceSettingsScreen() {
     const updateOfferings = useUpdateServiceOfferings();
     const uploadFile = useUploadFile();
 
-    const [selectedServices, setSelectedServices] = useState<EditableService[]>([]);
+    const [selectedServices, setSelectedServices] = useState<EditableService[]>(
+        [],
+    );
     const [search, setSearch] = useState("");
     const [saving, setSaving] = useState(false);
-    const [uploadingServiceId, setUploadingServiceId] = useState<string | null>(null);
+    const [uploadingServiceId, setUploadingServiceId] = useState<string | null>(
+        null,
+    );
     const specIdRef = useRef(0);
     const fetchFileUrl = useCallback(async (fileIdentifier: string) => {
-        const response = await apiClient.get<FileDownloadUrlResponse>(`/files/${fileIdentifier}`);
+        const response = await apiClient.get<FileDownloadUrlResponse>(
+            `/files/${fileIdentifier}`,
+        );
         return response.data.fileUrl;
     }, []);
 
@@ -102,16 +110,16 @@ export default function ServiceSettingsScreen() {
                 specs:
                     specs.length > 0
                         ? specs.map((spec: any) =>
-                            buildSpec({
-                                id: spec.id,
-                                name: spec.name ?? "",
-                                price: spec.price ?? "",
-                                duration: spec.estimatedDurationMinutes
-                                    ? String(spec.estimatedDurationMinutes)
-                                    : "",
-                                currency: spec.currency ?? "CNY",
-                            }),
-                        )
+                              buildSpec({
+                                  id: spec.id,
+                                  name: spec.name ?? "",
+                                  price: spec.price ?? "",
+                                  duration: spec.estimatedDurationMinutes
+                                      ? String(spec.estimatedDurationMinutes)
+                                      : "",
+                                  currency: spec.currency ?? "CNY",
+                              }),
+                          )
                         : [buildSpec()],
             };
         });
@@ -121,33 +129,56 @@ export default function ServiceSettingsScreen() {
     const {
         data: serviceCategories = [],
         isFetching: loadingOptions,
+        refetch: refetchServiceCategories,
     } = useQuery({
         queryKey: ["worker-service-options", search],
         queryFn: async () => {
-            const response = await apiClient.get<ServiceListResponse>("/service/services", {
-                query: {
-                    page: "1",
-                    limit: "25",
-                    ...(search ? { search } : {}),
+            const response = await apiClient.get<ServiceListResponse>(
+                "/service/services",
+                {
+                    query: {
+                        page: "1",
+                        limit: "25",
+                        ...(search ? { search } : {}),
+                    },
                 },
-            });
+            );
             return response.data.items;
         },
     });
 
-    const handleUpdateDescription = useCallback((serviceId: string, text: string) => {
-        setSelectedServices((prev) =>
-            prev.map((item) =>
-                item.serviceId === serviceId ? { ...item, description: text } : item,
-            ),
-        );
-    }, []);
+    const { refreshing, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: () =>
+            Promise.allSettled([
+                userId ? refetchProfile() : Promise.resolve(),
+                refetchServiceCategories({
+                    throwOnError: false,
+                }),
+            ]),
+    });
+
+    const handleUpdateDescription = useCallback(
+        (serviceId: string, text: string) => {
+            setSelectedServices((prev) =>
+                prev.map((item) =>
+                    item.serviceId === serviceId
+                        ? { ...item, description: text }
+                        : item,
+                ),
+            );
+        },
+        [],
+    );
 
     const handleUpdateSpecField = useCallback(
         (
             serviceId: string,
             localId: string,
-            field: keyof Pick<EditableSpecification, "name" | "price" | "duration">,
+            field: keyof Pick<
+                EditableSpecification,
+                "name" | "price" | "duration"
+            >,
             value: string,
         ) => {
             setSelectedServices((prev) =>
@@ -158,7 +189,9 @@ export default function ServiceSettingsScreen() {
                     return {
                         ...service,
                         specs: service.specs.map((spec) =>
-                            spec.localId === localId ? { ...spec, [field]: value } : spec,
+                            spec.localId === localId
+                                ? { ...spec, [field]: value }
+                                : spec,
                         ),
                     };
                 }),
@@ -180,38 +213,48 @@ export default function ServiceSettingsScreen() {
         [buildSpec],
     );
 
-    const handleRemoveSpec = useCallback((serviceId: string, localId: string) => {
-        setSelectedServices((prev) =>
-            prev.map((service) => {
-                if (service.serviceId !== serviceId) {
-                    return service;
-                }
-                if (service.specs.length === 1) {
-                    Alert.alert("提示", "每个服务至少保留一个规格");
-                    return service;
-                }
-                return {
-                    ...service,
-                    specs: service.specs.filter((spec) => spec.localId !== localId),
-                };
-            }),
-        );
-    }, []);
+    const handleRemoveSpec = useCallback(
+        (serviceId: string, localId: string) => {
+            setSelectedServices((prev) =>
+                prev.map((service) => {
+                    if (service.serviceId !== serviceId) {
+                        return service;
+                    }
+                    if (service.specs.length === 1) {
+                        Alert.alert("提示", "每个服务至少保留一个规格");
+                        return service;
+                    }
+                    return {
+                        ...service,
+                        specs: service.specs.filter(
+                            (spec) => spec.localId !== localId,
+                        ),
+                    };
+                }),
+            );
+        },
+        [],
+    );
 
     const handleRemoveService = (serviceId: string) => {
-        setSelectedServices((prev) => prev.filter((item) => item.serviceId !== serviceId));
+        setSelectedServices((prev) =>
+            prev.filter((item) => item.serviceId !== serviceId),
+        );
     };
 
     const handleAddGalleryImage = useCallback(
         async (serviceId: string) => {
-            const target = selectedServices.find((item) => item.serviceId === serviceId);
+            const target = selectedServices.find(
+                (item) => item.serviceId === serviceId,
+            );
             if (!target) return;
             if (target.gallery.length >= 5) {
                 Alert.alert("提示", "最多上传 5 张宣传图片");
                 return;
             }
 
-            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            const permission =
+                await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (!permission.granted) {
                 Alert.alert("提示", "需要相册权限才能上传图片");
                 return;
@@ -247,12 +290,12 @@ export default function ServiceSettingsScreen() {
                     prev.map((service) =>
                         service.serviceId === serviceId
                             ? {
-                                ...service,
-                                gallery: [
-                                    ...service.gallery,
-                                    { id: response.id, url: accessibleUrl },
-                                ].slice(0, 5),
-                            }
+                                  ...service,
+                                  gallery: [
+                                      ...service.gallery,
+                                      { id: response.id, url: accessibleUrl },
+                                  ].slice(0, 5),
+                              }
                             : service,
                     ),
                 );
@@ -266,18 +309,23 @@ export default function ServiceSettingsScreen() {
         [fetchFileUrl, selectedServices, uploadFile],
     );
 
-    const handleRemoveGalleryImage = useCallback((serviceId: string, imageId: string) => {
-        setSelectedServices((prev) =>
-            prev.map((service) =>
-                service.serviceId === serviceId
-                    ? {
-                        ...service,
-                        gallery: service.gallery.filter((img) => img.id !== imageId),
-                    }
-                    : service,
-            ),
-        );
-    }, []);
+    const handleRemoveGalleryImage = useCallback(
+        (serviceId: string, imageId: string) => {
+            setSelectedServices((prev) =>
+                prev.map((service) =>
+                    service.serviceId === serviceId
+                        ? {
+                              ...service,
+                              gallery: service.gallery.filter(
+                                  (img) => img.id !== imageId,
+                              ),
+                          }
+                        : service,
+                ),
+            );
+        },
+        [],
+    );
 
     const handleAddService = (
         service: ServiceListResponse["items"][number]["children"][number],
@@ -323,13 +371,19 @@ export default function ServiceSettingsScreen() {
                     Alert.alert("提示", `${service.name} 的规格名称不能为空`);
                     return;
                 }
-                if (!spec.price.trim() || !pricePattern.test(spec.price.trim())) {
+                if (
+                    !spec.price.trim() ||
+                    !pricePattern.test(spec.price.trim())
+                ) {
                     Alert.alert("提示", `${service.name} 的规格价格格式不正确`);
                     return;
                 }
                 const duration = Number.parseInt(spec.duration, 10);
                 if (Number.isNaN(duration) || duration <= 0) {
-                    Alert.alert("提示", `${service.name} 的规格耗时必须为正整数`);
+                    Alert.alert(
+                        "提示",
+                        `${service.name} 的规格耗时必须为正整数`,
+                    );
                     return;
                 }
             }
@@ -347,7 +401,10 @@ export default function ServiceSettingsScreen() {
                     name: spec.name.trim(),
                     price: spec.price.trim(),
                     currency: spec.currency || "CNY",
-                    estimatedDurationMinutes: Number.parseInt(spec.duration, 10),
+                    estimatedDurationMinutes: Number.parseInt(
+                        spec.duration,
+                        10,
+                    ),
                 })),
             })),
         };
@@ -372,7 +429,10 @@ export default function ServiceSettingsScreen() {
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                <TouchableOpacity
+                    style={styles.backButton}
+                    onPress={() => router.back()}
+                >
                     <Ionicons name="arrow-back" size={24} color="#333" />
                 </TouchableOpacity>
                 <Text style={styles.title}>服务设置</Text>
@@ -393,6 +453,15 @@ export default function ServiceSettingsScreen() {
                 style={styles.content}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: 40 }}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
+                        tintColor="#2196F3"
+                    />
+                }
             >
                 {isLoading ? (
                     <View style={styles.loader}>
@@ -408,73 +477,145 @@ export default function ServiceSettingsScreen() {
                                 </Text>
                             )}
                             {selectedServices.map((service) => (
-                                <View key={service.serviceId} style={styles.serviceItem}>
+                                <View
+                                    key={service.serviceId}
+                                    style={styles.serviceItem}
+                                >
                                     <View style={styles.serviceHeader}>
-                                        <Text style={styles.serviceName}>{service.name}</Text>
+                                        <Text style={styles.serviceName}>
+                                            {service.name}
+                                        </Text>
                                         <TouchableOpacity
-                                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                            onPress={() => handleRemoveService(service.serviceId)}
+                                            hitSlop={{
+                                                top: 8,
+                                                bottom: 8,
+                                                left: 8,
+                                                right: 8,
+                                            }}
+                                            onPress={() =>
+                                                handleRemoveService(
+                                                    service.serviceId,
+                                                )
+                                            }
                                         >
-                                            <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                                            <Ionicons
+                                                name="trash-outline"
+                                                size={18}
+                                                color="#ef4444"
+                                            />
                                         </TouchableOpacity>
                                     </View>
                                     {service.categoryName ? (
-                                        <Text style={styles.serviceCategory}>{service.categoryName}</Text>
+                                        <Text style={styles.serviceCategory}>
+                                            {service.categoryName}
+                                        </Text>
                                     ) : null}
                                     <View>
-                                        <Text style={styles.label}>服务描述</Text>
+                                        <Text style={styles.label}>
+                                            服务描述
+                                        </Text>
                                         <TextInput
                                             style={[styles.descriptionInput]}
                                             multiline
                                             value={service.description}
                                             placeholder="介绍服务优势、适用场景等，帮助用户了解您的能力"
                                             onChangeText={(text) =>
-                                                handleUpdateDescription(service.serviceId, text)
+                                                handleUpdateDescription(
+                                                    service.serviceId,
+                                                    text,
+                                                )
                                             }
                                         />
                                     </View>
                                     <View style={styles.gallerySection}>
                                         <View style={styles.galleryHeader}>
-                                            <Text style={styles.subSectionTitle}>宣传图片</Text>
+                                            <Text
+                                                style={styles.subSectionTitle}
+                                            >
+                                                宣传图片
+                                            </Text>
                                             <Text style={styles.helperText}>
                                                 {`最多 5 张，已选 ${service.gallery?.length ?? 0}`}
                                             </Text>
                                         </View>
                                         <View style={styles.galleryList}>
-                                            {(service.gallery ?? []).map((image) => (
-                                                <View key={image.id} style={styles.galleryItem}>
-                                                    <Image
-                                                        source={{ uri: image.url }}
-                                                        style={styles.galleryImage}
-                                                        resizeMode="cover"
-                                                    />
-                                                    <TouchableOpacity
-                                                        style={styles.removeGalleryButton}
-                                                        onPress={() =>
-                                                            handleRemoveGalleryImage(service.serviceId, image.id)
+                                            {(service.gallery ?? []).map(
+                                                (image) => (
+                                                    <View
+                                                        key={image.id}
+                                                        style={
+                                                            styles.galleryItem
                                                         }
                                                     >
-                                                        <Ionicons name="close" size={14} color="#fff" />
-                                                    </TouchableOpacity>
-                                                </View>
-                                            ))}
-                                            {(service.gallery?.length ?? 0) < 5 && (
+                                                        <Image
+                                                            source={{
+                                                                uri: image.url,
+                                                            }}
+                                                            style={
+                                                                styles.galleryImage
+                                                            }
+                                                            resizeMode="cover"
+                                                        />
+                                                        <TouchableOpacity
+                                                            style={
+                                                                styles.removeGalleryButton
+                                                            }
+                                                            onPress={() =>
+                                                                handleRemoveGalleryImage(
+                                                                    service.serviceId,
+                                                                    image.id,
+                                                                )
+                                                            }
+                                                        >
+                                                            <Ionicons
+                                                                name="close"
+                                                                size={14}
+                                                                color="#fff"
+                                                            />
+                                                        </TouchableOpacity>
+                                                    </View>
+                                                ),
+                                            )}
+                                            {(service.gallery?.length ?? 0) <
+                                                5 && (
                                                 <TouchableOpacity
                                                     style={[
                                                         styles.galleryItem,
                                                         styles.galleryAddButton,
-                                                        uploadingServiceId === service.serviceId &&
-                                                        styles.galleryAddButtonDisabled,
+                                                        uploadingServiceId ===
+                                                            service.serviceId &&
+                                                            styles.galleryAddButtonDisabled,
                                                     ]}
-                                                    onPress={() => handleAddGalleryImage(service.serviceId)}
-                                                    disabled={uploadingServiceId === service.serviceId}
+                                                    onPress={() =>
+                                                        handleAddGalleryImage(
+                                                            service.serviceId,
+                                                        )
+                                                    }
+                                                    disabled={
+                                                        uploadingServiceId ===
+                                                        service.serviceId
+                                                    }
                                                 >
-                                                    {uploadingServiceId === service.serviceId ? (
-                                                        <ActivityIndicator size="small" color="#2563eb" />
+                                                    {uploadingServiceId ===
+                                                    service.serviceId ? (
+                                                        <ActivityIndicator
+                                                            size="small"
+                                                            color="#2563eb"
+                                                        />
                                                     ) : (
                                                         <>
-                                                            <Ionicons name="add" size={20} color="#2563eb" />
-                                                            <Text style={styles.galleryAddText}>上传</Text>
+                                                            <Ionicons
+                                                                name="add"
+                                                                size={20}
+                                                                color="#2563eb"
+                                                            />
+                                                            <Text
+                                                                style={
+                                                                    styles.galleryAddText
+                                                                }
+                                                            >
+                                                                上传
+                                                            </Text>
                                                         </>
                                                     )}
                                                 </TouchableOpacity>
@@ -482,27 +623,51 @@ export default function ServiceSettingsScreen() {
                                         </View>
                                     </View>
                                     <View style={styles.specHeader}>
-                                        <Text style={styles.subSectionTitle}>服务规格</Text>
+                                        <Text style={styles.subSectionTitle}>
+                                            服务规格
+                                        </Text>
                                         <TouchableOpacity
                                             style={styles.addSpecButton}
-                                            onPress={() => handleAddSpec(service.serviceId)}
+                                            onPress={() =>
+                                                handleAddSpec(service.serviceId)
+                                            }
                                         >
-                                            <Ionicons name="add-circle-outline" size={16} color="#2563eb" />
-                                            <Text style={styles.addSpecText}>添加规格</Text>
+                                            <Ionicons
+                                                name="add-circle-outline"
+                                                size={16}
+                                                color="#2563eb"
+                                            />
+                                            <Text style={styles.addSpecText}>
+                                                添加规格
+                                            </Text>
                                         </TouchableOpacity>
                                     </View>
                                     {service.specs.map((spec, index) => (
-                                        <View key={spec.localId} style={styles.specItem}>
+                                        <View
+                                            key={spec.localId}
+                                            style={styles.specItem}
+                                        >
                                             <View style={styles.specHeaderRow}>
-                                                <Text style={styles.label}>规格名称</Text>
+                                                <Text style={styles.label}>
+                                                    规格名称
+                                                </Text>
                                                 {service.specs.length > 1 && (
                                                     <TouchableOpacity
-                                                        style={styles.removeSpecButton}
+                                                        style={
+                                                            styles.removeSpecButton
+                                                        }
                                                         onPress={() =>
-                                                            handleRemoveSpec(service.serviceId, spec.localId)
+                                                            handleRemoveSpec(
+                                                                service.serviceId,
+                                                                spec.localId,
+                                                            )
                                                         }
                                                     >
-                                                        <Ionicons name="close-circle" size={18} color="#ef4444" />
+                                                        <Ionicons
+                                                            name="close-circle"
+                                                            size={18}
+                                                            color="#ef4444"
+                                                        />
                                                     </TouchableOpacity>
                                                 )}
                                             </View>
@@ -511,12 +676,24 @@ export default function ServiceSettingsScreen() {
                                                 value={spec.name}
                                                 placeholder={`例如：${index === 0 ? "标准版" : "豪华版"}`}
                                                 onChangeText={(text) =>
-                                                    handleUpdateSpecField(service.serviceId, spec.localId, "name", text)
+                                                    handleUpdateSpecField(
+                                                        service.serviceId,
+                                                        spec.localId,
+                                                        "name",
+                                                        text,
+                                                    )
                                                 }
                                             />
                                             <View style={styles.formRow}>
-                                                <View style={{ flex: 1, marginRight: 8 }}>
-                                                    <Text style={styles.label}>价格(¥)</Text>
+                                                <View
+                                                    style={{
+                                                        flex: 1,
+                                                        marginRight: 8,
+                                                    }}
+                                                >
+                                                    <Text style={styles.label}>
+                                                        价格(¥)
+                                                    </Text>
                                                     <TextInput
                                                         style={styles.input}
                                                         value={spec.price}
@@ -533,7 +710,9 @@ export default function ServiceSettingsScreen() {
                                                     />
                                                 </View>
                                                 <View style={{ flex: 1 }}>
-                                                    <Text style={styles.label}>耗时(分钟)</Text>
+                                                    <Text style={styles.label}>
+                                                        耗时(分钟)
+                                                    </Text>
                                                     <TextInput
                                                         style={styles.input}
                                                         value={spec.duration}
@@ -557,7 +736,9 @@ export default function ServiceSettingsScreen() {
                         </View>
 
                         <View style={styles.card}>
-                            <Text style={styles.sectionTitle}>添加服务分类</Text>
+                            <Text style={styles.sectionTitle}>
+                                添加服务分类
+                            </Text>
                             <TextInput
                                 style={styles.searchInput}
                                 placeholder="搜索服务名称"
@@ -565,25 +746,61 @@ export default function ServiceSettingsScreen() {
                                 onChangeText={setSearch}
                             />
                             {loadingOptions ? (
-                                <ActivityIndicator size="small" color="#999" style={{ marginTop: 12 }} />
+                                <ActivityIndicator
+                                    size="small"
+                                    color="#999"
+                                    style={{ marginTop: 12 }}
+                                />
                             ) : serviceCategories.length === 0 ? (
-                                <Text style={styles.helperText}>暂无可选服务分类</Text>
+                                <Text style={styles.helperText}>
+                                    暂无可选服务分类
+                                </Text>
                             ) : (
                                 serviceCategories.map((category) => (
-                                    <View key={category.id} style={styles.categorySection}>
-                                        <Text style={styles.categoryTitle}>{category.name}</Text>
+                                    <View
+                                        key={category.id}
+                                        style={styles.categorySection}
+                                    >
+                                        <Text style={styles.categoryTitle}>
+                                            {category.name}
+                                        </Text>
                                         {category.children.length === 0 ? (
-                                            <Text style={styles.helperText}>该分类下暂无具体服务</Text>
+                                            <Text style={styles.helperText}>
+                                                该分类下暂无具体服务
+                                            </Text>
                                         ) : (
                                             category.children.map((service) => {
-                                                const isSelected = selectedServices.some(
-                                                    (item) => item.serviceId === service.id,
-                                                );
+                                                const isSelected =
+                                                    selectedServices.some(
+                                                        (item) =>
+                                                            item.serviceId ===
+                                                            service.id,
+                                                    );
                                                 return (
-                                                    <View key={service.id} style={styles.optionItem}>
-                                                        <View style={{ flex: 1 }}>
-                                                            <Text style={styles.optionName}>{service.name}</Text>
-                                                            <Text style={styles.optionDesc} numberOfLines={2}>
+                                                    <View
+                                                        key={service.id}
+                                                        style={
+                                                            styles.optionItem
+                                                        }
+                                                    >
+                                                        <View
+                                                            style={{ flex: 1 }}
+                                                        >
+                                                            <Text
+                                                                style={
+                                                                    styles.optionName
+                                                                }
+                                                            >
+                                                                {service.name}
+                                                            </Text>
+                                                            <Text
+                                                                style={
+                                                                    styles.optionDesc
+                                                                }
+                                                                numberOfLines={
+                                                                    2
+                                                                }
+                                                            >
                                                                 {service.description ||
                                                                     category.description ||
                                                                     "暂无描述"}
@@ -592,18 +809,29 @@ export default function ServiceSettingsScreen() {
                                                         <TouchableOpacity
                                                             style={[
                                                                 styles.addButton,
-                                                                isSelected && styles.addButtonDisabled,
+                                                                isSelected &&
+                                                                    styles.addButtonDisabled,
                                                             ]}
-                                                            disabled={isSelected}
-                                                            onPress={() => handleAddService(service, category.name)}
+                                                            disabled={
+                                                                isSelected
+                                                            }
+                                                            onPress={() =>
+                                                                handleAddService(
+                                                                    service,
+                                                                    category.name,
+                                                                )
+                                                            }
                                                         >
                                                             <Text
                                                                 style={[
                                                                     styles.addButtonText,
-                                                                    isSelected && styles.addButtonTextDisabled,
+                                                                    isSelected &&
+                                                                        styles.addButtonTextDisabled,
                                                                 ]}
                                                             >
-                                                                {isSelected ? "已添加" : "添加"}
+                                                                {isSelected
+                                                                    ? "已添加"
+                                                                    : "添加"}
                                                             </Text>
                                                         </TouchableOpacity>
                                                     </View>

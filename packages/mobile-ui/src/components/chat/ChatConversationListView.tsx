@@ -1,5 +1,5 @@
 import * as React from "react";
-import { FlatList, Image, Pressable, View } from "react-native";
+import { FlatList, Image, Pressable, RefreshControl, View } from "react-native";
 
 import { useFile } from "@repo/hooks/api/files";
 import { Text } from "../ui/text";
@@ -20,6 +20,8 @@ export function ChatConversationListView(props: {
     items: ChatConversationListItem[];
     onPressConversation: (conversationId: string) => void;
     emptyText?: string;
+    refreshing?: boolean;
+    onRefresh?: () => void;
 }) {
     const emptyMessage = props.emptyText ?? "暂无会话";
 
@@ -42,6 +44,14 @@ export function ChatConversationListView(props: {
                         {emptyMessage}
                     </Text>
                 </View>
+            }
+            refreshControl={
+                props.onRefresh ? (
+                    <RefreshControl
+                        refreshing={Boolean(props.refreshing)}
+                        onRefresh={props.onRefresh}
+                    />
+                ) : undefined
             }
         />
     );

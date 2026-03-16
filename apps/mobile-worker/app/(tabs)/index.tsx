@@ -7,9 +7,10 @@ import {
     useServicePersonnelProfile,
 } from "@repo/hooks/api/service-personnel";
 import { useStaffOrdersList } from "@repo/hooks/api/order";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import type { StaffOrderListResponse } from "@repo/types";
 import { useRouter } from "expo-router";
-import React, { Suspense, useCallback, useMemo, useState } from "react";
+import React, { Suspense, useMemo } from "react";
 import {
     ActivityIndicator,
     RefreshControl,
@@ -88,7 +89,16 @@ function HomeContent() {
         limit: 20,
         sortOrder: "asc",
     });
-    const [refreshing, setRefreshing] = useState(false);
+    const { refreshing, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: () =>
+            Promise.allSettled([
+                refetchProfile(),
+                refetchStats(),
+                refetchEarnings(),
+                refetchOrders(),
+            ]),
+    });
 
     const orders = ordersResponse.items ?? [];
 
@@ -113,20 +123,6 @@ function HomeContent() {
         session?.user?.name ||
         session?.user?.email ||
         "服务人员";
-
-    const handleRefresh = useCallback(async () => {
-        setRefreshing(true);
-        try {
-            await Promise.allSettled([
-                refetchProfile(),
-                refetchStats(),
-                refetchEarnings(),
-                refetchOrders(),
-            ]);
-        } finally {
-            setRefreshing(false);
-        }
-    }, [refetchProfile, refetchStats, refetchEarnings, refetchOrders]);
 
     const isRefreshing =
         refreshing ||
@@ -157,7 +153,9 @@ function HomeContent() {
                 refreshControl={
                     <RefreshControl
                         refreshing={isRefreshing}
-                        onRefresh={handleRefresh}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
                     />
                 }
             >

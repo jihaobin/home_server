@@ -1,7 +1,7 @@
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { icons as lucideIconRegistry } from "lucide-react-native";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
 import { Image } from "expo-image";
 import type { Review } from "./types";
@@ -21,15 +21,29 @@ export interface ReviewsListProps {
     negativeCount?: number;
 }
 
-const ReviewAvatar = ({ name, avatar, avatarFileId, placeholder }: { name: string; avatar?: string; avatarFileId?: string, placeholder?: string }) => {
+const ReviewAvatar = ({
+    name,
+    avatar,
+    avatarFileId,
+    placeholder,
+}: {
+    name: string;
+    avatar?: string;
+    avatarFileId?: string;
+    placeholder?: string;
+}) => {
     const isHttp = avatar && /^https?:\/\//i.test(avatar);
     const { data: avatarFile } = useFile(!isHttp ? avatarFileId : undefined);
     const resolved = isHttp ? avatar : avatarFile?.fileUrl || null;
+    const avatarSource = useMemo(
+        () => (resolved ? { uri: resolved } : null),
+        [resolved],
+    );
 
-    if (resolved) {
+    if (avatarSource) {
         return (
             <Image
-                source={{ uri: resolved }}
+                source={avatarSource}
                 style={{ width: 40, height: 40, borderRadius: 999 }}
                 contentFit="cover"
                 placeholder={placeholder}
@@ -43,6 +57,27 @@ const ReviewAvatar = ({ name, avatar, avatarFileId, placeholder }: { name: strin
                 {name.slice(0, 1)}
             </Text>
         </View>
+    );
+};
+
+const ReviewGalleryImage = ({
+    image,
+}: {
+    image: { url: string; blurhash?: string | null };
+}) => {
+    const imageSource = useMemo(() => ({ uri: image.url }), [image.url]);
+
+    return (
+        <Image
+            source={imageSource}
+            className="rounded"
+            contentFit="cover"
+            style={{
+                width: 80,
+                height: 80,
+            }}
+            placeholder={image.blurhash ?? undefined}
+        />
     );
 };
 
@@ -91,24 +126,29 @@ export function ReviewsList({
                     {tabs.map((tab) => (
                         <Pressable
                             key={tab.key}
-                            className={`mr-6 pb-3 pt-4 ${activeTab === tab.key ? "border-b-2 border-primary" : ""
-                                }`}
+                            className={`mr-6 pb-3 pt-4 ${
+                                activeTab === tab.key
+                                    ? "border-b-2 border-primary"
+                                    : ""
+                            }`}
                             onPress={() => setActiveTab(tab.key)}
                         >
                             <View className="flex-row items-center">
                                 <Text
-                                    className={`text-sm font-medium ${activeTab === tab.key
-                                        ? "text-primary"
-                                        : "text-muted-foreground"
-                                        }`}
+                                    className={`text-sm font-medium ${
+                                        activeTab === tab.key
+                                            ? "text-primary"
+                                            : "text-muted-foreground"
+                                    }`}
                                 >
                                     {tab.label}
                                 </Text>
                                 <Text
-                                    className={`ml-1 text-xs ${activeTab === tab.key
-                                        ? "text-primary"
-                                        : "text-muted-foreground"
-                                        }`}
+                                    className={`ml-1 text-xs ${
+                                        activeTab === tab.key
+                                            ? "text-primary"
+                                            : "text-muted-foreground"
+                                    }`}
                                 >
                                     {tab.count}+
                                 </Text>
@@ -150,19 +190,25 @@ export function ReviewsList({
 
                                     {/* 星级评分 */}
                                     <View className="flex-row items-center mb-2">
-                                        {Array.from({ length: 5 }).map((_, i) => (
-                                            <Icon
-                                                key={`star-${review.id}-${i}`}
-                                                as={ICON_MAP.Star}
-                                                size={11}
-                                                className={
-                                                    i < review.rating
-                                                        ? "text-amber-400"
-                                                        : "text-muted-foreground/20"
-                                                }
-                                                fill={i < review.rating ? "currentColor" : "none"}
-                                            />
-                                        ))}
+                                        {Array.from({ length: 5 }).map(
+                                            (_, i) => (
+                                                <Icon
+                                                    key={`star-${review.id}-${i}`}
+                                                    as={ICON_MAP.Star}
+                                                    size={11}
+                                                    className={
+                                                        i < review.rating
+                                                            ? "text-amber-400"
+                                                            : "text-muted-foreground/20"
+                                                    }
+                                                    fill={
+                                                        i < review.rating
+                                                            ? "currentColor"
+                                                            : "none"
+                                                    }
+                                                />
+                                            ),
+                                        )}
                                     </View>
 
                                     {/* 评论内容(如果有) */}
@@ -173,30 +219,35 @@ export function ReviewsList({
                                     )}
 
                                     {/* 评论图片(如果有,最多显示3张) */}
-                                    {review.images && review.images.length > 0 && (
-                                        <View className="mb-2 flex-row -mx-0.5">
-                                            {(review.images ?? []).slice(0, 3).map((image, imgIndex) => (
-                                                <Pressable
-                                                    key={`${review.id}-img-${imgIndex}`}
-                                                    className="px-0.5"
-                                                    onPress={() =>
-                                                        onImagePress?.(
-                                                            (review.images ?? []).map((img) => img.url),
-                                                            imgIndex,
-                                                        )
-                                                    }
-                                                >
-                                                    <Image
-                                                        source={{ uri: image.url }}
-                                                        className="rounded"
-                                                        contentFit="cover"
-                                                        style={{ width: 80, height: 80 }}
-                                                        placeholder={image.blurhash}
-                                                    />
-                                                </Pressable>
-                                            ))}
-                                        </View>
-                                    )}
+                                    {review.images &&
+                                        review.images.length > 0 && (
+                                            <View className="mb-2 flex-row -mx-0.5">
+                                                {(review.images ?? [])
+                                                    .slice(0, 3)
+                                                    .map((image, imgIndex) => (
+                                                        <Pressable
+                                                            key={`${review.id}-img-${imgIndex}`}
+                                                            className="px-0.5"
+                                                            onPress={() =>
+                                                                onImagePress?.(
+                                                                    (
+                                                                        review.images ??
+                                                                        []
+                                                                    ).map(
+                                                                        (img) =>
+                                                                            img.url,
+                                                                    ),
+                                                                    imgIndex,
+                                                                )
+                                                            }
+                                                        >
+                                                            <ReviewGalleryImage
+                                                                image={image}
+                                                            />
+                                                        </Pressable>
+                                                    ))}
+                                            </View>
+                                        )}
 
                                     {/* 服务标签和地区 */}
                                     <View className="flex-row items-center flex-wrap">

@@ -13,6 +13,7 @@ import { usePaymentCountdown } from "@/hooks/usePaymentCountdown";
 import { Image as ExpoImage } from "expo-image";
 import { cssInterop } from "nativewind";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
+import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 
 // Enable NativeWind `className` on expo-image.
 cssInterop(ExpoImage, { className: { target: "style" } });
@@ -190,17 +191,17 @@ function OrderActionButton({
         action.variant === "primary"
             ? `${base} bg-primary`
             : action.variant === "outlinePrimary"
-                ? `${base} border border-primary bg-transparent`
-                : `${base} border border-border bg-transparent`;
+              ? `${base} border border-primary bg-transparent`
+              : `${base} border border-border bg-transparent`;
 
     const textClassName =
         action.variant === "primary"
             ? "text-sm font-puhui-regular text-primary-foreground"
             : action.variant === "outlinePrimary"
-                ? "text-sm font-puhui-regular text-primary"
-                : action.variant === "outlineMuted"
-                    ? "text-sm font-puhui-regular text-muted-foreground"
-                    : "text-sm font-puhui-regular text-foreground";
+              ? "text-sm font-puhui-regular text-primary"
+              : action.variant === "outlineMuted"
+                ? "text-sm font-puhui-regular text-muted-foreground"
+                : "text-sm font-puhui-regular text-foreground";
 
     return (
         <Pressable
@@ -232,20 +233,34 @@ function OrderCard({
         order.status === "pending_payment"
             ? "text-destructive"
             : order.status === "paid" || order.status === "pending_acceptance"
-                ? "text-primary"
-                : order.status === "cancelled"
-                    ? "text-muted-foreground"
-                    : "text-foreground";
+              ? "text-primary"
+              : order.status === "cancelled"
+                ? "text-muted-foreground"
+                : "text-foreground";
 
-    const workerAvatarSource = order.workerAvatarUrl
-        ? { uri: order.workerAvatarUrl }
-        : require("@/assets/images/promo-2.png");
+    const workerAvatarSource = useMemo(
+        () =>
+            order.workerAvatarUrl
+                ? { uri: order.workerAvatarUrl }
+                : require("@/assets/images/promo-2.png"),
+        [order.workerAvatarUrl],
+    );
+    const workerAvatarPlaceholder = useMemo(
+        () =>
+            order.workerAvatarBlurhash
+                ? { blurhash: order.workerAvatarBlurhash }
+                : undefined,
+        [order.workerAvatarBlurhash],
+    );
 
     const countdown = usePaymentCountdown(order.paymentExpiresAt);
     const showPaymentCountdown = order.status === "pending_payment";
 
     return (
-        <Pressable onPress={() => router.push(`/order/${order.id}`)} className="mx-4 mt-3 rounded-lg bg-card shadow-sm">
+        <Pressable
+            onPress={() => router.push(`/order/${order.id}`)}
+            className="mx-4 mt-3 rounded-lg bg-card shadow-sm"
+        >
             <View className="px-3 pt-3 pb-3">
                 <View className="flex-row items-center justify-between">
                     <Text className="text-sm font-puhui-regular text-foreground">
@@ -285,11 +300,7 @@ function OrderCard({
                 <View className="flex-row items-start">
                     <Image
                         source={workerAvatarSource}
-                        placeholder={
-                            order.workerAvatarBlurhash
-                                ? { blurhash: order.workerAvatarBlurhash }
-                                : undefined
-                        }
+                        placeholder={workerAvatarPlaceholder}
                         contentFit="cover"
                         transition={200}
                         className="h-[68px] w-[68px] rounded-sm"
@@ -440,6 +451,13 @@ export default function OrdersIndex() {
         tab: activeTabId,
         limit: 10,
     });
+    const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh({
+        refetchActiveQueries: false,
+        extraRefresh: () =>
+            cardsQuery.refetch({
+                throwOnError: false,
+            }),
+    });
     const rawItems = useMemo(() => {
         return cardsQuery.data?.pages.flatMap((page) => page.data) ?? [];
     }, [cardsQuery.data]);
@@ -586,7 +604,11 @@ export default function OrdersIndex() {
                     ref={(ref) => {
                         listRef.current = ref;
                     }}
-                    data={visibleOrders as OrderCardViewModel[]}
+                    data={
+                        showPageLoading
+                            ? []
+                            : (visibleOrders as OrderCardViewModel[])
+                    }
                     keyExtractor={(item) => item.id}
                     renderItem={({ item }) => (
                         <OrderCard
@@ -602,17 +624,14 @@ export default function OrdersIndex() {
                     showsVerticalScrollIndicator={false}
                     refreshControl={
                         <RefreshControl
-                            refreshing={
-                                Boolean(cardsQuery.isFetching) &&
-                                !cardsQuery.isFetchingNextPage
-                            }
+                            refreshing={refreshing}
                             onRefresh={() => {
-                                cardsQuery.refetch();
+                                void onRefresh();
                             }}
                         />
                     }
                     ListEmptyComponent={
-                        cardsQuery.isLoading ? (
+                        showPageLoading || cardsQuery.isLoading ? (
                             <OrdersListSkeleton />
                         ) : cardsQuery.isError ? (
                             <View className="flex-1 items-center justify-center py-12">

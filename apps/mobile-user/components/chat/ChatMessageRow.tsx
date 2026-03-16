@@ -1,6 +1,7 @@
 import { Pressable, View } from "react-native";
 import { Image } from "expo-image";
 import { Play } from "lucide-react-native";
+import { useMemo } from "react";
 
 import type { ChatMessage, OrderStatus } from "@repo/types";
 import { useFile } from "@repo/hooks/api/files";
@@ -120,6 +121,14 @@ function ChatOrderCardMessage(props: {
         snapshot?.workerAvatarBlurhash ??
         orderDetail?.assignment?.servicePersonnel?.avatarBlurhash ??
         orderDetail?.service?.imageBlurhash;
+    const avatarSource = useMemo(
+        () => (avatarUrl ? { uri: avatarUrl } : null),
+        [avatarUrl],
+    );
+    const avatarPlaceholder = useMemo(
+        () => (avatarBlurhash ? { blurhash: avatarBlurhash } : undefined),
+        [avatarBlurhash],
+    );
     const subline = resolveOrderSubline(
         snapshot?.workerName ?? resolveWorkerName(orderDetail),
         snapshot?.appointmentTime ?? orderDetail?.appointmentTime,
@@ -147,14 +156,10 @@ function ChatOrderCardMessage(props: {
 
             <View className="mt-2 flex-row items-center">
                 <View className="h-16 w-16 overflow-hidden rounded-lg bg-muted">
-                    {avatarUrl ? (
+                    {avatarSource ? (
                         <Image
-                            source={{ uri: avatarUrl }}
-                            placeholder={
-                                avatarBlurhash
-                                    ? { blurhash: avatarBlurhash }
-                                    : undefined
-                            }
+                            source={avatarSource}
+                            placeholder={avatarPlaceholder}
                             className="h-full w-full"
                             contentFit="cover"
                         />
@@ -210,6 +215,13 @@ function ChatImageMessage(props: {
     const fileId = content.type === "image" ? content.fileId : null;
     const { data } = useFile(fileId);
     const uri = data?.fileUrl;
+    const imageSource = useMemo(() => (uri ? { uri } : null), [uri]);
+    const imageBlurhash =
+        content.type === "image" ? content.blurhash : undefined;
+    const imagePlaceholder = useMemo(
+        () => (imageBlurhash ? { blurhash: imageBlurhash } : undefined),
+        [imageBlurhash],
+    );
 
     if (content.type !== "image") {
         return null;
@@ -220,14 +232,10 @@ function ChatImageMessage(props: {
             onPress={() => props.onOpenMedia?.(props.message.id)}
             className="max-w-[86%] rounded-2xl border border-border bg-card px-2 py-2"
         >
-            {uri ? (
+            {imageSource ? (
                 <Image
-                    source={{ uri }}
-                    placeholder={
-                        content.blurhash
-                            ? { blurhash: content.blurhash }
-                            : undefined
-                    }
+                    source={imageSource}
+                    placeholder={imagePlaceholder}
                     style={{ width: 220, height: 160, borderRadius: 8 }}
                     contentFit="cover"
                 />

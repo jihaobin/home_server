@@ -1,14 +1,14 @@
 import { BottomSheetModal } from "@repo/mobile-ui/components/ui/modal/BottomSheetModal";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { Textarea } from "@repo/mobile-ui/components/ui/textarea";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
     ActivityIndicator,
     ScrollView,
     TouchableOpacity,
     View,
 } from "react-native";
-import { Image } from "expo-image"
+import { Image } from "expo-image";
 import { Camera, X } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { toast } from "sonner-native";
@@ -57,13 +57,19 @@ export function OrderReviewModal({
     orderSerial,
     onSubmit,
 }: OrderReviewModalProps) {
+    const serviceImageSource = useMemo(
+        () => (serviceImageUrl ? { uri: serviceImageUrl } : null),
+        [serviceImageUrl],
+    );
     // 评分相关状态
     const [rating, setRating] = useState(5);
     const [serviceQuality, setServiceQuality] = useState<number | undefined>(
         undefined,
     );
     const [attitude, setAttitude] = useState<number | undefined>(undefined);
-    const [punctuality, setPunctuality] = useState<number | undefined>(undefined);
+    const [punctuality, setPunctuality] = useState<number | undefined>(
+        undefined,
+    );
 
     // 评论内容
     const [comment, setComment] = useState("");
@@ -94,7 +100,9 @@ export function OrderReviewModal({
         return (
             <View className="mb-3">
                 {label && (
-                    <Text className="text-sm text-muted-foreground mb-2">{label}</Text>
+                    <Text className="text-sm text-muted-foreground mb-2">
+                        {label}
+                    </Text>
                 )}
                 <View className="flex-row gap-1 justify-center">
                     {[1, 2, 3, 4, 5].map((star) => (
@@ -104,7 +112,14 @@ export function OrderReviewModal({
                             activeOpacity={0.7}
                             className="p-2"
                         >
-                            <Text className={cn("text-4xl", star <= value ? "text-primary" : "text-muted-foreground/20")}>
+                            <Text
+                                className={cn(
+                                    "text-4xl",
+                                    star <= value
+                                        ? "text-primary"
+                                        : "text-muted-foreground/20",
+                                )}
+                            >
                                 ★
                             </Text>
                         </TouchableOpacity>
@@ -152,8 +167,9 @@ export function OrderReviewModal({
 
             try {
                 // 获取文件扩展名
-                const fileName = asset.fileName || uri.split('/').pop() || 'image.jpg';
-                const fileType = asset.mimeType || 'image/jpeg';
+                const fileName =
+                    asset.fileName || uri.split("/").pop() || "image.jpg";
+                const fileType = asset.mimeType || "image/jpeg";
 
                 // 上传图片到服务器
                 const uploadResult = await uploadFile({
@@ -170,7 +186,7 @@ export function OrderReviewModal({
                 toast.success("图片上传成功");
             } catch (error) {
                 // 上传失败，移除预览图
-                setImages(images.filter(img => img !== uri));
+                setImages(images.filter((img) => img !== uri));
                 toast.error("图片上传失败，请重试");
                 console.error("Upload image error:", error);
             }
@@ -246,7 +262,9 @@ export function OrderReviewModal({
             <View className="flex-1 px-4">
                 {/* 标题 */}
                 <View className="pb-4 border-b border-border">
-                    <Text className="text-xl font-bold text-center">商品信息</Text>
+                    <Text className="text-xl font-bold text-center">
+                        商品信息
+                    </Text>
                     <Text className="text-sm text-muted-foreground text-center mt-1">
                         真实、有趣的分享更受欢迎哦
                     </Text>
@@ -260,20 +278,25 @@ export function OrderReviewModal({
                     {/* 服务商品信息展示 */}
                     <View className="mt-4 flex-row items-center gap-3 p-3 bg-muted/30 rounded-lg border border-border">
                         <View className="w-16 h-16 rounded-lg overflow-hidden bg-muted">
-                            {serviceImageUrl ? (
+                            {serviceImageSource ? (
                                 <Image
-                                    source={{ uri: serviceImageUrl }}
+                                    source={serviceImageSource}
                                     style={{ width: "100%", height: "100%" }}
                                     contentFit="cover"
                                 />
                             ) : (
                                 <View className="w-full h-full items-center justify-center">
-                                    <Text className="text-xs text-muted-foreground">商品</Text>
+                                    <Text className="text-xs text-muted-foreground">
+                                        商品
+                                    </Text>
                                 </View>
                             )}
                         </View>
                         <View className="flex-1">
-                            <Text className="text-sm font-medium text-foreground" numberOfLines={1}>
+                            <Text
+                                className="text-sm font-medium text-foreground"
+                                numberOfLines={1}
+                            >
                                 {serviceName || "商品信息"}
                             </Text>
                             <Text className="text-xs text-muted-foreground mt-0.5">
@@ -325,7 +348,10 @@ export function OrderReviewModal({
                                         activeOpacity={0.7}
                                         className="absolute -top-1.5 -right-1.5 bg-destructive rounded-full p-1 shadow-sm"
                                     >
-                                        <X size={12} className="text-destructive-foreground" />
+                                        <X
+                                            size={12}
+                                            className="text-destructive-foreground"
+                                        />
                                     </TouchableOpacity>
                                 </View>
                             ))}
@@ -338,13 +364,20 @@ export function OrderReviewModal({
                                     disabled={isUploading}
                                     className={cn(
                                         "w-24 h-24 rounded-lg border border-primary bg-background items-center justify-center",
-                                        isUploading && "opacity-50"
+                                        isUploading && "opacity-50",
                                     )}
                                 >
                                     {isUploading ? (
-                                        <ActivityIndicator size="small" className="text-primary" />
+                                        <ActivityIndicator
+                                            size="small"
+                                            className="text-primary"
+                                        />
                                     ) : (
-                                        <Icon as={Camera} size={28} className="text-primary mb-1" />
+                                        <Icon
+                                            as={Camera}
+                                            size={28}
+                                            className="text-primary mb-1"
+                                        />
                                     )}
                                 </TouchableOpacity>
                             )}
@@ -367,7 +400,10 @@ export function OrderReviewModal({
                         )}
                     >
                         {isSubmitting ? (
-                            <ActivityIndicator size="small" className="text-primary-foreground" />
+                            <ActivityIndicator
+                                size="small"
+                                className="text-primary-foreground"
+                            />
                         ) : (
                             <Text className="text-base font-semibold text-primary-foreground">
                                 {isUploading ? "上传中..." : "发布"}
