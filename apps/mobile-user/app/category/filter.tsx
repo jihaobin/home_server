@@ -4,7 +4,7 @@ import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { cssInterop, useColorScheme } from "nativewind";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { InteractionManager, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
 import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
@@ -54,6 +54,9 @@ const WEEKDAY_BY_DIGIT: Record<string, string> = {
     "6": "周六",
     "7": "周日",
 };
+
+const RECOMMEND_TAB_KEY = "recommend";
+const PENDING_TAB_KEY = "__pending__";
 
 function formatWorkDays(value: string): string {
     if (!value) {
@@ -291,8 +294,11 @@ export default function CategoryFilterScreen() {
     const categoryId = params.categoryId
         ? String(params.categoryId)
         : undefined;
-    const defaultTabName = params.defaultTabName
+    const explicitDefaultTabName = params.defaultTabName
         ? String(params.defaultTabName)
+        : undefined;
+    const defaultTabName = explicitDefaultTabName
+        ? explicitDefaultTabName
         : params.categoryName
           ? String(params.categoryName)
           : undefined;
@@ -305,16 +311,26 @@ export default function CategoryFilterScreen() {
 
     const title = params.categoryName || "家庭保洁";
 
-    const [activeTabKey, setActiveTabKey] = useState<string>("recommend");
+    const shouldDeferInitialTab = Boolean(
+        defaultServiceId || explicitDefaultTabName,
+    );
+    const [activeTabKey, setActiveTabKey] = useState<string>(() => {
+        if (defaultServiceId) {
+            return defaultServiceId;
+        }
+
+        return shouldDeferInitialTab ? PENDING_TAB_KEY : RECOMMEND_TAB_KEY;
+    });
 
     const listRef = useRef<FlashListRef<WorkerCardItem> | null>(null);
+    const [isTransitionSettled, setIsTransitionSettled] = useState(false);
 
     const serviceListQuery = useServiceListSinglePage({
         categoryId,
         isActive: true,
         limit: 1,
         page: 1,
-        enabled: Boolean(categoryId),
+        enabled: Boolean(categoryId) && isTransitionSettled,
     });
 
     const services = useMemo(
@@ -324,26 +340,42 @@ export default function CategoryFilterScreen() {
 
     const tabs = useMemo(() => {
         return [
-            { key: "recommend", label: "推荐" },
+            { key: RECOMMEND_TAB_KEY, label: "推荐" },
             ...services.map((s) => ({ key: s.id, label: s.name })),
         ];
     }, [services]);
 
     const isTabsLoading =
         Boolean(categoryId) &&
-        (serviceListQuery.isLoading ||
+        (!isTransitionSettled ||
+            serviceListQuery.isLoading ||
             (serviceListQuery.isFetching && !serviceListQuery.data));
 
     useEffect(() => {
-        // 切换分类时默认回到“推荐”。
-        setActiveTabKey("recommend");
-    }, [categoryId]);
+        if (defaultServiceId) {
+            setActiveTabKey(defaultServiceId);
+            return;
+        }
+
+        setActiveTabKey(
+            shouldDeferInitialTab ? PENDING_TAB_KEY : RECOMMEND_TAB_KEY,
+        );
+    }, [categoryId, defaultServiceId, shouldDeferInitialTab]);
 
     useEffect(() => {
-        if (!services.length) return;
+        if (isTabsLoading) {
+            return;
+        }
+
+        if (!services.length) {
+            if (activeTabKey === PENDING_TAB_KEY) {
+                setActiveTabKey(RECOMMEND_TAB_KEY);
+            }
+            return;
+        }
 
         const hasActive = services.some((s) => s.id === activeTabKey);
-        if (hasActive) {
+        if (hasActive || activeTabKey === RECOMMEND_TAB_KEY) {
             return;
         }
 
@@ -356,8 +388,17 @@ export default function CategoryFilterScreen() {
         const next = byId ?? byName;
         if (next && next.id !== activeTabKey) {
             setActiveTabKey(next.id);
+            return;
         }
-    }, [services, activeTabKey, defaultServiceId, defaultTabName]);
+
+        setActiveTabKey(RECOMMEND_TAB_KEY);
+    }, [
+        services,
+        activeTabKey,
+        defaultServiceId,
+        defaultTabName,
+        isTabsLoading,
+    ]);
 
     const selectedHomeLocation = useHomeLocationStore(
         (state) => state.selectedLocation,
@@ -370,8 +411,20 @@ export default function CategoryFilterScreen() {
 
     useFocusEffect(
         useCallback(() => {
-            setIsScreenFocused(true);
+            let isCancelled = false;
+            const interactionTask = InteractionManager.runAfterInteractions(
+                () => {
+                    if (!isCancelled) {
+                        setIsTransitionSettled(true);
+                        setIsScreenFocused(true);
+                    }
+                },
+            );
+
             return () => {
+                isCancelled = true;
+                interactionTask.cancel();
+                setIsTransitionSettled(false);
                 setIsScreenFocused(false);
             };
         }, []),
@@ -409,7 +462,10 @@ export default function CategoryFilterScreen() {
             limit: 20,
         },
         {
-            enabled: activeTabKey === "recommend" && Boolean(categoryId),
+            enabled:
+                isTransitionSettled &&
+                activeTabKey === RECOMMEND_TAB_KEY &&
+                Boolean(categoryId),
         },
     );
 
@@ -421,7 +477,7 @@ export default function CategoryFilterScreen() {
         Boolean(categoryId);
 
     const personnelQuery = useServicePersonnelSearchQuery({
-        enabled: canSearchPersonnel,
+        enabled: isTransitionSettled && canSearchPersonnel,
         serviceId: activeService?.id ?? "",
         userLat: resolvedCoords?.lat ?? 0,
         userLng: resolvedCoords?.lng ?? 0,
@@ -433,7 +489,7 @@ export default function CategoryFilterScreen() {
     });
 
     const workers = useMemo<WorkerCardItem[]>(() => {
-        if (activeTabKey === "recommend") {
+        if (activeTabKey === RECOMMEND_TAB_KEY) {
             const pages = recommendationsQuery.data?.pages ?? [];
             return pages
                 .flatMap((p) => p.recommendedPersonnel)
@@ -486,18 +542,23 @@ export default function CategoryFilterScreen() {
         activeService,
     ]);
 
-    const isListLoading =
-        activeTabKey === "recommend"
+    const isListLoading = !isTransitionSettled
+        ? true
+        : shouldDeferInitialTab &&
+            activeTabKey !== RECOMMEND_TAB_KEY &&
+            !activeService
+          ? true
+          : activeTabKey === RECOMMEND_TAB_KEY
             ? recommendationsQuery.isLoading
             : Boolean(personnelQuery.isLoading) && canSearchPersonnel;
 
     const isListError =
-        activeTabKey === "recommend"
+        activeTabKey === RECOMMEND_TAB_KEY
             ? recommendationsQuery.isError
             : personnelQuery.isError;
 
     const listEmptyText =
-        activeTabKey === "recommend" ? "暂无推荐人员" : "暂无服务人员";
+        activeTabKey === RECOMMEND_TAB_KEY ? "暂无推荐人员" : "暂无服务人员";
 
     return (
         <View className="flex-1 bg-background">
@@ -622,7 +683,7 @@ export default function CategoryFilterScreen() {
                     )
                 }
                 ListFooterComponent={
-                    activeTabKey === "recommend" &&
+                    activeTabKey === RECOMMEND_TAB_KEY &&
                     recommendationsQuery.isFetchingNextPage ? (
                         <View className="pb-6">
                             <WorkerCardSkeleton />
@@ -631,7 +692,7 @@ export default function CategoryFilterScreen() {
                 }
                 onEndReachedThreshold={0.2}
                 onEndReached={() => {
-                    if (activeTabKey !== "recommend") {
+                    if (activeTabKey !== RECOMMEND_TAB_KEY) {
                         return;
                     }
                     if (

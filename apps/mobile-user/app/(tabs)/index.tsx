@@ -822,6 +822,7 @@ export default function HomeScreen() {
             setIsScreenFocused(true);
             return () => {
                 setIsScreenFocused(false);
+                setMoreServicesVisible(false);
             };
         }, []),
     );

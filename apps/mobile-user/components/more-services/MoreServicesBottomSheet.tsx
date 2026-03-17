@@ -1,5 +1,6 @@
 import type React from "react";
 import { Image as ExpoImage } from "expo-image";
+import { router } from "expo-router";
 import { cssInterop } from "nativewind";
 import { useMemo } from "react";
 import { Pressable, ScrollView, View } from "react-native";
@@ -33,6 +34,14 @@ type MoreServicesGridItem = {
     label: string;
     imageUrl?: string | null;
     kind: "category" | "service";
+    categoryId?: string;
+};
+
+type CategoryFilterRouteParams = {
+    categoryId: string;
+    categoryName: string;
+    defaultTabName?: string;
+    defaultServiceId?: string;
 };
 
 function MoreServicesSkeleton({ sectionCount = 3 }: { sectionCount?: number }) {
@@ -92,14 +101,16 @@ function resolveImageSource(imageUrl?: string | null): ImageSource {
 function ServiceGridItem({
     label,
     imageUrl,
+    onPress,
 }: {
     label: string;
     imageUrl?: string | null;
+    onPress?: () => void;
 }) {
     const imageSource = useMemo(() => resolveImageSource(imageUrl), [imageUrl]);
 
     return (
-        <View className="w-11 items-center">
+        <Pressable className="w-11 items-center" onPress={onPress}>
             <View className="h-11 w-11 items-center justify-center">
                 <View className="h-[38px] w-[38px] overflow-hidden rounded-full border border-primary">
                     <Image
@@ -115,7 +126,7 @@ function ServiceGridItem({
             >
                 {label}
             </Text>
-        </View>
+        </Pressable>
     );
 }
 
@@ -164,6 +175,7 @@ export function MoreServicesBottomSheet({
                     label: s.name,
                     imageUrl: s.imageFileUrl ?? null,
                     kind: "service",
+                    categoryId: s.categoryId,
                 }));
 
             return {
@@ -173,6 +185,17 @@ export function MoreServicesBottomSheet({
             };
         },
     );
+
+    const navigateToCategoryFilter = (params: CategoryFilterRouteParams) => {
+        router.push({
+            pathname: "/category/filter",
+            params,
+        });
+
+        requestAnimationFrame(() => {
+            onClose();
+        });
+    };
 
     return (
         <BottomSheetModal
@@ -224,6 +247,42 @@ export function MoreServicesBottomSheet({
                                                 key={item.id}
                                                 label={item.label}
                                                 imageUrl={item.imageUrl}
+                                                onPress={() => {
+                                                    if (
+                                                        item.kind === "category"
+                                                    ) {
+                                                        navigateToCategoryFilter(
+                                                            {
+                                                                categoryId:
+                                                                    String(
+                                                                        item.id,
+                                                                    ),
+                                                                categoryName:
+                                                                    item.label,
+                                                                defaultTabName:
+                                                                    item.label,
+                                                            },
+                                                        );
+                                                        return;
+                                                    }
+
+                                                    const serviceCategoryId =
+                                                        item.categoryId;
+                                                    if (!serviceCategoryId) {
+                                                        return;
+                                                    }
+
+                                                    navigateToCategoryFilter({
+                                                        categoryId:
+                                                            serviceCategoryId,
+                                                        categoryName:
+                                                            section.title,
+                                                        defaultServiceId:
+                                                            String(item.id),
+                                                        defaultTabName:
+                                                            item.label,
+                                                    });
+                                                }}
                                             />
                                         ))}
                                     </View>
