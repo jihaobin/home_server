@@ -1526,6 +1526,10 @@ export class PayService {
                 refundChannel,
                 {
                     outTradeNo,
+                    tradeNo:
+                        latestSuccessPayment.transactionId ??
+                        successPayment.transactionId ??
+                        undefined,
                     outRequestNo,
                     amount: requestRefundAmount,
                     reason,

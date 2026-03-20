@@ -4,6 +4,7 @@ export type RefundChannel = (typeof paymentMethodEnum.enumValues)[number];
 
 export interface RefundRequest {
     outTradeNo: string;
+    tradeNo?: string;
     outRequestNo: string;
     amount: number;
     reason?: string;
