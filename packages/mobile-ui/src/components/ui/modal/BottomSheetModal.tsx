@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import {
     Modal,
-    TouchableWithoutFeedback,
+    Pressable,
+    StyleSheet,
     useWindowDimensions,
     View,
 } from "react-native";
@@ -144,50 +145,48 @@ export function BottomSheetModal({
             statusBarTranslucent={false}
         >
             <GestureHandlerRootView style={{ flex: 1 }}>
-                {/* 半透明背景遮罩 */}
-                <TouchableWithoutFeedback onPress={onClose}>
-                    <View
-                        className={cn("flex-1 justify-end", backdropClassName)}
+                <View className="flex-1 justify-end">
+                    <Pressable
+                        style={StyleSheet.absoluteFill}
+                        className={cn("flex-1", backdropClassName)}
+                        onPress={onClose}
+                    />
+                    <Animated.View
+                        entering={SlideInDown.duration(300)}
+                        exiting={SlideOutDown.duration(250)}
+                        style={[
+                            animatedModalStyle,
+                            {
+                                shadowColor: "#000",
+                                shadowOffset: {
+                                    width: 0,
+                                    height: -4,
+                                },
+                                shadowOpacity: 0.25,
+                                shadowRadius: 12,
+                                elevation: 24,
+                            },
+                        ]}
+                        className={cn(
+                            "rounded-t-3xl bg-background",
+                            sheetClassName,
+                        )}
                     >
-                        <TouchableWithoutFeedback>
-                            <Animated.View
-                                entering={SlideInDown.duration(300)}
-                                exiting={SlideOutDown.duration(250)}
-                                style={[
-                                    animatedModalStyle,
-                                    {
-                                        shadowColor: "#000",
-                                        shadowOffset: {
-                                            width: 0,
-                                            height: -4,
-                                        },
-                                        shadowOpacity: 0.25,
-                                        shadowRadius: 12,
-                                        elevation: 24,
-                                    },
-                                ]}
-                                className={cn(
-                                    "rounded-t-3xl bg-background",
-                                    sheetClassName,
-                                )}
-                            >
-                                <View className="flex-1">
-                                    {/* 顶部拖动指示条 */}
-                                    {showDragIndicator && (
-                                        <GestureDetector gesture={panGesture}>
-                                            <Animated.View className="items-center py-4 active:bg-muted/10">
-                                                <View className="h-1.5 w-12 rounded-full bg-muted-foreground/40" />
-                                            </Animated.View>
-                                        </GestureDetector>
-                                    )}
+                        <View className="flex-1">
+                            {/* 顶部拖动指示条 */}
+                            {showDragIndicator && (
+                                <GestureDetector gesture={panGesture}>
+                                    <Animated.View className="items-center py-4 active:bg-muted/10">
+                                        <View className="h-1.5 w-12 rounded-full bg-muted-foreground/40" />
+                                    </Animated.View>
+                                </GestureDetector>
+                            )}
 
-                                    {/* 内容区域 */}
-                                    {children}
-                                </View>
-                            </Animated.View>
-                        </TouchableWithoutFeedback>
-                    </View>
-                </TouchableWithoutFeedback>
+                            {/* 内容区域 */}
+                            {children}
+                        </View>
+                    </Animated.View>
+                </View>
             </GestureHandlerRootView>
         </Modal>
     );

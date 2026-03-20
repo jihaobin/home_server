@@ -9,6 +9,7 @@ import type {
     OrderListResponse,
     OrderCardsListResponse,
     OrderCardsTab,
+    OrderRescheduleDto,
     OrderStatus,
     StaffOrderListRequest,
     StaffOrderListResponse,
@@ -288,14 +289,14 @@ export const useRescheduleOrder = () => {
     return useMutation({
         mutationFn: ({
             orderId,
-            appointmentTime,
+            ...payload
         }: {
             orderId: string;
-            appointmentTime: string;
-        }) => {
-            return apiClient.post<OrderDetail>(`/order/${orderId}/reschedule`, {
-                appointmentTime,
-            });
+        } & OrderRescheduleDto) => {
+            return apiClient.post<OrderDetail>(
+                `/order/${orderId}/reschedule`,
+                payload,
+            );
         },
         onSuccess: (_data, variables) => {
             queryClient.invalidateQueries({ queryKey: ["staff-orders-list"] });

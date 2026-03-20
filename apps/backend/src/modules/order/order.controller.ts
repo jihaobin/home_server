@@ -17,10 +17,6 @@ import { ZodValidationPipe } from 'src/common/pipes';
 import { OrderService } from './order.service';
 import { OrderCheckinService } from './order-checkin.service';
 import {
-    OrderRescheduleSchema,
-    type OrderRescheduleDto,
-} from './dto/order-reschedule.dto';
-import {
     CreateDesignatedOrder,
     CreateDesignatedOrderSchema,
     CreateDesignatedOrderResponseSchema,
@@ -31,9 +27,11 @@ import {
     OrderListResponseSchema,
     OrderCardsListQuerySchema,
     OrderCardsListResponseSchema,
+    OrderRescheduleSchema,
     StaffOrderListRequestSchema,
     StaffOrderListResponseSchema,
     VerifyOrderCheckinSchema,
+    type OrderRescheduleDto,
     type UserRole,
     type VerifyOrderCheckinDto,
 } from '@repo/types';
@@ -196,7 +194,6 @@ export class OrderController {
     @UseGuards(AuthGuard)
     @Roles(['service_personnel'])
     @Post(':id/reschedule')
-    @UsePipes(new ZodValidationPipe(OrderRescheduleSchema))
     @ApiOperation({
         summary: '服务人员改期',
         description:
@@ -205,7 +202,8 @@ export class OrderController {
     @ApiBodies(OrderRescheduleSchema)
     async rescheduleOrder(
         @Param('id') id: string,
-        @Body() dto: OrderRescheduleDto,
+        @Body(new ZodValidationPipe(OrderRescheduleSchema))
+        dto: OrderRescheduleDto,
         @Req() req: Request,
     ) {
         const staffId = req.user.id;
