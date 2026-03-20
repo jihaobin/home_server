@@ -17,8 +17,8 @@ import {
     View,
 } from "react-native";
 import * as React from "react";
-import { toast } from "sonner-native";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
+import { toast } from "@repo/mobile-ui/lib/toast";
 import { useOrderConfirmDesignatedPreview } from "@repo/hooks/api/order";
 import { useAddressEditStore } from "@/stores/address-store";
 import useServiceStore from "@/stores/service";
@@ -135,32 +135,6 @@ export default function OrderConfirmScreen() {
             ? preview.pricing.totalAmount
             : 0;
 
-    const warmTip =
-        "温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案温馨提示文案。";
-
-    if (showPageLoading) {
-        return (
-            <View className="flex-1 bg-background">
-                <View className="bg-card pb-3 pt-12">
-                    <View className="flex-row items-center">
-                        <View className="w-[78px]" />
-                        <View className="flex-1 items-center">
-                            <Text className="text-base font-puhui-medium text-foreground">
-                                确认订单
-                            </Text>
-                        </View>
-                        <View className="w-[78px]" />
-                    </View>
-                </View>
-                <View className="flex-1 items-center justify-center px-6">
-                    <Text className="text-sm font-puhui-regular text-muted-foreground">
-                        正在刷新订单信息...
-                    </Text>
-                </View>
-            </View>
-        );
-    }
-
     const serviceTimeLabel = React.useMemo(() => {
         if (!selectedServiceTime) {
             return "请选择时间";
@@ -221,6 +195,38 @@ export default function OrderConfirmScreen() {
         setIsRemarkSheetVisible(false);
     };
 
+    const handleGoBack = React.useCallback(() => {
+        setIsPaySheetVisible(false);
+        setIsRemarkSheetVisible(false);
+        setIsServiceTimeSheetVisible(false);
+        toast.dismiss();
+
+        router.back();
+    }, [router]);
+
+    if (showPageLoading) {
+        return (
+            <View className="flex-1 bg-background">
+                <View className="bg-card pb-3 pt-12">
+                    <View className="flex-row items-center">
+                        <View className="w-[78px]" />
+                        <View className="flex-1 items-center">
+                            <Text className="text-base font-puhui-medium text-foreground">
+                                确认订单
+                            </Text>
+                        </View>
+                        <View className="w-[78px]" />
+                    </View>
+                </View>
+                <View className="flex-1 items-center justify-center px-6">
+                    <Text className="text-sm font-puhui-regular text-muted-foreground">
+                        正在刷新订单信息...
+                    </Text>
+                </View>
+            </View>
+        );
+    }
+
     return (
         <View className="flex-1 bg-background">
             {/* 顶部导航栏（按 Figma：左右 78px，中间标题） */}
@@ -228,7 +234,7 @@ export default function OrderConfirmScreen() {
                 <View className="flex-row items-center">
                     <View className="w-[78px] pl-4">
                         <Pressable
-                            onPress={() => router.back()}
+                            onPress={handleGoBack}
                             className="h-[46px] w-[46px] items-center justify-center"
                             hitSlop={8}
                         >

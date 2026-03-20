@@ -9,7 +9,7 @@ import { useRouter } from "expo-router";
 import { icons as lucideIconRegistry } from "lucide-react-native";
 import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
-import { toast } from "sonner-native";
+import { toast } from "@repo/mobile-ui/lib/toast";
 import { useOrderPayment } from "@/hooks/useOrderPayment";
 
 const ICON_MAP = lucideIconRegistry;

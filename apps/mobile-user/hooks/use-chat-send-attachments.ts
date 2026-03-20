@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import * as ImagePicker from "expo-image-picker";
-import { toast } from "sonner-native";
+import { toast } from "@repo/mobile-ui/lib/toast";
 
 import { useUploadFile } from "@repo/hooks/api/files";
 

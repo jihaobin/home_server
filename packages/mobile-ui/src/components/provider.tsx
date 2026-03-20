@@ -19,13 +19,14 @@ import {
     View,
 } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { Toaster, toast } from "sonner-native";
+import { LayoutAnimationConfig } from "react-native-reanimated";
 import {
     queryClient,
     setQueryClientErrorNotifier,
 } from "@repo/lib/query-client";
 import { authClient as defaultAuthClient } from "@repo/lib/auth-client";
 import { setApiClientAuthClient } from "@repo/lib/http-client";
+import { Toaster, toast } from "../lib/toast";
 import { SessionProvider } from "./SessionProvider";
 import { SplashScreenController } from "./splash";
 import { DevToolsBubble } from "react-native-react-query-devtools";
@@ -74,6 +75,15 @@ export function Provider({
         return () => subscription.remove();
     }, []);
 
+    const toasterNode = (
+        <Toaster
+            position="top-center"
+            duration={3000}
+            swipeToDismissDirection="up"
+            richColors
+        />
+    );
+
     return (
         <SafeAreaProvider>
             <QueryErrorResetBoundary>
@@ -117,12 +127,13 @@ export function Provider({
                                 </Suspense>
                             </SessionProvider>
                             {/* <DevToolsBubble onCopy={onCopy} queryClient={queryClient} /> */}
-                            <Toaster
-                                position="top-center"
-                                duration={3000}
-                                swipeToDismissDirection="up"
-                                richColors
-                            />
+                            {Platform.OS === "android" ? (
+                                <LayoutAnimationConfig skipEntering skipExiting>
+                                    {toasterNode}
+                                </LayoutAnimationConfig>
+                            ) : (
+                                toasterNode
+                            )}
                         </QueryClientProvider>
                     </ErrorBoundary>
                 )}

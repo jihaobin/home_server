@@ -2,7 +2,7 @@ import "@repo/mobile-ui/styles/mobile-user.css";
 import { ThemeProvider } from "@react-navigation/native";
 import { NAV_THEME } from "@repo/mobile-ui/lib/mobile-user-constants";
 import { PortalHost } from "@rn-primitives/portal";
-import { Stack } from "expo-router";
+import { Stack, usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme } from "nativewind";
 import * as React from "react";
@@ -10,17 +10,14 @@ import { Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Provider } from "@repo/mobile-ui/components/provider";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
-import { Toaster } from "sonner-native";
-import { toast } from "sonner-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppUpdateProvider } from "@repo/mobile-ui/app-update/AppUpdateProvider";
+import { toast } from "@repo/mobile-ui/lib/toast";
 import { useChatSocket } from "../hooks/use-chat-socket";
 
 export default function RootLayout() {
     const hasMounted = React.useRef(false);
     const { colorScheme } = useColorScheme();
     const navTheme = NAV_THEME[colorScheme ?? "light"];
-    const statusBarBackground = navTheme.colors.primary;
     const [isColorSchemeLoaded, setIsColorSchemeLoaded] = React.useState(false);
 
     useIsomorphicLayoutEffect(() => {
@@ -32,10 +29,10 @@ export default function RootLayout() {
             // Adds the background color to the html element to prevent white background on overscroll.
             const doc = (globalThis as Record<string, unknown>).document as
                 | {
-                    documentElement?: {
-                        classList?: { add: (value: string) => void };
-                    };
-                }
+                      documentElement?: {
+                          classList?: { add: (value: string) => void };
+                      };
+                  }
                 | undefined;
             doc?.documentElement?.classList?.add("bg-background");
         }
@@ -57,7 +54,6 @@ export default function RootLayout() {
                         />
                         <RootNavigation />
                         <PortalHost />
-                        <Toaster />
                     </ThemeProvider>
                 </AppUpdateProvider>
             </Provider>
@@ -68,7 +64,13 @@ export default function RootLayout() {
 function RootNavigation() {
     const { colorScheme } = useColorScheme();
     const { session } = useSession();
+    const pathname = usePathname();
     const isAuthenticated = !!session?.user?.id;
+
+    React.useEffect(() => {
+        // 路由切换时主动清理未消失 toast，避免回退与 overlay 卸载并发导致 Android 视图树竞态。
+        toast.dismiss();
+    }, [pathname]);
 
     return (
         <>
@@ -76,6 +78,14 @@ function RootNavigation() {
                 <ChatSocketBridge enabled={isAuthenticated} />
             ) : null}
             <Stack
+                screenListeners={{
+                    beforeRemove: () => {
+                        toast.dismiss();
+                    },
+                    transitionStart: () => {
+                        toast.dismiss();
+                    },
+                }}
                 screenOptions={{
                     headerShown: false,
                     headerBackTitle: "返回", // 为返回按钮添加文字
@@ -126,7 +136,6 @@ function RootNavigation() {
                         }}
                     />
 
-
                     <Stack.Screen
                         name="category/filter"
                         options={{
@@ -169,6 +178,6 @@ function ChatSocketBridge({ enabled }: { enabled: boolean }) {
 
 const useIsomorphicLayoutEffect =
     Platform.OS === "web" &&
-        typeof (globalThis as Record<string, unknown>).window === "undefined"
+    typeof (globalThis as Record<string, unknown>).window === "undefined"
         ? React.useEffect
         : React.useLayoutEffect;

@@ -10,6 +10,12 @@ import { useOrderReview } from "@repo/hooks/api/review";
 import { useCreateReview } from "@repo/hooks/api/review";
 import { useUploadFiles } from "@repo/hooks/api/files";
 import type { OrderStatus } from "@repo/types";
+import { useOrderActions } from "@/components/orders_screen/hooks/useOrderActions";
+import {
+    resolveCancelOrderDescription,
+    resolveCancelOrderReason,
+} from "@/lib/order-cancel";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import {
     ImageUploader,
     type ImageUploaderItem,
@@ -261,6 +267,8 @@ function OrderDetailContent({
     const order = orderDetailQuery.data;
     const queryClient = useQueryClient();
     const upsertConversation = useChatUpsertConversation();
+    const { cancelOrder, isCancelling } = useOrderActions();
+    const { confirm, confirmDialog } = useConfirmDialog();
 
     const createReview = useCreateReview();
     const uploadFiles = useUploadFiles();
@@ -438,11 +446,27 @@ function OrderDetailContent({
             return;
         }
         if (canCancel) {
-            toast.info("取消订单（mock）");
+            void (async () => {
+                const confirmed = await confirm({
+                    title: "确认取消订单",
+                    description: resolveCancelOrderDescription(order.status),
+                    confirmText: "继续取消",
+                    cancelText: "保留订单",
+                    confirmVariant: "destructive",
+                });
+                if (!confirmed) {
+                    return;
+                }
+
+                await cancelOrder({
+                    orderId: order.id,
+                    reason: resolveCancelOrderReason(order.status),
+                });
+            })();
             return;
         }
         toast.info("操作（mock）");
-    }, [canCancel, needsReview, order.status]);
+    }, [canCancel, cancelOrder, needsReview, order.id, order.status]);
 
     const shouldShowSecondaryButton =
         canCancel || (order.status === "completed" && needsReview);
@@ -526,6 +550,7 @@ function OrderDetailContent({
 
     return (
         <>
+            {confirmDialog}
             <View className="h-12 flex-row items-center justify-between px-4">
                 <TouchableOpacity
                     activeOpacity={0.7}
@@ -574,7 +599,7 @@ function OrderDetailContent({
                 <View className="mx-4 mt-3 rounded-lg bg-card px-4 py-4 shadow-xs">
                     <View className="flex-row">
                         <Image
-                            source={require("../../assets/images/定位-小.png")}
+                            source={require("../../assets/images/icon-location-small.png")}
                             className="mt-0.5 h-5 w-5"
                             resizeMode="contain"
                         />
@@ -641,7 +666,7 @@ function OrderDetailContent({
                                 source={
                                     serviceImageUri
                                         ? { uri: serviceImageUri }
-                                        : require("../../assets/images/家庭保洁.png")
+                                        : require("../../assets/images/category-home-cleaning.png")
                                 }
                                 className="h-14 w-14 rounded-md"
                                 resizeMode="cover"
@@ -772,18 +797,21 @@ function OrderDetailContent({
             </ScrollView>
 
             <View className="border-t border-border/50 bg-card px-4 py-3">
-                <View className="flex-row items-center justify-between">
-                    <View className="flex-row items-center gap-5">
+                <View className="flex-row items-center gap-2">
+                    <View className="min-w-0 flex-1 flex-row items-center gap-2">
                         <TouchableOpacity
                             activeOpacity={0.7}
                             onPress={handleSupport}
-                            className="flex-row items-center"
+                            className="min-w-0 flex-1 flex-row items-center justify-center px-1 py-2"
                         >
                             <Headset
-                                size={18}
+                                size={15}
                                 className="text-muted-foreground"
                             />
-                            <Text className="ml-2 text-sm font-puhui-regular text-muted-foreground">
+                            <Text
+                                className="ml-1 text-[11px] font-puhui-regular text-muted-foreground"
+                                numberOfLines={1}
+                            >
                                 咨询客服
                             </Text>
                         </TouchableOpacity>
@@ -791,26 +819,38 @@ function OrderDetailContent({
                         <TouchableOpacity
                             activeOpacity={0.7}
                             onPress={() => void handleOpenWorkerChat()}
-                            className="flex-row items-center"
+                            className="min-w-0 flex-1 flex-row items-center justify-center px-1 py-2"
                         >
                             <MessageCircle
-                                size={18}
+                                size={15}
                                 className="text-muted-foreground"
                             />
-                            <Text className="ml-2 text-sm font-puhui-regular text-muted-foreground">
+                            <Text
+                                className="ml-1 text-[11px] font-puhui-regular text-muted-foreground"
+                                numberOfLines={1}
+                            >
                                 联系服务人员
                             </Text>
                         </TouchableOpacity>
                     </View>
 
-                    <View className="flex-row items-center gap-3">
+                    <View className="min-w-0 flex-1 flex-row items-center gap-2">
                         {shouldShowSecondaryButton ? (
                             <TouchableOpacity
                                 activeOpacity={0.7}
                                 onPress={handleSecondaryAction}
-                                className="h-11 w-28 items-center justify-center rounded-full border border-border bg-card"
+                                disabled={canCancel && isCancelling}
+                                style={
+                                    canCancel && isCancelling
+                                        ? { opacity: 0.6 }
+                                        : undefined
+                                }
+                                className="h-11 min-w-0 flex-1 items-center justify-center rounded-full border border-border bg-card px-2"
                             >
-                                <Text className="text-sm font-puhui-medium text-muted-foreground">
+                                <Text
+                                    className="text-xs font-puhui-medium text-muted-foreground"
+                                    numberOfLines={1}
+                                >
                                     {secondaryButtonText}
                                 </Text>
                             </TouchableOpacity>
@@ -819,9 +859,12 @@ function OrderDetailContent({
                         <TouchableOpacity
                             activeOpacity={0.7}
                             onPress={handlePrimaryAction}
-                            className="h-11 w-28 items-center justify-center rounded-full bg-primary"
+                            className="h-11 min-w-0 flex-1 items-center justify-center rounded-full bg-primary px-2"
                         >
-                            <Text className="text-sm font-puhui-medium text-primary-foreground">
+                            <Text
+                                className="text-xs font-puhui-medium text-primary-foreground"
+                                numberOfLines={1}
+                            >
                                 {primaryButtonText}
                             </Text>
                         </TouchableOpacity>

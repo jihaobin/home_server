@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
-import { toast } from "sonner-native";
+import { toast } from "@repo/mobile-ui/lib/toast";
 import { authClient } from "@repo/lib/auth-client";
 import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
 
@@ -171,10 +171,11 @@ export default function VerifyScreen() {
                         return (
                             <View
                                 key={`code-${index}`}
-                                className={`h-12 w-12 rounded-xl border ${isActive
-                                    ? "border-primary"
-                                    : "border-border/60"
-                                    } items-center justify-center bg-muted/40`}
+                                className={`h-12 w-12 rounded-xl border ${
+                                    isActive
+                                        ? "border-primary"
+                                        : "border-border/60"
+                                } items-center justify-center bg-muted/40`}
                             >
                                 <Text className="text-lg text-foreground">
                                     {digit}

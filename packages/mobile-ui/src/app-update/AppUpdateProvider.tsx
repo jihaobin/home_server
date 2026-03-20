@@ -7,18 +7,10 @@ import React, {
     useRef,
     useState,
 } from "react";
-import {
-    AppState,
-    type AppStateStatus,
-    Platform,
-} from "react-native";
+import { AppState, type AppStateStatus, Platform } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import Constants from "expo-constants";
-import {
-    Directory,
-    File,
-    Paths,
-} from "expo-file-system";
+import { Directory, File, Paths } from "expo-file-system";
 import {
     createDownloadResumable,
     type DownloadProgressData,
@@ -26,12 +18,12 @@ import {
 import * as IntentLauncher from "expo-intent-launcher";
 import * as Linking from "expo-linking";
 import { MMKV } from "react-native-mmkv";
-import { toast } from "sonner-native";
 import type { AppReleaseApp, AppReleasePlatform } from "@repo/types";
 import {
     appUpdateCheckQueryFn,
     appUpdateCheckQueryKey,
 } from "@repo/hooks/api/app-release";
+import { toast } from "../lib/toast";
 import { AppUpdateModal } from "./AppUpdateModal";
 import type {
     DownloadProgress,
@@ -47,7 +39,10 @@ type CheckOptions = {
 type CheckResult =
     | { status: "available"; info: ResolvedUpdateInfo }
     | { status: "up-to-date" }
-    | { status: "skipped"; reason: "ignored" | "unsupported" | "missing-version" }
+    | {
+          status: "skipped";
+          reason: "ignored" | "unsupported" | "missing-version";
+      }
     | { status: "error"; message: string };
 
 type AppUpdateContextValue = {
@@ -363,10 +358,7 @@ export function AppUpdateProvider({
                     : 0;
 
                 const now = Date.now();
-                if (
-                    now - lastProgressUpdateRef.current < 80 &&
-                    percent < 100
-                ) {
+                if (now - lastProgressUpdateRef.current < 80 && percent < 100) {
                     return;
                 }
                 lastProgressUpdateRef.current = now;
@@ -470,17 +462,22 @@ export function AppUpdateProvider({
         }));
 
         try {
-            if (!(IntentLauncher as { startActivityAsync?: unknown })
-                ?.startActivityAsync) {
+            if (
+                !(IntentLauncher as { startActivityAsync?: unknown })
+                    ?.startActivityAsync
+            ) {
                 throw new Error("缺少 expo-intent-launcher 依赖，请先安装");
             }
 
             const contentUri = new File(localUri).contentUri;
-            await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
-                data: contentUri,
-                flags: 1,
-                type: "application/vnd.android.package-archive",
-            });
+            await IntentLauncher.startActivityAsync(
+                "android.intent.action.VIEW",
+                {
+                    data: contentUri,
+                    flags: 1,
+                    type: "application/vnd.android.package-archive",
+                },
+            );
             toast.success("已触发安装，请在系统弹窗中完成更新");
             setState((prev) => ({
                 ...prev,
@@ -496,7 +493,13 @@ export function AppUpdateProvider({
             toast.error(`安装失败：${message}`);
             void openUnknownSourcesSettings();
         }
-    }, [openUnknownSourcesSettings, platform, startDownload, state.info, state.progress.localUri]);
+    }, [
+        openUnknownSourcesSettings,
+        platform,
+        startDownload,
+        state.info,
+        state.progress.localUri,
+    ]);
 
     const handlePrimaryAction = useCallback(() => {
         if (!state.info) {
@@ -578,7 +581,11 @@ export function AppUpdateProvider({
                 progress={state.progress}
                 errorMessage={state.errorMessage}
                 onPrimaryAction={handlePrimaryAction}
-                onSecondaryAction={state.info?.requireUpdate ? undefined : handleSecondaryAction}
+                onSecondaryAction={
+                    state.info?.requireUpdate
+                        ? undefined
+                        : handleSecondaryAction
+                }
                 onInstall={installUpdate}
                 onRetry={handleRetry}
             />

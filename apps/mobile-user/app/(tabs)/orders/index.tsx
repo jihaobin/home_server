@@ -8,6 +8,11 @@ import type { OrderCardsTab, OrderStatus } from "@repo/types";
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import { useOrderCardsListInfinite } from "@repo/hooks/api/order";
 import { useOrderActions } from "@/components/orders_screen/hooks/useOrderActions";
+import {
+    resolveCancelOrderDescription,
+    resolveCancelOrderReason,
+} from "@/lib/order-cancel";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { usePaymentCountdown } from "@/hooks/usePaymentCountdown";
 import { Image as ExpoImage } from "expo-image";
@@ -288,7 +293,7 @@ function OrderCard({
                             </Text>
                         </Text>
                         <Text className="text-xs font-puhui-regular text-muted-foreground">
-                            逾期将自动取消
+                            逾期后请尽快与用户协商改期
                         </Text>
                     </View>
                 ) : null}
@@ -497,6 +502,7 @@ export default function OrdersIndex() {
         isCompleting,
         reorder,
     } = useOrderActions();
+    const { confirm, confirmDialog } = useConfirmDialog();
 
     const actionsDisabled = isPaying || isCancelling || isCompleting;
 
@@ -510,7 +516,23 @@ export default function OrdersIndex() {
         }) => {
             switch (action.key) {
                 case "cancel":
-                    await cancelOrder({ orderId: order.id });
+                    if (
+                        !(await confirm({
+                            title: "确认取消订单",
+                            description: resolveCancelOrderDescription(
+                                order.status,
+                            ),
+                            confirmText: "继续取消",
+                            cancelText: "保留订单",
+                            confirmVariant: "destructive",
+                        }))
+                    ) {
+                        return;
+                    }
+                    await cancelOrder({
+                        orderId: order.id,
+                        reason: resolveCancelOrderReason(order.status),
+                    });
                     return;
                 case "pay":
                     await payExistingOrder({
@@ -556,6 +578,7 @@ export default function OrdersIndex() {
     return (
         <RequireAuth>
             <View className="flex-1 bg-background">
+                {confirmDialog}
                 <SafeAreaView edges={["top"]} className="bg-card">
                     <View className="h-11 items-center justify-center">
                         <Text className="text-base font-puhui-medium text-foreground">

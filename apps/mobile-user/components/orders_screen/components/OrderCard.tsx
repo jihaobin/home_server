@@ -13,6 +13,11 @@ import type { OrderCardProps } from "../types";
 import { formatCurrency, formatDateTime } from "../utils";
 import { useOrderActions } from "../hooks/useOrderActions";
 import { usePaymentCountdown } from "@/hooks/usePaymentCountdown";
+import {
+    resolveCancelOrderDescription,
+    resolveCancelOrderReason,
+} from "@/lib/order-cancel";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { OrderCardPreview } from "./OrderCardPreview";
 
@@ -81,6 +86,7 @@ export function OrderCard({ order, section }: OrderCardProps) {
         isExpired: isPaymentCountdownExpired,
     } = usePaymentCountdown(order.paymentExpiresAt);
     const countdownRefreshRef = useRef(false);
+    const { confirm, confirmDialog } = useConfirmDialog();
 
     useEffect(() => {
         if (order.status !== "pending_payment") {
@@ -116,11 +122,23 @@ export function OrderCard({ order, section }: OrderCardProps) {
     }, [order.id, order.paymentExpiresAt, order.totalAmount, payExistingOrder]);
 
     const handleCancelOrder = useCallback(() => {
-        const cancelReason =
-            order.status === "pending_payment"
-                ? "支付前用户取消订单"
-                : "用户取消预约";
-        void cancelOrder({ orderId: order.id, reason: cancelReason });
+        void (async () => {
+            const confirmed = await confirm({
+                title: "确认取消订单",
+                description: resolveCancelOrderDescription(order.status),
+                confirmText: "继续取消",
+                cancelText: "保留订单",
+                confirmVariant: "destructive",
+            });
+            if (!confirmed) {
+                return;
+            }
+
+            await cancelOrder({
+                orderId: order.id,
+                reason: resolveCancelOrderReason(order.status),
+            });
+        })();
     }, [cancelOrder, order.id, order.status]);
 
     const handleCompleteOrder = useCallback(() => {
@@ -238,89 +256,94 @@ export function OrderCard({ order, section }: OrderCardProps) {
     ]);
 
     return (
-        <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={handleNavigateDetail}
-            className={cn(
-                "mt-3 rounded-2xl border px-4 py-4",
-                section.cardClassName,
-            )}
-        >
-            {/* 顶部状态栏：订单状态和服务人员 */}
-            <View className="flex-row items-center justify-between mb-3">
-                <Text className="text-sm text-foreground">{statusLabel}</Text>
-                <Text className="text-sm text-foreground">
-                    {(order.servicePersonnelName &&
-                        order.servicePersonnelName.trim()) ||
-                        "客服协调中"}{" "}
-                    {">"}
-                </Text>
-            </View>
-            {order.status === "pending_payment" ? (
-                <View className="mb-3 rounded-xl bg-destructive/5 px-3 py-2">
-                    <Text className="text-xs text-destructive">
-                        {isPaymentCountdownExpired
-                            ? "支付已超时，请重新下单"
-                            : `请在 ${paymentCountdownText} 内完成支付`}
+        <>
+            {confirmDialog}
+            <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={handleNavigateDetail}
+                className={cn(
+                    "mt-3 rounded-2xl border px-4 py-4",
+                    section.cardClassName,
+                )}
+            >
+                {/* 顶部状态栏：订单状态和服务人员 */}
+                <View className="flex-row items-center justify-between mb-3">
+                    <Text className="text-sm text-foreground">
+                        {statusLabel}
+                    </Text>
+                    <Text className="text-sm text-foreground">
+                        {(order.servicePersonnelName &&
+                            order.servicePersonnelName.trim()) ||
+                            "客服协调中"}{" "}
+                        {">"}
                     </Text>
                 </View>
-            ) : null}
-            {order.status === "pending_acceptance" ? (
-                <View className="mb-3 rounded-xl bg-amber-50 px-3 py-2">
-                    <Text className="text-xs text-amber-700">
-                        服务人员正在确认档期，确认后将自动进入待服务。如需调整时间，可先联系客服或取消订单。
-                    </Text>
-                </View>
-            ) : null}
-            {order.status === "staff_rejected" ? (
-                <View className="mb-3 rounded-xl bg-slate-100 px-3 py-2">
-                    <Text className="text-xs text-slate-700">
-                        很抱歉，本次预约的服务人员暂时无法接单。您可以重新预约其他时间或服务人员。
-                    </Text>
-                </View>
-            ) : null}
+                {order.status === "pending_payment" ? (
+                    <View className="mb-3 rounded-xl bg-destructive/5 px-3 py-2">
+                        <Text className="text-xs text-destructive">
+                            {isPaymentCountdownExpired
+                                ? "支付已超时，请重新下单"
+                                : `请在 ${paymentCountdownText} 内完成支付`}
+                        </Text>
+                    </View>
+                ) : null}
+                {order.status === "pending_acceptance" ? (
+                    <View className="mb-3 rounded-xl bg-amber-50 px-3 py-2">
+                        <Text className="text-xs text-amber-700">
+                            服务人员正在确认档期，确认后将自动进入待服务。如需调整时间，可先联系客服或取消订单。
+                        </Text>
+                    </View>
+                ) : null}
+                {order.status === "staff_rejected" ? (
+                    <View className="mb-3 rounded-xl bg-slate-100 px-3 py-2">
+                        <Text className="text-xs text-slate-700">
+                            很抱歉，本次预约的服务人员暂时无法接单。您可以重新预约其他时间或服务人员。
+                        </Text>
+                    </View>
+                ) : null}
 
-            <OrderCardPreview
-                title={order.serviceName}
-                subtitle={order.serviceSpecifications || "暂无服务描述"}
-                amountText={formatCurrency(Number(order.totalAmount))}
-                appointmentText={appointmentDisplay}
-                imageUrl={order.servicePersonnelImage || null}
-            />
+                <OrderCardPreview
+                    title={order.serviceName}
+                    subtitle={order.serviceSpecifications || "暂无服务描述"}
+                    amountText={formatCurrency(Number(order.totalAmount))}
+                    appointmentText={appointmentDisplay}
+                    imageUrl={order.servicePersonnelImage || null}
+                />
 
-            {/* 预约时间和实付款 */}
-            <View className="mt-3 pt-3 border-t border-border/30 flex-row items-center justify-between">
-                <View>
-                    <Text className="text-xs text-muted-foreground">
-                        预约时间
-                    </Text>
-                    <Text className="mt-0.5 text-sm text-foreground">
-                        {appointmentDisplay}
-                    </Text>
+                {/* 预约时间和实付款 */}
+                <View className="mt-3 pt-3 border-t border-border/30 flex-row items-center justify-between">
+                    <View>
+                        <Text className="text-xs text-muted-foreground">
+                            预约时间
+                        </Text>
+                        <Text className="mt-0.5 text-sm text-foreground">
+                            {appointmentDisplay}
+                        </Text>
+                    </View>
+                    <View className="items-end">
+                        <Text className="text-xs text-muted-foreground">
+                            实付款
+                        </Text>
+                        <Text className="mt-0.5 text-base font-bold text-foreground">
+                            {formatCurrency(Number(order.totalAmount))}
+                        </Text>
+                    </View>
                 </View>
-                <View className="items-end">
-                    <Text className="text-xs text-muted-foreground">
-                        实付款
-                    </Text>
-                    <Text className="mt-0.5 text-base font-bold text-foreground">
-                        {formatCurrency(Number(order.totalAmount))}
-                    </Text>
-                </View>
-            </View>
 
-            {/* 底部操作区 */}
-            <View className="mt-3 pt-3 border-t border-border/30 flex-row items-center justify-between">
-                <View className="flex-row items-center gap-2">
-                    <Text className="text-xs text-muted-foreground">
-                        服务操作
-                    </Text>
+                {/* 底部操作区 */}
+                <View className="mt-3 pt-3 border-t border-border/30 flex-row items-center justify-between">
+                    <View className="flex-row items-center gap-2">
+                        <Text className="text-xs text-muted-foreground">
+                            服务操作
+                        </Text>
+                    </View>
+                    <View className="flex-row items-center gap-2">
+                        {actionButtons.map((button) => (
+                            <ActionButton key={button.label} {...button} />
+                        ))}
+                    </View>
                 </View>
-                <View className="flex-row items-center gap-2">
-                    {actionButtons.map((button) => (
-                        <ActionButton key={button.label} {...button} />
-                    ))}
-                </View>
-            </View>
-        </TouchableOpacity>
+            </TouchableOpacity>
+        </>
     );
 }

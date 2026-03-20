@@ -1,12 +1,12 @@
-import { cn } from '@repo/mobile-ui/lib/utils';
-import { X, Image as ImageIcon } from 'lucide-react-native';
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, Pressable, ActivityIndicator, Image } from 'react-native';
-import { Text } from '../../../packages/mobile-ui/src/components/ui/text';
-import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
-import { useImageManipulator, SaveFormat } from 'expo-image-manipulator';
-import { toast } from 'sonner-native';
+import { cn } from "@repo/mobile-ui/lib/utils";
+import { X, Image as ImageIcon } from "lucide-react-native";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { View, Pressable, ActivityIndicator, Image } from "react-native";
+import { Text } from "../../../packages/mobile-ui/src/components/ui/text";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
+import { useImageManipulator, SaveFormat } from "expo-image-manipulator";
+import { toast } from "@repo/mobile-ui/lib/toast";
 
 export interface ImageUploaderProps {
     /** 当前图片 URI */
@@ -24,9 +24,15 @@ export interface ImageUploaderProps {
     /** 上传失败回调 */
     onUploadError?: (error: Error) => void;
     /** 实际上传函数,由使用方提供(调用 useUploadFile 的 mutateAsync) */
-    onUpload?: (file: { uri: string; name: string; type: string }) => Promise<{ fileIdentifier: string; fileUrl: string }>;
+    onUpload?: (file: {
+        uri: string;
+        name: string;
+        type: string;
+    }) => Promise<{ fileIdentifier: string; fileUrl: string }>;
     /** 多图上传函数,由使用方提供(调用 useUploadFiles 的 mutateAsync) */
-    onUploadMultiple?: (files: Array<{ uri: string; name: string; type: string }>) => Promise<Array<{ fileIdentifier: string; fileUrl: string }>>;
+    onUploadMultiple?: (
+        files: Array<{ uri: string; name: string; type: string }>,
+    ) => Promise<Array<{ fileIdentifier: string; fileUrl: string }>>;
     /** 多图上传状态变化 */
     onItemsChange?: (items: ImageUploaderItem[]) => void;
     /** 容器自定义样式 */
@@ -62,7 +68,7 @@ export interface ImageUploaderItem {
     uri: string;
     name: string;
     type: string;
-    status: 'ready' | 'uploading' | 'error';
+    status: "ready" | "uploading" | "error";
     fileIdentifier: string | null;
     fileUrl: string | null;
     errorMessage: string | null;
@@ -83,7 +89,7 @@ export function ImageUploader({
     size = 120,
     borderRadius = 8,
     circular = false,
-    placeholderColor = '#94a3b8',
+    placeholderColor = "#94a3b8",
     maxWidth = 2048,
     maxHeight = 2048,
     maxFileSize = 2 * 1024 * 1024, // 2MB
@@ -111,7 +117,7 @@ export function ImageUploader({
         };
     }, []);
 
-    const valuesKey = useMemo(() => (values ?? []).join('|'), [values]);
+    const valuesKey = useMemo(() => (values ?? []).join("|"), [values]);
 
     useEffect(() => {
         if (!multiple || !values) return;
@@ -127,8 +133,8 @@ export function ImageUploader({
                 key: `value-${idx}-${uri}`,
                 uri,
                 name: `image_${idx + 1}.jpg`,
-                type: 'image/jpeg',
-                status: 'ready',
+                type: "image/jpeg",
+                status: "ready",
                 fileIdentifier: null,
                 fileUrl: uri,
                 errorMessage: null,
@@ -145,8 +151,8 @@ export function ImageUploader({
     // 请求相机权限
     const requestCameraPermission = async () => {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== 'granted') {
-            toast.error('需要相机权限才能拍照');
+        if (status !== "granted") {
+            toast.error("需要相机权限才能拍照");
             return false;
         }
         return true;
@@ -154,49 +160,57 @@ export function ImageUploader({
 
     // 请求相册权限
     const requestMediaLibraryPermission = async () => {
-        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (status !== 'granted') {
-            toast.error('需要访问相册权限才能选择照片');
+        const { status } =
+            await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+            toast.error("需要访问相册权限才能选择照片");
             return false;
         }
         return true;
     };
 
     // 压缩图片
-    const compressImage = useCallback(async (uri: string): Promise<string> => {
-        try {
-            // 获取文件信息
-            const fileInfo = await FileSystem.getInfoAsync(uri);
-            if (!fileInfo.exists) {
-                throw new Error('文件不存在');
-            }
+    const compressImage = useCallback(
+        async (uri: string): Promise<string> => {
+            try {
+                // 获取文件信息
+                const fileInfo = await FileSystem.getInfoAsync(uri);
+                if (!fileInfo.exists) {
+                    throw new Error("文件不存在");
+                }
 
-            const fileSize = 'size' in fileInfo ? fileInfo.size : 0;
+                const fileSize = "size" in fileInfo ? fileInfo.size : 0;
 
-            // 如果文件大小在限制内,直接返回
-            if (fileSize <= maxFileSize) {
+                // 如果文件大小在限制内,直接返回
+                if (fileSize <= maxFileSize) {
+                    return uri;
+                }
+
+                // 使用新的 useImageManipulator API 进行压缩
+                const context = useImageManipulator(uri);
+                context.resize({ width: maxWidth, height: maxHeight });
+                const image = await context.renderAsync();
+                const result = await image.saveAsync({
+                    compress: compressQuality,
+                    format: SaveFormat.JPEG,
+                });
+
+                return result.uri;
+            } catch (error) {
                 return uri;
             }
-
-            // 使用新的 useImageManipulator API 进行压缩
-            const context = useImageManipulator(uri);
-            context.resize({ width: maxWidth, height: maxHeight });
-            const image = await context.renderAsync();
-            const result = await image.saveAsync({
-                compress: compressQuality,
-                format: SaveFormat.JPEG,
-            });
-
-            return result.uri;
-        } catch (error) {
-            return uri;
-        }
-    }, [maxFileSize, maxWidth, maxHeight, compressQuality]);
+        },
+        [maxFileSize, maxWidth, maxHeight, compressQuality],
+    );
 
     // 处理图片选择
     const handleImagePicked = useCallback(
         async (result: ImagePicker.ImagePickerResult) => {
-            if (result.canceled || !result.assets || result.assets.length === 0) {
+            if (
+                result.canceled ||
+                !result.assets ||
+                result.assets.length === 0
+            ) {
                 return;
             }
 
@@ -220,14 +234,17 @@ export function ImageUploader({
                         const file = {
                             uri: compressedUri,
                             name: fileName || `image_${Date.now()}.jpg`,
-                            type: mimeType || 'image/jpeg',
+                            type: mimeType || "image/jpeg",
                         };
 
                         const response = await onUpload(file);
-                        onUploadSuccess?.(response.fileIdentifier, response.fileUrl);
+                        onUploadSuccess?.(
+                            response.fileIdentifier,
+                            response.fileUrl,
+                        );
                     }
                 } catch (error) {
-                    console.error('图片上传失败:', error);
+                    console.error("图片上传失败:", error);
                     onUploadError?.(error as Error);
                     // 上传失败时也保留本地预览
                 } finally {
@@ -250,8 +267,8 @@ export function ImageUploader({
                             key: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
                             uri: compressedUri,
                             name: asset.fileName || `image_${Date.now()}.jpg`,
-                            type: asset.mimeType || 'image/jpeg',
-                            status: 'uploading' as const,
+                            type: asset.mimeType || "image/jpeg",
+                            status: "uploading" as const,
                             fileIdentifier: null,
                             fileUrl: null,
                             errorMessage: null,
@@ -265,7 +282,7 @@ export function ImageUploader({
                     setItems((prev) =>
                         prev.map((item) =>
                             prepared.find((target) => target.key === item.key)
-                                ? { ...item, status: 'ready' }
+                                ? { ...item, status: "ready" }
                                 : item,
                         ),
                     );
@@ -279,30 +296,40 @@ export function ImageUploader({
                     type: item.type,
                 }));
 
-                let responses: Array<{ fileIdentifier: string; fileUrl: string }> = [];
+                let responses: Array<{
+                    fileIdentifier: string;
+                    fileUrl: string;
+                }> = [];
                 if (onUploadMultiple) {
                     responses = await onUploadMultiple(files);
                 } else if (onUpload) {
-                    responses = await Promise.all(files.map((file) => onUpload(file)));
+                    responses = await Promise.all(
+                        files.map((file) => onUpload(file)),
+                    );
                 }
 
                 if (!isMountedRef.current) return;
 
                 responses.forEach((response) => {
                     if (response) {
-                        onUploadSuccess?.(response.fileIdentifier, response.fileUrl);
+                        onUploadSuccess?.(
+                            response.fileIdentifier,
+                            response.fileUrl,
+                        );
                     }
                 });
 
                 setItems((prev) =>
                     prev.map((item) => {
-                        const idx = prepared.findIndex((target) => target.key === item.key);
+                        const idx = prepared.findIndex(
+                            (target) => target.key === item.key,
+                        );
                         if (idx < 0) return item;
                         const response = responses[idx];
                         if (response) {
                             return {
                                 ...item,
-                                status: 'ready',
+                                status: "ready",
                                 fileIdentifier: response.fileIdentifier,
                                 fileUrl: response.fileUrl,
                                 errorMessage: null,
@@ -310,10 +337,10 @@ export function ImageUploader({
                         }
                         return {
                             ...item,
-                            status: 'error',
+                            status: "error",
                             fileIdentifier: null,
                             fileUrl: null,
-                            errorMessage: '图片上传失败',
+                            errorMessage: "图片上传失败",
                         };
                     }),
                 );
@@ -325,10 +352,12 @@ export function ImageUploader({
                         prepared.find((target) => target.key === item.key)
                             ? {
                                   ...item,
-                                  status: 'error',
+                                  status: "error",
                                   fileIdentifier: null,
                                   fileUrl: null,
-                                  errorMessage: (error as Error).message || '图片上传失败',
+                                  errorMessage:
+                                      (error as Error).message ||
+                                      "图片上传失败",
                               }
                             : item,
                     ),
@@ -355,7 +384,7 @@ export function ImageUploader({
         if (!hasPermission) return;
 
         const result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ['images'],
+            mediaTypes: ["images"],
             aspect,
             quality: 1,
         });
@@ -375,7 +404,7 @@ export function ImageUploader({
         }
 
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'],
+            mediaTypes: ["images"],
             allowsMultipleSelection: multiple,
             selectionLimit: multiple ? remaining : 1,
             aspect,
@@ -392,11 +421,13 @@ export function ImageUploader({
     };
 
     const containerSize = { width: size, height: size };
-    const radiusStyle = circular ? { borderRadius: size / 2 } : { borderRadius };
+    const radiusStyle = circular
+        ? { borderRadius: size / 2 }
+        : { borderRadius };
 
     if (multiple) {
         return (
-            <View className={cn('flex-row flex-wrap gap-3', className)}>
+            <View className={cn("flex-row flex-wrap gap-3", className)}>
                 {items.map((item) => (
                     <View
                         key={item.key}
@@ -411,40 +442,51 @@ export function ImageUploader({
                         <Pressable
                             disabled={disabled}
                             onPress={() => {
-                                setItems((prev) => prev.filter((target) => target.key !== item.key));
+                                setItems((prev) =>
+                                    prev.filter(
+                                        (target) => target.key !== item.key,
+                                    ),
+                                );
                             }}
                             className="absolute right-1 top-1 h-5 w-5 items-center justify-center rounded-full"
-                            style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+                            style={{ backgroundColor: "rgba(0,0,0,0.6)" }}
                         >
                             <X size={12} color="#fff" />
                         </Pressable>
 
-                        {item.status === 'uploading' ? (
+                        {item.status === "uploading" ? (
                             <View
                                 className="absolute inset-0 items-center justify-center"
-                                style={{ backgroundColor: 'rgba(0,0,0,0.35)' }}
+                                style={{ backgroundColor: "rgba(0,0,0,0.35)" }}
                             >
                                 <ActivityIndicator size="small" color="#fff" />
-                                <Text className="mt-1 text-xs text-background">上传中</Text>
+                                <Text className="mt-1 text-xs text-background">
+                                    上传中
+                                </Text>
                             </View>
                         ) : null}
 
-                        {item.status === 'error' ? (
+                        {item.status === "error" ? (
                             <View
                                 className="absolute inset-0 items-center justify-center"
-                                style={{ backgroundColor: 'rgba(239,68,68,0.55)' }}
+                                style={{
+                                    backgroundColor: "rgba(239,68,68,0.55)",
+                                }}
                             >
-                                <Text className="text-xs text-background">上传失败</Text>
+                                <Text className="text-xs text-background">
+                                    上传失败
+                                </Text>
                                 <Pressable
                                     disabled={disabled}
                                     onPress={async () => {
-                                        if (!onUpload && !onUploadMultiple) return;
+                                        if (!onUpload && !onUploadMultiple)
+                                            return;
                                         setItems((prev) =>
                                             prev.map((target) =>
                                                 target.key === item.key
                                                     ? {
                                                           ...target,
-                                                          status: 'uploading',
+                                                          status: "uploading",
                                                           errorMessage: null,
                                                           fileIdentifier: null,
                                                           fileUrl: null,
@@ -459,25 +501,39 @@ export function ImageUploader({
                                                 name: item.name,
                                                 type: item.type,
                                             };
-                                            let response: { fileIdentifier: string; fileUrl: string } | null = null;
+                                            let response: {
+                                                fileIdentifier: string;
+                                                fileUrl: string;
+                                            } | null = null;
                                             if (onUploadMultiple) {
-                                                const results = await onUploadMultiple([file]);
+                                                const results =
+                                                    await onUploadMultiple([
+                                                        file,
+                                                    ]);
                                                 response = results[0] ?? null;
                                             } else if (onUpload) {
                                                 response = await onUpload(file);
                                             }
                                             if (!isMountedRef.current) return;
                                             if (response) {
-                                                onUploadSuccess?.(response.fileIdentifier, response.fileUrl);
+                                                onUploadSuccess?.(
+                                                    response.fileIdentifier,
+                                                    response.fileUrl,
+                                                );
                                                 setItems((prev) =>
                                                     prev.map((target) =>
                                                         target.key === item.key
                                                             ? {
                                                                   ...target,
-                                                                  status: 'ready',
-                                                                  fileIdentifier: response!.fileIdentifier,
-                                                                  fileUrl: response!.fileUrl,
-                                                                  errorMessage: null,
+                                                                  status: "ready",
+                                                                  fileIdentifier:
+                                                                      response!
+                                                                          .fileIdentifier,
+                                                                  fileUrl:
+                                                                      response!
+                                                                          .fileUrl,
+                                                                  errorMessage:
+                                                                      null,
                                                               }
                                                             : target,
                                                     ),
@@ -488,10 +544,12 @@ export function ImageUploader({
                                                         target.key === item.key
                                                             ? {
                                                                   ...target,
-                                                                  status: 'error',
-                                                                  fileIdentifier: null,
+                                                                  status: "error",
+                                                                  fileIdentifier:
+                                                                      null,
                                                                   fileUrl: null,
-                                                                  errorMessage: '图片上传失败',
+                                                                  errorMessage:
+                                                                      "图片上传失败",
                                                               }
                                                             : target,
                                                     ),
@@ -505,10 +563,15 @@ export function ImageUploader({
                                                     target.key === item.key
                                                         ? {
                                                               ...target,
-                                                              status: 'error',
-                                                              fileIdentifier: null,
+                                                              status: "error",
+                                                              fileIdentifier:
+                                                                  null,
                                                               fileUrl: null,
-                                                              errorMessage: (error as Error).message || '图片上传失败',
+                                                              errorMessage:
+                                                                  (
+                                                                      error as Error
+                                                                  ).message ||
+                                                                  "图片上传失败",
                                                           }
                                                         : target,
                                                 ),
@@ -516,9 +579,13 @@ export function ImageUploader({
                                         }
                                     }}
                                     className="mt-2 rounded-full px-3 py-1"
-                                    style={{ backgroundColor: 'rgba(0,0,0,0.35)' }}
+                                    style={{
+                                        backgroundColor: "rgba(0,0,0,0.35)",
+                                    }}
                                 >
-                                    <Text className="text-xs text-background">重试</Text>
+                                    <Text className="text-xs text-background">
+                                        重试
+                                    </Text>
                                 </Pressable>
                             </View>
                         ) : null}
@@ -530,13 +597,15 @@ export function ImageUploader({
                         disabled={disabled}
                         onPress={showImageSourceOptions}
                         className={cn(
-                            'border-border bg-muted overflow-hidden border-2 border-dashed items-center justify-center',
-                            disabled && 'opacity-50',
+                            "border-border bg-muted overflow-hidden border-2 border-dashed items-center justify-center",
+                            disabled && "opacity-50",
                         )}
                         style={[containerSize, radiusStyle]}
                     >
                         <ImageIcon size={size / 3} color={placeholderColor} />
-                        <Text className="text-muted-foreground mt-2 text-xs">添加图片</Text>
+                        <Text className="text-muted-foreground mt-2 text-xs">
+                            添加图片
+                        </Text>
                     </Pressable>
                 ) : null}
             </View>
@@ -544,13 +613,13 @@ export function ImageUploader({
     }
 
     return (
-        <View className={cn('relative', className)}>
+        <View className={cn("relative", className)}>
             <Pressable
                 disabled={disabled || loading}
                 onPress={showImageSourceOptions}
                 className={cn(
-                    'border-border bg-muted overflow-hidden border-2 border-dashed',
-                    disabled && 'opacity-50',
+                    "border-border bg-muted overflow-hidden border-2 border-dashed",
+                    disabled && "opacity-50",
                 )}
                 style={[containerSize, radiusStyle]}
             >
@@ -563,14 +632,18 @@ export function ImageUploader({
                 ) : (
                     <View className="flex-1 items-center justify-center">
                         <ImageIcon size={size / 3} color={placeholderColor} />
-                        <Text className="text-muted-foreground mt-2 text-xs">点击上传</Text>
+                        <Text className="text-muted-foreground mt-2 text-xs">
+                            点击上传
+                        </Text>
                     </View>
                 )}
 
                 {loading && (
                     <View className="bg-background/80 absolute inset-0 items-center justify-center">
                         <ActivityIndicator size="large" />
-                        <Text className="text-muted-foreground mt-2 text-xs">上传中...</Text>
+                        <Text className="text-muted-foreground mt-2 text-xs">
+                            上传中...
+                        </Text>
                     </View>
                 )}
             </Pressable>

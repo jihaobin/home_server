@@ -7,7 +7,6 @@ import {
     useMicrophonePermissions,
 } from "expo-camera";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
-import { toast } from "sonner-native";
 import {
     Camera,
     type LucideIcon,
@@ -19,6 +18,7 @@ import {
     Zap,
     ZapOff,
 } from "lucide-react-native";
+import { toast } from "../../lib/toast";
 
 import { Icon } from "../ui/icon";
 import { Text } from "../ui/text";
