@@ -6,8 +6,7 @@ export const PendingAcceptanceReminderRedisKeys = {
 export type PendingAcceptanceReminderStage =
     | 'warning_60'
     | 'warning_30'
-    | 'warning_15'
-    | 'auto_cancel';
+    | 'warning_15';
 
 export type PendingAcceptanceWarningLevel = 'mild' | 'serious' | 'critical';
 
@@ -24,7 +23,7 @@ export const PENDING_ACCEPTANCE_REMINDER_SEQUENCE: readonly PendingAcceptanceRem
             stage: 'warning_60',
             offsetMs: 60 * 60 * 1000,
             warningLevel: 'mild',
-            escalateLabel: '还有 1 小时将自动取消，请尽快处理',
+            escalateLabel: '还有 1 小时，请尽快确认是否接单',
         },
         {
             stage: 'warning_30',
@@ -36,13 +35,8 @@ export const PENDING_ACCEPTANCE_REMINDER_SEQUENCE: readonly PendingAcceptanceRem
             stage: 'warning_15',
             offsetMs: 15 * 60 * 1000,
             warningLevel: 'critical',
-            escalateLabel: '最后 15 分钟，若仍未响应将自动取消',
-        },
-        {
-            stage: 'auto_cancel',
-            offsetMs: 0,
-            warningLevel: 'critical',
-            escalateLabel: '已达到最晚处理时间，系统将自动取消订单',
+            escalateLabel:
+                '最后 15 分钟，若在规定时间内无法处理订单，请与用户协商后修改订单的日期',
         },
     ] as const;
 

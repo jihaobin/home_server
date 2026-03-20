@@ -1,7 +1,6 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { Redis } from 'ioredis';
 import {
-    BadRequestException,
     Inject,
     Injectable,
     Logger,
@@ -194,96 +193,6 @@ export class PendingAcceptanceReminderWorker
         }
     }
 
-    private async handleAutoCancel(entry: ReminderQueueEntry) {
-        const orderId = entry.payload.orderId;
-        const lockKey = `${PendingAcceptanceReminderRedisKeys.lockPrefix}${orderId}`;
-        const lockId = await this.cacheService.acquireLock(lockKey, 10, 1, 200);
-        if (!lockId) {
-            this.logger.warn(`订单 ${orderId} 自动取消锁获取失败，稍后重试`);
-            await this.requeue(entry, 5000);
-            return;
-        }
-        try {
-            const latest = await this.orderRepository.getOrderById(orderId);
-            if (
-                !latest ||
-                !latest.assignment ||
-                latest.assignment.id !== entry.payload.assignmentId ||
-                latest.assignment.decisionStatus !== 'pending' ||
-                latest.status !== 'pending_acceptance'
-            ) {
-                this.logger.debug?.(
-                    `自动取消跳过，订单状态已变化 order=${latest?.id ?? entry.payload.orderId} status=${latest?.status} decision=${latest?.assignment?.decisionStatus}`,
-                );
-                return;
-            }
-            const reason = '[system] 待接单超时，系统自动取消';
-            try {
-                await this.orderRepository.cancelOrder(latest.id, reason, null);
-            } catch (error) {
-                if (error instanceof BadRequestException) {
-                    this.logger.debug?.(
-                        `订单 ${latest.id} 状态已更新，跳过自动取消`,
-                    );
-                    return;
-                }
-                throw error;
-            }
-            const cancelledOrder =
-                (await this.orderRepository.getOrderById(latest.id)) ?? latest;
-            await this.notifyAutoCancellation(cancelledOrder, reason);
-            this.logger.log(`订单 ${orderId} 待接单超时，系统自动取消`);
-        } catch (error) {
-            this.logger.error(
-                `订单 ${orderId} 自动取消任务处理失败`,
-                error instanceof Error ? error.message : String(error),
-            );
-            await this.requeue(entry, 10000);
-        } finally {
-            await this.cacheService
-                .releaseLock(lockKey, lockId)
-                .catch(() => undefined);
-        }
-    }
-
-    private async notifyAutoCancellation(
-        order: DetailedOrder | null,
-        reason: string,
-    ) {
-        if (!order?.assignment?.servicePersonnel?.userId) {
-            return;
-        }
-        const serviceUserId = order.assignment.servicePersonnel.userId;
-        try {
-            const message = this.notificationTemplateService.getTemplate(
-                'order_cancelled',
-                { reason },
-            );
-            await this.notificationPublisher.publish({
-                event: 'order_cancelled',
-                payload: {
-                    event: 'order_cancelled',
-                    orderId: order.id,
-                    status: 'cancelled',
-                    cancelReason: reason,
-                    message,
-                },
-                targets: [
-                    {
-                        targetId: `${order.id}:service_personnel:${serviceUserId}`,
-                        userId: serviceUserId,
-                        targetType: 'service_personnel',
-                    },
-                ],
-            });
-        } catch (error) {
-            this.logger.warn(
-                `订单 ${order.id} 自动取消通知失败`,
-                error instanceof Error ? error.message : String(error),
-            );
-        }
-    }
-
     private async handleEntry(entry: ReminderQueueEntry) {
         const now = Date.now();
         if (entry.score > now) {
@@ -312,10 +221,6 @@ export class PendingAcceptanceReminderWorker
             this.logger.debug?.(
                 `待接单提醒任务 assignment 不匹配，order=${order.id} current=${order.assignment.id} expected=${entry.payload.assignmentId}`,
             );
-            return;
-        }
-        if (entry.payload.stage === 'auto_cancel') {
-            await this.handleAutoCancel(entry);
             return;
         }
         await this.handleWarningStage(order, entry.payload);

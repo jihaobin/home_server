@@ -56,8 +56,8 @@
 
 - `order_pending_acceptance_assigned`：支付成功并已分配给指定服务人员时触发，提醒尽快接单。
 - `order_cancelled`：订单被客户或平台取消时触发，附带取消原因。
-- `order_pending_acceptance_warning`（占位）：`pending_acceptance` 状态下 45/15 分钟的提醒与强制取消提示，将在后续迭代补充。
-- `order_service_eta_warning`（占位）：服务人员已接单但尚未上门时的 30/15 分钟提醒，占位逻辑已预留。
+- `order_pending_acceptance_warning`：`pending_acceptance` 状态下 45/15 分钟的提醒与强制取消提示，将在后续迭代补充。
+- `order_service_eta_warning`：服务人员已接单但尚未上门时的 30/15 分钟提醒，占位逻辑已预留。
 
 ## 4. 实施步骤
 
