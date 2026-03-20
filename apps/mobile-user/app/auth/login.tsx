@@ -3,20 +3,25 @@ import { router, useFocusEffect, useNavigation } from "expo-router";
 import { useCallback, useState } from "react";
 import {
     BackHandler,
+    GestureResponderEvent,
     KeyboardAvoidingView,
     Platform,
+    Pressable,
     ScrollView,
     TextInput,
-    TouchableOpacity,
     View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "@repo/mobile-ui/components/ui/button";
+import { Checkbox } from "@repo/mobile-ui/components/ui/checkbox";
 import { Text } from "@repo/mobile-ui/components/ui/text";
-import { toast } from "sonner-native";
+import { toast } from "@repo/mobile-ui/lib/toast";
 import { authClient } from "@repo/lib/auth-client";
 import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
 import { Image } from "expo-image";
+import type { LegalDocKey } from "@/lib/legal-documents";
+import { LegalWebModal } from "@/components/legal-web-modal";
+import { LEGAL_DOCUMENT_CONFIG } from "@/lib/legal-documents";
 
 const phoneRegex = /^1[3-9]\d{9}$/;
 
@@ -25,6 +30,9 @@ export default function LoginScreen() {
     const [phone, setPhone] = useState("");
     const [agreeToTerms, setAgreeToTerms] = useState(false);
     const [isSendingOtp, setIsSendingOtp] = useState(false);
+    const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocKey | null>(
+        null,
+    );
 
     useFocusEffect(
         useCallback(() => {
@@ -59,6 +67,22 @@ export default function LoginScreen() {
     const normalizedPhone = phone.trim();
     const canSendOtp =
         phoneRegex.test(normalizedPhone) && agreeToTerms && !isSendingOtp;
+
+    const toggleAgreeToTerms = useCallback(() => {
+        setAgreeToTerms((prev) => !prev);
+    }, []);
+
+    const handleOpenLegalDoc = useCallback((doc: LegalDocKey) => {
+        setActiveLegalDoc(doc);
+    }, []);
+
+    const handleOpenLegalDocFromPressable = useCallback(
+        (doc: LegalDocKey) => (event: GestureResponderEvent) => {
+            event.stopPropagation();
+            handleOpenLegalDoc(doc);
+        },
+        [handleOpenLegalDoc],
+    );
 
     const handleSendOtp = async () => {
         if (!phoneRegex.test(normalizedPhone)) {
@@ -126,7 +150,9 @@ export default function LoginScreen() {
                                 autoComplete="tel"
                                 value={phone}
                                 onChangeText={(value) =>
-                                    setPhone(value.replace(/\D/g, "").slice(0, 11))
+                                    setPhone(
+                                        value.replace(/\D/g, "").slice(0, 11),
+                                    )
                                 }
                             />
                         </View>
@@ -135,26 +161,50 @@ export default function LoginScreen() {
                             未注册手机号验证后将自动创建账户
                         </Text>
 
-                        <TouchableOpacity
-                            className="mt-6 flex-row items-center"
-                            onPress={() => setAgreeToTerms((prev) => !prev)}
-                        >
-                            <View className="h-4 w-4 rounded-full border border-border items-center justify-center">
-                                {agreeToTerms ? (
-                                    <View className="h-2.5 w-2.5 rounded-full bg-primary" />
-                                ) : null}
-                            </View>
-                            <Text className="ml-2 text-xs text-muted-foreground">
-                                我已阅读并同意
-                                <Text className="text-primary">
-                                    《用户协议》
+                        <View className="mt-6 flex-row items-start">
+                            <Checkbox
+                                checked={agreeToTerms}
+                                onCheckedChange={(checked) =>
+                                    setAgreeToTerms(Boolean(checked))
+                                }
+                                className="mt-0.5 size-5 rounded-md border-2 border-primary bg-card"
+                                checkedClassName="border-primary bg-primary"
+                                indicatorClassName="bg-primary"
+                                iconClassName="text-primary-foreground"
+                            />
+                            <Pressable
+                                className="ml-3 flex-1 flex-row flex-wrap items-center"
+                                onPress={toggleAgreeToTerms}
+                                hitSlop={8}
+                            >
+                                <Text className="text-xs leading-5 text-muted-foreground">
+                                    我已阅读并同意
                                 </Text>
-                                和
-                                <Text className="text-primary">
-                                    《隐私政策》
+                                <Pressable
+                                    onPress={handleOpenLegalDocFromPressable(
+                                        "terms",
+                                    )}
+                                    hitSlop={6}
+                                >
+                                    <Text className="text-xs leading-5 text-primary">
+                                        《用户协议》
+                                    </Text>
+                                </Pressable>
+                                <Text className="text-xs leading-5 text-muted-foreground">
+                                    和
                                 </Text>
-                            </Text>
-                        </TouchableOpacity>
+                                <Pressable
+                                    onPress={handleOpenLegalDocFromPressable(
+                                        "privacy",
+                                    )}
+                                    hitSlop={6}
+                                >
+                                    <Text className="text-xs leading-5 text-primary">
+                                        《隐私政策》
+                                    </Text>
+                                </Pressable>
+                            </Pressable>
+                        </View>
 
                         <Button
                             className="mt-6"
@@ -168,6 +218,21 @@ export default function LoginScreen() {
                     </View>
                 </ScrollView>
             </SafeAreaView>
+
+            <LegalWebModal
+                visible={activeLegalDoc !== null}
+                title={
+                    activeLegalDoc
+                        ? LEGAL_DOCUMENT_CONFIG[activeLegalDoc].title
+                        : ""
+                }
+                url={
+                    activeLegalDoc
+                        ? LEGAL_DOCUMENT_CONFIG[activeLegalDoc].url
+                        : ""
+                }
+                onClose={() => setActiveLegalDoc(null)}
+            />
         </KeyboardAvoidingView>
     );
 }

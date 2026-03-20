@@ -29,6 +29,9 @@ import { useFile, useUploadFile } from "@repo/hooks/api/files";
 import { authClient } from "@repo/lib/auth-client";
 import type { OrderCardsTab } from "@repo/types";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
+import type { LegalDocKey } from "@/lib/legal-documents";
+import { LegalWebModal } from "@/components/legal-web-modal";
+import { LEGAL_DOCUMENT_CONFIG } from "@/lib/legal-documents";
 
 type OrderQuickAction = {
     id: "unpaid" | "pending" | "verifying" | "review";
@@ -37,7 +40,13 @@ type OrderQuickAction = {
 };
 
 type MenuItem = {
-    id: "complaint" | "address" | "customer-service" | "check-update";
+    id:
+        | "complaint"
+        | "address"
+        | "customer-service"
+        | "terms"
+        | "privacy"
+        | "check-update";
     label: string;
     icon: keyof typeof lucideIconRegistry;
     badge?: string;
@@ -96,6 +105,9 @@ export default function Profile() {
     const { colorScheme, setColorScheme } = useColorScheme();
     const isDark = colorScheme === "dark";
     const { checkForUpdate, status: updateStatus } = useAppUpdate();
+    const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocKey | null>(
+        null,
+    );
 
     const user = session?.user;
 
@@ -155,6 +167,8 @@ export default function Profile() {
             },
             { id: "address", label: "服务地址", icon: "MapPin" },
             { id: "customer-service", label: "官方客服", icon: "Headphones" },
+            { id: "terms", label: "用户协议", icon: "FileText" },
+            { id: "privacy", label: "隐私政策", icon: "Shield" },
             {
                 id: "check-update",
                 label: "检查更新",
@@ -177,6 +191,10 @@ export default function Profile() {
         },
         [router],
     );
+
+    const handleOpenLegalDoc = useCallback((doc: LegalDocKey) => {
+        setActiveLegalDoc(doc);
+    }, []);
 
     const handlePickAvatar = useCallback(async () => {
         const { status } =
@@ -401,7 +419,7 @@ export default function Profile() {
 
                     {/* Menu + logout card (Figma: y=351, h=280, w=343) */}
                     <View
-                        className="relative mx-4 mt-3 h-[280px] rounded-lg bg-card"
+                        className="relative mx-4 mt-3 rounded-lg bg-card pb-[72px]"
                         style={{
                             shadowColor: "#000",
                             shadowOffset: { width: 0, height: 1 },
@@ -434,6 +452,14 @@ export default function Profile() {
                                                 manual: true,
                                                 force: true,
                                             });
+                                            return;
+                                        }
+                                        if (item.id === "terms") {
+                                            handleOpenLegalDoc("terms");
+                                            return;
+                                        }
+                                        if (item.id === "privacy") {
+                                            handleOpenLegalDoc("privacy");
                                         }
                                     }}
                                 >
@@ -474,6 +500,21 @@ export default function Profile() {
                         </Pressable>
                     </View>
                 </ScrollView>
+
+                <LegalWebModal
+                    visible={activeLegalDoc !== null}
+                    title={
+                        activeLegalDoc
+                            ? LEGAL_DOCUMENT_CONFIG[activeLegalDoc].title
+                            : ""
+                    }
+                    url={
+                        activeLegalDoc
+                            ? LEGAL_DOCUMENT_CONFIG[activeLegalDoc].url
+                            : ""
+                    }
+                    onClose={() => setActiveLegalDoc(null)}
+                />
             </View>
         </RequireAuth>
     );
