@@ -112,7 +112,13 @@ export class HomeController {
     @ApiQueries(HomeQueryWithCategorySchema)
     @ApiSuccessResponse(HomeRecommendationsResponseSchema)
     @ApiErrorResponses()
-    async getHomeRecommendations(@Query() query: HomeQueryWithCategoryId) {
-        return await this.homeService.getHomeRecommendations(query);
+    async getHomeRecommendations(
+        @Query() query: HomeQueryWithCategoryId,
+        @Req() req: Request,
+    ) {
+        return await this.homeService.getHomeRecommendations(
+            req.user?.id,
+            query,
+        );
     }
 }

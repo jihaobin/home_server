@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
 import {
@@ -319,6 +319,7 @@ export class HomeRepository {
         limit: number;
         offset?: number;
         categoryId?: string;
+        excludePersonnelUserId?: string;
     }): Promise<HomeRecommendedPersonnel[]> {
         const now = new Date();
         const centerGeom = params.center;
@@ -346,6 +347,15 @@ export class HomeRepository {
             userPoint,
             params.maxDistanceKm,
         );
+
+        const personnelBaseConditions = [
+            eq(servicePersonnel.isAvailable, true),
+        ];
+        if (params.excludePersonnelUserId) {
+            personnelBaseConditions.push(
+                ne(servicePersonnel.userId, params.excludePersonnelUserId),
+            );
+        }
 
         const optimalPricingConditions = [
             eq(servicePersonnelPricing.isActive, true),
@@ -454,7 +464,7 @@ export class HomeRepository {
                     )
                     .where(
                         and(
-                            eq(servicePersonnel.isAvailable, true),
+                            ...personnelBaseConditions,
                             distancePreFilter,
                             exactFilter,
                         ),
@@ -532,6 +542,7 @@ export class HomeRepository {
         limit: number;
         offset?: number;
         categoryId?: string;
+        excludePersonnelUserId?: string;
     }): Promise<HomeRecommendedPersonnel[]> {
         const now = new Date();
 
@@ -553,6 +564,15 @@ export class HomeRepository {
             sql`(${servicePersonnelPricing.effectiveFrom} IS NULL OR ${servicePersonnelPricing.effectiveFrom} <= ${now})`,
             sql`(${servicePersonnelPricing.effectiveTo} IS NULL OR ${servicePersonnelPricing.effectiveTo} >= ${now})`,
         ];
+
+        const personnelBaseConditions = [
+            eq(servicePersonnel.isAvailable, true),
+        ];
+        if (params.excludePersonnelUserId) {
+            personnelBaseConditions.push(
+                ne(servicePersonnel.userId, params.excludePersonnelUserId),
+            );
+        }
 
         const optimalPricingCTE = this.db.$with('optimal_pricing').as(
             this.db
@@ -651,7 +671,7 @@ export class HomeRepository {
                             eq(reviewStats.serviceId, '__all__'),
                         ),
                     )
-                    .where(and(eq(servicePersonnel.isAvailable, true))),
+                    .where(and(...personnelBaseConditions)),
             );
 
         const rows = await this.db

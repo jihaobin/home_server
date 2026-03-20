@@ -29,7 +29,7 @@ export class HomeService {
         // 不依赖登录态；若传入坐标则按距离优先排序，否则返回全量推荐。
         const [base, recommendations] = await Promise.all([
             this.getHomeBase(),
-            this.getHomeRecommendations(query),
+            this.getHomeRecommendations(userId, query),
         ]);
 
         return {
@@ -119,6 +119,7 @@ export class HomeService {
     }
 
     async getHomeRecommendations(
+        userId: string | undefined,
         query: HomeQueryWithCategoryId,
     ): Promise<HomeRecommendationsResponse> {
         const {
@@ -141,11 +142,13 @@ export class HomeService {
                       limit,
                       offset,
                       categoryId,
+                      excludePersonnelUserId: userId,
                   })
                 : await this.homeRepository.getRecommendedPersonnelGlobal({
                       limit,
                       offset,
                       categoryId,
+                      excludePersonnelUserId: userId,
                   });
 
         return {
