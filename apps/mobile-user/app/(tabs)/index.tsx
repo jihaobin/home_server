@@ -59,41 +59,41 @@ const GUARANTEES: readonly GuaranteeItem[] = [
     {
         id: "late-comp",
         label: "迟到必赔",
-        icon: require("@/assets/images/迟到必赔.png"),
+        icon: require("@/assets/images/guarantee-late-compensation.png"),
     },
     {
         id: "redo",
         label: "不满意重做",
-        icon: require("@/assets/images/不满意重做.png"),
+        icon: require("@/assets/images/guarantee-redo.png"),
     },
     {
         id: "24h",
         label: "7×24小时服务",
-        icon: require("@/assets/images/7_24小时服务.png"),
+        icon: require("@/assets/images/guarantee-24h-service.png"),
     },
     {
         id: "all-guarantee",
         label: "全场保障",
-        icon: require("@/assets/images/全场保障.png"),
+        icon: require("@/assets/images/guarantee-full-coverage.png"),
     },
 ] as const;
 
 // 后端返回的分类 icon 还未落到移动端资源映射前，先用当前像素稿的本地 icon 兜底。
 // 这里用 label 作为 key（当前 demo 资源是中文名）。
 const CATEGORY_ICON_BY_LABEL: Record<string, number> = {
-    家庭保洁: require("@/assets/images/家庭保洁.png"),
-    家电清洗: require("@/assets/images/家电清洗.png"),
-    康养护理: require("@/assets/images/康养护理.png"),
-    上门美业: require("@/assets/images/上门美业.png"),
-    整理收纳: require("@/assets/images/整理收纳.png"),
-    深度保洁: require("@/assets/images/深度保洁.png"),
-    衣物洗护: require("@/assets/images/衣物洗护.png"),
-    推拿按摩: require("@/assets/images/推拿按摩.png"),
-    家具养护: require("@/assets/images/家具养护.png"),
-    保姆月嫂: require("@/assets/images/保姆月嫂.png"),
+    家庭保洁: require("@/assets/images/category-home-cleaning.png"),
+    家电清洗: require("@/assets/images/category-appliance-cleaning.png"),
+    康养护理: require("@/assets/images/category-health-care.png"),
+    上门美业: require("@/assets/images/category-home-beauty.png"),
+    整理收纳: require("@/assets/images/category-organization.png"),
+    深度保洁: require("@/assets/images/category-deep-cleaning.png"),
+    衣物洗护: require("@/assets/images/category-laundry-care.png"),
+    推拿按摩: require("@/assets/images/category-massage.png"),
+    家具养护: require("@/assets/images/category-furniture-care.png"),
+    保姆月嫂: require("@/assets/images/category-nanny-maternity.png"),
 };
 
-const CATEGORY_FALLBACK_ICON = require("@/assets/images/分类-未选中.png");
+const CATEGORY_FALLBACK_ICON = require("@/assets/images/category-fallback.png");
 
 const WEEKDAY_BY_DIGIT: Record<string, string> = {
     "1": "周一",
@@ -322,7 +322,7 @@ function RemoteProviderCard({
                 {showDistance ? (
                     <View className="mt-2 flex-row items-center gap-1">
                         <Image
-                            source={require("@/assets/images/定位-小.png")}
+                            source={require("@/assets/images/icon-location-small.png")}
                             contentFit="contain"
                             className="h-3 w-3"
                         />
@@ -343,7 +343,7 @@ function RemoteProviderCard({
                 ) : (
                     <View className="mt-2 flex-row items-center gap-1">
                         <Image
-                            source={require("@/assets/images/定位-小.png")}
+                            source={require("@/assets/images/icon-location-small.png")}
                             contentFit="contain"
                             className="h-3 w-3"
                         />
@@ -358,7 +358,7 @@ function RemoteProviderCard({
 
                 <View className="mt-1.5 flex-row items-start">
                     <Image
-                        source={require("@/assets/images/时间.png")}
+                        source={require("@/assets/images/icon-time.png")}
                         contentFit="contain"
                         className="mt-0.5 h-3 w-3"
                     />
@@ -868,7 +868,7 @@ export default function HomeScreen() {
                             <View className="bg-primary pb-2">
                                 <View className="h-11 flex-row items-center">
                                     <Image
-                                        source={require("@/assets/images/定位.png")}
+                                        source={require("@/assets/images/icon-location.png")}
                                         contentFit="contain"
                                         className="ml-4 h-4 w-4"
                                     />
@@ -886,7 +886,7 @@ export default function HomeScreen() {
                                             {headerAddressLabel}
                                         </Text>
                                         <Image
-                                            source={require("@/assets/images/箭头.png")}
+                                            source={require("@/assets/images/icon-arrow.png")}
                                             contentFit="contain"
                                             className="h-5 w-5"
                                         />

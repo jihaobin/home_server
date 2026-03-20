@@ -176,7 +176,7 @@ function WorkerCard({ item }: { item: WorkerCardItem }) {
 
                     <View className="mt-2 flex-row items-center">
                         <Image
-                            source={require("@/assets/images/定位-小.png")}
+                            source={require("@/assets/images/icon-location-small.png")}
                             contentFit="contain"
                             className="h-3 w-3"
                         />
@@ -197,7 +197,7 @@ function WorkerCard({ item }: { item: WorkerCardItem }) {
 
                     <View className="mt-1.5 flex-row items-start">
                         <Image
-                            source={require("@/assets/images/时间.png")}
+                            source={require("@/assets/images/icon-time.png")}
                             contentFit="contain"
                             className="mt-0.5 h-3 w-3"
                         />
