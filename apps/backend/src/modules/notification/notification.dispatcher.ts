@@ -20,6 +20,7 @@ import {
 } from 'src/common/database/schema/notifications';
 import { NotificationPresenceService } from './notification-presence.service';
 import { NotificationMetricsService } from './notification-metrics.service';
+import { NotificationVoiceCallService } from './notification-voice-call.service';
 
 interface TargetDispatchResult {
     targetId: string;
@@ -58,6 +59,7 @@ export class NotificationDispatcher {
         private readonly preferenceService: NotificationPreferenceService,
         private readonly presenceService: NotificationPresenceService,
         private readonly metrics: NotificationMetricsService,
+        private readonly notificationVoiceCallService: NotificationVoiceCallService,
     ) {
         for (const channel of channels) {
             this.registry.set(channel.type, channel);
@@ -108,6 +110,19 @@ export class NotificationDispatcher {
             });
             if (targetResults.some((result) => result.status === 'success')) {
                 hasSuccess = true;
+            }
+
+            try {
+                await this.notificationVoiceCallService.triggerNewOrderVoice({
+                    notificationId: notification.id,
+                    payload: basePayload,
+                    target,
+                });
+            } catch (error) {
+                this.logger.warn(
+                    `通知 ${notification.id} 新订单语音触发失败`,
+                    error instanceof Error ? error.message : String(error),
+                );
             }
         }
 

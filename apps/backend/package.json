@@ -23,9 +23,12 @@
         "db:generate:migrate": "pnpm drizzle-kit generate && dotenvx run -f .env.development -- pnpm drizzle-kit migrate"
     },
     "dependencies": {
+        "@alicloud/credentials": "^2.4.4",
         "@alicloud/dysmsapi20170525": "^4.2.0",
+        "@alicloud/dyvmsapi20170525": "^3.1.0",
         "@alicloud/openapi-client": "^0.4.15",
         "@alicloud/sts20150401": "^1.1.6",
+        "@alicloud/tea-util": "^1.4.8",
         "@anatine/zod-nestjs": "^2.0.12",
         "@aws-sdk/client-s3": "^3.922.0",
         "@aws-sdk/s3-request-presigner": "^3.922.0",
@@ -55,8 +58,8 @@
         "multer": "^2.0.2",
         "nestjs-zod": "5.0.0-beta.20250731T202215",
         "nodemailer": "^7.0.5",
-        "prom-client": "^15.1.2",
         "pg": "^8.16.3",
+        "prom-client": "^15.1.2",
         "qrcode": "^1.5.3",
         "reflect-metadata": "^0.2.2",
         "rxjs": "^7.8.1",
@@ -110,6 +113,9 @@
         "testRegex": ".*\\.spec\\.ts$",
         "transform": {
             "^.+\\.(t|j)s$": "ts-jest"
+        },
+        "moduleNameMapper": {
+            "^src/(.*)$": "<rootDir>/$1"
         },
         "collectCoverageFrom": [
             "**/*.(t|j)s"

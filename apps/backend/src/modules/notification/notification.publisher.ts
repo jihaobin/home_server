@@ -79,7 +79,8 @@ export class NotificationPublisher {
                 payload.targetId ??
                 payload.orderId ??
                 command.event;
-            const targetType = this.inferTargetType(target, payload);
+            const targetType =
+                target.targetType ?? this.inferTargetType(target, payload);
             const normalized: NormalizedNotificationTarget = {
                 ...target,
                 targetId,

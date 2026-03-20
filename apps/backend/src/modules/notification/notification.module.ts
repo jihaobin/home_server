@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { SmsModule } from 'src/common/sms/sms.module';
+import { VoiceCallModule } from 'src/common/voice';
 import { NotificationWsGateway } from './notification-ws.gateway';
 import { NotificationPublisher } from './notification.publisher';
 import { NotificationRelayService } from './workers/notification-relay.service';
@@ -27,13 +28,16 @@ import { NotificationRetryService } from './notification-retry.service';
 import { NotificationTemplateService } from './notification-template.service';
 import { SmsCallbackController } from './sms-callback.controller';
 import { SmsCallbackService } from './sms-callback.service';
+import { NotificationVoiceCallService } from './notification-voice-call.service';
+import { VoiceCallController } from './voice-call.controller';
 
 @Module({
-    imports: [ConfigModule, SmsModule],
+    imports: [ConfigModule, SmsModule, VoiceCallModule],
     controllers: [
         NotificationController,
         TencentPushCallbackController,
         SmsCallbackController,
+        // VoiceCallController,
     ],
     providers: [
         NotificationPublisher,
@@ -54,6 +58,7 @@ import { SmsCallbackService } from './sms-callback.service';
         TencentCloudPushChannel,
         SmsChannel,
         NotificationRetryService,
+        NotificationVoiceCallService,
         NotificationRepository,
         NotificationTemplateService,
         SmsCallbackService,
