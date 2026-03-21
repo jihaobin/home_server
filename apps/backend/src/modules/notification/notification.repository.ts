@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, inArray, isNull, isNotNull, lt, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, isNotNull, lt, or, sql } from 'drizzle-orm';
 
 import type {
     NotificationChannel as NotificationChannelType,
@@ -17,6 +17,7 @@ import {
     notificationDeliveries,
     notificationOutbox,
     notificationTargets,
+    notificationVoiceDeliveries,
     notifications,
 } from 'src/common/database/schema';
 import type { NotificationDeliveries } from '@repo/types';
@@ -29,7 +30,13 @@ export type NormalizedNotificationTarget = NotificationTargetDescriptor & {
 export type NotificationTargetRecord = typeof notificationTargets.$inferSelect;
 export type NotificationRecord = typeof notifications.$inferSelect;
 type NotificationDeliveryRecord = typeof notificationDeliveries.$inferSelect;
+type NotificationVoiceDeliveryRecord =
+    typeof notificationVoiceDeliveries.$inferSelect;
 export type DeliveryWithRelations = NotificationDeliveryRecord & {
+    notification: NotificationRecord | null;
+    target: NotificationTargetRecord | null;
+};
+export type VoiceDeliveryWithRelations = NotificationVoiceDeliveryRecord & {
     notification: NotificationRecord | null;
     target: NotificationTargetRecord | null;
 };
@@ -172,6 +179,95 @@ export class NotificationRepository {
     async getDeliveryWithDetails(deliveryId: string) {
         return this.db.query.notificationDeliveries.findFirst({
             where: eq(notificationDeliveries.deliveryId, deliveryId),
+            with: {
+                notification: true,
+                target: true,
+            },
+        });
+    }
+
+    async createVoiceDeliveryLog(params: {
+        notificationId: string;
+        targetRecordId: string;
+        outId: string;
+        callId?: string | null;
+        status?: NotificationDeliveryStatus;
+        lastError?: string | null;
+        providerStatusCode?: string | null;
+        providerStatusMessage?: string | null;
+        deliveredAt?: Date | null;
+        context?: Record<string, unknown>;
+    }) {
+        await this.db
+            .insert(notificationVoiceDeliveries)
+            .values({
+                id: createId(),
+                notificationId: params.notificationId,
+                targetId: params.targetRecordId,
+                outId: params.outId,
+                callId: params.callId ?? null,
+                status: params.status ?? 'pending',
+                lastError: params.lastError ?? null,
+                providerStatusCode: params.providerStatusCode ?? null,
+                providerStatusMessage: params.providerStatusMessage ?? null,
+                deliveredAt: params.deliveredAt ?? null,
+                context: params.context ?? {},
+            })
+            .onConflictDoNothing({
+                target: notificationVoiceDeliveries.outId,
+            });
+    }
+
+    async updateVoiceDeliveryLog(
+        id: string,
+        updates: Partial<{
+            callId: string | null;
+            status: NotificationDeliveryStatus;
+            lastError: string | null;
+            providerStatusCode: string | null;
+            providerStatusMessage: string | null;
+            deliveredAt: Date | null;
+            context: Record<string, unknown>;
+        }>,
+    ) {
+        await this.db
+            .update(notificationVoiceDeliveries)
+            .set({
+                ...updates,
+                updatedAt: new Date(),
+            })
+            .where(eq(notificationVoiceDeliveries.id, id));
+    }
+
+    async getVoiceDeliveryWithDetails(params: {
+        outId?: string | null;
+        callId?: string | null;
+    }) {
+        if (!params.outId && !params.callId) {
+            return null;
+        }
+
+        const conditions = [
+            params.outId
+                ? eq(notificationVoiceDeliveries.outId, params.outId)
+                : undefined,
+            params.callId
+                ? eq(notificationVoiceDeliveries.callId, params.callId)
+                : undefined,
+        ].filter(Boolean);
+
+        const whereClause =
+            conditions.length === 1
+                ? conditions[0]
+                : or(
+                      ...(conditions as [
+                          (typeof conditions)[number],
+                          (typeof conditions)[number],
+                      ]),
+                  );
+
+        return this.db.query.notificationVoiceDeliveries.findFirst({
+            where: whereClause,
             with: {
                 notification: true,
                 target: true,

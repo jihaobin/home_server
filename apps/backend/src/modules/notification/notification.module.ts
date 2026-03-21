@@ -29,7 +29,8 @@ import { NotificationTemplateService } from './notification-template.service';
 import { SmsCallbackController } from './sms-callback.controller';
 import { SmsCallbackService } from './sms-callback.service';
 import { NotificationVoiceCallService } from './notification-voice-call.service';
-import { VoiceCallController } from './voice-call.controller';
+import { AliyunVoiceCallbackController } from './aliyun-voice-callback.controller';
+import { AliyunVoiceCallbackService } from './aliyun-voice-callback.service';
 
 @Module({
     imports: [ConfigModule, SmsModule, VoiceCallModule],
@@ -37,6 +38,7 @@ import { VoiceCallController } from './voice-call.controller';
         NotificationController,
         TencentPushCallbackController,
         SmsCallbackController,
+        AliyunVoiceCallbackController,
         // VoiceCallController,
     ],
     providers: [
@@ -62,6 +64,7 @@ import { VoiceCallController } from './voice-call.controller';
         NotificationRepository,
         NotificationTemplateService,
         SmsCallbackService,
+        AliyunVoiceCallbackService,
         {
             provide: NOTIFICATION_CHANNELS,
             useFactory: (

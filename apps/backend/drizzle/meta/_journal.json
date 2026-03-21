@@ -442,6 +442,13 @@
       "when": 1772782935035,
       "tag": "0062_swift_king_bedlam",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1773979200000,
+      "tag": "0063_glossy_hobgoblin",
+      "breakpoints": true
     }
   ]
 }

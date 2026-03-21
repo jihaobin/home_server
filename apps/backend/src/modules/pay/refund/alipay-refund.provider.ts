@@ -210,7 +210,7 @@ export class AlipayRefundProvider implements RefundProvider {
             'code' in payload &&
             typeof payload.code === 'string'
         ) {
-            return payload as AlipayTradeRefundResponse;
+            return payload;
         }
 
         return null;

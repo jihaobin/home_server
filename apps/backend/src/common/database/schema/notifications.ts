@@ -172,6 +172,59 @@ export const notificationDeliveries = pgTable(
     ],
 );
 
+export const notificationVoiceDeliveries = pgTable(
+    'notification_voice_deliveries',
+    {
+        id: varchar('id', { length: 255 })
+            .primaryKey()
+            .$default(() => createId())
+            .unique(),
+        notificationId: varchar('notification_id', { length: 255 })
+            .notNull()
+            .references(() => notifications.id, { onDelete: 'cascade' }),
+        targetId: varchar('target_id', { length: 255 })
+            .notNull()
+            .references(() => notificationTargets.id, { onDelete: 'cascade' }),
+        outId: varchar('out_id', { length: 255 }).notNull(),
+        callId: varchar('call_id', { length: 255 }),
+        status: notificationDeliveryStatusEnum('status')
+            .notNull()
+            .default('pending'),
+        lastError: text('last_error'),
+        providerStatusCode: varchar('provider_status_code', { length: 64 }),
+        providerStatusMessage: text('provider_status_message'),
+        deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+        context: jsonb('context')
+            .$type<NotificationMetadata>()
+            .notNull()
+            .default(sql`'{}'::jsonb`),
+        createdAt: timestamp('created_at', { withTimezone: true })
+            .notNull()
+            .defaultNow(),
+        updatedAt: timestamp('updated_at', { withTimezone: true })
+            .$onUpdateFn(() => new Date())
+            .defaultNow()
+            .notNull(),
+    },
+    (table) => [
+        uniqueIndex('notification_voice_deliveries_out_id_unique').on(
+            table.outId,
+        ),
+        uniqueIndex('notification_voice_deliveries_call_id_unique').on(
+            table.callId,
+        ),
+        index('idx_notification_voice_deliveries_notification').on(
+            table.notificationId,
+            table.targetId,
+            table.createdAt.desc(),
+        ),
+        index('idx_notification_voice_deliveries_status').on(
+            table.status,
+            table.createdAt.desc(),
+        ),
+    ],
+);
+
 export const notificationOutbox = pgTable(
     'notification_outbox',
     {
@@ -240,6 +293,7 @@ export const notificationsRelations = relations(
     ({ many, one }) => ({
         targets: many(notificationTargets),
         deliveries: many(notificationDeliveries),
+        voiceDeliveries: many(notificationVoiceDeliveries),
         outboxEntry: one(notificationOutbox, {
             fields: [notifications.id],
             references: [notificationOutbox.notificationId],
@@ -259,6 +313,7 @@ export const notificationTargetsRelations = relations(
             references: [users.id],
         }),
         deliveries: many(notificationDeliveries),
+        voiceDeliveries: many(notificationVoiceDeliveries),
     }),
 );
 
@@ -271,6 +326,20 @@ export const notificationDeliveriesRelations = relations(
         }),
         target: one(notificationTargets, {
             fields: [notificationDeliveries.targetId],
+            references: [notificationTargets.id],
+        }),
+    }),
+);
+
+export const notificationVoiceDeliveriesRelations = relations(
+    notificationVoiceDeliveries,
+    ({ one }) => ({
+        notification: one(notifications, {
+            fields: [notificationVoiceDeliveries.notificationId],
+            references: [notifications.id],
+        }),
+        target: one(notificationTargets, {
+            fields: [notificationVoiceDeliveries.targetId],
             references: [notificationTargets.id],
         }),
     }),

@@ -8,7 +8,10 @@ import type { DbType } from 'src/common/database/db';
 import { users } from 'src/common/database/schema/auth-user';
 import { VoiceCallService } from 'src/common/voice';
 
-import type { NotificationTargetRecord } from './notification.repository';
+import {
+    NotificationRepository,
+    type NotificationTargetRecord,
+} from './notification.repository';
 
 const NEW_ORDER_VOICE_EVENT = 'order_pending_acceptance_assigned';
 const VOICE_DEDUPLICATION_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -20,6 +23,7 @@ export class NotificationVoiceCallService {
 
     constructor(
         private readonly voiceCallService: VoiceCallService,
+        private readonly notificationRepository: NotificationRepository,
         @Inject(DB)
         private readonly db: DbType,
         @Inject(CACHE_SERVICE)
@@ -92,18 +96,101 @@ export class NotificationVoiceCallService {
                 VOICE_INFLIGHT_TTL_SECONDS,
             );
 
+            const outId = this.buildOutId(payload, target);
+            const baseContext = {
+                event: payload.event ?? null,
+                orderId: payload.orderId ?? null,
+                templateCode: this.getVoiceTemplateCode(),
+                calledShowNumber: this.getCalledShowNumber(),
+                calledNumber: phoneNumber,
+                requestedAt: new Date().toISOString(),
+            };
+            await this.notificationRepository.createVoiceDeliveryLog({
+                notificationId: payload.notificationId!,
+                targetRecordId: target.id,
+                outId,
+                status: 'pending',
+                context: {
+                    request: baseContext,
+                },
+            });
+
             const result = await this.voiceCallService.singleCallByTts({
                 calledNumber: phoneNumber,
                 ttsCode: this.getVoiceTemplateCode(),
                 calledShowNumber: this.getCalledShowNumber(),
-                outId: this.buildOutId(payload, target),
+                outId,
             });
 
             if (!result.success) {
+                const failedDelivery =
+                    await this.notificationRepository.getVoiceDeliveryWithDetails(
+                        {
+                            outId,
+                        },
+                    );
+                if (failedDelivery) {
+                    await this.notificationRepository.updateVoiceDeliveryLog(
+                        failedDelivery.id,
+                        {
+                            status: 'failed',
+                            lastError:
+                                result.error ??
+                                result.message ??
+                                '语音通话发起失败',
+                            providerStatusCode: result.code ?? null,
+                            providerStatusMessage:
+                                result.message ?? result.error ?? null,
+                            context: {
+                                ...this.cloneContext(failedDelivery.context),
+                                request: baseContext,
+                                response: {
+                                    success: false,
+                                    code: result.code ?? null,
+                                    message: result.message ?? null,
+                                    error: result.error ?? null,
+                                    recommend: result.recommend ?? null,
+                                    requestId: result.requestId ?? null,
+                                    callId: result.callId ?? null,
+                                    outId,
+                                },
+                            },
+                        },
+                    );
+                }
                 this.logger.warn(
                     `新订单语音提醒失败 notification=${payload.notificationId} target=${target.targetId} error=${result.error ?? result.message ?? 'unknown'}`,
                 );
                 return;
+            }
+
+            const sentDelivery =
+                await this.notificationRepository.getVoiceDeliveryWithDetails({
+                    outId,
+                });
+            if (sentDelivery) {
+                await this.notificationRepository.updateVoiceDeliveryLog(
+                    sentDelivery.id,
+                    {
+                        callId: result.callId ?? null,
+                        status: 'sent',
+                        providerStatusCode: result.code ?? null,
+                        providerStatusMessage: result.message ?? null,
+                        lastError: null,
+                        context: {
+                            ...this.cloneContext(sentDelivery.context),
+                            request: baseContext,
+                            response: {
+                                success: true,
+                                code: result.code ?? null,
+                                message: result.message ?? null,
+                                requestId: result.requestId ?? null,
+                                callId: result.callId ?? null,
+                                outId,
+                            },
+                        },
+                    },
+                );
             }
 
             await this.cacheService.set(
@@ -213,5 +300,14 @@ export class NotificationVoiceCallService {
         }
         const value = (record as Record<string, unknown>)[key];
         return typeof value === 'string' ? value : undefined;
+    }
+
+    private cloneContext(
+        context: Record<string, unknown> | null | undefined,
+    ): Record<string, unknown> {
+        if (!context || typeof context !== 'object' || Array.isArray(context)) {
+            return {};
+        }
+        return { ...context };
     }
 }
