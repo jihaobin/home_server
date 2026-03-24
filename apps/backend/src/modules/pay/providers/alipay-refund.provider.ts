@@ -4,7 +4,7 @@ import type {
     RefundProvider,
     RefundRequest,
     RefundResult,
-} from './refund.interface';
+} from './refund-provider.interface';
 
 type RefundFundDetail = {
     fund_channel: string;
@@ -218,10 +218,10 @@ export class AlipayRefundProvider implements RefundProvider {
 
     private getStringField(
         payload: AlipayTradeRefundResponse,
-        keys: string[],
-    ): string | undefined {
-        for (const key of keys) {
-            const value = payload[key];
+        fields: string[],
+    ) {
+        for (const field of fields) {
+            const value = payload[field];
             if (typeof value === 'string' && value.length > 0) {
                 return value;
             }
@@ -230,13 +230,10 @@ export class AlipayRefundProvider implements RefundProvider {
         return undefined;
     }
 
-    private getField(
-        payload: AlipayTradeRefundResponse,
-        keys: string[],
-    ): unknown {
-        for (const key of keys) {
-            if (key in payload) {
-                return payload[key];
+    private getField(payload: AlipayTradeRefundResponse, fields: string[]) {
+        for (const field of fields) {
+            if (field in payload) {
+                return payload[field];
             }
         }
 

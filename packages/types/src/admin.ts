@@ -704,12 +704,16 @@ export const AdminWithdrawalSchema = z
         requestedAt: IsoDateTimeStringSchema.describe('申请时间'),
         reviewedAt: IsoDateTimeStringSchema.nullable().describe('审核时间'),
         processedAt: IsoDateTimeStringSchema.nullable().describe(
-            '打款完成时间',
+            '进入终态时间（完成、失败、取消、驳回）',
         ),
         payoutReferenceId: z
             .string()
             .nullable()
             .describe('第三方打款流水号'),
+        providerState: z.string().nullable().describe('渠道原始状态'),
+        providerAppId: z.string().nullable().describe('渠道 appId'),
+        providerBillNo: z.string().nullable().describe('渠道侧单号'),
+        providerPackageInfo: z.string().nullable().describe('渠道补充信息'),
         failureReason: z.string().nullable().describe('失败原因'),
         user: AdminWithdrawalUserSchema.nullable().describe('申请人'),
         reviewer: AdminWithdrawalReviewerSchema.nullable().describe(
@@ -783,7 +787,7 @@ export const AdminReviewWithdrawalBodySchema = z
     .object({
         action: z
             .enum(['approve', 'reject'])
-            .describe('审核动作：approve=通过并打款，reject=驳回'),
+            .describe('审核动作：approve=审核通过并触发打款，reject=驳回'),
         note: z
             .string()
             .max(1000, '备注不能超过 1000 字')

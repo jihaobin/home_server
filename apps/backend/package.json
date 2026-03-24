@@ -18,9 +18,9 @@
         "test:cov": "jest --coverage",
         "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
         "test:e2e": "jest --config ./test/jest-e2e.json",
-        "db:generate": "pnpm drizzle-kit generate",
-        "db:migration": "dotenvx run -f .env.development -- pnpm drizzle-kit migrate",
-        "db:generate:migrate": "pnpm drizzle-kit generate && dotenvx run -f .env.development -- pnpm drizzle-kit migrate"
+        "db:generate": "node ../../node_modules/drizzle-kit/bin.cjs generate",
+        "db:migration": "dotenvx run -f .env.development -- node ../../node_modules/drizzle-kit/bin.cjs migrate",
+        "db:generate:migrate": "node ../../node_modules/drizzle-kit/bin.cjs generate && dotenvx run -f .env.development -- node ../../node_modules/drizzle-kit/bin.cjs migrate"
     },
     "dependencies": {
         "@alicloud/credentials": "^2.4.4",

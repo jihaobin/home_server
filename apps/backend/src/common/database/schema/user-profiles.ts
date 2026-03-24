@@ -28,6 +28,12 @@ export const userProfiles = pgTable(
             .unique(), // 关联到 users 表的主键
         alipayUserId: varchar('alipay_user_id', { length: 64 }), // 支付宝 userId
         alipayOpenId: varchar('alipay_open_id', { length: 64 }), // 支付宝 openId
+        wechatWorkerOpenId: varchar('wechat_worker_open_id', { length: 128 }), // 服务人员端微信提现 openid
+        wechatWorkerUnionId: varchar('wechat_worker_union_id', { length: 128 }), // 服务人员端微信提现 unionid
+        wechatWorkerAppId: varchar('wechat_worker_app_id', { length: 128 }), // 服务人员端微信提现 appid
+        wechatWorkerBoundAt: timestamp('wechat_worker_bound_at', {
+            withTimezone: true,
+        }), // 服务人员端微信提现绑定时间
         realName: varchar('real_name', { length: 50 }), // 真实姓名
         idCardNumber: varchar('id_card_number', { length: 18 }).unique(), // 身份证号码，唯一约束
         faceRecognitionData: text('face_recognition_data'), // 面部识别数据（加密存储或存储特征值）

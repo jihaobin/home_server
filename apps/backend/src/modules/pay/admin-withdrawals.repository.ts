@@ -34,6 +34,10 @@ export interface AdminWithdrawalRecord {
     reviewedAt: Date | null;
     processedAt: Date | null;
     payoutReferenceId: string | null;
+    providerState: string | null;
+    providerAppId: string | null;
+    providerBillNo: string | null;
+    providerPackageInfo: string | null;
     failureReason: string | null;
     userId: string | null;
     userName: string | null;
@@ -71,6 +75,10 @@ export class AdminWithdrawalsRepository {
                 reviewedAt: withdrawals.reviewedAt,
                 processedAt: withdrawals.processedAt,
                 payoutReferenceId: withdrawals.payoutReferenceId,
+                providerState: withdrawals.providerState,
+                providerAppId: withdrawals.providerAppId,
+                providerBillNo: withdrawals.providerBillNo,
+                providerPackageInfo: withdrawals.providerPackageInfo,
                 failureReason: withdrawals.failureReason,
                 userId: users.id,
                 userName: users.name,
@@ -121,6 +129,10 @@ export class AdminWithdrawalsRepository {
                 reviewedAt: withdrawals.reviewedAt,
                 processedAt: withdrawals.processedAt,
                 payoutReferenceId: withdrawals.payoutReferenceId,
+                providerState: withdrawals.providerState,
+                providerAppId: withdrawals.providerAppId,
+                providerBillNo: withdrawals.providerBillNo,
+                providerPackageInfo: withdrawals.providerPackageInfo,
                 failureReason: withdrawals.failureReason,
                 userId: users.id,
                 userName: users.name,

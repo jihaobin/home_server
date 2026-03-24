@@ -10,7 +10,7 @@ import {
     type RefundProvider,
     type RefundRequest,
     type RefundResult,
-} from './refund.interface';
+} from './refund-provider.interface';
 
 @Injectable()
 export class RefundDispatcher {

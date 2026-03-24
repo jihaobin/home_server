@@ -9,9 +9,15 @@ import { AdminRevenueLogsRepository } from './admin-revenue-logs.repository';
 import { AdminWithdrawalsController } from './admin-withdrawals.controller';
 import { AdminWithdrawalsService } from './admin-withdrawals.service';
 import { AdminWithdrawalsRepository } from './admin-withdrawals.repository';
-import { AlipayRefundProvider } from './refund/alipay-refund.provider';
-import { REFUND_PROVIDERS } from './refund/refund.interface';
-import { RefundDispatcher } from './refund/refund.dispatcher';
+import { AlipayPaymentProvider } from './providers/alipay-payment.provider';
+import { AlipayPayoutProvider } from './providers/alipay-payout.provider';
+import { AlipayRefundProvider } from './providers/alipay-refund.provider';
+import { PaymentDispatcher } from './providers/payment.dispatcher';
+import { PAYMENT_PROVIDERS } from './providers/payment-provider.interface';
+import { PayoutDispatcher } from './providers/payout.dispatcher';
+import { PAYOUT_PROVIDERS } from './providers/payout-provider.interface';
+import { RefundDispatcher } from './providers/refund.dispatcher';
+import { REFUND_PROVIDERS } from './providers/refund-provider.interface';
 
 @Module({
     controllers: [
@@ -26,8 +32,26 @@ import { RefundDispatcher } from './refund/refund.dispatcher';
         AdminRevenueLogsRepository,
         AdminWithdrawalsService,
         AdminWithdrawalsRepository,
+        AlipayPaymentProvider,
+        AlipayPayoutProvider,
         AlipayRefundProvider,
+        PaymentDispatcher,
+        PayoutDispatcher,
         RefundDispatcher,
+        {
+            provide: PAYMENT_PROVIDERS,
+            useFactory: (alipayPaymentProvider: AlipayPaymentProvider) => [
+                alipayPaymentProvider,
+            ],
+            inject: [AlipayPaymentProvider],
+        },
+        {
+            provide: PAYOUT_PROVIDERS,
+            useFactory: (alipayPayoutProvider: AlipayPayoutProvider) => [
+                alipayPayoutProvider,
+            ],
+            inject: [AlipayPayoutProvider],
+        },
         {
             provide: REFUND_PROVIDERS,
             useFactory: (alipayRefundProvider: AlipayRefundProvider) => [

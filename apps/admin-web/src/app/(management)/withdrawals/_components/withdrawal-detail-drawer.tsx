@@ -98,7 +98,7 @@ export function WithdrawalDetailDrawer({
             })
             toast.success(
                 pendingAction === "approve"
-                    ? "提现已通过并打款"
+                    ? getApproveSuccessMessage(updated.status)
                     : "提现已驳回，冻结余额已解冻",
             )
             setPendingAction(null)
@@ -186,7 +186,7 @@ export function WithdrawalDetailDrawer({
                                                 disabled={!canReview || reviewMutation.isPending}
                                                 onClick={() => setPendingAction("approve")}
                                             >
-                                                通过并打款
+                                                通过并发起打款
                                             </Button>
                                             <Button
                                                 variant="destructive"
@@ -213,7 +213,7 @@ export function WithdrawalDetailDrawer({
                                             value={formatDateTime(withdrawal.requestedAt)}
                                         />
                                         <EntityDrawerProperty
-                                            label="完成时间"
+                                            label="终态时间"
                                             value={
                                                 withdrawal.processedAt
                                                     ? formatDateTime(withdrawal.processedAt)
@@ -227,6 +227,22 @@ export function WithdrawalDetailDrawer({
                                         <EntityDrawerProperty
                                             label="打款流水号"
                                             value={withdrawal.payoutReferenceId ?? "—"}
+                                        />
+                                        <EntityDrawerProperty
+                                            label="渠道状态"
+                                            value={withdrawal.providerState ?? "—"}
+                                        />
+                                        <EntityDrawerProperty
+                                            label="渠道单号"
+                                            value={withdrawal.providerBillNo ?? "—"}
+                                        />
+                                        <EntityDrawerProperty
+                                            label="渠道 AppID"
+                                            value={withdrawal.providerAppId ?? "—"}
+                                        />
+                                        <EntityDrawerProperty
+                                            label="渠道补充信息"
+                                            value={withdrawal.providerPackageInfo ?? "—"}
                                         />
                                         <EntityDrawerProperty
                                             label="失败原因"
@@ -300,7 +316,7 @@ export function WithdrawalDetailDrawer({
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                             {pendingAction === "approve"
-                                ? "系统将立即调用支付宝转账并记录资金流水，请确保账户余额与收款信息无误。"
+                                ? "系统将触发渠道打款并回写渠道状态；审核通过不代表已经到账，请确保账户余额与收款信息无误。"
                                 : "驳回后会将冻结金额退回服务人员余额并记录备注。"}
                         </AlertDialogDescription>
                     </AlertDialogHeader>
@@ -334,15 +350,21 @@ function EmptyState() {
 
 const STATUS_LABELS: Record<AdminWithdrawal["status"], string> = {
     pending: "待审核",
-    approved: "已通过",
+    approved: "待渠道处理",
+    processing: "处理中",
     completed: "已完成",
+    failed: "打款失败",
+    cancelled: "已取消",
     rejected: "已驳回",
 }
 
 const STATUS_BADGE_CLASS: Record<AdminWithdrawal["status"], string> = {
     pending: "bg-amber-100 text-amber-800",
     approved: "bg-sky-100 text-sky-700",
+    processing: "bg-indigo-100 text-indigo-700",
     completed: "bg-emerald-100 text-emerald-700",
+    failed: "bg-rose-100 text-rose-700",
+    cancelled: "bg-slate-200 text-slate-700",
     rejected: "bg-rose-100 text-rose-700",
 }
 
@@ -357,6 +379,23 @@ const ACCOUNT_TYPE_LABELS: Record<AdminWithdrawal["payeeAccountType"], string> =
     ALIPAY_USER_ID: "支付宝 UID",
     ALIPAY_LOGON_ID: "支付宝登录号",
     ALIPAY_OPEN_ID: "支付宝 OpenID",
+    WECHAT_OPENID: "微信 OpenID",
+}
+
+function getApproveSuccessMessage(status: AdminWithdrawal["status"]) {
+    switch (status) {
+        case "completed":
+            return "提现已完成"
+        case "approved":
+        case "processing":
+            return "提现已审核通过，渠道处理中"
+        case "failed":
+            return "提现已审核通过，但渠道返回失败"
+        case "cancelled":
+            return "提现已审核通过，但渠道已取消"
+        default:
+            return `提现状态已更新为${STATUS_LABELS[status]}`
+    }
 }
 
 function formatAmount(withdrawal: AdminWithdrawal) {

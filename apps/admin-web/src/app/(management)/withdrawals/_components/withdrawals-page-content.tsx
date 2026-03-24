@@ -96,6 +96,9 @@ export function WithdrawalsPageContent({
     const pendingOnPage = currentItems.filter(
         (item) => item.status === "pending",
     ).length
+    const inFlightOnPage = currentItems.filter(
+        (item) => item.status === "approved" || item.status === "processing",
+    ).length
 
     const handleDataChange = useCallback((data: WithdrawalsListResponse) => {
         setTableSnapshot(data)
@@ -201,7 +204,7 @@ export function WithdrawalsPageContent({
             "提现金额",
             "币种",
             "申请时间",
-            "完成时间",
+            "终态时间",
             "提现方式",
             "收款账号类型",
             "收款账号",
@@ -210,6 +213,10 @@ export function WithdrawalsPageContent({
             "审核人",
             "审核备注",
             "打款流水号",
+            "渠道状态",
+            "渠道单号",
+            "渠道AppID",
+            "失败原因",
         ]
 
         const rows = currentItems.map((item) => [
@@ -227,6 +234,10 @@ export function WithdrawalsPageContent({
             item.reviewer?.name ?? item.reviewer?.id ?? "",
             item.reviewNote ?? "",
             item.payoutReferenceId ?? "",
+            item.providerState ?? "",
+            item.providerBillNo ?? "",
+            item.providerAppId ?? "",
+            item.failureReason ?? "",
         ])
 
         const csvContent = `\uFEFF${[header, ...rows]
@@ -247,7 +258,7 @@ export function WithdrawalsPageContent({
         <div className="space-y-6">
             <PageHeader
                 title="提现记录"
-                description="审核服务人员提现申请，支持备注记录与审批历史查询。"
+                description="审核服务人员提现申请，并跟踪渠道打款状态与终态结果。"
                 breadcrumbItems={[
                     { label: "运营管理", href: "/withdrawals" },
                     { label: "提现记录" },
@@ -284,6 +295,7 @@ export function WithdrawalsPageContent({
                 <PageHeaderToolbar className="gap-3">
                     <span>当前筛选命中 {totalItems} 条申请</span>
                     <span>本页待审核 {pendingOnPage} 条</span>
+                    <span>本页处理中 {inFlightOnPage} 条</span>
                 </PageHeaderToolbar>
             </PageHeader>
 
@@ -430,9 +442,15 @@ function formatStatus(status: WithdrawalStatus) {
         case "pending":
             return "待审核"
         case "approved":
-            return "已通过"
+            return "待渠道处理"
+        case "processing":
+            return "处理中"
         case "completed":
             return "已完成"
+        case "failed":
+            return "打款失败"
+        case "cancelled":
+            return "已取消"
         case "rejected":
             return "已驳回"
         default:
@@ -461,6 +479,8 @@ function formatAccountType(value: AdminWithdrawal["payeeAccountType"]) {
             return "支付宝登录号"
         case "ALIPAY_OPEN_ID":
             return "支付宝 OpenID"
+        case "WECHAT_OPENID":
+            return "微信 OpenID"
         default:
             return value
     }

@@ -5,12 +5,12 @@ const nextConfig: NextConfig = {
   basePath: "/admin",
   typescript: { ignoreBuildErrors: true },
   reactCompiler: true,
-  allowedDevOrigins: ['local-origin.dev', '*.local-origin.dev',"192.168.0.106"],
+  allowedDevOrigins: ['local-origin.dev', '*.local-origin.dev',"192.168.0.107"],
   images: {
     remotePatterns: [
         {
             protocol: 'http',
-            hostname: '192.168.0.106',
+            hostname: '192.168.0.107',
             port: '9000',
             pathname: '/**',
         }

@@ -52,7 +52,8 @@ export class AdminWithdrawalsController {
     @Patch(':withdrawalId')
     @ApiOperation({
         summary: '审核提现申请',
-        description: '支持通过(自动打款)或驳回提现申请，并记录审核备注。',
+        description:
+            '支持审核通过后触发渠道打款，或驳回提现申请；审核通过不代表渠道已完成打款。',
     })
     @ApiSuccessResponse(AdminWithdrawalSchema, {
         description: '更新后的提现记录',

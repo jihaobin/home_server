@@ -14,16 +14,9 @@ import {
     ScrollView,
     StyleSheet,
     Text,
-    TextInput,
     TouchableOpacity,
     View,
 } from "react-native";
-
-interface AccountInfo {
-    type: "alipay" | "wechat";
-    account: string;
-    name: string;
-}
 
 const maskAccount = (value?: string | null) => {
     if (!value) return "";
@@ -33,10 +26,6 @@ const maskAccount = (value?: string | null) => {
 
 export default function AccountBindingScreen() {
     const router = useRouter();
-    const [boundAccounts, setBoundAccounts] = useState<AccountInfo[]>([]);
-    const [wechatAccount, setWechatAccount] = useState("");
-    const [wechatName, setWechatName] = useState("");
-    const [showWechatForm, setShowWechatForm] = useState(false);
     const [authError, setAuthError] = useState<string | null>(null);
     const [isBindingAlipay, setIsBindingAlipay] = useState(false);
 
@@ -116,26 +105,6 @@ export default function AccountBindingScreen() {
         }
     };
 
-    const handleBindWechat = () => {
-        if (!wechatAccount.trim() || !wechatName.trim()) {
-            Alert.alert("提示", "请填写完整的微信信息");
-            return;
-        }
-
-        Alert.alert("绑定成功", "微信账号已绑定");
-        setBoundAccounts((prev) => [
-            ...prev.filter((acc) => acc.type !== "wechat"),
-            {
-                type: "wechat",
-                account: wechatAccount,
-                name: wechatName,
-            },
-        ]);
-        setShowWechatForm(false);
-        setWechatAccount("");
-        setWechatName("");
-    };
-
     const handleUnbindAlipay = () => {
         Alert.alert("确认解绑", "解绑后需要重新授权才能提现，是否继续？", [
             { text: "取消", style: "cancel" },
@@ -145,9 +114,6 @@ export default function AccountBindingScreen() {
                 onPress: async () => {
                     try {
                         await unbindAlipay();
-                        setBoundAccounts((prev) =>
-                            prev.filter((acc) => acc.type !== "alipay"),
-                        );
                         await refetchBindingStatus();
                         Alert.alert("解绑成功");
                     } catch (error) {
@@ -162,34 +128,12 @@ export default function AccountBindingScreen() {
         ]);
     };
 
-    const handleUnbind = (type: "alipay" | "wechat") => {
-        Alert.alert(
-            "确认解绑",
-            `确定要解绑${type === "alipay" ? "支付宝" : "微信"}账号吗？`,
-            [
-                { text: "取消", style: "cancel" },
-                {
-                    text: "确定",
-                    onPress: () => {
-                        setBoundAccounts((prev) =>
-                            prev.filter((acc) => acc.type !== type),
-                        );
-                        Alert.alert("解绑成功");
-                    },
-                    style: "destructive",
-                },
-            ],
-        );
-    };
-
     const alipayAccountDisplay = maskAccount(
         bindingStatus?.alipayUserId ||
-        bindingStatus?.alipayOpenId ||
-        boundAccounts.find((acc) => acc.type === "alipay")?.account ||
-        "",
+            bindingStatus?.alipayOpenId ||
+            "",
     );
     const isAlipayBound = Boolean(bindingStatus?.bound);
-    const isWechatBound = boundAccounts.some((acc) => acc.type === "wechat");
 
     return (
         <View style={styles.container}>
@@ -208,7 +152,8 @@ export default function AccountBindingScreen() {
                 <View style={styles.tipCard}>
                     <Ionicons name="information-circle" size={20} color="#2196F3" />
                     <Text style={styles.tipText}>
-                        绑定支付宝账号用于提现收益，授权过程由支付宝官方应用完成。
+                        当前提现绑定仅开放支付宝授权。微信提现绑定将在正式接入后开放，
+                        不再提供手工填写的假绑定入口。
                     </Text>
                 </View>
 
@@ -279,7 +224,7 @@ export default function AccountBindingScreen() {
                     )}
                 </View>
 
-                {/* <View style={styles.accountCard}>
+                <View style={styles.accountCard}>
                     <View style={styles.accountHeader}>
                         <View style={styles.accountLeft}>
                             <View style={[styles.iconWrapper, { backgroundColor: "#07C160" }]}>
@@ -287,75 +232,15 @@ export default function AccountBindingScreen() {
                             </View>
                             <Text style={styles.accountType}>微信</Text>
                         </View>
-                        {!isWechatBound && !showWechatForm && (
-                            <TouchableOpacity
-                                style={styles.bindButton}
-                                onPress={() => setShowWechatForm(true)}
-                            >
-                                <Text style={styles.bindButtonText}>绑定</Text>
-                            </TouchableOpacity>
-                        )}
+                        <View style={styles.comingSoonBadge}>
+                            <Text style={styles.comingSoonText}>暂未开放</Text>
+                        </View>
                     </View>
-
-                    {isWechatBound && (
-                        <View style={styles.accountInfo}>
-                            <View>
-                                <Text style={styles.accountName}>
-                                    {
-                                        boundAccounts.find((acc) => acc.type === "wechat")
-                                            ?.name
-                                    }
-                                </Text>
-                                <Text style={styles.accountNumber}>
-                                    {
-                                        boundAccounts.find((acc) => acc.type === "wechat")
-                                            ?.account
-                                    }
-                                </Text>
-                            </View>
-                            <TouchableOpacity onPress={() => handleUnbind("wechat")}>
-                                <Text style={styles.unbindText}>解绑</Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
-
-                    {showWechatForm && !isWechatBound && (
-                        <View style={styles.formSection}>
-                            <View style={styles.formGroup}>
-                                <Text style={styles.label}>微信账号</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    value={wechatAccount}
-                                    onChangeText={setWechatAccount}
-                                    placeholder="微信号或手机号"
-                                />
-                            </View>
-                            <View style={styles.formGroup}>
-                                <Text style={styles.label}>真实姓名</Text>
-                                <TextInput
-                                    style={styles.input}
-                                    value={wechatName}
-                                    onChangeText={setWechatName}
-                                    placeholder="与微信实名认证一致"
-                                />
-                            </View>
-                            <View style={styles.formActions}>
-                                <TouchableOpacity
-                                    style={styles.cancelButton}
-                                    onPress={() => setShowWechatForm(false)}
-                                >
-                                    <Text style={styles.cancelButtonText}>取消</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={styles.confirmButton}
-                                    onPress={handleBindWechat}
-                                >
-                                    <Text style={styles.confirmButtonText}>确认绑定</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    )}
-                </View> */}
+                    <Text style={styles.unboundText}>
+                        微信提现绑定需要服务人员端真实的 openid 与 appid 闭环，当前版本尚未接入。
+                        请先使用支付宝完成提现绑定。
+                    </Text>
+                </View>
 
                 <View style={styles.securityCard}>
                     <View style={styles.securityItem}>
@@ -463,6 +348,17 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: "white",
         fontWeight: "bold",
+    },
+    comingSoonBadge: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 999,
+        backgroundColor: "#E8F5E9",
+    },
+    comingSoonText: {
+        fontSize: 12,
+        color: "#2E7D32",
+        fontWeight: "600",
     },
     accountInfo: {
         flexDirection: "row",

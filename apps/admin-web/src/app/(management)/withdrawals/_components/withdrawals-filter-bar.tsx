@@ -33,8 +33,11 @@ import {
 const STATUS_OPTIONS = [
     { label: "全部状态", value: "all" },
     { label: "待审核", value: "pending" },
-    { label: "已通过", value: "approved" },
+    { label: "待渠道处理", value: "approved" },
+    { label: "处理中", value: "processing" },
     { label: "已完成", value: "completed" },
+    { label: "打款失败", value: "failed" },
+    { label: "已取消", value: "cancelled" },
     { label: "已驳回", value: "rejected" },
 ]
 

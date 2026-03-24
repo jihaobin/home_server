@@ -5,53 +5,45 @@ import {
     Logger,
     NotFoundException,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import type {
     AdminReviewWithdrawalBody,
     AdminWithdrawal,
     AdminWithdrawalListQuery,
     AdminWithdrawalListResponse,
-    AlipayWithdrawResponse,
-} from '@repo/types';
-import {
-    alipayWithdrawResponseSchema,
-    alipayWithdrawSuccessResponseSchema,
+    WithdrawalStatus,
 } from '@repo/types';
 import Decimal from 'decimal.js';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
-import { createWorkerAliPaySdk } from 'src/lib/alipaySdk';
 import { PayRepository } from './pay.repository';
+import { PayoutDispatcher } from './providers/payout.dispatcher';
 import {
     AdminWithdrawalsRepository,
     type AdminWithdrawalFilters,
     type AdminWithdrawalRecord,
 } from './admin-withdrawals.repository';
-import z from 'zod/v4';
 
-const unwrapAlipayResponsePayload = (raw: unknown) => {
-    if (!raw || typeof raw !== 'object' || raw === null) {
-        return raw;
-    }
+const WITHDRAWAL_TERMINAL_STATUSES: WithdrawalStatus[] = [
+    'completed',
+    'failed',
+    'cancelled',
+    'rejected',
+];
 
-    const payload = raw as Record<string, unknown>;
-    if ('alipay_fund_trans_uni_transfer_response' in payload) {
-        const nested = payload.alipay_fund_trans_uni_transfer_response;
-        if (nested && typeof nested === 'object') {
-            return nested;
-        }
-    }
-
-    return payload;
-};
+const WITHDRAWAL_IN_FLIGHT_STATUSES: WithdrawalStatus[] = [
+    'approved',
+    'processing',
+];
 
 @Injectable()
 export class AdminWithdrawalsService {
-    private readonly alipaySdk = createWorkerAliPaySdk();
     private readonly logger = new Logger(AdminWithdrawalsService.name);
 
     constructor(
         private readonly repository: AdminWithdrawalsRepository,
         private readonly payRepository: PayRepository,
+        private readonly payoutDispatcher: PayoutDispatcher,
         @Inject(DB) private readonly db: DbType,
     ) {}
 
@@ -96,125 +88,54 @@ export class AdminWithdrawalsService {
         return this.mapRecord(updated);
     }
 
+    @Cron('30 */5 * * * *')
+    async syncInFlightWithdrawalsJob() {
+        await this.syncInFlightWithdrawals();
+    }
+
     private async approveAndPayout(
         withdrawalId: string,
         adminId: string,
         note?: string,
     ) {
-        const withdrawal =
-            await this.payRepository.findWithdrawalById(withdrawalId);
-
-        if (!withdrawal) {
-            throw new NotFoundException('提现记录不存在');
-        }
-
-        if (withdrawal.status === 'completed') {
-            throw new BadRequestException('该提现已完成');
-        }
-
-        if (withdrawal.status === 'rejected') {
-            throw new BadRequestException('该提现已被驳回');
-        }
-
-        if (withdrawal.method !== 'alipay') {
-            throw new BadRequestException('当前仅支持支付宝打款');
-        }
-
-        if (
-            withdrawal.payeeAccountType === 'ALIPAY_LOGON_ID' &&
-            !withdrawal.payeeName
-        ) {
-            throw new BadRequestException('支付宝账号提现需要提供收款人姓名');
-        }
+        const withdrawal = await this.claimPendingWithdrawalForApproval(
+            withdrawalId,
+            adminId,
+            note,
+        );
 
         const amountDecimal = new Decimal(withdrawal.amount ?? '0');
         if (amountDecimal.lte(0)) {
             throw new BadRequestException('提现金额异常');
         }
 
-        const transferResult = await this.executeAlipayTransfer(
-            withdrawal.id,
-            amountDecimal,
-            withdrawal.payeeAccount,
-            withdrawal.payeeAccountType,
-            withdrawal.payeeName ?? undefined,
-            withdrawal.remark ?? undefined,
-        );
-
-        const processedAt = new Date();
-        const reviewedAt = new Date();
-        await this.db.transaction(async (tx) => {
-            const balanceRecord =
-                await this.payRepository.findUserBalanceByUserId(
-                    withdrawal.userId,
-                    tx,
-                );
-
-            if (!balanceRecord) {
-                throw new BadRequestException('账户余额不存在或未初始化');
-            }
-
-            const available = new Decimal(
-                balanceRecord.availableBalance ?? '0',
-            );
-            const frozen = new Decimal(balanceRecord.frozenBalance ?? '0');
-
-            if (frozen.lt(amountDecimal)) {
-                throw new BadRequestException('冻结余额不足，无法完成提现');
-            }
-
-            const frozenAfter = frozen.minus(amountDecimal);
-            const totalAfter = available.plus(frozenAfter);
-
-            await this.payRepository.updateUserBalanceById(
-                balanceRecord.id,
+        try {
+            const payoutResult = await this.payoutDispatcher.executePayout(
+                withdrawal.method,
                 {
-                    availableBalance: available.toFixed(2),
-                    frozenBalance: frozenAfter.toFixed(2),
-                    totalBalance: totalAfter.toFixed(2),
-                    lastTransactionId: transferResult.referenceId ?? undefined,
+                    withdrawal,
                 },
-                tx,
             );
 
-            await this.payRepository.updateWithdrawalById(
+            await this.applyPayoutResult(withdrawal, adminId, note, payoutResult);
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : '渠道打款请求异常';
+
+            await this.payRepository.updateWithdrawalByIdWithStatusGuard(
                 withdrawal.id,
+                ['approved'],
                 {
-                    status: 'completed',
-                    reviewedByAdminId: adminId,
-                    reviewNote: note ?? null,
-                    reviewedAt,
-                    processedAt,
-                    payoutReferenceId: transferResult.referenceId,
-                    failureReason: null,
+                    providerState: 'REQUEST_EXCEPTION',
+                    failureReason: message.slice(0, 500),
                 },
-                tx,
             );
 
-            await this.payRepository.createFinancialTransaction(
-                {
-                    userId: withdrawal.userId,
-                    withdrawalId: withdrawal.id,
-                    transactionType: 'withdrawal',
-                    amount: amountDecimal.negated().toFixed(2),
-                    currency: withdrawal.currency ?? 'CNY',
-                    description:
-                        `提现至支付宝账号 ${withdrawal.payeeAccount}`.slice(
-                            0,
-                            120,
-                        ),
-                    referenceId: transferResult.referenceId,
-                    metadata: JSON.stringify({
-                        payeeAccount: withdrawal.payeeAccount,
-                        payeeAccountType: withdrawal.payeeAccountType,
-                        payeeName: withdrawal.payeeName,
-                        reviewedBy: adminId,
-                        note,
-                    }),
-                },
-                tx,
+            this.logger.error(
+                `[AdminWithdrawalsService] 打款请求异常，提现单进入待同步状态: ${withdrawal.id}`,
+                message,
             );
-        });
+        }
     }
 
     private async rejectWithdrawal(
@@ -222,30 +143,24 @@ export class AdminWithdrawalsService {
         adminId: string,
         note?: string,
     ) {
-        const withdrawal =
-            await this.payRepository.findWithdrawalById(withdrawalId);
-
-        if (!withdrawal) {
-            throw new NotFoundException('提现记录不存在');
-        }
-
-        if (withdrawal.status === 'completed') {
-            throw new BadRequestException('该提现已完成，无法驳回');
-        }
-
-        if (withdrawal.status === 'rejected') {
-            throw new BadRequestException('该提现已被驳回');
-        }
-
-        const amountDecimal = new Decimal(withdrawal.amount ?? '0');
-        if (amountDecimal.lte(0)) {
-            throw new BadRequestException('提现金额异常');
-        }
-
-        const processedAt = new Date();
-        const reviewedAt = new Date();
-
         await this.db.transaction(async (tx) => {
+            const withdrawal =
+                await this.payRepository.findWithdrawalById(withdrawalId, tx);
+
+            if (!withdrawal) {
+                throw new NotFoundException('提现记录不存在');
+            }
+
+            this.ensureWithdrawalPendingForReview(withdrawal.status);
+
+            const amountDecimal = new Decimal(withdrawal.amount ?? '0');
+            if (amountDecimal.lte(0)) {
+                throw new BadRequestException('提现金额异常');
+            }
+
+            const processedAt = new Date();
+            const reviewedAt = new Date();
+
             const balanceRecord =
                 await this.payRepository.findUserBalanceByUserId(
                     withdrawal.userId,
@@ -269,6 +184,33 @@ export class AdminWithdrawalsService {
             const frozenAfter = frozen.minus(amountDecimal);
             const totalAfter = availableAfter.plus(frozenAfter);
 
+            const claimed = await this.payRepository.updateWithdrawalByIdWithStatusGuard(
+                withdrawal.id,
+                ['pending'],
+                {
+                    status: 'rejected',
+                    reviewedByAdminId: adminId,
+                    reviewNote: note ?? null,
+                    reviewedAt,
+                    processedAt,
+                    payoutReferenceId: null,
+                    providerState: null,
+                    providerBillNo: null,
+                    providerPackageInfo: null,
+                    providerMeta: null,
+                    failureReason: null,
+                },
+                tx,
+            );
+
+            if (!claimed) {
+                const latest = await this.payRepository.findWithdrawalById(
+                    withdrawal.id,
+                    tx,
+                );
+                this.throwWithdrawalReviewConflict(latest?.status);
+            }
+
             await this.payRepository.updateUserBalanceById(
                 balanceRecord.id,
                 {
@@ -279,132 +221,303 @@ export class AdminWithdrawalsService {
                 tx,
             );
 
-            await this.payRepository.updateWithdrawalById(
+        });
+    }
+
+    private async claimPendingWithdrawalForApproval(
+        withdrawalId: string,
+        adminId: string,
+        note?: string,
+    ) {
+        return this.db.transaction(async (tx) => {
+            const withdrawal = await this.payRepository.findWithdrawalById(
+                withdrawalId,
+                tx,
+            );
+
+            if (!withdrawal) {
+                throw new NotFoundException('提现记录不存在');
+            }
+
+            this.ensureWithdrawalPendingForReview(withdrawal.status);
+
+            const reviewedAt = new Date();
+            const claimed = await this.payRepository.updateWithdrawalByIdWithStatusGuard(
                 withdrawal.id,
+                ['pending'],
                 {
-                    status: 'rejected',
+                    status: 'approved',
                     reviewedByAdminId: adminId,
                     reviewNote: note ?? null,
                     reviewedAt,
-                    processedAt,
+                    processedAt: null,
+                    payoutReferenceId: null,
+                    providerState: null,
+                    providerBillNo: null,
+                    providerPackageInfo: null,
+                    providerMeta: null,
                     failureReason: null,
                 },
                 tx,
             );
+
+            if (!claimed) {
+                const latest = await this.payRepository.findWithdrawalById(
+                    withdrawal.id,
+                    tx,
+                );
+                this.throwWithdrawalReviewConflict(latest?.status);
+            }
+
+            return claimed;
         });
     }
 
-    private async executeAlipayTransfer(
-        withdrawalId: string,
-        amount: Decimal,
-        payeeAccount: string,
-        payeeAccountType: string,
-        payeeName?: string,
-        remark?: string,
+    private async applyPayoutResult(
+        withdrawal: NonNullable<
+            Awaited<ReturnType<PayRepository['findWithdrawalById']>>
+        >,
+        adminId: string | null | undefined,
+        note: string | undefined,
+        payoutResult: Awaited<
+            ReturnType<PayoutDispatcher['executePayout']>
+        >,
     ) {
-        const amountText = amount.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-        const bizContent: Record<string, unknown> = {
-            out_biz_no: withdrawalId,
-            trans_amount: amountText.toFixed(2),
-            biz_scene: 'DIRECT_TRANSFER',
-            product_code: 'TRANS_ACCOUNT_NO_PWD',
-            order_title: '服务人员提现',
-            transfer_scene_name: '佣金报酬',
-            transfer_scene_report_infos: [
+        if (
+            payoutResult.withdrawalStatus === 'approved' ||
+            payoutResult.withdrawalStatus === 'processing'
+        ) {
+            await this.payRepository.updateWithdrawalByIdWithStatusGuard(
+                withdrawal.id,
+                ['approved', 'processing'],
                 {
-                    info_type: '佣金报酬说明',
-                    info_content: '服务人员提现',
-                },
-            ],
-            payee_info: {
-                identity: payeeAccount,
-                identity_type: payeeAccountType,
-                ...(payeeName ? { name: payeeName } : {}),
-            },
-        };
-
-        if (remark) {
-            Object.assign(bizContent, { remark });
-        }
-
-        let rawResponse: unknown;
-        try {
-            rawResponse = await this.alipaySdk.exec(
-                'alipay.fund.trans.uni.transfer',
-                {
-                    bizContent,
+                    status: payoutResult.withdrawalStatus,
+                    reviewedByAdminId: adminId ?? withdrawal.reviewedByAdminId,
+                    reviewNote: note ?? null,
+                    processedAt: null,
+                    payoutReferenceId: payoutResult.referenceId ?? null,
+                    providerState: payoutResult.providerState ?? null,
+                    providerAppId:
+                        payoutResult.providerAppId ??
+                        withdrawal.providerAppId ??
+                        null,
+                    providerBillNo: payoutResult.providerBillNo ?? null,
+                    providerPackageInfo:
+                        payoutResult.providerPackageInfo ?? null,
+                    providerMeta: payoutResult.providerMeta ?? null,
+                    failureReason: payoutResult.failureReason ?? null,
                 },
             );
-            console.log('支付宝打款接口返回：', rawResponse);
-        } catch (error) {
-            this.logger.error(
-                `调用支付宝打款接口失败: ${withdrawalId}`,
-                error instanceof Error ? error.message : String(error),
-            );
-            throw new BadRequestException('支付宝打款失败，请稍后重试');
+            return;
         }
 
-        const normalizedPayload = unwrapAlipayResponsePayload(
-            rawResponse,
-        ) as Record<string, unknown>;
+        await this.db.transaction(async (tx) => {
+            const latest = await this.payRepository.findWithdrawalById(
+                withdrawal.id,
+                tx,
+            );
 
-        const parsedResult =
-            alipayWithdrawResponseSchema.safeParse(normalizedPayload);
-        if (!parsedResult.success) {
-            this.logger.warn(
-                '[AdminWithdrawalsService] 支付宝打款响应格式异常',
+            if (!latest) {
+                throw new NotFoundException('提现记录不存在');
+            }
+
+            if (WITHDRAWAL_TERMINAL_STATUSES.includes(latest.status)) {
+                return;
+            }
+
+            if (!WITHDRAWAL_IN_FLIGHT_STATUSES.includes(latest.status)) {
+                throw new BadRequestException('提现状态异常，无法推进到终态');
+            }
+
+            const amountDecimal = new Decimal(latest.amount ?? '0');
+            if (amountDecimal.lte(0)) {
+                throw new BadRequestException('提现金额异常');
+            }
+
+            const locked = await this.payRepository.updateWithdrawalByIdWithStatusGuard(
+                latest.id,
+                ['approved', 'processing'],
                 {
-                    withdrawalId,
-                    errors: z.treeifyError(parsedResult.error),
-                    response: normalizedPayload,
+                    status: payoutResult.withdrawalStatus,
+                    reviewedByAdminId:
+                        adminId ?? latest.reviewedByAdminId ?? null,
+                    reviewNote: note ?? null,
+                    processedAt:
+                        payoutResult.processedAt ??
+                        new Date(),
+                    payoutReferenceId: payoutResult.referenceId ?? null,
+                    providerState: payoutResult.providerState ?? null,
+                    providerAppId:
+                        payoutResult.providerAppId ??
+                        latest.providerAppId ??
+                        null,
+                    providerBillNo: payoutResult.providerBillNo ?? null,
+                    providerPackageInfo:
+                        payoutResult.providerPackageInfo ?? null,
+                    providerMeta: payoutResult.providerMeta ?? null,
+                    failureReason: payoutResult.failureReason ?? null,
                 },
+                tx,
             );
+
+            if (!locked) {
+                return;
+            }
+
+            const balanceRecord =
+                await this.payRepository.findUserBalanceByUserId(
+                    latest.userId,
+                    tx,
+                );
+
+            if (!balanceRecord) {
+                throw new BadRequestException('账户余额不存在或未初始化');
+            }
+
+            const available = new Decimal(
+                balanceRecord.availableBalance ?? '0',
+            );
+            const frozen = new Decimal(balanceRecord.frozenBalance ?? '0');
+
+            if (frozen.lt(amountDecimal)) {
+                throw new BadRequestException('冻结余额不足，无法完成提现处理');
+            }
+
+            if (payoutResult.withdrawalStatus === 'completed') {
+                const frozenAfter = frozen.minus(amountDecimal);
+                const totalAfter = available.plus(frozenAfter);
+
+                await this.payRepository.updateUserBalanceById(
+                    balanceRecord.id,
+                    {
+                        availableBalance: available.toFixed(2),
+                        frozenBalance: frozenAfter.toFixed(2),
+                        totalBalance: totalAfter.toFixed(2),
+                        lastTransactionId:
+                            payoutResult.referenceId ?? undefined,
+                    },
+                    tx,
+                );
+
+                await this.payRepository.createFinancialTransaction(
+                    {
+                        userId: latest.userId,
+                        withdrawalId: latest.id,
+                        transactionType: 'withdrawal',
+                        amount: amountDecimal.negated().toFixed(2),
+                        currency: latest.currency ?? 'CNY',
+                        description:
+                            `提现至${latest.method}账号 ${latest.payeeAccount}`.slice(
+                                0,
+                                120,
+                            ),
+                        referenceId: payoutResult.referenceId ?? null,
+                        metadata: JSON.stringify({
+                            payeeAccount: latest.payeeAccount,
+                            payeeAccountType: latest.payeeAccountType,
+                            payeeName: latest.payeeName,
+                            reviewedBy:
+                                adminId ?? latest.reviewedByAdminId ?? null,
+                            note,
+                            providerMeta: payoutResult.providerMeta ?? null,
+                        }),
+                    },
+                    tx,
+                );
+            }
+
+            if (
+                payoutResult.withdrawalStatus === 'failed' ||
+                payoutResult.withdrawalStatus === 'cancelled'
+            ) {
+                const availableAfter = available.plus(amountDecimal);
+                const frozenAfter = frozen.minus(amountDecimal);
+                const totalAfter = availableAfter.plus(frozenAfter);
+
+                await this.payRepository.updateUserBalanceById(
+                    balanceRecord.id,
+                    {
+                        availableBalance: availableAfter.toFixed(2),
+                        frozenBalance: frozenAfter.toFixed(2),
+                        totalBalance: totalAfter.toFixed(2),
+                    },
+                    tx,
+                );
+            }
+        });
+    }
+
+    private ensureWithdrawalPendingForReview(status?: WithdrawalStatus | null) {
+        if (status === 'pending') {
+            return;
         }
 
-        const responsePayload:
-            | AlipayWithdrawResponse
-            | Record<string, unknown> = parsedResult.success
-            ? parsedResult.data
-            : normalizedPayload;
+        this.throwWithdrawalReviewConflict(status);
+    }
 
-        const responseCode =
-            typeof responsePayload.code === 'string'
-                ? responsePayload.code
-                : '';
+    private throwWithdrawalReviewConflict(status?: WithdrawalStatus | null): never {
+        switch (status) {
+            case 'completed':
+                throw new BadRequestException('该提现已完成');
+            case 'rejected':
+                throw new BadRequestException('该提现已被驳回');
+            case 'processing':
+                throw new BadRequestException('该提现正在处理中');
+            case 'approved':
+                throw new BadRequestException('该提现已审核通过，等待渠道处理');
+            case 'failed':
+            case 'cancelled':
+                throw new BadRequestException('该提现已进入失败或取消状态');
+            default:
+                throw new BadRequestException('该提现当前不可审核');
+        }
+    }
 
-        if (responseCode !== '10000') {
-            const payloadRecord = responsePayload as Record<string, unknown>;
-            const getStringField = (key: string) => {
-                const value = payloadRecord[key];
-                return typeof value === 'string' ? value : null;
-            };
-            const errorMessage =
-                getStringField('subMsg') ??
-                getStringField('sub_msg') ??
-                getStringField('msg');
-            throw new BadRequestException(
-                `支付宝打款失败：${errorMessage || '未知错误'}`,
-            );
+    private async syncInFlightWithdrawals(limit = 100) {
+        const candidates = await this.payRepository.findWithdrawalsByStatuses(
+            WITHDRAWAL_IN_FLIGHT_STATUSES,
+            limit,
+        );
+
+        let syncedCount = 0;
+        let skippedCount = 0;
+        let failedCount = 0;
+
+        for (const withdrawal of candidates) {
+            try {
+                const payoutResult = await this.payoutDispatcher.queryPayoutStatus(
+                    withdrawal.method,
+                    {
+                        withdrawal,
+                    },
+                );
+
+                if (!payoutResult) {
+                    skippedCount++;
+                    continue;
+                }
+
+                await this.applyPayoutResult(
+                    withdrawal,
+                    withdrawal.reviewedByAdminId,
+                    withdrawal.reviewNote ?? undefined,
+                    payoutResult,
+                );
+                syncedCount++;
+            } catch (error) {
+                failedCount++;
+                this.logger.warn(
+                    `[AdminWithdrawalsService] 同步提现状态失败: ${withdrawal.id}`,
+                    error instanceof Error ? error.message : error,
+                );
+            }
         }
 
-        const successData =
-            alipayWithdrawSuccessResponseSchema.safeParse(responsePayload);
-        if (!successData.success) {
-            this.logger.warn(
-                '[AdminWithdrawalsService] 支付宝打款成功但响应字段缺失',
-                {
-                    withdrawalId,
-                    response: responsePayload,
-                    errors: successData.error.flatten(),
-                },
+        if (candidates.length > 0) {
+            this.logger.log(
+                `[AdminWithdrawalsService] 提现状态同步完成，总数=${candidates.length}，已同步=${syncedCount}，跳过=${skippedCount}，失败=${failedCount}`,
             );
-            throw new BadRequestException('支付宝打款结果解析失败，请稍后重试');
         }
-
-        return {
-            referenceId:
-                successData.data.payFundOrderId ?? successData.data.orderId,
-        };
     }
 
     private normalizeQuery(query: AdminWithdrawalListQuery | undefined) {
@@ -458,6 +571,10 @@ export class AdminWithdrawalsService {
                 ? record.processedAt.toISOString()
                 : null,
             payoutReferenceId: record.payoutReferenceId ?? null,
+            providerState: record.providerState ?? null,
+            providerAppId: record.providerAppId ?? null,
+            providerBillNo: record.providerBillNo ?? null,
+            providerPackageInfo: record.providerPackageInfo ?? null,
             failureReason: record.failureReason ?? null,
             user: record.userId
                 ? {

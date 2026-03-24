@@ -1,5 +1,4 @@
-import { DefaultLogger, type LogWriter } from 'drizzle-orm/logger';
-
+import { type LogWriter } from 'drizzle-orm/logger';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 import { Pool } from 'pg';

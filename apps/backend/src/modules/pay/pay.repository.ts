@@ -5,7 +5,7 @@ import {
     WorkerEarningsRecordItem,
     WorkerEarningsRecordListResponse,
 } from '@repo/types';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { DB } from 'src/common/database/database.provider';
 import { DbType } from 'src/common/database/db';
 import {
@@ -186,6 +186,44 @@ export class PayRepository {
             .returning();
 
         return record ?? null;
+    }
+
+    async updateWithdrawalByIdWithStatusGuard(
+        id: string,
+        expectedStatuses: WithdrawalStatus[],
+        data: Partial<Omit<WithdrawalInsert, 'id' | 'userId'>>,
+        executor?: Executor,
+    ) {
+        if (expectedStatuses.length === 0) {
+            return null;
+        }
+
+        const db = this.getExecutor(executor);
+        const [record] = await db
+            .update(withdrawals)
+            .set(data)
+            .where(
+                and(
+                    eq(withdrawals.id, id),
+                    inArray(withdrawals.status, expectedStatuses),
+                ),
+            )
+            .returning();
+
+        return record ?? null;
+    }
+
+    findWithdrawalsByStatuses(
+        statuses: WithdrawalStatus[],
+        limit = 100,
+        executor?: Executor,
+    ) {
+        const db = this.getExecutor(executor);
+        return db.query.withdrawals.findMany({
+            where: inArray(withdrawals.status, statuses),
+            orderBy: [desc(withdrawals.requestedAt)],
+            limit,
+        });
     }
 
     async createFinancialTransaction(

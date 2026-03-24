@@ -43,6 +43,7 @@ export const WithdrawalPayeeAccountTypeEnum = z.enum([
     "ALIPAY_USER_ID",
     "ALIPAY_LOGON_ID",
     "ALIPAY_OPEN_ID",
+    "WECHAT_OPENID",
 ]);
 export type WithdrawalPayeeAccountType = z.infer<
     typeof WithdrawalPayeeAccountTypeEnum
@@ -69,6 +70,9 @@ export type AssignmentDecisionStatus = z.infer<
 export const WithdrawalStatusEnum = z.enum([
     "pending", // 待审核
     "approved", // 审核通过
+    "processing", // 渠道处理中
+    "failed", // 渠道打款失败
+    "cancelled", // 渠道取消或系统取消
     "rejected", // 审核拒绝
     "completed", // 已完成
 ]);
@@ -800,6 +804,37 @@ export const UserProfilesSchema = z
             .meta({
                 description: "支付宝 openId",
                 title: "支付宝 openId",
+            }),
+        wechatWorkerOpenId: z
+            .string()
+            .max(128)
+            .optional()
+            .meta({
+                description: "服务人员端微信提现 openid",
+                title: "服务人员微信提现 openid",
+            }),
+        wechatWorkerUnionId: z
+            .string()
+            .max(128)
+            .optional()
+            .meta({
+                description: "服务人员端微信提现 unionid",
+                title: "服务人员微信提现 unionid",
+            }),
+        wechatWorkerAppId: z
+            .string()
+            .max(128)
+            .optional()
+            .meta({
+                description: "服务人员端微信提现 appid",
+                title: "服务人员微信提现 appid",
+            }),
+        wechatWorkerBoundAt: z
+            .date()
+            .optional()
+            .meta({
+                description: "服务人员端微信提现绑定时间",
+                title: "服务人员微信提现绑定时间",
             }),
         realName: z.string().max(50).meta({
             description: "真实姓名",
@@ -2044,6 +2079,9 @@ export const WithdrawalsSchema = z
             examples: [
                 "pending (待处理)",
                 "approved (已批准)",
+                "processing (渠道处理中)",
+                "failed (渠道打款失败)",
+                "cancelled (渠道取消)",
                 "rejected (已拒绝)",
                 "completed (已完成)",
             ],
@@ -2078,6 +2116,50 @@ export const WithdrawalsSchema = z
             .meta({
                 description: "第三方打款参考号",
                 title: "打款参考号",
+            }),
+        providerState: z
+            .string()
+            .max(64)
+            .nullable()
+            .optional()
+            .meta({
+                description: "渠道原始状态",
+                title: "渠道原始状态",
+            }),
+        providerAppId: z
+            .string()
+            .max(128)
+            .nullable()
+            .optional()
+            .meta({
+                description: "渠道 appId",
+                title: "渠道 appId",
+            }),
+        providerBillNo: z
+            .string()
+            .max(255)
+            .nullable()
+            .optional()
+            .meta({
+                description: "渠道侧单号",
+                title: "渠道侧单号",
+            }),
+        providerPackageInfo: z
+            .string()
+            .max(1000)
+            .nullable()
+            .optional()
+            .meta({
+                description: "渠道确认收款或补充信息",
+                title: "渠道补充信息",
+            }),
+        providerMeta: z
+            .record(z.string(), z.unknown())
+            .nullable()
+            .optional()
+            .meta({
+                description: "渠道扩展元数据",
+                title: "渠道扩展元数据",
             }),
         failureReason: z
             .string()

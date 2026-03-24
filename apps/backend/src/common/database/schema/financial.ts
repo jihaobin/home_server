@@ -2,6 +2,7 @@ import { relations, sql } from 'drizzle-orm';
 import {
     decimal,
     index,
+    jsonb,
     pgEnum,
     pgTable,
     timestamp,
@@ -204,6 +205,13 @@ export const withdrawals = pgTable(
         payoutReferenceId: varchar('payout_reference_id', {
             length: 255,
         }), // 打款参考号
+        providerState: varchar('provider_state', { length: 64 }), // 渠道原始状态
+        providerAppId: varchar('provider_app_id', { length: 128 }), // 渠道 appId
+        providerBillNo: varchar('provider_bill_no', { length: 255 }), // 渠道侧单号
+        providerPackageInfo: varchar('provider_package_info', {
+            length: 1000,
+        }), // 渠道确认收款/补充信息
+        providerMeta: jsonb('provider_meta').$type<Record<string, unknown>>(), // 渠道扩展元数据
         failureReason: varchar('failure_reason', { length: 500 }), // 打款失败原因
         requestedAt: timestamp('requested_at', {
             withTimezone: true,
@@ -220,7 +228,7 @@ export const withdrawals = pgTable(
         // 提现状态时间索引 - 用于管理员查询待处理的提现
         index('idx_withdrawals_status_time')
             .on(table.status, table.requestedAt.desc())
-            .where(sql`status IN ('pending', 'approved')`),
+            .where(sql`status IN ('pending', 'approved', 'processing')`),
     ],
 );
 

@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 import {
     PaymentMethodEnum,
+    PaymentStatusEnum,
     TransactionTypeEnum,
     WithdrawalStatusEnum,
 } from "./database-entity";
@@ -908,6 +909,23 @@ export type AlipayWithdrawResponse = z.infer<
 	typeof alipayWithdrawResponseSchema
 >;
 
+const paymentAppChannelSchema = z.enum(["alipay", "wechat_pay"]);
+
+const wechatPayRequestSchema = z
+	.object({
+		appId: createBoundedString(128, "微信 appId"),
+		partnerId: createBoundedString(128, "微信商户号"),
+		prepayId: createBoundedString(128, "微信 prepayId"),
+		packageValue: createBoundedString(64, "微信 package"),
+		nonceStr: createBoundedString(128, "微信 nonceStr"),
+		timeStamp: createBoundedString(32, "微信 timeStamp"),
+		sign: createBoundedString(512, "微信签名"),
+	})
+	.meta({
+		title: "微信支付拉起参数",
+		description: "APP 端调起微信支付所需参数。",
+	});
+
 export const InitiatePaymentParamsSchema = z
 			.string()
 			.min(1, "订单ID不能为空")
@@ -921,12 +939,9 @@ export type InitiatePaymentParams = z.infer<typeof InitiatePaymentParamsSchema>;
 
 export const InitiatePaymentBodySchema = z
 	.object({
-		payType: PaymentMethodEnum.refine(
-			(value) => value === "alipay",
-			"当前仅支持支付宝支付",
-		).meta({
+		payType: paymentAppChannelSchema.meta({
 			title: "支付方式",
-			description: "当前仅支持 alipay",
+			description: "支付渠道。当前实现以支付宝为主，结构已兼容微信支付。",
 			examples: ["alipay"],
 		}),
 		displayAmount: z.coerce
@@ -945,30 +960,40 @@ export const InitiatePaymentBodySchema = z
 
 export type InitiatePaymentBody = z.infer<typeof InitiatePaymentBodySchema>;
 
+const initiatePaymentResponseBaseSchema = z.object({
+	paymentId: z.string().min(1).meta({
+		title: "支付记录ID",
+		description: "用于后续查询或调试的支付记录标识",
+	}),
+	payType: paymentAppChannelSchema.meta({ title: "支付方式" }),
+	outTradeNo: z.string().min(1).meta({
+		title: "外部订单号",
+		description: "支付流水号/商户订单号",
+	}),
+	amount: z.number().positive().meta({
+		title: "支付金额",
+		description: "本次支付的订单金额（单位：元）",
+	}),
+	currency: z
+		.string()
+		.min(1)
+		.meta({ title: "币种", description: "默认使用 CNY" }),
+});
+
 export const InitiatePaymentResponseSchema = z
-	.object({
-		paymentId: z.string().min(1).meta({
-			title: "支付记录ID",
-			description: "用于后续查询或调试的支付记录标识",
+	.discriminatedUnion("payType", [
+		initiatePaymentResponseBaseSchema.extend({
+			payType: z.literal("alipay"),
+			orderString: z.string().min(1).meta({
+				title: "支付订单串",
+				description: "客户端直接用于发起支付宝支付的订单字符串签名",
+			}),
 		}),
-		orderString: z.string().min(1).meta({
-			title: "支付订单串",
-			description: "客户端直接用于发起支付的订单字符串签名",
+		initiatePaymentResponseBaseSchema.extend({
+			payType: z.literal("wechat_pay"),
+			wechatPayRequest: wechatPayRequestSchema,
 		}),
-		payType: PaymentMethodEnum.meta({ title: "支付方式" }),
-		outTradeNo: z.string().min(1).meta({
-			title: "外部订单号",
-			description: "支付流水号/商户订单号",
-		}),
-		amount: z.number().positive().meta({
-			title: "支付金额",
-			description: "本次支付的订单金额（单位：元）",
-		}),
-		currency: z
-			.string()
-			.min(1)
-			.meta({ title: "币种", description: "默认使用 CNY" }),
-	})
+	])
 	.meta({ title: "发起支付响应" });
 
 export type InitiatePaymentResponse = z.infer<typeof InitiatePaymentResponseSchema>;
@@ -979,6 +1004,13 @@ export const AlipayNotifyResponseSchema = z.enum(["success", "fail"]).meta({
 });
 
 export type AlipayNotifyResponse = z.infer<typeof AlipayNotifyResponseSchema>;
+
+export const PaymentNotifyResponseSchema = z.enum(["success", "fail"]).meta({
+	title: "支付回调响应",
+	description: "支付渠道回调处理完成后返回 success 或 fail。",
+});
+
+export type PaymentNotifyResponse = z.infer<typeof PaymentNotifyResponseSchema>;
 
 
 const withdrawAmountNumberSchema = z
@@ -1001,15 +1033,12 @@ export const UserWithdrawBodySchema = z
 	.object({
 		amount: withdrawAmountNumberSchema,
 		currency: withdrawCurrencySchema,
-		payType: PaymentMethodEnum.refine(
-			(value) => value === "alipay",
-			"当前仅支持支付宝提现",
-		),
+		payType: paymentAppChannelSchema,
 		remark: alipayWithdrawRemarkSchema,
 	})
 	.meta({
 		title: "用户提现请求体",
-		description: "前端提交的提现申请信息，收款账号由后端根据绑定信息自动填充",
+		description: "前端提交的提现申请信息，收款账号由后端根据渠道绑定信息自动填充",
 	});
 
 export type UserWithdrawBody = z.infer<typeof UserWithdrawBodySchema>;
@@ -1026,6 +1055,7 @@ export const UserWithdrawResponseSchema = z
 			description: "已提交的提现金额，单位元",
 		}),
 		currency: z.string().min(1).meta({ title: "币种" }),
+		payType: paymentAppChannelSchema.meta({ title: "提现方式" }),
 		balance: z
 			.object({
 				available: z.number().nonnegative(),
@@ -1033,15 +1063,16 @@ export const UserWithdrawResponseSchema = z
 				total: z.number().nonnegative(),
 			})
 			.meta({ title: "提现后余额快照" }),
-		outBizNo: z.string().min(1, "业务单号不能为空").meta({
-			title: "支付宝业务单号",
-			description: "传给支付宝的 out_biz_no",
+		providerRequestNo: z.string().min(1, "渠道请求号不能为空").meta({
+			title: "渠道请求号",
+			description: "用于渠道打款或后续查询的业务单号",
 		}),
-		alipayOrderId: z
+		providerState: z
 			.string()
 			.min(1)
 			.optional()
-			.meta({ title: "支付宝订单号" }),
+			.nullable()
+			.meta({ title: "渠道状态" }),
 	})
 	.meta({
 		title: "用户提现响应",
@@ -1289,13 +1320,9 @@ export type WorkerEarningsRecordListResponse = z.infer<
 export const QueryPaymentStatusResponseSchema = z.object({
     orderId: z.string(),
     orderSerial: z.string(),
-    paymentStatus: z.enum(["refunded", "pending", "succeeded", "failed"]),
-    tradeStatus: z.enum([
-        "WAIT_BUYER_PAY",
-        "TRADE_CLOSED",
-        "TRADE_SUCCESS",
-        "TRADE_FINISHED",
-    ]),
+    payType: paymentAppChannelSchema,
+    paymentStatus: PaymentStatusEnum,
+    channelStatus: z.string(),
     amount: z.string().optional(),
     transactionId: z.string().optional(),
     message: z.string(),

@@ -27,15 +27,21 @@ type WithdrawalsTableProps = {
 
 const STATUS_LABELS: Record<AdminWithdrawal["status"], string> = {
     pending: "待审核",
-    approved: "已通过",
+    approved: "待渠道处理",
+    processing: "处理中",
     completed: "已完成",
+    failed: "打款失败",
+    cancelled: "已取消",
     rejected: "已驳回",
 }
 
 const STATUS_BADGE_CLASS: Record<AdminWithdrawal["status"], string> = {
     pending: "bg-amber-100 text-amber-800",
     approved: "bg-sky-100 text-sky-700",
+    processing: "bg-indigo-100 text-indigo-700",
     completed: "bg-emerald-100 text-emerald-700",
+    failed: "bg-rose-100 text-rose-700",
+    cancelled: "bg-slate-200 text-slate-700",
     rejected: "bg-rose-100 text-rose-700",
 }
 
@@ -50,6 +56,7 @@ const ACCOUNT_TYPE_LABELS: Record<AdminWithdrawal["payeeAccountType"], string> =
         ALIPAY_USER_ID: "支付宝 UID",
         ALIPAY_LOGON_ID: "支付宝登录号",
         ALIPAY_OPEN_ID: "支付宝 OpenID",
+        WECHAT_OPENID: "微信 OpenID",
     }
 
 export function WithdrawalsTable({

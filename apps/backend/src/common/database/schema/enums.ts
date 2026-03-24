@@ -45,6 +45,7 @@ export const payeeAccountTypeEnum = pgEnum('payee_account_type', [
     'ALIPAY_USER_ID',
     'ALIPAY_LOGON_ID',
     'ALIPAY_OPEN_ID',
+    'WECHAT_OPENID',
 ]);
 
 /**
@@ -53,6 +54,9 @@ export const payeeAccountTypeEnum = pgEnum('payee_account_type', [
 export const withdrawalStatusEnum = pgEnum('withdrawal_status', [
     'pending', // 待审核
     'approved', // 审核通过
+    'processing', // 渠道处理中
+    'failed', // 渠道打款失败
+    'cancelled', // 渠道取消或系统取消
     'rejected', // 审核拒绝
     'completed', // 已完成
 ]);

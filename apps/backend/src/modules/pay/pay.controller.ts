@@ -19,6 +19,7 @@ import {
     InitiatePaymentBodySchema,
     InitiatePaymentParamsSchema,
     InitiatePaymentResponseSchema,
+    PaymentNotifyResponseSchema,
     type PayNotification,
     payNotificationSchema,
     QueryPaymentStatusResponseSchema,
@@ -47,6 +48,8 @@ import { Cron } from '@nestjs/schedule';
 import { createAliPaySdk } from 'src/lib/alipaySdk';
 import z from 'zod/v4';
 
+const paymentNotifyChannelSchema = z.enum(['alipay', 'wechat_pay']);
+
 @ApiTags('支付')
 @Controller('pay')
 export class PayController {
@@ -66,11 +69,11 @@ export class PayController {
     )
     @ApiOperation({
         summary: '发起订单支付',
-        description: '校验订单状态与金额后，生成支付宝支付串返回给客户端',
+        description: '校验订单状态与金额后，按支付渠道生成客户端拉起参数',
     })
     @ApiBodies(InitiatePaymentBodySchema)
     @ApiSuccessResponse(InitiatePaymentResponseSchema, {
-        description: '返回支付记录信息及用于客户端唤起支付宝的订单串',
+        description: '返回支付记录信息及客户端拉起支付所需参数',
     })
     async initiatePayment(
         @Param('orderId') orderId: string,
@@ -100,12 +103,37 @@ export class PayController {
         description: '处理完成后需返回 success 或 fail 给支付宝',
     })
     async handleAlipayNotify(@Body() payload: PayNotification) {
-        return this.payService.payNotify(payload);
+        return this.payService.handlePaymentNotify('alipay', payload);
+    }
+
+    @Public()
+    @SkipTransform()
+    @Post('notify/:channel')
+    @HttpCode(HttpStatus.OK)
+    @UsePipes(
+        createMultiZodPipe({
+            params: paymentNotifyChannelSchema,
+            errorMessage: '支付回调渠道参数校验失败',
+        }),
+    )
+    @ApiOperation({
+        summary: '统一支付异步通知回调(不要在应用中进行调用)',
+        description:
+            '按渠道转发支付平台异步通知，当前支付宝可用，后续可平滑接入微信支付。',
+    })
+    @ApiSuccessResponse(PaymentNotifyResponseSchema, {
+        description: '处理完成后返回 success 或 fail',
+    })
+    async handlePaymentNotify(
+        @Param('channel') channel: z.infer<typeof paymentNotifyChannelSchema>,
+        @Body() payload: unknown,
+    ) {
+        return this.payService.handlePaymentNotify(channel, payload);
     }
 
     @ApiOperation({
         summary: '用户提现',
-        description: '校验余额并冻结提现金额，等待管理员审核后才会实际打款',
+        description: '校验余额并冻结提现金额，按渠道创建提现工单并等待管理员审核',
     })
     @UseGuards(AuthGuard)
     @Roles(['service_personnel'])
@@ -238,7 +266,7 @@ export class PayController {
     @ApiOperation({
         summary: '查询订单支付状态',
         description:
-            '主动查询支付宝订单的支付状态,用于客户端收到不确定状态码时确认支付结果',
+            '主动查询订单最近一次支付记录对应渠道的支付状态，用于客户端确认支付结果',
     })
     async queryPaymentStatus(
         @Param('orderId') orderId: string,

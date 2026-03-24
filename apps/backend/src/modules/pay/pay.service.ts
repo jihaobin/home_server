@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { createId } from '@paralleldrive/cuid2';
 import {
-    type PayNotification,
+    type InitiatePaymentResponse,
     type QueryPaymentStatusResponse,
     type UserRole,
     type UserWithdrawBody,
@@ -20,7 +20,6 @@ import {
     type WorkerAlipayAuthExchangeResponse,
     OrderStatus,
 } from '@repo/types';
-import { format } from 'date-fns';
 import Decimal from 'decimal.js';
 import { and, arrayOverlaps, eq, gte, sql } from 'drizzle-orm';
 import { CACHE_SERVICE, type IAdvancedCacheService } from 'src/common/cache';
@@ -40,7 +39,9 @@ import { createAliPaySdk, createWorkerAliPaySdk } from 'src/lib/alipaySdk';
 import { OrderService } from '../order/order.service';
 import { OrderRepository } from '../order/order.reposityro';
 import { PayRepository } from './pay.repository';
-import { RefundDispatcher } from './refund/refund.dispatcher';
+import { PaymentDispatcher } from './providers/payment.dispatcher';
+import type { PaymentChannel } from './providers/payment-provider.interface';
+import { RefundDispatcher } from './providers/refund.dispatcher';
 
 type PaymentInsert = typeof payments.$inferInsert;
 
@@ -49,6 +50,7 @@ type OrderRecord = typeof orders.$inferSelect;
 type PaymentRecordWithOrder = PaymentRecord & { order: OrderRecord | null };
 
 type PaymentStatus = (typeof payments.status.enumValues)[number];
+type WithdrawalStatus = (typeof payments.status.enumValues)[number];
 
 type BuildAlipayAuthParamOptions = {
     appId: string;
@@ -67,8 +69,6 @@ type BuildAlipayAuthParamOptions = {
     encodeSign?: boolean;
 };
 
-type TradeStatus = PayNotification['trade_status'];
-
 type AlipayOauthTokenResponse = {
     userId?: string;
     openId?: string;
@@ -79,21 +79,6 @@ const maskAlipayId = (value?: string | null) => {
     if (value.length <= 6) return value;
     return `${value.slice(0, 3)}****${value.slice(-3)}`;
 };
-
-const TRADE_STATUS_TO_PAYMENT_STATUS: Record<TradeStatus, PaymentStatus> = {
-    WAIT_BUYER_PAY: 'pending',
-    TRADE_SUCCESS: 'succeeded',
-    TRADE_FINISHED: 'succeeded',
-    TRADE_CLOSED: 'failed',
-};
-
-function parseAlipayTime(value?: string) {
-    if (!value) {
-        return undefined;
-    }
-
-    return new Date(`${value.replace(' ', 'T')}+08:00`);
-}
 
 export interface EarningsOverview {
     balance: {
@@ -109,7 +94,6 @@ export interface EarningsOverview {
 
 @Injectable()
 export class PayService {
-    // 实例化客户端
     private alipaySdk = createAliPaySdk();
     private workerAlipaySdk = createWorkerAliPaySdk();
 
@@ -131,6 +115,9 @@ export class PayService {
     @Inject(RefundDispatcher)
     private refundDispatcher: RefundDispatcher;
 
+    @Inject(PaymentDispatcher)
+    private paymentDispatcher: PaymentDispatcher;
+
     private logger = new Logger(PayService.name);
 
     private readonly paymentLockTtl = 30; // 秒
@@ -141,10 +128,6 @@ export class PayService {
 
     private isPaymentExpired(expiresAt?: Date | null) {
         return Boolean(expiresAt && expiresAt.getTime() <= Date.now());
-    }
-
-    private formatAlipayTimeExpire(date: Date) {
-        return format(date, 'yyyy-MM-dd+HH:mm:ss');
     }
 
     private parseAlipayOauthTokenResponse(
@@ -243,27 +226,65 @@ export class PayService {
         return record;
     }
 
-    /**
-     * 统一的支付状态更新逻辑(幂等性保证)
-     * 被异步通知、主动查询、定时任务共同调用
-     * @param orderId 订单ID
-     * @param tradeStatus 支付宝交易状态
-     * @param alipayTradeNo 支付宝交易号
-     * @param notifyTime 通知时间
-     * @returns 更新是否成功
-     */
+    private mapProviderStatusToPaymentStatus(
+        channel: PaymentChannel,
+        providerStatus: string,
+    ): PaymentStatus | null {
+        if (channel === 'alipay') {
+            switch (providerStatus) {
+                case 'WAIT_BUYER_PAY':
+                    return 'pending';
+                case 'TRADE_SUCCESS':
+                case 'TRADE_FINISHED':
+                    return 'succeeded';
+                case 'TRADE_CLOSED':
+                    return 'failed';
+                default:
+                    return null;
+            }
+        }
+
+        if (channel === 'wechat_pay') {
+            switch (providerStatus) {
+                case 'NOTPAY':
+                case 'USERPAYING':
+                case 'PROCESSING':
+                case 'ACCEPT':
+                    return 'pending';
+                case 'SUCCESS':
+                    return 'succeeded';
+                case 'CLOSED':
+                case 'REVOKED':
+                case 'PAYERROR':
+                case 'FAILED':
+                    return 'failed';
+                case 'REFUND':
+                    return 'refunded';
+                default:
+                    return null;
+            }
+        }
+
+        return null;
+    }
+
     private async updatePaymentStatusIdempotent({
         orderId,
-        tradeStatus,
-        alipayTradeNo,
-        notifyTime,
+        channel,
+        providerStatus,
+        transactionId,
+        paidAt,
     }: {
         orderId: string;
-        tradeStatus: TradeStatus;
-        alipayTradeNo?: string;
-        notifyTime?: string;
+        channel: PaymentChannel;
+        providerStatus: string;
+        transactionId?: string;
+        paidAt?: Date;
     }): Promise<{ success: boolean; alreadyProcessed: boolean }> {
-        const mappedStatus = TRADE_STATUS_TO_PAYMENT_STATUS[tradeStatus];
+        const mappedStatus = this.mapProviderStatusToPaymentStatus(
+            channel,
+            providerStatus,
+        );
         if (!mappedStatus) {
             return { success: false, alreadyProcessed: false };
         }
@@ -283,11 +304,6 @@ export class PayService {
                 return { success: false, alreadyProcessed: false };
             }
 
-            const paidAt =
-                mappedStatus === 'succeeded'
-                    ? parseAlipayTime(notifyTime)
-                    : undefined;
-
             let alreadyProcessed = false;
 
             let pendingAcceptanceOrderId: string | null = null;
@@ -303,7 +319,7 @@ export class PayService {
                 let paymentRecord =
                     await this.payRepository.findLatestByOrderAndMethod(
                         orderId,
-                        'alipay',
+                        channel,
                         tx,
                     );
 
@@ -318,13 +334,13 @@ export class PayService {
                         orderId: orderId,
                         amount: latestOrder.totalAmount,
                         currency: latestOrder.currency ?? 'CNY',
-                        paymentMethod: 'alipay',
+                        paymentMethod: channel,
                         status: mappedStatus,
                         paidAt,
                     };
 
-                    if (alipayTradeNo) {
-                        newPayment.transactionId = alipayTradeNo;
+                    if (transactionId) {
+                        newPayment.transactionId = transactionId;
                     }
 
                     paymentRecord = await this.payRepository.createPayment(
@@ -340,8 +356,8 @@ export class PayService {
                         paidAt,
                     };
 
-                    if (alipayTradeNo) {
-                        updateData.transactionId = alipayTradeNo;
+                    if (transactionId) {
+                        updateData.transactionId = transactionId;
                     }
 
                     paymentRecord = await this.payRepository.updatePaymentById(
@@ -375,7 +391,7 @@ export class PayService {
                         paymentRecord ??
                         (await this.payRepository.findLatestByOrderAndMethod(
                             orderId,
-                            'alipay',
+                            channel,
                             tx,
                         ));
 
@@ -388,7 +404,7 @@ export class PayService {
                             amount: `+${orderForPayment.totalAmount}`,
                             currency: orderForPayment.currency ?? 'CNY',
                             description: `客户支付订单${orderForPayment.orderSerial ?? orderForPayment.id}`,
-                            referenceId: alipayTradeNo ?? null,
+                            referenceId: transactionId ?? null,
                         };
 
                     await this.payRepository.createFinancialTransaction(
@@ -453,7 +469,7 @@ export class PayService {
         try {
             await this.order.cancelOrderBySystem(
                 payment.order.id,
-                '支付宝未产生交易记录，系统自动取消',
+                `${payment.paymentMethod} 未产生交易记录，系统自动取消`,
             );
         } catch (error) {
             this.logger.warn(
@@ -767,10 +783,10 @@ export class PayService {
         userId,
     }: {
         displayAmount: number;
-        payType: 'wechat_pay' | 'alipay' | 'bank_transfer';
+        payType: 'wechat_pay' | 'alipay';
         orderId: string;
         userId: string;
-    }) {
+    }): Promise<InitiatePaymentResponse> {
         if (!userId) {
             throw new BadRequestException('用户信息缺失');
         }
@@ -807,10 +823,6 @@ export class PayService {
 
         if (orderInfo.status !== 'pending_payment') {
             throw new BadRequestException('当前状态不支持发起支付');
-        }
-
-        if (payType !== 'alipay') {
-            throw new BadRequestException('当前暂不支持该支付方式');
         }
 
         const lockKey = this.getPaymentLockKey(orderInfo.id);
@@ -910,33 +922,25 @@ export class PayService {
                 `订单支付-${orderInfo.orderSerial ?? orderInfo.id}`;
             const orderBody = orderInfo.service?.description ?? '';
 
-            const paymentExpireTime = orderInfo.paymentExpiresAt
-                ? this.formatAlipayTimeExpire(
-                      new Date(orderInfo.paymentExpiresAt),
-                  )
-                : undefined;
-
-            const orderString = this.alipaySdk.sdkExecute(
-                'alipay.trade.app.pay',
+            const providerResult = await this.paymentDispatcher.initiatePayment(
+                payType,
                 {
-                    bizContent: {
-                        out_trade_no: outTradeNo,
-                        total_amount: payableAmount.toFixed(2),
-                        subject: orderSubject,
-                        product_code: 'QUICK_MSECURITY_PAY',
-                        body: orderBody,
-                        time_expire: paymentExpireTime,
-                    },
-                    notify_url: `http://e96a2a8c.natappfree.cc/api/pay/alipay/notify`,
+                    paymentId: paymentRecord.id,
+                    outTradeNo,
+                    amount: payableAmount,
+                    currency: orderInfo.currency ?? 'CNY',
+                    subject: orderSubject,
+                    body: orderBody,
+                    timeExpire: orderInfo.paymentExpiresAt ?? undefined,
                 },
             );
 
             return {
                 paymentId: paymentRecord.id,
-                orderString,
-                payType,
                 outTradeNo,
                 amount: payableAmount,
+                currency: orderInfo.currency ?? 'CNY',
+                ...providerResult,
             };
         } finally {
             if (lockId) {
@@ -952,29 +956,43 @@ export class PayService {
         }
     }
 
-    async payNotify(payInfo: PayNotification) {
-        const signatureValid = this.alipaySdk.checkNotifySignV2(payInfo);
-        // 生产环境必须校验签名
-        if (!signatureValid) {
+    async handlePaymentNotify(channel: PaymentChannel, payload: unknown) {
+        try {
+            const notifyResult = await this.paymentDispatcher.handleNotify(
+                channel,
+                payload,
+            );
+
+            const order = await this.db.query.orders.findFirst({
+                where: eq(orders.orderSerial, notifyResult.outTradeNo),
+            });
+
+            if (!order) {
+                return 'fail';
+            }
+
+            const result = await this.updatePaymentStatusIdempotent({
+                orderId: order.id,
+                channel: notifyResult.channel,
+                providerStatus: notifyResult.providerStatus,
+                transactionId: notifyResult.transactionId,
+                paidAt: notifyResult.paidAt,
+            });
+
+            return result.success || result.alreadyProcessed
+                ? 'success'
+                : 'fail';
+        } catch (error) {
+            this.logger.warn(
+                '[PayService] 处理支付回调失败',
+                error instanceof Error ? error.message : error,
+            );
             return 'fail';
         }
+    }
 
-        const order = await this.db.query.orders.findFirst({
-            where: eq(orders.orderSerial, payInfo.out_trade_no),
-        });
-
-        if (!order) {
-            return 'fail';
-        }
-
-        const result = await this.updatePaymentStatusIdempotent({
-            orderId: order.id,
-            tradeStatus: payInfo.trade_status,
-            alipayTradeNo: payInfo.trade_no,
-            notifyTime: payInfo.gmt_payment || payInfo.notify_time,
-        });
-
-        return result.success || result.alreadyProcessed ? 'success' : 'fail';
+    async payNotify(payload: unknown) {
+        return this.handlePaymentNotify('alipay', payload);
     }
 
     /**
@@ -1003,8 +1021,7 @@ export class PayService {
     }
 
     /**
-     * 主动查询支付宝订单状态
-     * 客户端在收到不确定状态(8000/6004)时调用
+     * 主动查询订单支付状态
      * @param orderId 订单ID
      * @param userId 用户ID(权限校验)
      * @returns 订单支付状态
@@ -1036,73 +1053,61 @@ export class PayService {
         }
 
         const outTradeNo = orderInfo.orderSerial ?? orderInfo.id;
+        const existingPayments = await this.payRepository.findByOrderId(orderId);
+        const latestPayment = [...existingPayments].sort((left, right) => {
+            const leftTime = left.createdAt?.getTime?.() ?? 0;
+            const rightTime = right.createdAt?.getTime?.() ?? 0;
+            return rightTime - leftTime;
+        })[0];
+
+        if (!latestPayment) {
+            throw new BadRequestException('订单暂无支付记录');
+        }
+
+        if (
+            latestPayment.paymentMethod !== 'alipay' &&
+            latestPayment.paymentMethod !== 'wechat_pay'
+        ) {
+            throw new BadRequestException('当前支付记录不支持状态查询');
+        }
 
         try {
-            // 调用支付宝查询接口
-            const queryResult = await this.alipaySdk.exec(
-                'alipay.trade.query',
+            const providerResult = await this.paymentDispatcher.queryPaymentStatus(
+                latestPayment.paymentMethod,
                 {
-                    bizContent: {
-                        out_trade_no: outTradeNo,
-                    },
+                    outTradeNo,
                 },
             );
 
-            // 解析查询结果
-            const response = queryResult as {
-                code: string;
-                msg: string;
-                tradeStatus?: TradeStatus;
-                tradeNo?: string;
-                totalAmount?: string;
-                sendPayDate?: string;
-            };
-
-            // code=10000 表示接口调用成功
-            if (response.code === '10000' && response.tradeStatus) {
-                // 使用统一的更新逻辑
+            if (!providerResult.notFound) {
                 await this.updatePaymentStatusIdempotent({
                     orderId: orderInfo.id,
-                    tradeStatus: response.tradeStatus,
-                    alipayTradeNo: response.tradeNo,
-                    notifyTime: response.sendPayDate,
+                    channel: providerResult.channel,
+                    providerStatus: providerResult.providerStatus,
+                    transactionId: providerResult.transactionId,
+                    paidAt: providerResult.paidAt,
                 });
-
-                // 重新查询数据库中的最新状态
-                const latestPayment =
-                    await this.payRepository.findLatestByOrderAndMethod(
-                        orderInfo.id,
-                        'alipay',
-                    );
-
-                return {
-                    orderId: orderInfo.id,
-                    orderSerial: outTradeNo,
-                    paymentStatus: latestPayment?.status ?? 'pending',
-                    tradeStatus: response.tradeStatus,
-                    amount: response.totalAmount,
-                    transactionId: response.tradeNo,
-                    message: '订单已支付完成',
-                };
             }
 
-            // code=40004 表示订单不存在(用户可能还未完成支付)
-            if (response.code === '40004') {
-                return {
-                    orderId: orderInfo.id,
-                    orderSerial: outTradeNo,
-                    paymentStatus: 'pending',
-                    tradeStatus: 'WAIT_BUYER_PAY' as TradeStatus,
-                    amount: response.totalAmount,
-                    transactionId: response.tradeNo,
-                    message: '订单尚未支付',
-                };
-            }
+            const refreshedPayment =
+                await this.payRepository.findLatestByOrderAndMethod(
+                    orderInfo.id,
+                    latestPayment.paymentMethod,
+                );
 
-            throw new BadRequestException(`查询支付状态失败: ${response.msg}`);
+            return {
+                orderId: orderInfo.id,
+                orderSerial: outTradeNo,
+                payType: latestPayment.paymentMethod,
+                paymentStatus: refreshedPayment?.status ?? 'pending',
+                channelStatus: providerResult.providerStatus,
+                amount: providerResult.amount,
+                transactionId: providerResult.transactionId,
+                message: providerResult.message,
+            };
         } catch (error) {
             this.logger.error(
-                '[PayService] 查询支付宝订单状态失败',
+                '[PayService] 查询订单支付状态失败',
                 error instanceof Error ? error.message : error,
             );
             throw new BadRequestException('查询支付状态失败,请稍后重试');
@@ -1118,11 +1123,9 @@ export class PayService {
         const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
 
         try {
-            // 查询所有超时的pending支付记录
             const pendingPayments = await this.db.query.payments.findMany({
                 where: and(
                     eq(payments.status, 'pending'),
-                    eq(payments.paymentMethod, 'alipay'),
                     sql`${payments.createdAt} < ${tenMinutesAgo}`,
                 ),
                 with: {
@@ -1148,46 +1151,36 @@ export class PayService {
                     payment.order.orderSerial ?? payment.order.id;
 
                 try {
-                    const queryResult = await this.alipaySdk.exec(
-                        'alipay.trade.query',
-                        {
-                            bizContent: {
-                                out_trade_no: outTradeNo,
+                    const providerResult =
+                        await this.paymentDispatcher.queryPaymentStatus(
+                            payment.paymentMethod,
+                            {
+                                outTradeNo,
                             },
-                        },
-                    );
+                        );
 
-                    const response = queryResult as {
-                        code: string;
-                        msg: string;
-                        tradeStatus?: TradeStatus;
-                        tradeNo?: string;
-                        totalAmount?: string;
-                        sendPayDate?: string;
-                    };
-
-                    if (response.code === '10000' && response.tradeStatus) {
+                    if (!providerResult.notFound) {
                         const result = await this.updatePaymentStatusIdempotent(
                             {
                                 orderId: payment.order.id,
-                                tradeStatus: response.tradeStatus,
-                                alipayTradeNo: response.tradeNo,
-                                notifyTime: response.sendPayDate,
+                                channel: providerResult.channel,
+                                providerStatus: providerResult.providerStatus,
+                                transactionId: providerResult.transactionId,
+                                paidAt: providerResult.paidAt,
                             },
                         );
 
                         if (result.success || result.alreadyProcessed) {
                             successCount++;
                             this.logger.log(
-                                `[PayService] 定时查询成功更新订单 ${outTradeNo} 状态: ${response.tradeStatus}`,
+                                `[PayService] 定时查询成功更新订单 ${outTradeNo} 状态: ${providerResult.providerStatus}`,
                             );
                         } else {
                             failCount++;
                         }
-                    } else if (response.code === '40004') {
-                        // 订单不存在,标记为失败并触发系统取消，避免重复查询
+                    } else {
                         this.logger.log(
-                            `[PayService] 订单 ${outTradeNo} 尚未在支付宝产生交易记录`,
+                            `[PayService] 订单 ${outTradeNo} 尚未在 ${payment.paymentMethod} 产生交易记录`,
                         );
                         await this.markPaymentFailedAndCancelOrder(payment);
                     }
@@ -1865,7 +1858,7 @@ export class PayService {
         });
     }
 
-    // 用户提现（当前仅支持支付宝）
+    // 用户提现申请：冻结余额并按渠道写入提现工单
     async withdraw(
         userId: string,
         payload: UserWithdrawBody,
@@ -1880,9 +1873,6 @@ export class PayService {
         }
 
         const { amount, currency, payType, remark } = payload;
-        if (payType !== 'alipay') {
-            throw new BadRequestException('当前仅支持支付宝提现');
-        }
 
         const amountDecimal = new Decimal(amount).toDecimalPlaces(
             2,
@@ -1903,27 +1893,48 @@ export class PayService {
             columns: {
                 alipayUserId: true,
                 alipayOpenId: true,
+                wechatWorkerOpenId: true,
+                wechatWorkerAppId: true,
                 realName: true,
             },
         });
 
         const alipayUserId = profile?.alipayUserId?.trim();
         const alipayOpenId = profile?.alipayOpenId?.trim();
+        const wechatWorkerOpenId = profile?.wechatWorkerOpenId?.trim();
+        const wechatWorkerAppId = profile?.wechatWorkerAppId?.trim();
         const payeeName = profile?.realName?.trim() || null;
 
         let payeeAccount: string | null = null;
-        let payeeAccountType: 'ALIPAY_USER_ID' | 'ALIPAY_OPEN_ID' | null = null;
+        let payeeAccountType:
+            | 'ALIPAY_USER_ID'
+            | 'ALIPAY_OPEN_ID'
+            | 'WECHAT_OPENID'
+            | null = null;
+        let providerAppId: string | null = null;
 
-        if (alipayUserId) {
-            payeeAccount = alipayUserId;
-            payeeAccountType = 'ALIPAY_USER_ID';
-        } else if (alipayOpenId) {
-            payeeAccount = alipayOpenId;
-            payeeAccountType = 'ALIPAY_OPEN_ID';
-        }
+        if (payType === 'alipay') {
+            if (alipayUserId) {
+                payeeAccount = alipayUserId;
+                payeeAccountType = 'ALIPAY_USER_ID';
+            } else if (alipayOpenId) {
+                payeeAccount = alipayOpenId;
+                payeeAccountType = 'ALIPAY_OPEN_ID';
+            }
 
-        if (!payeeAccount || !payeeAccountType) {
-            throw new BadRequestException('请先绑定支付宝账号后再提现');
+            if (!payeeAccount || !payeeAccountType) {
+                throw new BadRequestException('请先绑定支付宝账号后再提现');
+            }
+        } else {
+            if (!wechatWorkerOpenId || !wechatWorkerAppId) {
+                throw new BadRequestException(
+                    '请先绑定服务人员端微信提现账号后再提现',
+                );
+            }
+
+            payeeAccount = wechatWorkerOpenId;
+            payeeAccountType = 'WECHAT_OPENID';
+            providerAppId = wechatWorkerAppId;
         }
 
         const freezeContext = await this.db.transaction(async (tx) => {
@@ -1975,6 +1986,7 @@ export class PayService {
                     payeeAccount,
                     payeeAccountType,
                     payeeName,
+                    providerAppId,
                     remark: normalizedRemark || null,
                 },
                 tx,
@@ -1999,6 +2011,7 @@ export class PayService {
             status: freezeContext.withdrawal.status,
             amount: amountDecimal.toNumber(),
             currency,
+            payType,
             balance: {
                 available: Number(
                     freezeContext.balanceAfterFreeze.available.toFixed(2),
@@ -2010,7 +2023,8 @@ export class PayService {
                     freezeContext.balanceAfterFreeze.total.toFixed(2),
                 ),
             },
-            outBizNo: freezeContext.withdrawal.id,
+            providerRequestNo: freezeContext.withdrawal.id,
+            providerState: freezeContext.withdrawal.providerState ?? null,
         };
 
         return response;

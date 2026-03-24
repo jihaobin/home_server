@@ -3,7 +3,7 @@ import { useInitiatePayment } from "@repo/hooks/api/pay";
 import { useQueryClient } from "@tanstack/react-query";
 import { aliPay } from "@repo/lib/pay";
 import { apiClient } from "@repo/lib/http-client";
-import type { QueryPaymentStatusResponse } from "@repo/types";
+import type { PaymentMethod, QueryPaymentStatusResponse } from "@repo/types";
 import { toast } from "@repo/mobile-ui/lib/toast";
 
 type PaymentFlowResult = {
@@ -17,6 +17,7 @@ type PayOrderParams = {
     orderId: string;
     displayAmount: number;
     paymentExpiresAt?: Date | string | null;
+    payType?: Extract<PaymentMethod, "alipay" | "wechat_pay">;
 };
 
 type RetryConfig = {
@@ -189,6 +190,7 @@ export function useOrderPayment() {
             orderId,
             displayAmount,
             paymentExpiresAt,
+            payType = "alipay",
         }: PayOrderParams): Promise<PaymentFlowResult> => {
             if (!orderId) {
                 toast.error("订单信息缺失，请稍后重试");
@@ -235,10 +237,14 @@ export function useOrderPayment() {
                 const paymentResponse = await initiatePayment.mutateAsync({
                     orderId,
                     data: {
-                        payType: "alipay",
+                        payType,
                         displayAmount: amount,
                     },
                 });
+
+                if (paymentResponse.data.payType !== "alipay") {
+                    throw new Error("当前客户端暂未支持该支付方式");
+                }
 
                 toast.dismiss();
                 toast.loading("等待支付宝支付结果...");

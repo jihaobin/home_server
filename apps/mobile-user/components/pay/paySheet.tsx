@@ -23,12 +23,6 @@ interface PaymentOption {
 
 const paymentOptions: PaymentOption[] = [
     {
-        id: "wechat_pay",
-        name: "微信支付",
-        icon: "Smartphone",
-        iconColor: "#07C160",
-    },
-    {
         id: "alipay",
         name: "支付宝支付",
         icon: "Wallet",
@@ -75,11 +69,6 @@ export function PaySheet({
             return;
         }
 
-        if (selectedPayment !== "alipay") {
-            toast.error("当前仅支持支付宝支付");
-            return;
-        }
-
         if (isProcessingPayment) {
             return;
         }
@@ -105,6 +94,7 @@ export function PaySheet({
                 orderId: createdOrderId,
                 displayAmount: payableAmount,
                 paymentExpiresAt,
+                payType: selectedPayment,
             });
 
             if (paymentResult.success) {
@@ -208,6 +198,10 @@ export function PaySheet({
                         </Pressable>
                     ))}
                 </View>
+
+                <Text className="mt-3 text-sm text-muted-foreground">
+                    当前版本仅开放支付宝支付，微信支付将在正式接入后开放。
+                </Text>
 
                 <View className="mt-6 flex-row items-center justify-between border-t border-border pt-4">
                     <View>
