@@ -9,19 +9,16 @@ import {
     Post,
     Query,
     Req,
+    Res,
     UseGuards,
     UsePipes,
 } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import {
-    AlipayNotifyResponseSchema,
     type InitiatePaymentBody,
     InitiatePaymentBodySchema,
     InitiatePaymentParamsSchema,
     InitiatePaymentResponseSchema,
-    PaymentNotifyResponseSchema,
-    type PayNotification,
-    payNotificationSchema,
     QueryPaymentStatusResponseSchema,
     type UserWithdrawBody,
     UserWithdrawBodySchema,
@@ -36,17 +33,19 @@ import {
     WorkerAlipayBindingStatusSchema,
     WorkerAlipayUnbindResponseSchema,
 } from '@repo/types';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { ApiErrorResponses, ApiSuccessResponse } from 'src/common/decorator';
 import { ApiBodies } from 'src/common/decorator/swagger-api-bodies';
 import { SkipTransform } from 'src/common/interceptors';
 import { createMultiZodPipe, createZodPipe } from 'src/common/pipes';
+import type { RequestWithRawBody } from '../auth/middlewares';
 import { Public, Roles } from '../auth/decorators';
 import { PayService } from './pay.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { Cron } from '@nestjs/schedule';
 import { createAliPaySdk } from 'src/lib/alipaySdk';
 import z from 'zod/v4';
+import { serializeParsedNotifyBody } from './pay-notify.utils';
 
 const paymentNotifyChannelSchema = z.enum(['alipay', 'wechat_pay']);
 
@@ -56,6 +55,90 @@ export class PayController {
     constructor(private readonly payService: PayService) {}
 
     private alipaySdk = createAliPaySdk();
+
+    private async readRawRequestBody(
+        req: RequestWithRawBody,
+        channel: 'alipay' | 'wechat_pay',
+    ) {
+        if (typeof req.rawBody === 'string') {
+            return req.rawBody;
+        }
+
+        if (typeof req.body === 'string') {
+            return req.body;
+        }
+
+        if (Buffer.isBuffer(req.body)) {
+            return req.body.toString('utf8');
+        }
+
+        if (req.body && typeof req.body === 'object') {
+            const serializedBody = serializeParsedNotifyBody(req.body, channel);
+
+            if (serializedBody) {
+                return serializedBody;
+            }
+
+            if (channel === 'wechat_pay') {
+                throw new Error('微信支付回调缺少原始请求体，无法验签');
+            }
+        }
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) {
+            chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+        }
+
+        return Buffer.concat(chunks).toString('utf8');
+    }
+
+    private async buildNotifyPayload(
+        channel: 'alipay' | 'wechat_pay',
+        req: RequestWithRawBody,
+    ) {
+        const rawBody = await this.readRawRequestBody(req, channel);
+
+        if (channel === 'wechat_pay') {
+            return {
+                rawBody,
+                headers: req.headers,
+            };
+        }
+
+        return {
+            rawBody,
+            headers: req.headers,
+            parsedBody: Object.fromEntries(
+                new URLSearchParams(rawBody).entries(),
+            ),
+        };
+    }
+
+    private async handleWechatNotifyResponse(req: Request, res: Response) {
+        const payload = await this.buildNotifyPayload('wechat_pay', req);
+        const handled = await this.payService.handlePaymentNotify(
+            'wechat_pay',
+            payload,
+        );
+
+        if (handled) {
+            return res.status(HttpStatus.NO_CONTENT).send();
+        }
+
+        return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+            code: 'FAIL',
+            message: '处理失败',
+        });
+    }
+
+    private async handleAlipayNotifyResponse(req: Request, res: Response) {
+        const payload = await this.buildNotifyPayload('alipay', req);
+        const handled = await this.payService.handlePaymentNotify(
+            'alipay',
+            payload,
+        );
+
+        return res.status(HttpStatus.OK).send(handled ? 'success' : 'fail');
+    }
 
     @UseGuards(AuthGuard)
     @Post('orders/:orderId')
@@ -90,24 +173,6 @@ export class PayController {
 
     @Public()
     @SkipTransform()
-    @Post('alipay/notify')
-    @HttpCode(HttpStatus.OK)
-    @UsePipes(
-        createZodPipe(payNotificationSchema, '支付宝异步通知参数校验失败'),
-    )
-    @ApiOperation({
-        summary: '支付宝异步通知回调(不要在应用中进行调用)',
-        description: '消费支付宝服务器推送的异步通知，并同步更新支付状态',
-    })
-    @ApiSuccessResponse(AlipayNotifyResponseSchema, {
-        description: '处理完成后需返回 success 或 fail 给支付宝',
-    })
-    async handleAlipayNotify(@Body() payload: PayNotification) {
-        return this.payService.handlePaymentNotify('alipay', payload);
-    }
-
-    @Public()
-    @SkipTransform()
     @Post('notify/:channel')
     @HttpCode(HttpStatus.OK)
     @UsePipes(
@@ -119,21 +184,57 @@ export class PayController {
     @ApiOperation({
         summary: '统一支付异步通知回调(不要在应用中进行调用)',
         description:
-            '按渠道转发支付平台异步通知，当前支付宝可用，后续可平滑接入微信支付。',
+            '按渠道消费支付平台异步通知。支付宝成功需返回 success，微信支付成功需返回 204 无响应体。',
     })
-    @ApiSuccessResponse(PaymentNotifyResponseSchema, {
-        description: '处理完成后返回 success 或 fail',
+    @ApiResponse({
+        status: HttpStatus.OK,
+        description: '支付宝回调处理完成后返回 success 或 fail',
+        schema: {
+            type: 'string',
+            enum: ['success', 'fail'],
+            example: 'success',
+        },
+    })
+    @ApiResponse({
+        status: HttpStatus.NO_CONTENT,
+        description: '微信支付回调处理成功后返回 204，无响应体',
+    })
+    @ApiResponse({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        description: '微信支付回调处理失败',
+        schema: {
+            type: 'object',
+            properties: {
+                code: {
+                    type: 'string',
+                    example: 'FAIL',
+                },
+                message: {
+                    type: 'string',
+                    example: '处理失败',
+                },
+            },
+            required: ['code', 'message'],
+        },
     })
     async handlePaymentNotify(
         @Param('channel') channel: z.infer<typeof paymentNotifyChannelSchema>,
-        @Body() payload: unknown,
+        @Req() req: RequestWithRawBody,
+        @Res({ passthrough: false }) res: Response,
     ) {
-        return this.payService.handlePaymentNotify(channel, payload);
+        console.log('回调接口被调用，渠道：', channel);
+        switch (channel) {
+            case 'alipay':
+                return this.handleAlipayNotifyResponse(req, res);
+            case 'wechat_pay':
+                return this.handleWechatNotifyResponse(req, res);
+        }
     }
 
     @ApiOperation({
         summary: '用户提现',
-        description: '校验余额并冻结提现金额，按渠道创建提现工单并等待管理员审核',
+        description:
+            '校验余额并冻结提现金额，按渠道创建提现工单并等待管理员审核',
     })
     @UseGuards(AuthGuard)
     @Roles(['service_personnel'])

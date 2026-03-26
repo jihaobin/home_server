@@ -1,6 +1,6 @@
 import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
 import { Text } from "@repo/mobile-ui/components/ui/text";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import { Pressable, RefreshControl, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -13,12 +13,14 @@ import {
     resolveCancelOrderReason,
 } from "@/lib/order-cancel";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { usePaymentCountdown } from "@/hooks/usePaymentCountdown";
+import { ExistingOrderPaySheet } from "@/components/pay/ExistingOrderPaySheet";
 import { Image as ExpoImage } from "expo-image";
 import { cssInterop } from "nativewind";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
+import { hasPendingWechatPaymentSession } from "@/lib/wechat-payment-session";
 
 // Enable NativeWind `className` on expo-image.
 cssInterop(ExpoImage, { className: { target: "style" } });
@@ -79,6 +81,12 @@ type OrderCardViewModel = {
     totalAmountText: string;
     needsReview?: boolean;
     actions: readonly OrderCardAction[];
+};
+
+type PendingPayOrderState = {
+    orderId: string;
+    totalAmount: number;
+    paymentExpiresAt?: string | null;
 };
 
 const pad2 = (value: number) => String(value).padStart(2, "0");
@@ -260,6 +268,9 @@ function OrderCard({
 
     const countdown = usePaymentCountdown(order.paymentExpiresAt);
     const showPaymentCountdown = order.status === "pending_payment";
+    const paymentCountdownText = !countdown.targetTimestamp
+        ? "请尽快完成支付"
+        : countdown.formatted;
 
     return (
         <Pressable
@@ -289,11 +300,11 @@ function OrderCard({
                                         : "text-primary"
                                 }
                             >
-                                {countdown.formatted}
+                                {paymentCountdownText}
                             </Text>
                         </Text>
                         <Text className="text-xs font-puhui-regular text-muted-foreground">
-                            逾期后请尽快与用户协商改期
+                            超时未支付订单将自动取消
                         </Text>
                     </View>
                 ) : null}
@@ -426,6 +437,9 @@ function OrdersListSkeleton({ count = 4 }: { count?: number }) {
 
 export default function OrdersIndex() {
     const [activeTabId, setActiveTabId] = useState<OrdersTabId>("all");
+    const [isPaySheetVisible, setIsPaySheetVisible] = useState(false);
+    const [pendingPayOrder, setPendingPayOrder] =
+        useState<PendingPayOrderState | null>(null);
 
     const params = useLocalSearchParams<{
         tab?: string | string[];
@@ -456,6 +470,29 @@ export default function OrdersIndex() {
         tab: activeTabId,
         limit: 10,
     });
+
+    useEffect(() => {
+        if (!requestIdParam) {
+            return;
+        }
+
+        void cardsQuery.refetch({
+            throwOnError: false,
+        });
+    }, [cardsQuery, requestIdParam]);
+
+    useFocusEffect(
+        useCallback(() => {
+            if (!hasPendingWechatPaymentSession()) {
+                return;
+            }
+
+            void cardsQuery.refetch({
+                throwOnError: false,
+            });
+        }, [cardsQuery]),
+    );
+
     const { refreshing, showPageLoading, onRefresh } = useGlobalPageRefresh({
         refetchActiveQueries: false,
         extraRefresh: () =>
@@ -493,18 +530,11 @@ export default function OrdersIndex() {
     }, [rawItems]);
 
     const router = useRouter();
-    const {
-        payExistingOrder,
-        isPaying,
-        cancelOrder,
-        isCancelling,
-        completeOrder,
-        isCompleting,
-        reorder,
-    } = useOrderActions();
+    const { cancelOrder, isCancelling, completeOrder, isCompleting, reorder } =
+        useOrderActions();
     const { confirm, confirmDialog } = useConfirmDialog();
 
-    const actionsDisabled = isPaying || isCancelling || isCompleting;
+    const actionsDisabled = isCancelling || isCompleting;
 
     const onActionPress = useMemo(() => {
         return async ({
@@ -535,11 +565,12 @@ export default function OrdersIndex() {
                     });
                     return;
                 case "pay":
-                    await payExistingOrder({
+                    setPendingPayOrder({
                         orderId: order.id,
-                        amount: order.totalAmount,
+                        totalAmount: order.totalAmount,
                         paymentExpiresAt: order.paymentExpiresAt,
                     });
+                    setIsPaySheetVisible(true);
                     return;
                 case "progress":
                     router.push(`/order/${order.id}`);
@@ -573,7 +604,7 @@ export default function OrdersIndex() {
                     return;
             }
         };
-    }, [cancelOrder, completeOrder, payExistingOrder, reorder, router]);
+    }, [cancelOrder, completeOrder, reorder, router]);
 
     return (
         <RequireAuth>
@@ -687,6 +718,16 @@ export default function OrdersIndex() {
                         }
                     }}
                 />
+
+                {pendingPayOrder ? (
+                    <ExistingOrderPaySheet
+                        visible={isPaySheetVisible}
+                        onClose={() => setIsPaySheetVisible(false)}
+                        orderId={pendingPayOrder.orderId}
+                        totalAmount={pendingPayOrder.totalAmount}
+                        paymentExpiresAt={pendingPayOrder.paymentExpiresAt}
+                    />
+                ) : null}
             </View>
         </RequireAuth>
     );

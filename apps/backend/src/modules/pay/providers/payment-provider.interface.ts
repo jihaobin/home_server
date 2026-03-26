@@ -34,6 +34,12 @@ export type PaymentProviderQueryRequest = {
     outTradeNo: string;
 };
 
+export type PaymentProviderNotifyRequest = {
+    rawBody: string;
+    headers?: Record<string, string | string[] | undefined>;
+    parsedBody?: unknown;
+};
+
 export type PaymentProviderStatusResult = {
     channel: PaymentChannel;
     providerStatus: string;
@@ -59,7 +65,9 @@ export interface PaymentProvider {
         request: PaymentProviderQueryRequest,
     ): Promise<PaymentProviderStatusResult>;
 
-    handleNotify?(payload: unknown): Promise<PaymentProviderNotifyResult>;
+    handleNotify?(
+        request: PaymentProviderNotifyRequest,
+    ): Promise<PaymentProviderNotifyResult>;
 }
 
 export const PAYMENT_PROVIDERS = Symbol('PAYMENT_PROVIDERS');

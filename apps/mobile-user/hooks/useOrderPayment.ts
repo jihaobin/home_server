@@ -1,13 +1,28 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useInitiatePayment } from "@repo/hooks/api/pay";
 import { useQueryClient } from "@tanstack/react-query";
-import { aliPay } from "@repo/lib/pay";
-import { apiClient } from "@repo/lib/http-client";
+import {
+    aliPay,
+    ensureWeChatAppRegistered,
+    isWeChatAppInstalled,
+    wechatPay,
+} from "@repo/lib/pay";
 import type { PaymentMethod, QueryPaymentStatusResponse } from "@repo/types";
 import { toast } from "@repo/mobile-ui/lib/toast";
+import {
+    reconcileOrderPaymentStatus,
+    syncOrderRelatedQueries,
+    type RetryConfig,
+} from "@/lib/order-payment-sync";
+import {
+    clearWechatPayResultSnapshot,
+    clearPendingWechatPaymentSession,
+    setPendingWechatPaymentSession,
+} from "@/lib/wechat-payment-session";
 
 type PaymentFlowResult = {
     success: boolean;
+    action: "success" | "cancelled" | "pending" | "failed" | "external_pending";
     paymentStatus: QueryPaymentStatusResponse["paymentStatus"];
     message?: string;
     clientResultCode?: string;
@@ -20,75 +35,56 @@ type PayOrderParams = {
     payType?: Extract<PaymentMethod, "alipay" | "wechat_pay">;
 };
 
-type RetryConfig = {
-    retries: number;
-    interval: number;
-    loadingMessage: string;
-    pendingMessage?: string;
-    errorMessage?: string;
-};
-
 const FALLBACK_CONFIG: RetryConfig = {
     retries: 3,
     interval: 2000,
-    loadingMessage: "正在确认支付状态...",
-    pendingMessage: "支付结果确认中，请稍后查看订单状态",
     errorMessage: "支付失败，请稍后重试",
 };
 
-const RESULT_STATUS_CONFIG: Record<string, RetryConfig> = {
+const ALIPAY_RESULT_STATUS_CONFIG: Record<string, RetryConfig> = {
     "9000": {
         retries: 3,
         interval: 1500,
-        loadingMessage: "支付成功，正在确认结果...",
-        pendingMessage: "支付结果确认中，请稍后查看订单状态",
         errorMessage: "支付结果确认失败，请稍后重试",
     },
     "8000": {
         retries: 10,
         interval: 3000,
-        loadingMessage: "支付结果确认中...",
-        pendingMessage: "支付结果确认中，请稍后查看订单状态",
         errorMessage: "支付结果尚未确认，请稍后重试",
     },
     "6004": {
         retries: 10,
         interval: 3000,
-        loadingMessage: "支付结果确认中...",
-        pendingMessage: "支付结果确认中，请稍后查看订单状态",
         errorMessage: "支付结果尚未确认，请稍后重试",
     },
     "6001": {
         retries: 1,
         interval: 1500,
-        loadingMessage: "正在确认订单状态...",
-        pendingMessage: "您已取消支付，可稍后在订单列表继续支付",
         errorMessage: "您已取消支付",
     },
     "6002": {
         retries: 5,
         interval: 2000,
-        loadingMessage: "网络异常，正在确认支付状态...",
-        pendingMessage: "网络波动，稍后请在订单列表查看支付结果",
         errorMessage: "网络异常，请稍后查看支付结果",
     },
     "4000": {
         retries: 3,
         interval: 2000,
-        loadingMessage: "支付失败，正在确认状态...",
-        pendingMessage: "支付状态确认中，请稍后查看",
         errorMessage: "支付失败，请稍后重试",
     },
     "5000": {
         retries: 3,
         interval: 2000,
-        loadingMessage: "正在确认支付重复请求结果...",
-        pendingMessage: "支付状态确认中，请稍后查看",
         errorMessage: "支付请求重复或失败，请稍后重试",
     },
 };
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const resolveAlipayRetryConfig = (code?: string | null): RetryConfig => {
+    return {
+        ...FALLBACK_CONFIG,
+        ...(code ? (ALIPAY_RESULT_STATUS_CONFIG[code] ?? {}) : {}),
+    };
+};
 
 const resolveErrorMessage = (error: unknown) => {
     if (error instanceof Error) {
@@ -100,11 +96,8 @@ const resolveErrorMessage = (error: unknown) => {
     return "操作失败，请稍后重试";
 };
 
-type PollResult = {
-    success: boolean;
-    paymentStatus: QueryPaymentStatusResponse["paymentStatus"];
-    message?: string;
-};
+const wait = (ms: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const isPaymentExpired = (value?: Date | string | null) => {
     if (!value) {
@@ -122,65 +115,11 @@ export function useOrderPayment() {
     const initiatePayment = useInitiatePayment();
     const queryClient = useQueryClient();
     const [isPaying, setIsPaying] = useState(false);
+    const payingRef = useRef(false);
 
-    const mergeConfig = useMemo(() => {
-        return (code?: string | null): RetryConfig => ({
-            ...FALLBACK_CONFIG,
-            ...(code ? (RESULT_STATUS_CONFIG[code] ?? {}) : {}),
-        });
-    }, []);
-
-    const pollPaymentStatus = useCallback(
-        async (orderId: string, config: RetryConfig): Promise<PollResult> => {
-            let lastSnapshot: QueryPaymentStatusResponse | null = null;
-
-            for (let attempt = 0; attempt < config.retries; attempt++) {
-                if (attempt > 0) {
-                    await delay(config.interval);
-                }
-
-                try {
-                    const response =
-                        await apiClient.get<QueryPaymentStatusResponse>(
-                            `/pay/orders/${orderId}/payment-status`,
-                        );
-
-                    lastSnapshot = response.data;
-
-                    if (response.data.paymentStatus !== "pending") {
-                        return {
-                            success:
-                                response.data.paymentStatus === "succeeded",
-                            paymentStatus: response.data.paymentStatus,
-                            message: response.data.message,
-                        };
-                    }
-                } catch (error) {
-                    lastSnapshot = lastSnapshot ?? null;
-                }
-            }
-
-            return {
-                success: false,
-                paymentStatus: lastSnapshot?.paymentStatus ?? "pending",
-                message: lastSnapshot?.message,
-            };
-        },
-        [],
-    );
-
-    const invalidateOrderCaches = useCallback(
-        (orderId: string) => {
-            queryClient.invalidateQueries({ queryKey: ["orders-list"] });
-            queryClient.invalidateQueries({
-                queryKey: ["orders-list-infinite"],
-            });
-            queryClient.invalidateQueries({
-                queryKey: ["order-cards-list-infinite"],
-            });
-            queryClient.invalidateQueries({
-                queryKey: ["order-detail", orderId],
-            });
+    const syncOrderCaches = useCallback(
+        async (orderId: string) => {
+            await syncOrderRelatedQueries(queryClient, orderId);
         },
         [queryClient],
     );
@@ -196,6 +135,7 @@ export function useOrderPayment() {
                 toast.error("订单信息缺失，请稍后重试");
                 return {
                     success: false,
+                    action: "failed",
                     paymentStatus: "pending",
                     message: "订单信息缺失",
                 };
@@ -206,6 +146,7 @@ export function useOrderPayment() {
                 toast.error("订单金额异常，请稍后重试");
                 return {
                     success: false,
+                    action: "failed",
                     paymentStatus: "pending",
                     message: "订单金额异常",
                 };
@@ -215,25 +156,25 @@ export function useOrderPayment() {
                 toast.error("订单支付已超时，请重新下单");
                 return {
                     success: false,
+                    action: "failed",
                     paymentStatus: "pending",
                     message: "支付已超时",
                 };
             }
 
-            if (isPaying) {
+            if (isPaying || payingRef.current) {
                 return {
                     success: false,
+                    action: "pending",
                     paymentStatus: "pending",
                     message: "支付处理中，请稍候",
                 };
             }
 
+            payingRef.current = true;
             setIsPaying(true);
 
             try {
-                toast.dismiss();
-                toast.loading("正在创建支付请求...");
-
                 const paymentResponse = await initiatePayment.mutateAsync({
                     orderId,
                     data: {
@@ -242,75 +183,126 @@ export function useOrderPayment() {
                     },
                 });
 
-                if (paymentResponse.data.payType !== "alipay") {
-                    throw new Error("当前客户端暂未支持该支付方式");
+                if (paymentResponse.data.payType === "alipay") {
+                    const alipayResult = await aliPay(
+                        paymentResponse.data.orderString,
+                    );
+
+                    const resultStatus =
+                        alipayResult?.resultStatus ?? "unknown";
+                    const config = resolveAlipayRetryConfig(resultStatus);
+
+                    const reconcileResult = await reconcileOrderPaymentStatus({
+                        queryClient,
+                        orderId,
+                        retryConfig: config,
+                        clientResultCode: resultStatus,
+                        cancelled: resultStatus === "6001",
+                    });
+
+                    if (reconcileResult.success) {
+                        toast.success("支付成功");
+                    } else if (reconcileResult.action === "failed") {
+                        toast.error(
+                            reconcileResult.message ??
+                                config.errorMessage ??
+                                "支付失败，请稍后重试",
+                        );
+                    }
+
+                    return {
+                        success: reconcileResult.success,
+                        action: reconcileResult.action,
+                        paymentStatus: reconcileResult.paymentStatus,
+                        message: reconcileResult.message ?? config.errorMessage,
+                        clientResultCode: reconcileResult.clientResultCode,
+                    };
                 }
 
-                toast.dismiss();
-                toast.loading("等待支付宝支付结果...");
+                const universalLink =
+                    process.env.EXPO_PUBLIC_WECHAT_USER_UNIVERSAL_LINK?.trim() ||
+                    process.env.EXPO_PUBLIC_WECHAT_UNIVERSAL_LINK?.trim();
 
-                const alipayResult = await aliPay(
-                    paymentResponse.data.orderString,
-                );
-                toast.dismiss();
+                await ensureWeChatAppRegistered({
+                    appId: paymentResponse.data.wechatPayRequest.appId,
+                    universalLink: universalLink ?? "",
+                });
 
-                const resultStatus = alipayResult?.resultStatus ?? "unknown";
-                const config = mergeConfig(resultStatus);
+                const installed = await isWeChatAppInstalled();
+                if (!installed) {
+                    throw new Error("请先安装微信客户端");
+                }
 
-                toast.loading(config.loadingMessage);
-                const pollResult = await pollPaymentStatus(orderId, config);
-                toast.dismiss();
+                clearWechatPayResultSnapshot();
 
-                if (pollResult.success) {
-                    toast.success("支付成功");
-                } else if (pollResult.paymentStatus === "pending") {
-                    toast.info(
-                        config.pendingMessage ??
-                            pollResult.message ??
-                            "支付结果确认中，请稍后查看订单状态",
-                    );
-                } else {
-                    toast.error(
-                        pollResult.message ??
-                            config.errorMessage ??
-                            "支付失败，请稍后重试",
-                    );
+                setPendingWechatPaymentSession({
+                    orderId,
+                    amount,
+                    paymentMethod: "wechat_pay",
+                    createdAt: new Date().toISOString(),
+                    paymentExpiresAt:
+                        typeof paymentExpiresAt === "string"
+                            ? paymentExpiresAt
+                            : (paymentExpiresAt?.toISOString() ?? null),
+                    prepayId: paymentResponse.data.wechatPayRequest.prepayId,
+                });
+
+                const wechatDispatchPromise = wechatPay(
+                    paymentResponse.data.wechatPayRequest,
+                )
+                    .then((dispatched) => ({
+                        kind: "resolved" as const,
+                        dispatched,
+                    }))
+                    .catch((error: unknown) => ({
+                        kind: "error" as const,
+                        error,
+                    }));
+
+                const wechatDispatchOutcome = await Promise.race([
+                    wechatDispatchPromise,
+                    wait(1200).then(() => ({
+                        kind: "timeout" as const,
+                    })),
+                ]);
+
+                if (
+                    wechatDispatchOutcome.kind === "resolved" &&
+                    !wechatDispatchOutcome.dispatched
+                ) {
+                    throw new Error("微信支付拉起失败，请稍后重试");
+                }
+
+                if (wechatDispatchOutcome.kind === "error") {
+                    throw wechatDispatchOutcome.error;
                 }
 
                 return {
-                    success: pollResult.success,
-                    paymentStatus: pollResult.paymentStatus,
-                    message: pollResult.message ?? config.errorMessage,
-                    clientResultCode: resultStatus,
+                    success: false,
+                    action: "external_pending",
+                    paymentStatus: "pending",
+                    message: "微信支付已拉起，请返回应用确认结果",
+                    clientResultCode: "dispatched",
                 };
             } catch (error) {
-                toast.dismiss();
                 const message = resolveErrorMessage(error);
+                clearPendingWechatPaymentSession();
+                await syncOrderCaches(orderId);
                 toast.error(message);
                 return {
                     success: false,
-                    paymentStatus: "pending",
+                    action: "failed",
+                    paymentStatus: "failed",
                     message,
                 };
             } finally {
-                invalidateOrderCaches(orderId);
+                void syncOrderCaches(orderId);
+                payingRef.current = false;
                 setIsPaying(false);
             }
         },
-        [
-            initiatePayment,
-            invalidateOrderCaches,
-            isPaying,
-            mergeConfig,
-            pollPaymentStatus,
-        ],
+        [initiatePayment, isPaying, syncOrderCaches],
     );
-
-    useEffect(() => {
-        return () => {
-            toast.dismiss();
-        };
-    }, []);
 
     return {
         payOrder,

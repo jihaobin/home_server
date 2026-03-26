@@ -6,6 +6,7 @@ import type {
     PaymentProvider,
     PaymentProviderInitiateRequest,
     PaymentProviderInitiateResult,
+    PaymentProviderNotifyRequest,
     PaymentProviderNotifyResult,
     PaymentProviderQueryRequest,
     PaymentProviderStatusResult,
@@ -62,9 +63,7 @@ export class AlipayPaymentProvider implements PaymentProvider {
                       }
                     : {}),
             },
-            notify_url:
-                process.env.ALIPAY_NOTIFY_URL ??
-                'http://e96a2a8c.natappfree.cc/api/pay/alipay/notify',
+            notify_url: process.env.ALIPAY_NOTIFY_URL,
         });
 
         return {
@@ -110,8 +109,13 @@ export class AlipayPaymentProvider implements PaymentProvider {
         throw new Error(queryResult.msg || '查询支付状态失败');
     }
 
-    async handleNotify(payload: unknown): Promise<PaymentProviderNotifyResult> {
-        const payInfo = payload as PayNotification;
+    async handleNotify(
+        request: PaymentProviderNotifyRequest,
+    ): Promise<PaymentProviderNotifyResult> {
+        const payInfo = (request.parsedBody ??
+            Object.fromEntries(
+                new URLSearchParams(request.rawBody).entries(),
+            )) as PayNotification;
         const signatureValid = this.alipaySdk.checkNotifySignV2(payInfo);
 
         if (!signatureValid) {
@@ -123,9 +127,7 @@ export class AlipayPaymentProvider implements PaymentProvider {
             channel: this.channel,
             providerStatus: payInfo.trade_status,
             transactionId: payInfo.trade_no,
-            paidAt: parseAlipayTime(
-                payInfo.gmt_payment || payInfo.notify_time,
-            ),
+            paidAt: parseAlipayTime(payInfo.gmt_payment || payInfo.notify_time),
             amount: payInfo.total_amount,
             message:
                 payInfo.trade_status === 'WAIT_BUYER_PAY'

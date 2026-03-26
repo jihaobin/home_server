@@ -41,23 +41,23 @@ export default function OrderConfirmScreen() {
     const personnelId = Array.isArray(params.personnelId)
         ? params.personnelId[0]
         : params.personnelId
-          ? String(params.personnelId)
-          : "";
+            ? String(params.personnelId)
+            : "";
     const serviceId = Array.isArray(params.serviceId)
         ? params.serviceId[0]
         : params.serviceId
-          ? String(params.serviceId)
-          : "";
+            ? String(params.serviceId)
+            : "";
     const serviceName = Array.isArray(params.serviceName)
         ? params.serviceName[0]
         : params.serviceName
-          ? String(params.serviceName)
-          : "";
+            ? String(params.serviceName)
+            : "";
     const routeSpecificationId = Array.isArray(params.specificationId)
         ? params.specificationId[0]
         : params.specificationId
-          ? String(params.specificationId)
-          : undefined;
+            ? String(params.specificationId)
+            : undefined;
 
     const { selectedAddress } = useAddressEditStore();
     const { selectedServiceTime } = useServiceStore();
@@ -333,9 +333,9 @@ export default function OrderConfirmScreen() {
                                     source={
                                         preview?.service?.imageFileUrl
                                             ? {
-                                                  uri: preview.service
-                                                      .imageFileUrl,
-                                              }
+                                                uri: preview.service
+                                                    .imageFileUrl,
+                                            }
                                             : require("../../assets/images/promo-1.png")
                                     }
                                     resizeMode="cover"
@@ -441,11 +441,10 @@ export default function OrderConfirmScreen() {
                             </Text>
                             <View className="flex-row items-center">
                                 <Text
-                                    className={`mr-1 text-xs font-puhui-regular ${
-                                        remark.trim()
+                                    className={`mr-1 text-xs font-puhui-regular ${remark.trim()
                                             ? "text-foreground"
                                             : "text-muted-foreground"
-                                    }`}
+                                        }`}
                                     numberOfLines={1}
                                 >
                                     {remark.trim() ? remark : "无备注"}
@@ -516,19 +515,6 @@ export default function OrderConfirmScreen() {
                         {warmTip}
                     </Text>
                 </View> */}
-
-                {/* 协议勾选 */}
-                <View className="mx-4 mt-4 flex-row items-center">
-                    <View className="h-4 w-4 items-center justify-center rounded-full bg-primary">
-                        <View className="h-2 w-2 rounded-full bg-card" />
-                    </View>
-                    <Text className="ml-2 text-xs font-puhui-regular text-foreground">
-                        同意
-                        <Text className="text-xs font-puhui-regular text-primary">
-                            《服务购买协议》
-                        </Text>
-                    </Text>
-                </View>
             </ScrollView>
 
             {/* 底部栏 */}

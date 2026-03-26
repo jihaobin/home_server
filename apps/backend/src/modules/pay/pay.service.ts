@@ -960,7 +960,7 @@ export class PayService {
         try {
             const notifyResult = await this.paymentDispatcher.handleNotify(
                 channel,
-                payload,
+                payload as never,
             );
 
             const order = await this.db.query.orders.findFirst({
@@ -968,7 +968,7 @@ export class PayService {
             });
 
             if (!order) {
-                return 'fail';
+                return false;
             }
 
             const result = await this.updatePaymentStatusIdempotent({
@@ -979,20 +979,14 @@ export class PayService {
                 paidAt: notifyResult.paidAt,
             });
 
-            return result.success || result.alreadyProcessed
-                ? 'success'
-                : 'fail';
+            return result.success || result.alreadyProcessed;
         } catch (error) {
             this.logger.warn(
                 '[PayService] 处理支付回调失败',
                 error instanceof Error ? error.message : error,
             );
-            return 'fail';
+            return false;
         }
-    }
-
-    async payNotify(payload: unknown) {
-        return this.handlePaymentNotify('alipay', payload);
     }
 
     /**
@@ -1053,7 +1047,8 @@ export class PayService {
         }
 
         const outTradeNo = orderInfo.orderSerial ?? orderInfo.id;
-        const existingPayments = await this.payRepository.findByOrderId(orderId);
+        const existingPayments =
+            await this.payRepository.findByOrderId(orderId);
         const latestPayment = [...existingPayments].sort((left, right) => {
             const leftTime = left.createdAt?.getTime?.() ?? 0;
             const rightTime = right.createdAt?.getTime?.() ?? 0;
@@ -1072,12 +1067,13 @@ export class PayService {
         }
 
         try {
-            const providerResult = await this.paymentDispatcher.queryPaymentStatus(
-                latestPayment.paymentMethod,
-                {
-                    outTradeNo,
-                },
-            );
+            const providerResult =
+                await this.paymentDispatcher.queryPaymentStatus(
+                    latestPayment.paymentMethod,
+                    {
+                        outTradeNo,
+                    },
+                );
 
             if (!providerResult.notFound) {
                 await this.updatePaymentStatusIdempotent({

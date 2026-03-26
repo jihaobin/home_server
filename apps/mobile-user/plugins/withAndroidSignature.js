@@ -43,5 +43,12 @@ function setAndroidSignature(appBuildGradle) {
 `
   );
 
+  output = output.replace(
+    /(debug\s*\{)[^}]*?signingConfig\s+signingConfigs\.debug/s,
+    `$1
+            signingConfig signingConfigs.release
+`
+  );
+
   return output;
 }

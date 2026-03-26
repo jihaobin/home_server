@@ -11,11 +11,13 @@ import { useCreateReview } from "@repo/hooks/api/review";
 import { useUploadFiles } from "@repo/hooks/api/files";
 import type { OrderStatus } from "@repo/types";
 import { useOrderActions } from "@/components/orders_screen/hooks/useOrderActions";
+import { ExistingOrderPaySheet } from "@/components/pay/ExistingOrderPaySheet";
 import {
     resolveCancelOrderDescription,
     resolveCancelOrderReason,
 } from "@/lib/order-cancel";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
+import { usePaymentCountdown } from "@/hooks/usePaymentCountdown";
 import {
     ImageUploader,
     type ImageUploaderItem,
@@ -90,7 +92,20 @@ function formatDuration(estimatedDurationMinutes: number | null | undefined) {
     return `${estimatedDurationMinutes}分钟`;
 }
 
-function OrderStatusCard({ status }: { status: OrderStatus }) {
+function OrderStatusCard({
+    status,
+    paymentExpiresAt,
+}: {
+    status: OrderStatus;
+    paymentExpiresAt?: Date | string | null;
+}) {
+    const countdown = usePaymentCountdown(paymentExpiresAt);
+    const paymentDeadlineText = !countdown.targetTimestamp
+        ? "请尽快完成支付，超时未支付自动取消订单"
+        : countdown.isExpired
+          ? "订单支付已超时，请重新下单"
+          : `请在${countdown.formatted}内完成支付，超时未支付自动取消订单`;
+
     if (status === "pending_payment") {
         return (
             <View className="mx-4 mt-3 rounded-lg bg-card px-4 py-4 shadow-xs">
@@ -102,7 +117,7 @@ function OrderStatusCard({ status }: { status: OrderStatus }) {
                 </Text>
                 <View className="mt-3 rounded-lg bg-destructive/10 px-3 py-2">
                     <Text className="text-xs font-puhui-regular text-destructive">
-                        请在11分17秒内完成支付，超时未支付自动取消订单
+                        {paymentDeadlineText}
                     </Text>
                 </View>
             </View>
@@ -267,12 +282,13 @@ function OrderDetailContent({
     const order = orderDetailQuery.data;
     const queryClient = useQueryClient();
     const upsertConversation = useChatUpsertConversation();
-    const { cancelOrder, isCancelling } = useOrderActions();
+    const { cancelOrder, isCancelling, reorder } = useOrderActions();
     const { confirm, confirmDialog } = useConfirmDialog();
 
     const createReview = useCreateReview();
     const uploadFiles = useUploadFiles();
     const [reviewModalVisible, setReviewModalVisible] = useState(false);
+    const [isPaySheetVisible, setIsPaySheetVisible] = useState(false);
     const [draftRating, setDraftRating] = useState<number>(5);
     const [draftComment, setDraftComment] = useState<string>("");
 
@@ -426,7 +442,7 @@ function OrderDetailContent({
 
     const handlePrimaryAction = useCallback(() => {
         if (canPay) {
-            toast.info("立即支付（mock）");
+            setIsPaySheetVisible(true);
             return;
         }
         if (order.status === "completed" && needsReview) {
@@ -437,12 +453,12 @@ function OrderDetailContent({
             setReviewModalVisible(true);
             return;
         }
-        toast.info("再次预约（mock）");
-    }, [canPay, needsReview, order.status]);
+        reorder();
+    }, [canPay, needsReview, order.status, reorder]);
 
     const handleSecondaryAction = useCallback(() => {
         if (order.status === "completed" && needsReview) {
-            toast.info("再来一单（mock）");
+            reorder();
             return;
         }
         if (canCancel) {
@@ -466,7 +482,7 @@ function OrderDetailContent({
             return;
         }
         toast.info("操作（mock）");
-    }, [canCancel, cancelOrder, needsReview, order.id, order.status]);
+    }, [canCancel, cancelOrder, needsReview, order.id, order.status, reorder]);
 
     const shouldShowSecondaryButton =
         canCancel || (order.status === "completed" && needsReview);
@@ -583,7 +599,10 @@ function OrderDetailContent({
                     />
                 }
             >
-                <OrderStatusCard status={order.status} />
+                <OrderStatusCard
+                    status={order.status}
+                    paymentExpiresAt={order.paymentExpiresAt}
+                />
 
                 <View className="mx-4 mt-3 rounded-lg bg-card px-4 py-4 shadow-xs">
                     <View className="flex-row items-center">
@@ -986,6 +1005,14 @@ function OrderDetailContent({
                     </View>
                 </View>
             </BottomSheetModal>
+
+            <ExistingOrderPaySheet
+                visible={isPaySheetVisible}
+                onClose={() => setIsPaySheetVisible(false)}
+                orderId={order.id}
+                totalAmount={order.totalAmount}
+                paymentExpiresAt={order.paymentExpiresAt}
+            />
         </>
     );
 }

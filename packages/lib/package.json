@@ -1,14 +1,15 @@
 {
-  "name": "@repo/lib",
-  "version": "0.0.0",
-  "private": true,
-  "exports": {
-    "./*": "./src/*.ts"
-  },
-  "dependencies": {
-    "@repo/utils": "workspace:*"
-  },
-  "devDependencies": {
-    "@repo/types": "workspace:*"
-  }
+    "name": "@repo/lib",
+    "version": "0.0.0",
+    "private": true,
+    "exports": {
+        "./*": "./src/*.ts"
+    },
+    "dependencies": {
+        "expo-wechat": "^0.1.5",
+        "@repo/utils": "workspace:*"
+    },
+    "devDependencies": {
+        "@repo/types": "workspace:*"
+    }
 }

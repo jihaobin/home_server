@@ -9,6 +9,11 @@
                 "include": "../alipay_certificate/**/*",
                 "outDir": "dist/alipay_certificate",
                 "watchAssets": true
+            },
+            {
+                "include": "../wechat_certificate/**/*",
+                "outDir": "dist/wechat_certificate",
+                "watchAssets": true
             }
         ]
 	}

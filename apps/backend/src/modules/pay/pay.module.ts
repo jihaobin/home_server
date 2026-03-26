@@ -18,6 +18,7 @@ import { PayoutDispatcher } from './providers/payout.dispatcher';
 import { PAYOUT_PROVIDERS } from './providers/payout-provider.interface';
 import { RefundDispatcher } from './providers/refund.dispatcher';
 import { REFUND_PROVIDERS } from './providers/refund-provider.interface';
+import { WechatPaymentProvider } from './providers/wechat-payment.provider';
 
 @Module({
     controllers: [
@@ -33,6 +34,7 @@ import { REFUND_PROVIDERS } from './providers/refund-provider.interface';
         AdminWithdrawalsService,
         AdminWithdrawalsRepository,
         AlipayPaymentProvider,
+        WechatPaymentProvider,
         AlipayPayoutProvider,
         AlipayRefundProvider,
         PaymentDispatcher,
@@ -40,10 +42,11 @@ import { REFUND_PROVIDERS } from './providers/refund-provider.interface';
         RefundDispatcher,
         {
             provide: PAYMENT_PROVIDERS,
-            useFactory: (alipayPaymentProvider: AlipayPaymentProvider) => [
-                alipayPaymentProvider,
-            ],
-            inject: [AlipayPaymentProvider],
+            useFactory: (
+                alipayPaymentProvider: AlipayPaymentProvider,
+                wechatPaymentProvider: WechatPaymentProvider,
+            ) => [alipayPaymentProvider, wechatPaymentProvider],
+            inject: [AlipayPaymentProvider, WechatPaymentProvider],
         },
         {
             provide: PAYOUT_PROVIDERS,

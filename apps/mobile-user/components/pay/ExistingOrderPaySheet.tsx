@@ -1,9 +1,7 @@
-import { useCreateDesignatedOrder } from "@repo/hooks/api/order";
-import { Text } from "@repo/mobile-ui/components/ui/text";
-import type { CreateDesignatedOrder } from "@repo/types";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
+import { Text } from "@repo/mobile-ui/components/ui/text";
 import { toast } from "@repo/mobile-ui/lib/toast";
 import { useOrderPayment } from "@/hooks/useOrderPayment";
 import {
@@ -11,45 +9,42 @@ import {
     type SupportedMobilePaymentMethod,
 } from "./PaymentMethodSheet";
 
-export interface PaySheetProps {
+export interface ExistingOrderPaySheetProps {
     visible: boolean;
     onClose: () => void;
-    orderData: CreateDesignatedOrder;
+    orderId: string;
     totalAmount: number;
+    paymentExpiresAt?: Date | string | null;
     onPaymentSuccess?: (orderId: string) => void;
     onPaymentFailed?: (orderId: string, message: string) => void;
     onPaymentCancelled?: () => void;
 }
 
-export function PaySheet({
+export function ExistingOrderPaySheet({
     visible,
     onClose,
-    orderData,
+    orderId,
     totalAmount,
+    paymentExpiresAt,
     onPaymentSuccess,
     onPaymentFailed,
     onPaymentCancelled,
-}: PaySheetProps) {
+}: ExistingOrderPaySheetProps) {
     const router = useRouter();
     const [selectedPayment, setSelectedPayment] =
         useState<SupportedMobilePaymentMethod>("wechat_pay");
-    const [isCreatingOrder, setIsCreatingOrder] = useState(false);
     const [isLaunchingPayment, setIsLaunchingPayment] = useState(false);
+    const { payOrder, isPaying } = useOrderPayment();
     const processingRef = useRef(false);
     const launchOverlayTimeoutRef = useRef<ReturnType<
         typeof setTimeout
     > | null>(null);
 
-    const { mutateAsync: createOrderAsync } = useCreateDesignatedOrder();
-    const { payOrder, isPaying } = useOrderPayment();
-
-    const isProcessingPayment = isCreatingOrder || isPaying;
-
     useEffect(() => {
         if (visible) {
             setSelectedPayment("wechat_pay");
         }
-    }, [visible]);
+    }, [visible, orderId]);
 
     const waitForModalDismissal = () =>
         new Promise<void>((resolve) => setTimeout(resolve, 250));
@@ -85,48 +80,38 @@ export function PaySheet({
         };
     }, []);
 
-    // 处理支付
     const handlePayment = async () => {
         if (!selectedPayment) {
             toast.error("请选择支付方式");
             return;
         }
 
-        if (isProcessingPayment || processingRef.current) {
+        if (isPaying || processingRef.current) {
             return;
         }
 
         processingRef.current = true;
 
         try {
-            setIsCreatingOrder(true);
-            const createdOrderResponse = await createOrderAsync(orderData);
-
-            const {
-                orderId: createdOrderId,
-                pricing,
-                paymentExpiresAt,
-            } = createdOrderResponse.data;
-            const payableAmount = pricing.totalAmount;
-            // 关闭模态框并等待卸载，再跳转到外部支付，避免回调时原生视图仍在绘制
             showLaunchOverlay();
             onClose();
             await waitForModalDismissal();
+
             const paymentResult = await payOrder({
-                orderId: createdOrderId,
-                displayAmount: payableAmount,
+                orderId,
+                displayAmount: totalAmount,
                 paymentExpiresAt,
                 payType: selectedPayment,
             });
 
             if (paymentResult.success) {
-                onPaymentSuccess?.(createdOrderId);
+                onPaymentSuccess?.(orderId);
                 router.push({
                     pathname: "/servicePersonnel/payment-result",
                     params: {
                         success: "true",
-                        orderId: createdOrderId,
-                        amount: payableAmount.toFixed(2),
+                        orderId,
+                        amount: totalAmount.toFixed(2),
                         paymentMethod: selectedPayment,
                     },
                 });
@@ -145,7 +130,6 @@ export function PaySheet({
             }
 
             if (paymentResult.action === "pending") {
-                onPaymentCancelled?.();
                 router.push({
                     pathname: "/(tabs)/orders",
                     params: {
@@ -161,25 +145,18 @@ export function PaySheet({
 
             const failureMessage =
                 paymentResult.message ?? "支付失败，请稍后重试";
-            onPaymentFailed?.(createdOrderId, failureMessage);
+            onPaymentFailed?.(orderId, failureMessage);
             router.push({
                 pathname: "/servicePersonnel/payment-result",
                 params: {
                     success: "false",
-                    orderId: createdOrderId,
-                    amount: payableAmount.toFixed(2),
+                    orderId,
+                    amount: totalAmount.toFixed(2),
                     paymentMethod: selectedPayment,
                     message: failureMessage,
                 },
             });
-        } catch (error) {
-            const message =
-                error instanceof Error
-                    ? error.message
-                    : "创建订单失败，请稍后重试";
-            toast.error(message);
         } finally {
-            setIsCreatingOrder(false);
             hideLaunchOverlay();
             processingRef.current = false;
         }
@@ -196,7 +173,7 @@ export function PaySheet({
                 onConfirm={() => {
                     void handlePayment();
                 }}
-                isProcessingPayment={isProcessingPayment}
+                isProcessingPayment={isPaying}
             />
             {isLaunchingPayment ? (
                 <View

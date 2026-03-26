@@ -19,6 +19,7 @@ const ICON_MAP = lucideIconRegistry;
 
 const paymentMethodLabels: Record<string, string> = {
     wechat: "微信支付",
+    wechat_pay: "微信支付",
     alipay: "支付宝支付",
     balance: "余额支付",
 };
@@ -268,7 +269,14 @@ export default function PaymentResultScreen() {
                     {isSuccess ? (
                         <>
                             <Button
-                                onPress={() => router.push("/(tabs)/orders")}
+                                onPress={() =>
+                                    router.push({
+                                        pathname: "/(tabs)/orders",
+                                        params: {
+                                            requestId: String(Date.now()),
+                                        },
+                                    })
+                                }
                                 className="h-12 w-full rounded-full bg-primary"
                             >
                                 <Text className="text-base font-semibold text-primary-foreground">

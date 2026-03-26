@@ -287,11 +287,11 @@ createOrder(data, {
 
 ### 1. 支付宝异步通知处理
 
-后端需要实现支付宝的异步通知接口：
+后端需要实现支付宝的异步通知处理逻辑，并收敛到统一回调入口：
 
 `	ypescript
-// POST /pay/alipay/notify
-async handleAlipayNotify(notify: AlipayNotify) {
+// POST /pay/notify/alipay
+async handlePaymentNotify(channel: "alipay", notify: AlipayNotify) {
   // 1. 验证签名
   const isValid = await this.verifyAlipaySign(notify);
   if (!isValid) return "fail";

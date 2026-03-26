@@ -11,6 +11,7 @@ import {
     type PaymentProviderInitiateRequest,
     type PaymentProviderInitiateResult,
     type PaymentProviderNotifyResult,
+    type PaymentProviderNotifyRequest,
     type PaymentProviderQueryRequest,
     type PaymentProviderStatusResult,
 } from './payment-provider.interface';
@@ -55,13 +56,13 @@ export class PaymentDispatcher {
 
     async handleNotify(
         channel: PaymentChannel,
-        payload: unknown,
+        request: PaymentProviderNotifyRequest,
     ): Promise<PaymentProviderNotifyResult> {
         const provider = this.getProvider(channel);
         if (!provider.handleNotify) {
             throw new BadRequestException(`暂不支持 ${channel} 支付回调`);
         }
 
-        return provider.handleNotify(payload);
+        return provider.handleNotify(request);
     }
 }

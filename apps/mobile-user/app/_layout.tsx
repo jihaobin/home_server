@@ -13,6 +13,9 @@ import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { AppUpdateProvider } from "@repo/mobile-ui/app-update/AppUpdateProvider";
 import { toast } from "@repo/mobile-ui/lib/toast";
 import { useChatSocket } from "../hooks/use-chat-socket";
+import { usePendingWechatPaymentReturn } from "../hooks/usePendingWechatPaymentReturn";
+import { useWechatPayResultListener } from "../hooks/useWechatPayResultListener";
+import { ensureWeChatAppRegistered } from "@repo/lib/pay";
 
 export default function RootLayout() {
     const hasMounted = React.useRef(false);
@@ -66,6 +69,31 @@ function RootNavigation() {
     const { session } = useSession();
     const pathname = usePathname();
     const isAuthenticated = !!session?.user?.id;
+
+    useWechatPayResultListener();
+    usePendingWechatPaymentReturn(pathname, isAuthenticated);
+
+    React.useEffect(() => {
+        const appId =
+            process.env.EXPO_PUBLIC_WECHAT_USER_APP_ID?.trim() ||
+            process.env.EXPO_PUBLIC_WECHAT_APP_ID?.trim();
+        const universalLink =
+            process.env.EXPO_PUBLIC_WECHAT_USER_UNIVERSAL_LINK?.trim() ||
+            process.env.EXPO_PUBLIC_WECHAT_UNIVERSAL_LINK?.trim();
+
+        if (!appId || !universalLink) {
+            return;
+        }
+
+        void ensureWeChatAppRegistered({
+            appId,
+            universalLink,
+        }).catch((error) => {
+            const message =
+                error instanceof Error ? error.message : "微信 SDK 初始化失败";
+            console.warn(message);
+        });
+    }, []);
 
     React.useEffect(() => {
         // 路由切换时主动清理未消失 toast，避免回退与 overlay 卸载并发导致 Android 视图树竞态。

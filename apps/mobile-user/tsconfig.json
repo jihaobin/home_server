@@ -19,5 +19,5 @@
         "expo-env.d.ts",
         "nativewind-env.d.ts",
         "postcss.config.mjs"
-    ]
+, "app.config.js"    ]
 }
