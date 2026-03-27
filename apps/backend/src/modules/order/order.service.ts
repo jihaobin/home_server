@@ -1346,6 +1346,13 @@ export class OrderService {
                     );
                 }
             } else {
+                if (order.status === 'pending_payment') {
+                    await this.payService.closePendingWechatPaymentOrder(
+                        id,
+                        'user_cancel',
+                    );
+                }
+
                 await this.orderRepository.cancelOrder(
                     id,
                     finalReason,
@@ -1382,6 +1389,11 @@ export class OrderService {
         if (order.status !== 'pending_payment') {
             return order;
         }
+
+        await this.payService.closePendingWechatPaymentOrder(
+            id,
+            'payment_timeout',
+        );
 
         const updated = await this.orderRepository.markOrderPaymentTimeout(
             id,

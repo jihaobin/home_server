@@ -30,9 +30,13 @@ export type PaymentProviderInitiateResult =
           };
       };
 
-export type PaymentProviderQueryRequest = {
+type PaymentProviderOutTradeNoRequest = {
     outTradeNo: string;
 };
+
+export type PaymentProviderQueryRequest = PaymentProviderOutTradeNoRequest;
+
+export type PaymentProviderCloseRequest = PaymentProviderOutTradeNoRequest;
 
 export type PaymentProviderNotifyRequest = {
     rawBody: string;
@@ -64,6 +68,8 @@ export interface PaymentProvider {
     queryPaymentStatus(
         request: PaymentProviderQueryRequest,
     ): Promise<PaymentProviderStatusResult>;
+
+    closeOrder?(request: PaymentProviderCloseRequest): Promise<void>;
 
     handleNotify?(
         request: PaymentProviderNotifyRequest,

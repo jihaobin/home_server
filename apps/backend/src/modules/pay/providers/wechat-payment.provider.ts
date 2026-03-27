@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { WechatPayClient } from 'src/lib/wechatPay/wechatPay.client';
 import type {
+    PaymentProviderCloseRequest,
     PaymentProvider,
     PaymentProviderInitiateRequest,
     PaymentProviderInitiateResult,
@@ -92,6 +93,10 @@ export class WechatPaymentProvider implements PaymentProvider {
             amount: toYuan(result.amount?.total),
             message: result.trade_state_desc || '微信支付状态已更新',
         };
+    }
+
+    async closeOrder(request: PaymentProviderCloseRequest): Promise<void> {
+        await this.wechatPayClient.closeOrderByOutTradeNo(request.outTradeNo);
     }
 
     async handleNotify(

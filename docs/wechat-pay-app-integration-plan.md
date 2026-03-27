@@ -3,6 +3,7 @@
 > 2026-03-26 同步说明：
 > 当前仓库已经完成“微信 App 支付”首阶段落地，包含后端 v3 下单/查单/回调验签、`WechatPaymentProvider` 注册，以及 `mobile-user` 端基于 `expo-wechat` 的真实拉起与回跳确认。
 > 目前真正未完成的核心工作已经收敛为三块：
+>
 > 1. `WechatRefundProvider` 与退款查单/回调；
 > 2. `WechatPayoutProvider` 与微信提现查单/回调；
 > 3. `mobile-worker` 端微信提现绑定闭环与 `requestMerchantTransfer` 确认收款原生能力。
@@ -17,11 +18,11 @@
 
 这三条链路都可以接，但难度和前置条件并不一样：
 
-| 能力 | 是否可做 | 关键前置条件 | 与当前仓库的主要差异 |
-| --- | --- | --- | --- |
-| 微信 App 支付 | 已完成首版 | 商户号绑定移动应用 AppID，后端接 v3 签名与回调 | 已落地 payment provider、v3 client、移动端拉起与支付回跳；剩余缺口主要是关单、更多异常补偿与测试完善 |
-| 微信退款 | 可以 | 已有微信支付成功订单，补退款 provider、回调与查单 | 退款分发器已具备，但微信退款 provider、回调与查单尚未接入 |
-| 微信商家转账到零钱 | 可以，但限制最多 | 必须有商家转账权限、用户 `openid`、用户确认收款、场景报备、运营账户资金 | 提现状态机和后台审核流已扩展，但微信绑定、商家转账 provider 与确认收款闭环尚未打通 |
+| 能力               | 是否可做         | 关键前置条件                                                            | 与当前仓库的主要差异                                                                                 |
+| ------------------ | ---------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 微信 App 支付      | 已完成首版       | 商户号绑定移动应用 AppID，后端接 v3 签名与回调                          | 已落地 payment provider、v3 client、移动端拉起与支付回跳；剩余缺口主要是关单、更多异常补偿与测试完善 |
+| 微信退款           | 可以             | 已有微信支付成功订单，补退款 provider、回调与查单                       | 退款分发器已具备，但微信退款 provider、回调与查单尚未接入                                            |
+| 微信商家转账到零钱 | 可以，但限制最多 | 必须有商家转账权限、用户 `openid`、用户确认收款、场景报备、运营账户资金 | 提现状态机和后台审核流已扩展，但微信绑定、商家转账 provider 与确认收款闭环尚未打通                   |
 
 最重要的结论有五个：
 
@@ -364,14 +365,14 @@ type InitiatePaymentResponse =
 
 微信支付状态建议映射：
 
-| 微信 `trade_state` | 本地 `paymentStatus` |
-| --- | --- |
-| `SUCCESS` | `succeeded` |
-| `NOTPAY` | `pending` |
-| `USERPAYING` | `pending` |
-| `CLOSED` | `failed` |
-| `PAYERROR` | `failed` |
-| `REFUND` | 交给退款链路维护，支付查询不单独推进 |
+| 微信 `trade_state` | 本地 `paymentStatus`                 |
+| ------------------ | ------------------------------------ |
+| `SUCCESS`          | `succeeded`                          |
+| `NOTPAY`           | `pending`                            |
+| `USERPAYING`       | `pending`                            |
+| `CLOSED`           | `failed`                             |
+| `PAYERROR`         | `failed`                             |
+| `REFUND`           | 交给退款链路维护，支付查询不单独推进 |
 
 ### 6.4 支付侧当前剩余工作
 
@@ -419,12 +420,12 @@ type InitiatePaymentResponse =
 
 微信退款终态建议映射：
 
-| 微信 `refund_status` | 建议本地语义 |
-| --- | --- |
-| `SUCCESS` | 退款成功 |
-| `CLOSED` | 退款关闭 |
-| `ABNORMAL` | 退款异常，需人工/补偿处理 |
-| `PROCESSING` | 处理中，保留中间态 |
+| 微信 `refund_status` | 建议本地语义              |
+| -------------------- | ------------------------- |
+| `SUCCESS`            | 退款成功                  |
+| `CLOSED`             | 退款关闭                  |
+| `ABNORMAL`           | 退款异常，需人工/补偿处理 |
+| `PROCESSING`         | 处理中，保留中间态        |
 
 ### 7.4 当前仓库需要补的点
 
@@ -459,17 +460,17 @@ type InitiatePaymentResponse =
 建议字段：
 
 ```ts
-id
-userId
-provider            // alipay | wechat
-appId               // 微信 appid / 支付宝应用标识
-accountType         // openid / unionid / alipay_user_id / ...
-accountId
-unionId
-realName
-isDefault
-createdAt
-updatedAt
+id;
+userId;
+provider; // alipay | wechat
+appId; // 微信 appid / 支付宝应用标识
+accountType; // openid / unionid / alipay_user_id / ...
+accountId;
+unionId;
+realName;
+isDefault;
+createdAt;
+updatedAt;
 ```
 
 这是推荐的长期方案。原因：
@@ -501,10 +502,10 @@ updatedAt
 当前仓库已经在 [user-profiles.ts](/mnt/f/home_server/apps/backend/src/common/database/schema/user-profiles.ts) 中落地如下字段：
 
 ```ts
-wechatWorkerOpenId
-wechatWorkerUnionId
-wechatWorkerBoundAt
-wechatWorkerAppId
+wechatWorkerOpenId;
+wechatWorkerUnionId;
+wechatWorkerBoundAt;
+wechatWorkerAppId;
 ```
 
 优点：
@@ -563,10 +564,10 @@ wechatWorkerAppId
 当前实现已经在提现记录上保留了渠道原始状态字段：
 
 ```ts
-providerState
-providerBillNo
-providerPackageInfo
-providerAppId
+providerState;
+providerBillNo;
+providerPackageInfo;
+providerAppId;
 ```
 
 后续对微信商家转账的细粒度状态，如 `WAIT_USER_CONFIRM`、`TRANSFERING`，继续保留在 `providerState` 即可，本地枚举不必一一镜像微信原始状态。
@@ -593,21 +594,47 @@ providerAppId
 2. 后端按提现渠道调用不同 provider；
 3. 若为微信，则调用微信“发起转账”；
 4. 若为支付宝，则维持现有同步打款逻辑；
-5. 微信分支下，本地 `withdrawals` 状态改为 `approved` 或 `processing`；
+5. 微信分支下，本地 `withdrawals` 状态改为 `approved` 或 `processing`，并进入“待用户微信确认收款”的异步链路；
 6. 微信分支下，保存：
-   - `out_bill_no = withdrawalId`
-   - `transfer_bill_no`
-   - `providerState`
-   - `package_info`
-   - `providerAppId`
-   - `transferSceneId`
+    - `out_bill_no = withdrawalId`
+    - `transfer_bill_no`
+    - `providerState`
+    - `package_info`
+    - `providerAppId`
+    - `transferSceneId`
 
 #### 用户确认收款
 
 1. 如果微信提现返回 `WAIT_USER_CONFIRM`；
-2. `mobile-worker` 端拉起微信官方确认收款页；
+2. `mobile-worker` 端在前台自动拉起微信官方确认收款页（不新增按钮/页面）；
 3. 客户端返回后调用后端查单；
 4. 后端等待微信转账回调或主动查单进入终态。
+
+#### 无新增按钮/页面的触发策略（推荐）
+
+为满足“不要新增按钮或新页面”的产品要求，建议把 SDK 调用时机设计为“**状态驱动 + 前台自动触发**”：
+
+1. 管理员审核通过后，后端发起微信商家转账并写入：
+    - `providerState=WAIT_USER_CONFIRM`（或微信等价待确认状态）；
+    - `providerPackageInfo`（调用 `requestMerchantTransfer` 所需 `package`）；
+    - `providerAppId`；
+2. 后端同时下发站内通知/Push，提示“您的提现已到账，请点击此通知确认收款”；
+3. `mobile-worker` 不新增页面：在**现有首页/工作台（或当前默认落地页）**的以下时机统一执行一次检测：
+    - App 冷启动完成后；
+    - `AppState` 从后台切回前台；
+    - 用户点击 Push 进入应用后；
+4. 检测到存在 `WAIT_USER_CONFIRM` 且有 `providerPackageInfo` 的提现单时，直接调用微信 SDK：
+    - Android: `WXOpenBusinessView`
+    - `businessType=requestMerchantTransfer`
+5. SDK 返回后立即调用后端查单接口，刷新该提现单状态。
+
+实现约束（避免骚扰与重复拉起）：
+
+- 仅在 App 前台触发，后台任务不直接拉起 SDK；
+- 按提现单维度做本地幂等锁（例如 `withdrawalId + 30s cooldown`），防止同一单重复弹起；
+- 一次只处理一笔待确认单（建议按创建时间升序）；
+- 若用户取消或微信拉起失败，保留 `WAIT_USER_CONFIRM`，在下次前台激活时自动重试；
+- 超过业务超时阈值仍未确认时，后端执行查单/撤销补偿并更新为 `cancelled/failed`。
 
 #### 终态处理
 
@@ -688,7 +715,7 @@ providerAppId
 
 - 补 `WechatPayoutProvider`；
 - 接入微信商家转账查单/回调；
-- 在 worker 端接上用户确认收款能力；
+- 在 worker 端接上“基于现有页面生命周期自动触发”的用户确认收款能力（不新增按钮/页面）；
 - 将微信终态继续写回现有提现审核流。
 
 ## 9. 类型与接口建议
@@ -790,7 +817,7 @@ providerAppId
 目标：
 
 - `mobile-worker` 集成微信 OpenSDK 的商家转账确认收款能力；
-- 提现详情页支持“去微信确认收款”；
+- 基于现有页面与生命周期自动检测 `WAIT_USER_CONFIRM` 并拉起确认（不新增按钮/页面）；
 - 用户返回 App 后主动查单。
 
 ### 第五阶段：撤销、补偿与对账（未开始）

@@ -50,6 +50,10 @@ export type WechatPayOrderQueryResponse = {
     };
 };
 
+export type WechatPayCloseOrderRequest = {
+    mchid: string;
+};
+
 export type WechatPayRefundAmount = {
     refund: number;
     total: number;

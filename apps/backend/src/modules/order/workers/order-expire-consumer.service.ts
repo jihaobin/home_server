@@ -27,6 +27,7 @@ import { OrderRepository } from '../order.reposityro';
 import { NotificationPublisher } from 'src/modules/notification/notification.publisher';
 import { NotificationTemplateService } from 'src/modules/notification/notification-template.service';
 import { ADMIN_ROLES } from 'src/modules/auth/rbac.utils';
+import { PayService } from 'src/modules/pay/pay.service';
 
 interface StreamEntry {
     id: string;
@@ -55,6 +56,7 @@ export class OrderExpireConsumerService
         private readonly cacheService: IAdvancedCacheService,
         private readonly notificationPublisher: NotificationPublisher,
         private readonly notificationTemplateService: NotificationTemplateService,
+        private readonly payService: PayService,
     ) {
         const baseClient = this.cacheService.getClient<Redis>();
         this.streamClient = baseClient.duplicate();
@@ -238,6 +240,11 @@ export class OrderExpireConsumerService
                 ) {
                     return;
                 }
+
+                await this.payService.closePendingWechatPaymentOrder(
+                    entry.orderId,
+                    'payment_timeout',
+                );
 
                 await this.orderRepository.markOrderPaymentTimeout(
                     entry.orderId,

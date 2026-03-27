@@ -127,8 +127,106 @@ export class PayService {
         return `lock:payment:order:${orderId}`;
     }
 
+    private getCloseWechatOrderLockKey(orderId: string) {
+        return `lock:payment:wechat_close:${orderId}`;
+    }
+
     private isPaymentExpired(expiresAt?: Date | null) {
         return Boolean(expiresAt && expiresAt.getTime() <= Date.now());
+    }
+
+    public async closePendingWechatPaymentOrder(
+        orderId: string,
+        scene: 'user_cancel' | 'payment_timeout' | 'pending_scan',
+    ) {
+        if (!orderId?.trim()) {
+            return;
+        }
+
+        const lockKey = this.getCloseWechatOrderLockKey(orderId);
+        let lockId: string | null = null;
+
+        try {
+            lockId = await this.cacheService.acquireLock(
+                lockKey,
+                this.paymentLockTtl,
+                10,
+                200,
+            );
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : String(error);
+            if (message.includes('仍无法获取')) {
+                this.logger.log(
+                    `[PayService] 微信关单并发冲突，跳过本次处理: orderId=${orderId} (scene=${scene})`,
+                );
+                return;
+            }
+
+            this.logger.warn(
+                `[PayService] 获取微信关单锁失败: orderId=${orderId} (scene=${scene})`,
+                message,
+            );
+            throw error;
+        }
+
+        if (!lockId) {
+            this.logger.log(
+                `[PayService] 微信关单锁未获取到，跳过本次处理: orderId=${orderId} (scene=${scene})`,
+            );
+            return;
+        }
+
+        try {
+            const order = await this.orderRepository.getOrderById(orderId);
+            if (!order || order.status !== 'pending_payment') {
+                return;
+            }
+
+            const paymentRecords =
+                await this.payRepository.findByOrderId(orderId);
+            const latestPayment = [...paymentRecords].sort((left, right) => {
+                const leftTime = left.createdAt?.getTime?.() ?? 0;
+                const rightTime = right.createdAt?.getTime?.() ?? 0;
+                return rightTime - leftTime;
+            })[0];
+
+            if (
+                !latestPayment ||
+                latestPayment.paymentMethod !== 'wechat_pay' ||
+                latestPayment.status !== 'pending'
+            ) {
+                return;
+            }
+
+            const outTradeNo = order.orderSerial ?? order.id;
+
+            await this.paymentDispatcher.closeOrder('wechat_pay', {
+                outTradeNo,
+            });
+
+            this.logger.log(
+                `[PayService] 微信未支付订单已关闭: ${outTradeNo} (scene=${scene})`,
+            );
+        } catch (error) {
+            this.logger.warn(
+                `[PayService] 微信关闭订单失败: orderId=${orderId} (scene=${scene})`,
+                error instanceof Error ? error.message : error,
+            );
+
+            throw error;
+        } finally {
+            if (lockId) {
+                await this.cacheService
+                    .releaseLock(lockKey, lockId)
+                    .catch((e) => {
+                        this.logger.warn(
+                            `[PayService] 释放微信关单锁失败: ${lockKey}`,
+                            e instanceof Error ? e.message : e,
+                        );
+                    });
+            }
+        }
     }
 
     private parseAlipayOauthTokenResponse(
@@ -454,6 +552,13 @@ export class PayService {
     ) {
         if (!payment?.order || payment.status !== 'pending') {
             return;
+        }
+
+        if (payment.paymentMethod === 'wechat_pay') {
+            await this.closePendingWechatPaymentOrder(
+                payment.order.id,
+                'pending_scan',
+            );
         }
 
         try {
@@ -2177,6 +2282,13 @@ export class PayService {
             providerAppId = wechatWorkerAppId;
         }
 
+        if (!payeeAccount || !payeeAccountType) {
+            throw new BadRequestException('提现收款账户信息缺失');
+        }
+
+        const confirmedPayeeAccount = payeeAccount;
+        const confirmedPayeeAccountType = payeeAccountType;
+
         const freezeContext = await this.db.transaction(async (tx) => {
             const balanceRecord =
                 await this.payRepository.findUserBalanceByUserId(userId, tx);
@@ -2223,8 +2335,8 @@ export class PayService {
                     currency,
                     status: 'pending',
                     method: payType,
-                    payeeAccount,
-                    payeeAccountType,
+                    payeeAccount: confirmedPayeeAccount,
+                    payeeAccountType: confirmedPayeeAccountType,
                     payeeName,
                     providerAppId,
                     remark: normalizedRemark || null,

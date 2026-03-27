@@ -11,6 +11,7 @@ import type {
     WechatPayAppLaunchRequest,
     WechatPayAppPrepayRequest,
     WechatPayAppPrepayResponse,
+    WechatPayCloseOrderRequest,
     WechatPayConfig,
     WechatPayCreateRefundRequest,
     WechatPayCreateRefundResponse,
@@ -25,9 +26,17 @@ import type {
 } from './wechatPay.types';
 
 type WechatPayRequestOptions = {
-    method: 'GET' | 'POST';
+    method: 'GET' | 'POST' | 'DELETE';
     path: string;
     body?: Record<string, unknown>;
+};
+
+type WechatPayRequestWithBodyOptions = WechatPayRequestOptions & {
+    expectNoContent?: false;
+};
+
+type WechatPayRequestNoContentOptions = WechatPayRequestOptions & {
+    expectNoContent: true;
 };
 
 type WechatPayResponseHeaders = {
@@ -162,6 +171,23 @@ function parseJson<T>(text: string): T {
     return JSON.parse(text) as T;
 }
 
+type WechatPayErrorResponse = {
+    code?: string;
+};
+
+function parseWechatPayErrorCode(responseBody: string): string | undefined {
+    if (!responseBody.trim()) {
+        return undefined;
+    }
+
+    try {
+        const parsed = parseJson<WechatPayErrorResponse>(responseBody);
+        return typeof parsed.code === 'string' ? parsed.code : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 export class WechatPayClient {
     private readonly config: WechatPayConfig;
 
@@ -239,11 +265,22 @@ export class WechatPayClient {
         }
     }
 
+    private async request<T>(
+        options: WechatPayRequestWithBodyOptions,
+    ): Promise<T>;
+
+    private async request(
+        options: WechatPayRequestNoContentOptions,
+    ): Promise<void>;
+
     private async request<T>({
         method,
         path,
         body,
-    }: WechatPayRequestOptions): Promise<T> {
+        expectNoContent,
+    }:
+        | WechatPayRequestWithBodyOptions
+        | WechatPayRequestNoContentOptions): Promise<T | void> {
         const serializedBody = body ? JSON.stringify(body) : '';
         const response = await fetch(`${this.config.baseUrl}${path}`, {
             method,
@@ -264,6 +301,15 @@ export class WechatPayClient {
 
         if (response.ok) {
             this.verifyResponseSignature(responseText, responseHeaders);
+
+            if (!responseText.trim()) {
+                if (expectNoContent) {
+                    return;
+                }
+
+                throw new Error('微信支付响应为空，无法解析业务数据');
+            }
+
             return parseJson<T>(responseText);
         }
 
@@ -308,6 +354,31 @@ export class WechatPayClient {
             path: '/v3/refund/domestic/refunds',
             body: request as unknown as Record<string, unknown>,
         });
+    }
+
+    async closeOrderByOutTradeNo(outTradeNo: string) {
+        const encodedOutTradeNo = encodeURIComponent(outTradeNo);
+        const payload: WechatPayCloseOrderRequest = {
+            mchid: this.config.mchId,
+        };
+
+        try {
+            await this.request({
+                method: 'POST',
+                path: `/v3/pay/transactions/out-trade-no/${encodedOutTradeNo}/close`,
+                body: payload as unknown as Record<string, unknown>,
+                expectNoContent: true,
+            });
+        } catch (error) {
+            if (error instanceof WechatPayApiError) {
+                const errorCode = parseWechatPayErrorCode(error.responseBody);
+                if (errorCode === 'ORDER_CLOSED' || errorCode === 'ORDERPAID') {
+                    return;
+                }
+            }
+
+            throw error;
+        }
     }
 
     async queryDomesticRefundByOutRefundNo(outRefundNo: string) {

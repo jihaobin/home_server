@@ -7,6 +7,7 @@ import {
 import {
     PAYMENT_PROVIDERS,
     type PaymentChannel,
+    type PaymentProviderCloseRequest,
     type PaymentProvider,
     type PaymentProviderInitiateRequest,
     type PaymentProviderInitiateResult,
@@ -52,6 +53,18 @@ export class PaymentDispatcher {
     ): Promise<PaymentProviderStatusResult> {
         const provider = this.getProvider(channel);
         return provider.queryPaymentStatus(request);
+    }
+
+    async closeOrder(
+        channel: PaymentChannel,
+        request: PaymentProviderCloseRequest,
+    ): Promise<void> {
+        const provider = this.getProvider(channel);
+        if (!provider.closeOrder) {
+            throw new BadRequestException(`暂不支持 ${channel} 关闭订单`);
+        }
+
+        await provider.closeOrder(request);
     }
 
     async handleNotify(
