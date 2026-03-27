@@ -2,8 +2,8 @@ import type { OrderStatus } from "@repo/types";
 
 export function resolveCancelOrderReason(status: OrderStatus) {
     return status === "pending_payment"
-        ? "支付前用户取消订单"
-        : "用户取消预约";
+        ? "支付前取消订单"
+        : "取消预约";
 }
 
 export function resolveCancelOrderDescription(status: OrderStatus) {

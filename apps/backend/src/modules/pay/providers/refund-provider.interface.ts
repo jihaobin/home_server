@@ -7,9 +7,34 @@ export interface RefundRequest {
     tradeNo?: string;
     outRequestNo: string;
     amount: number;
+    totalAmount?: number;
     reason?: string;
     channel?: RefundChannel;
 }
+
+export interface RefundQueryRequest {
+    outRequestNo: string;
+}
+
+export interface RefundQueryResult {
+    channel: RefundChannel;
+    outRequestNo: string;
+    outTradeNo?: string;
+    providerStatus: string;
+    refundId?: string;
+    refundAmount?: number;
+    successTime?: Date;
+    message: string;
+    notFound?: boolean;
+    raw?: unknown;
+}
+
+export interface RefundNotifyRequest {
+    rawBody: string;
+    headers?: Record<string, string | string[] | undefined>;
+}
+
+export type RefundNotifyResult = RefundQueryResult;
 
 export interface RefundSuccessResult {
     success: true;
@@ -33,6 +58,8 @@ export type RefundResult = RefundSuccessResult | RefundFailureResult;
 export interface RefundProvider {
     readonly channel: RefundChannel;
     refund(request: RefundRequest): Promise<RefundResult>;
+    queryRefundStatus?(request: RefundQueryRequest): Promise<RefundQueryResult>;
+    handleNotify?(request: RefundNotifyRequest): Promise<RefundNotifyResult>;
 }
 
 export const REFUND_PROVIDERS = Symbol('REFUND_PROVIDERS');

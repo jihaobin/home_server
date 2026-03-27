@@ -1,5 +1,12 @@
 # 微信支付、退款与商家转账接入方案
 
+> 2026-03-26 同步说明：
+> 当前仓库已经完成“微信 App 支付”首阶段落地，包含后端 v3 下单/查单/回调验签、`WechatPaymentProvider` 注册，以及 `mobile-user` 端基于 `expo-wechat` 的真实拉起与回跳确认。
+> 目前真正未完成的核心工作已经收敛为三块：
+> 1. `WechatRefundProvider` 与退款查单/回调；
+> 2. `WechatPayoutProvider` 与微信提现查单/回调；
+> 3. `mobile-worker` 端微信提现绑定闭环与 `requestMerchantTransfer` 确认收款原生能力。
+
 ## 1. 结论
 
 如果本仓库要把微信能力补齐，不应只做“App 支付”，而要按三条链路一起设计：
@@ -12,7 +19,7 @@
 
 | 能力 | 是否可做 | 关键前置条件 | 与当前仓库的主要差异 |
 | --- | --- | --- | --- |
-| 微信 App 支付 | 可以 | 商户号绑定移动应用 AppID，后端接 v3 签名与回调 | 支付域已完成多渠道抽象，但微信 provider、v3 client 与移动端拉起尚未落地 |
+| 微信 App 支付 | 已完成首版 | 商户号绑定移动应用 AppID，后端接 v3 签名与回调 | 已落地 payment provider、v3 client、移动端拉起与支付回跳；剩余缺口主要是关单、更多异常补偿与测试完善 |
 | 微信退款 | 可以 | 已有微信支付成功订单，补退款 provider、回调与查单 | 退款分发器已具备，但微信退款 provider、回调与查单尚未接入 |
 | 微信商家转账到零钱 | 可以，但限制最多 | 必须有商家转账权限、用户 `openid`、用户确认收款、场景报备、运营账户资金 | 提现状态机和后台审核流已扩展，但微信绑定、商家转账 provider 与确认收款闭环尚未打通 |
 
@@ -87,7 +94,7 @@
 - [pay.repository.ts](/mnt/f/home_server/apps/backend/src/modules/pay/pay.repository.ts)
   - 已有支付记录、余额、提现记录的仓储能力。
 - [paySheet.tsx](/mnt/f/home_server/apps/mobile-user/components/pay/paySheet.tsx)
-  - 已为微信支付预留资源与展示结构，但当前仍只开放支付宝入口。
+  - 已默认展示并优先选择微信支付，真实接入微信支付拉起流程。
 - [payment-provider.interface.ts](/mnt/f/home_server/apps/backend/src/modules/pay/providers/payment-provider.interface.ts)
   - 已抽出支付 provider 接口与统一分发器。
 - [refund-provider.interface.ts](/mnt/f/home_server/apps/backend/src/modules/pay/providers/refund-provider.interface.ts)
@@ -96,6 +103,20 @@
   - 已抽出打款 provider 接口与统一分发器。
 - [pay.ts](/mnt/f/home_server/packages/types/src/pay.ts)
   - 支付、查单、提现请求已经放开 `wechat_pay`，并预留微信支付拉起参数结构。
+- [pay.module.ts](/mnt/f/home_server/apps/backend/src/modules/pay/pay.module.ts)
+  - 已注册 `WechatPaymentProvider`，支付分发器已真正接入微信支付。
+- [wechat-payment.provider.ts](/mnt/f/home_server/apps/backend/src/modules/pay/providers/wechat-payment.provider.ts)
+  - 已实现微信 App 下单、查单、支付回调解析与状态映射。
+- [wechatPay.client.ts](/mnt/f/home_server/apps/backend/src/lib/wechatPay/wechatPay.client.ts)
+  - 已实现 v3 请求签名、响应验签、支付回调验签解密、App 拉起参数组装与按商户单号查单。
+- [packages/lib/src/pay.ts](/mnt/f/home_server/packages/lib/src/pay.ts)
+  - 已封装 `ensureWeChatAppRegistered()`、`isWeChatAppInstalled()`、`wechatPay()`。
+- [app.config.js](/mnt/f/home_server/apps/mobile-user/app.config.js)
+  - 已接入 `expo-wechat` plugin、微信 scheme、Universal Link 对应的 Associated Domains 与 Android Proguard 规则。
+- [useOrderPayment.ts](/mnt/f/home_server/apps/mobile-user/hooks/useOrderPayment.ts)
+  - 已处理微信支付发起、回跳前 pending session 持久化、失败兜底与返回 App 后的查单确认。
+- [wechat-payment-return.tsx](/mnt/f/home_server/apps/mobile-user/app/servicePersonnel/wechat-payment-return.tsx)
+  - 已在回到 App 后消费微信回调快照并主动查单，统一跳转支付结果页或订单列表。
 - [user-profiles.ts](/mnt/f/home_server/apps/backend/src/common/database/schema/user-profiles.ts)
   - 已增加 `wechatWorkerOpenId / wechatWorkerUnionId / wechatWorkerAppId / wechatWorkerBoundAt`。
 - [financial.ts](/mnt/f/home_server/apps/backend/src/common/database/schema/financial.ts)
@@ -105,12 +126,13 @@
 
 - [pay.service.ts](/mnt/f/home_server/apps/backend/src/modules/pay/pay.service.ts)
   - `pay()`、支付回调、查单、定时扫描、`withdraw()` 已经按渠道改造；
-  - 当前真正未完成的是微信 provider 尚未接入，`wechat_pay` 走到 dispatcher 后还没有可执行实现。
+  - `wechat_pay` 已可执行并接入真实 provider；当前真正未完成的是微信关单、退款、提现三条后续链路。
 - [pay.ts](/mnt/f/home_server/packages/types/src/pay.ts)
   - 基础类型已兼容微信支付与微信提现；
-  - 仍缺微信退款回调、微信提现查询/回调等更细粒度 schema。
+  - 仍缺微信退款回调、微信提现查询/回调、商家转账确认收款等更细粒度 schema。
 - [packages/lib/src/pay.ts](/mnt/f/home_server/packages/lib/src/pay.ts)
-  - 当前只有 `native-expo-alipay`，没有微信支付或商家转账确认收款的原生封装。
+  - 已有微信支付原生封装；
+  - 当前缺的是微信提现 `requestMerchantTransfer` 确认收款能力。
 - [admin-withdrawals.service.ts](/mnt/f/home_server/apps/backend/src/modules/pay/admin-withdrawals.service.ts)
   - 审核流已经支持 `approved / processing / completed / failed / cancelled`；
   - 当前缺的是微信打款 provider、微信状态映射与确认收款链路。
@@ -118,10 +140,11 @@
   - 微信 worker 维度字段已经落库；
   - 当前缺的是正式的绑定接口、绑定页面流程和数据写入闭环。
 - [pay.module.ts](/mnt/f/home_server/apps/backend/src/modules/pay/pay.module.ts)
-  - 当前只注册了 `AlipayPaymentProvider`、`AlipayRefundProvider`、`AlipayPayoutProvider`；
-  - 微信支付、退款、打款 provider 仍未注册。
+  - 当前已注册 `AlipayPaymentProvider`、`WechatPaymentProvider`、`AlipayRefundProvider`、`AlipayPayoutProvider`；
+  - 微信退款、微信打款 provider 仍未注册。
 - [useOrderPayment.ts](/mnt/f/home_server/apps/mobile-user/hooks/useOrderPayment.ts)
-  - 发起支付时虽然接受 `wechat_pay` 类型，但客户端仍只处理支付宝返回结果。
+  - 已完成微信支付拉起、前后台切回、结果对账；
+  - 当前仍缺更完整的异常回流覆盖与端到端测试验证。
 - [account-binding.tsx](/mnt/f/home_server/apps/mobile-worker/app/profile/account-binding.tsx)
   - 服务人员端仍只开放支付宝绑定，微信提现绑定入口尚未接入。
 
@@ -176,7 +199,7 @@
 
 ### 4.3 微信底层能力统一封装
 
-当前 `apps/backend/src/lib/wechatPay/` 目录已经预留，后续继续在这里补齐：
+当前 `apps/backend/src/lib/wechatPay/` 目录已经落地支付主链路能力，后续继续在这里补齐退款与商家转账：
 
 - `apps/backend/src/lib/wechatPay/wechatPay.client.ts`
 - `apps/backend/src/lib/wechatPay/wechatPay.crypto.ts`
@@ -195,11 +218,31 @@
 
 由于你这个仓库有用户端与服务人员端两套 App，建议微信配置从一开始就区分：
 
+当前代码里“微信支付首版”已经实际读取并依赖的最小环境变量包括：
+
+- 后端：
+  - `WECHAT_PAY_MCH_ID`
+  - `WECHAT_PAY_API_V3_KEY`
+  - `WECHAT_PAY_MERCHANT_CERT_SERIAL_NO`
+  - `WECHAT_PAY_PRIVATE_KEY_PATH`
+  - `WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH` 或 `WECHAT_PAY_PLATFORM_CERT_PATH`
+  - `WECHAT_PAY_PLATFORM_PUBLIC_KEY_ID` 或 `WECHAT_PAY_PLATFORM_CERT_SERIAL_NO`
+  - `WECHAT_PAY_BASE_URL`
+  - `WECHAT_PAY_USER_APP_ID`
+  - `WECHAT_PAY_USER_NOTIFY_URL`
+- `mobile-user`：
+  - `EXPO_PUBLIC_WECHAT_USER_APP_ID` 或 `EXPO_PUBLIC_WECHAT_APP_ID`
+  - `EXPO_PUBLIC_WECHAT_USER_UNIVERSAL_LINK` 或 `EXPO_PUBLIC_WECHAT_UNIVERSAL_LINK`
+
+下面这组是建议中的完整目标配置，其中退款、商家转账相关变量目前仍属于后续阶段预留：
+
 ```env
 WECHAT_PAY_MCH_ID=
 WECHAT_PAY_API_V3_KEY=
 WECHAT_PAY_MERCHANT_CERT_SERIAL_NO=
 WECHAT_PAY_PRIVATE_KEY_PATH=
+WECHAT_PAY_PLATFORM_PUBLIC_KEY_PATH=
+WECHAT_PAY_PLATFORM_PUBLIC_KEY_ID=
 WECHAT_PAY_PLATFORM_CERT_PATH=
 WECHAT_PAY_BASE_URL=https://api.mch.weixin.qq.com
 
@@ -232,7 +275,7 @@ WECHAT_PAY_TRANSFER_SOURCE_IP=
 
 ### 6.0 App 端实现选型
 
-当前方案确定在 Expo App 侧统一使用 [`expo-wechat`](https://github.com/likeSo/expo-wechat) 作为微信能力实现基础。
+当前方案已在 Expo App 侧统一使用 [`expo-wechat`](https://github.com/likeSo/expo-wechat) 作为微信能力实现基础。
 
 采用方式如下：
 
@@ -333,9 +376,9 @@ type InitiatePaymentResponse =
 ### 6.4 支付侧当前剩余工作
 
 - [alipay-payment.provider.ts](/mnt/f/home_server/apps/backend/src/modules/pay/providers/alipay-payment.provider.ts) 里支付宝 `notify_url` 仍然写死测试域名，接微信时要一并清掉；
-- [pay.module.ts](/mnt/f/home_server/apps/backend/src/modules/pay/pay.module.ts) 当前只注册支付宝 payment provider，需要补 `WechatPaymentProvider`；
-- [packages/lib/src/pay.ts](/mnt/f/home_server/packages/lib/src/pay.ts) 需要基于 `expo-wechat` 增加微信原生支付封装；
-- [useOrderPayment.ts](/mnt/f/home_server/apps/mobile-user/hooks/useOrderPayment.ts) 需要补微信支付结果处理；
+- [wechatPay.client.ts](/mnt/f/home_server/apps/backend/src/lib/wechatPay/wechatPay.client.ts) 当前只覆盖支付下单、查单与回调验签，尚未补“关单”接口；
+- [packages/lib/src/pay.ts](/mnt/f/home_server/packages/lib/src/pay.ts) 已接入 `expo-wechat` 支付能力，但还没有 worker 端商家转账确认收款封装；
+- [useOrderPayment.ts](/mnt/f/home_server/apps/mobile-user/hooks/useOrderPayment.ts) 与 [wechat-payment-return.tsx](/mnt/f/home_server/apps/mobile-user/app/servicePersonnel/wechat-payment-return.tsx) 已完成首版结果处理，但还缺更系统的异常场景验证；
 - 订单超时/系统取消时，对微信支付仍需补“关单”。
 
 ## 7. 微信退款接入设计
@@ -656,6 +699,7 @@ providerAppId
 
 - 多态的 `InitiatePaymentResponseSchema`
 - 微信支付请求参数 schema
+- 发起支付请求体中的 `payType` 已放开 `wechat_pay`
 - `UserWithdrawBodySchema`
   - 已放开 `wechat_pay`
 - `QueryPaymentStatusResponseSchema`
@@ -696,7 +740,7 @@ providerAppId
 
 ## 10. 分阶段实施顺序
 
-### 第一阶段：支付闭环（进行中）
+### 第一阶段：支付闭环（已完成首版）
 
 目标：
 
@@ -709,7 +753,8 @@ providerAppId
 当前进展：
 
 - 服务端 payment dispatcher、统一查单结构、统一回调入口已经到位；
-- 微信 payment provider、微信 v3 client、移动端原生拉起尚未完成。
+- `WechatPaymentProvider`、`WechatPayClient`、移动端 `expo-wechat` 拉起、回跳后的主动查单确认均已落地；
+- 当前剩余工作主要是“关单”、异常补偿与端到端验证，不再属于首版支付闭环阻塞项。
 
 ### 第二阶段：退款闭环（进行中）
 

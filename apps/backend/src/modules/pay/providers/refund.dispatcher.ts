@@ -8,8 +8,12 @@ import {
     REFUND_PROVIDERS,
     type RefundChannel,
     type RefundProvider,
+    type RefundQueryRequest,
+    type RefundQueryResult,
     type RefundRequest,
     type RefundResult,
+    type RefundNotifyRequest,
+    type RefundNotifyResult,
 } from './refund-provider.interface';
 
 @Injectable()
@@ -43,5 +47,29 @@ export class RefundDispatcher {
             ...request,
             channel,
         });
+    }
+
+    async queryRefundStatus(
+        channel: RefundChannel,
+        request: RefundQueryRequest,
+    ): Promise<RefundQueryResult> {
+        const provider = this.getProvider(channel);
+        if (!provider.queryRefundStatus) {
+            throw new BadRequestException(`暂不支持 ${channel} 退款状态查询`);
+        }
+
+        return provider.queryRefundStatus(request);
+    }
+
+    async handleNotify(
+        channel: RefundChannel,
+        request: RefundNotifyRequest,
+    ): Promise<RefundNotifyResult> {
+        const provider = this.getProvider(channel);
+        if (!provider.handleNotify) {
+            throw new BadRequestException(`暂不支持 ${channel} 退款回调`);
+        }
+
+        return provider.handleNotify(request);
     }
 }

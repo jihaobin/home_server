@@ -42,6 +42,7 @@ import { PayRepository } from './pay.repository';
 import { PaymentDispatcher } from './providers/payment.dispatcher';
 import type { PaymentChannel } from './providers/payment-provider.interface';
 import { RefundDispatcher } from './providers/refund.dispatcher';
+import type { RefundChannel } from './providers/refund-provider.interface';
 
 type PaymentInsert = typeof payments.$inferInsert;
 
@@ -1364,6 +1365,258 @@ export class PayService {
         });
     }
 
+    private buildRefundOutRequestNo(
+        orderId: string,
+        totalRefunded: number,
+        refundAmount: number,
+    ) {
+        const fingerprint = `${orderId}:${totalRefunded.toFixed(2)}:${refundAmount.toFixed(2)}`;
+        const digest = createHash('sha256')
+            .update(fingerprint)
+            .digest('hex')
+            .slice(0, 24);
+        return `REFUND_${digest}`;
+    }
+
+    private parseTransactionMetadata(metadata?: string | null) {
+        if (!metadata) {
+            return null;
+        }
+
+        try {
+            const parsed = JSON.parse(metadata);
+            return parsed && typeof parsed === 'object'
+                ? (parsed as Record<string, unknown>)
+                : null;
+        } catch {
+            return null;
+        }
+    }
+
+    private extractProviderStatus(metadata?: Record<string, unknown>) {
+        const value = metadata?.providerStatus;
+        return typeof value === 'string' ? value : undefined;
+    }
+
+    private async finalizeRefundSettlement({
+        order,
+        payment,
+        refundAmount,
+        totalRefunded,
+        orderAmount,
+        reason,
+        refundedById,
+        outRequestNo,
+        refundChannel,
+        tradeNo,
+        providerMetadata,
+    }: {
+        order: OrderRecord;
+        payment: PaymentRecord;
+        refundAmount: number;
+        totalRefunded: number;
+        orderAmount: number;
+        reason: string;
+        refundedById: string;
+        outRequestNo: string;
+        refundChannel: RefundChannel;
+        tradeNo?: string;
+        providerMetadata?: Record<string, unknown>;
+    }) {
+        await this.db.transaction(async (tx) => {
+            const isFullRefund = totalRefunded + refundAmount >= orderAmount;
+
+            if (isFullRefund) {
+                await this.payRepository.updatePaymentById(
+                    payment.id,
+                    {
+                        status: 'refunded',
+                    },
+                    tx,
+                );
+            }
+
+            if (isFullRefund) {
+                if (order.status === 'completed') {
+                    await this.orderRepository.updateOrderStatus(
+                        order.id,
+                        'refunded',
+                        tx,
+                    );
+                } else {
+                    await this.orderRepository.cancelOrder(
+                        order.id,
+                        reason,
+                        refundedById,
+                        tx,
+                    );
+                }
+            }
+
+            const refundType = isFullRefund ? '全额退款' : '部分退款';
+            await this.payRepository.createFinancialTransaction(
+                {
+                    orderId: order.id,
+                    paymentId: payment.id,
+                    userId: order.customerId,
+                    transactionType: 'refund_paid',
+                    amount: `-${refundAmount.toFixed(2)}`,
+                    currency: order.currency ?? 'CNY',
+                    description: `订单${refundType} - ${reason}`.slice(0, 500),
+                    referenceId: tradeNo ?? null,
+                    metadata: JSON.stringify({
+                        outRequestNo,
+                        outTradeNo: order.orderSerial,
+                        refundChannel,
+                        refundedById,
+                        isFullRefund,
+                        totalRefundedBefore: totalRefunded,
+                        totalRefundedAfter: totalRefunded + refundAmount,
+                        providerMetadata,
+                    }),
+                },
+                tx,
+            );
+
+            if (order.status === 'completed') {
+                await this.rollbackServicePersonnelEarnings(
+                    order.id,
+                    refundAmount,
+                    order.currency ?? 'CNY',
+                    tx,
+                );
+            }
+        });
+    }
+
+    async handleWechatRefundNotify(payload: {
+        rawBody: string;
+        headers?: Record<string, string | string[] | undefined>;
+    }) {
+        try {
+            const notifyResult = await this.refundDispatcher.handleNotify(
+                'wechat_pay',
+                payload,
+            );
+
+            if (notifyResult.providerStatus !== 'SUCCESS') {
+                this.logger.log(
+                    `[PayService] 微信退款回调状态: ${notifyResult.providerStatus}, outRefundNo:${notifyResult.outRequestNo}`,
+                );
+                return true;
+            }
+
+            if (!notifyResult.outTradeNo) {
+                return false;
+            }
+
+            const order = await this.db.query.orders.findFirst({
+                where: eq(orders.orderSerial, notifyResult.outTradeNo),
+            });
+
+            if (!order) {
+                return false;
+            }
+
+            const lockKey = `lock:refund:order:${order.id}`;
+            let lockId: string | null = null;
+            lockId = await this.cacheService.acquireLock(lockKey, 30, 10, 200);
+            if (!lockId) {
+                return false;
+            }
+
+            try {
+                const paymentRecords = await this.payRepository.findByOrderId(
+                    order.id,
+                );
+                const payment =
+                    paymentRecords.find(
+                        (item) =>
+                            item.paymentMethod === 'wechat_pay' &&
+                            (item.status === 'succeeded' ||
+                                item.status === 'refunded'),
+                    ) ?? null;
+
+                if (!payment) {
+                    return false;
+                }
+
+                const refundAmount = notifyResult.refundAmount;
+                if (!refundAmount || refundAmount <= 0) {
+                    return false;
+                }
+
+                const refundTransactions = await this.db
+                    .select()
+                    .from(financialTransactions)
+                    .where(
+                        and(
+                            eq(financialTransactions.orderId, order.id),
+                            eq(
+                                financialTransactions.transactionType,
+                                'refund_paid',
+                            ),
+                        ),
+                    );
+
+                const alreadyProcessed = refundTransactions.some((tx) => {
+                    const metadata = this.parseTransactionMetadata(tx.metadata);
+                    return metadata?.outRequestNo === notifyResult.outRequestNo;
+                });
+
+                if (alreadyProcessed) {
+                    return true;
+                }
+
+                const totalRefunded = refundTransactions.reduce((sum, tx) => {
+                    return sum + Math.abs(Number(tx.amount));
+                }, 0);
+
+                const orderAmount = Number(order.totalAmount);
+                if (totalRefunded + refundAmount > orderAmount + 0.01) {
+                    this.logger.error(
+                        `[PayService] 微信退款回调金额超限 - order:${order.id}, totalRefunded:${totalRefunded}, currentRefund:${refundAmount}, orderAmount:${orderAmount}`,
+                    );
+                    return false;
+                }
+
+                await this.finalizeRefundSettlement({
+                    order,
+                    payment,
+                    refundAmount,
+                    totalRefunded,
+                    orderAmount,
+                    reason: '微信退款回调确认成功',
+                    refundedById: order.customerId,
+                    outRequestNo: notifyResult.outRequestNo,
+                    refundChannel: 'wechat_pay',
+                    tradeNo: notifyResult.refundId,
+                    providerMetadata: {
+                        providerStatus: notifyResult.providerStatus,
+                        source: 'wechat_refund_notify',
+                    },
+                });
+
+                return true;
+            } finally {
+                await this.cacheService
+                    .releaseLock(lockKey, lockId)
+                    .catch((error) => {
+                        this.logger.warn(
+                            `[PayService] 释放退款锁失败: ${lockKey}`,
+                            error instanceof Error ? error.message : error,
+                        );
+                    });
+            }
+        } catch (error) {
+            this.logger.warn(
+                '[PayService] 处理微信退款回调失败',
+                error instanceof Error ? error.message : error,
+            );
+            return false;
+        }
+    }
+
     /**
      * 请求退款
      * @param orderId 订单ID
@@ -1472,12 +1725,7 @@ export class PayService {
         let lockId: string | null = null;
 
         try {
-            lockId = await this.cacheService.acquireLock(
-                lockKey,
-                30000,
-                10,
-                200,
-            );
+            lockId = await this.cacheService.acquireLock(lockKey, 30, 10, 200);
             if (!lockId) {
                 throw new BadRequestException('退款处理中,请稍后重试');
             }
@@ -1502,8 +1750,37 @@ export class PayService {
                 };
             }
 
-            // 5.2 生成退款请求号(使用订单ID+时间戳确保唯一性)
-            const outRequestNo = `REFUND_${orderId}_${Date.now()}`;
+            const latestRefundTransactions = await this.db
+                .select()
+                .from(financialTransactions)
+                .where(
+                    and(
+                        eq(financialTransactions.orderId, orderId),
+                        eq(
+                            financialTransactions.transactionType,
+                            'refund_paid',
+                        ),
+                    ),
+                );
+
+            const latestTotalRefunded = latestRefundTransactions.reduce(
+                (sum, tx) => {
+                    return sum + Math.abs(Number(tx.amount));
+                },
+                0,
+            );
+
+            if (latestTotalRefunded + requestRefundAmount > orderAmount) {
+                throw new BadRequestException(
+                    `累计退款金额不能超过订单总额。已退款: ${latestTotalRefunded}, 本次退款: ${requestRefundAmount}, 订单总额: ${orderAmount}`,
+                );
+            }
+
+            const outRequestNo = this.buildRefundOutRequestNo(
+                orderId,
+                latestTotalRefunded,
+                requestRefundAmount,
+            );
             const outTradeNo = order.orderSerial;
 
             this.logger.log(
@@ -1521,6 +1798,7 @@ export class PayService {
                         undefined,
                     outRequestNo,
                     amount: requestRefundAmount,
+                    totalAmount: orderAmount,
                     reason,
                 },
             );
@@ -1535,80 +1813,46 @@ export class PayService {
                 );
             }
 
-            // 9. 更新数据库(事务处理)
-            await this.db.transaction(async (tx) => {
-                // 9.1 检查是否为全额退款
-                const isFullRefund =
-                    totalRefunded + requestRefundAmount >= orderAmount;
-
-                // 9.2 更新支付记录状态(只有全额退款才标记为已退款)
-                if (isFullRefund) {
-                    await this.payRepository.updatePaymentById(
-                        successPayment.id,
-                        {
-                            status: 'refunded',
-                        },
-                        tx,
+            const providerStatus = this.extractProviderStatus(
+                refundResponse.metadata,
+            );
+            if (
+                refundChannel === 'wechat_pay' &&
+                providerStatus !== 'SUCCESS'
+            ) {
+                if (providerStatus === 'PROCESSING') {
+                    this.logger.log(
+                        `[PayService] 微信退款已受理，等待异步终态 - outRefundNo:${outRequestNo}, status:${providerStatus}`,
                     );
+                    return {
+                        success: true,
+                        message: '微信退款处理中，等待渠道终态',
+                        refundAmount: refundResponse.refundAmount,
+                        tradeNo: refundResponse.tradeNo,
+                        outRequestNo,
+                        refundChannel,
+                        processing: true,
+                        providerStatus,
+                    };
                 }
 
-                // 9.3 更新订单状态(只有全额退款才改为已退款/已取消)
-                if (isFullRefund) {
-                    if (order.status === 'completed') {
-                        await this.orderRepository.updateOrderStatus(
-                            orderId,
-                            'refunded',
-                            tx,
-                        );
-                    } else {
-                        await this.orderRepository.cancelOrder(
-                            orderId,
-                            reason,
-                            refundedById,
-                            tx,
-                        );
-                    }
-                }
-
-                // 9.4 记录退款流水
-                const refundType = isFullRefund ? '全额退款' : '部分退款';
-                await this.payRepository.createFinancialTransaction(
-                    {
-                        orderId,
-                        paymentId: successPayment.id,
-                        userId: order.customerId,
-                        transactionType: 'refund_paid',
-                        amount: `-${requestRefundAmount.toFixed(2)}`,
-                        currency: order.currency ?? 'CNY',
-                        description: `订单${refundType} - ${reason}`.slice(
-                            0,
-                            500,
-                        ),
-                        referenceId: refundResponse.tradeNo,
-                        metadata: JSON.stringify({
-                            outRequestNo,
-                            outTradeNo,
-                            refundChannel,
-                            refundedById,
-                            isFullRefund,
-                            totalRefundedBefore: totalRefunded,
-                            totalRefundedAfter:
-                                totalRefunded + requestRefundAmount,
-                            providerMetadata: refundResponse.metadata,
-                        }),
-                    },
-                    tx,
+                throw new BadRequestException(
+                    `微信退款失败: ${providerStatus ?? 'UNKNOWN'}`,
                 );
+            }
 
-                // 9.5 如果服务已完成且已产生收益,需要回退服务人员收益
-                if (order.status === 'completed') {
-                    await this.rollbackServicePersonnelEarnings(
-                        orderId,
-                        requestRefundAmount,
-                        order.currency ?? 'CNY',
-                        tx,
-                    );
-                }
+            await this.finalizeRefundSettlement({
+                order,
+                payment: successPayment,
+                refundAmount: requestRefundAmount,
+                totalRefunded: latestTotalRefunded,
+                orderAmount,
+                reason,
+                refundedById,
+                outRequestNo,
+                refundChannel,
+                tradeNo: refundResponse.tradeNo,
+                providerMetadata: refundResponse.metadata,
             });
 
             this.logger.log(

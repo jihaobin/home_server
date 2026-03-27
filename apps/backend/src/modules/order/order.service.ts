@@ -1335,7 +1335,16 @@ export class OrderService {
                 'staff_rejected',
             ];
             if (refundableStatuses.includes(order.status)) {
-                await this.payService.requestRefund(id, finalReason, actorId);
+                const refundResult = await this.payService.requestRefund(
+                    id,
+                    finalReason,
+                    actorId,
+                );
+                if (refundResult.processing) {
+                    return (
+                        (await this.orderRepository.getOrderById(id)) ?? order
+                    );
+                }
             } else {
                 await this.orderRepository.cancelOrder(
                     id,

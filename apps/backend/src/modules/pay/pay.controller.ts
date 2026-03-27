@@ -60,6 +60,10 @@ export class PayController {
         req: RequestWithRawBody,
         channel: 'alipay' | 'wechat_pay',
     ) {
+        if (channel === 'wechat_pay' && typeof req.rawBody !== 'string') {
+            throw new Error('微信回调缺少 rawBody，无法完成验签');
+        }
+
         if (typeof req.rawBody === 'string') {
             return req.rawBody;
         }
@@ -119,6 +123,23 @@ export class PayController {
             'wechat_pay',
             payload,
         );
+
+        if (handled) {
+            return res.status(HttpStatus.NO_CONTENT).send();
+        }
+
+        return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+            code: 'FAIL',
+            message: '处理失败',
+        });
+    }
+
+    private async handleWechatRefundNotifyResponse(
+        req: Request,
+        res: Response,
+    ) {
+        const payload = await this.buildNotifyPayload('wechat_pay', req);
+        const handled = await this.payService.handleWechatRefundNotify(payload);
 
         if (handled) {
             return res.status(HttpStatus.NO_CONTENT).send();
@@ -229,6 +250,43 @@ export class PayController {
             case 'wechat_pay':
                 return this.handleWechatNotifyResponse(req, res);
         }
+    }
+
+    @Public()
+    @SkipTransform()
+    @Post('wechat/refund/notify')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    @ApiOperation({
+        summary: '微信退款异步通知回调(不要在应用中进行调用)',
+        description: '消费微信退款结果通知，成功时返回 204 无响应体。',
+    })
+    @ApiResponse({
+        status: HttpStatus.NO_CONTENT,
+        description: '微信退款回调处理成功后返回 204，无响应体',
+    })
+    @ApiResponse({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        description: '微信退款回调处理失败',
+        schema: {
+            type: 'object',
+            properties: {
+                code: {
+                    type: 'string',
+                    example: 'FAIL',
+                },
+                message: {
+                    type: 'string',
+                    example: '处理失败',
+                },
+            },
+            required: ['code', 'message'],
+        },
+    })
+    async handleWechatRefundNotify(
+        @Req() req: RequestWithRawBody,
+        @Res({ passthrough: false }) res: Response,
+    ) {
+        return this.handleWechatRefundNotifyResponse(req, res);
     }
 
     @ApiOperation({

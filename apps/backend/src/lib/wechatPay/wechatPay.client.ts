@@ -12,10 +12,15 @@ import type {
     WechatPayAppPrepayRequest,
     WechatPayAppPrepayResponse,
     WechatPayConfig,
+    WechatPayCreateRefundRequest,
+    WechatPayCreateRefundResponse,
+    WechatPayDecryptedRefund,
     WechatPayDecryptedTransaction,
     WechatPayNotifyEnvelope,
     WechatPayNotifyParseResult,
     WechatPayOrderQueryResponse,
+    WechatPayRefundNotifyParseResult,
+    WechatPayRefundQueryResponse,
     WechatPayRequestHeaders,
 } from './wechatPay.types';
 
@@ -51,6 +56,8 @@ function resolveWechatPayConfigFromEnv(): WechatPayConfig {
         'https://api.mch.weixin.qq.com';
     const userAppId = process.env.WECHAT_PAY_USER_APP_ID?.trim();
     const userNotifyUrl = process.env.WECHAT_PAY_USER_NOTIFY_URL?.trim();
+    const userRefundNotifyUrl =
+        process.env.WECHAT_PAY_USER_REFUND_NOTIFY_URL?.trim() || userNotifyUrl;
 
     const resolveExistingPath = (candidates: Array<string | undefined>) => {
         const resolved = candidates
@@ -124,6 +131,9 @@ function resolveWechatPayConfigFromEnv(): WechatPayConfig {
     if (!userNotifyUrl) {
         throw new Error('未配置 WECHAT_PAY_USER_NOTIFY_URL');
     }
+    if (!userRefundNotifyUrl) {
+        throw new Error('未配置 WECHAT_PAY_USER_REFUND_NOTIFY_URL');
+    }
 
     return {
         mchId,
@@ -135,6 +145,7 @@ function resolveWechatPayConfigFromEnv(): WechatPayConfig {
         baseUrl,
         userAppId,
         userNotifyUrl,
+        userRefundNotifyUrl,
     };
 }
 
@@ -174,6 +185,10 @@ export class WechatPayClient {
 
     getUserNotifyUrl() {
         return this.config.userNotifyUrl;
+    }
+
+    getUserRefundNotifyUrl() {
+        return this.config.userRefundNotifyUrl;
     }
 
     private buildAuthorizationHeader({
@@ -287,6 +302,34 @@ export class WechatPayClient {
         }
     }
 
+    async createDomesticRefund(request: WechatPayCreateRefundRequest) {
+        return this.request<WechatPayCreateRefundResponse>({
+            method: 'POST',
+            path: '/v3/refund/domestic/refunds',
+            body: request as unknown as Record<string, unknown>,
+        });
+    }
+
+    async queryDomesticRefundByOutRefundNo(outRefundNo: string) {
+        const encodedOutRefundNo = encodeURIComponent(outRefundNo);
+
+        try {
+            return await this.request<WechatPayRefundQueryResponse>({
+                method: 'GET',
+                path: `/v3/refund/domestic/refunds/${encodedOutRefundNo}`,
+            });
+        } catch (error) {
+            if (
+                error instanceof WechatPayApiError &&
+                error.statusCode === 404
+            ) {
+                return null;
+            }
+
+            throw error;
+        }
+    }
+
     buildAppLaunchRequest(prepayId: string): WechatPayAppLaunchRequest {
         const timeStamp = Math.floor(Date.now() / 1000).toString();
         const nonceStr = createWechatPayNonce();
@@ -344,6 +387,71 @@ export class WechatPayClient {
             throw new Error('微信支付回调验签失败');
         }
 
+        const { envelope, decrypted } = this.parseAndDecryptNotify(rawBody);
+        const transaction = parseJson<WechatPayDecryptedTransaction>(decrypted);
+
+        return {
+            envelope,
+            transaction,
+        };
+    }
+
+    parseAndVerifyRefundNotify({
+        rawBody,
+        headers,
+    }: {
+        rawBody: string;
+        headers: WechatPayRequestHeaders;
+    }): WechatPayRefundNotifyParseResult {
+        this.verifyNotifyHeaders(rawBody, headers);
+        const { envelope, decrypted } = this.parseAndDecryptNotify(rawBody);
+        const refund = parseJson<WechatPayDecryptedRefund>(decrypted);
+
+        return {
+            envelope,
+            refund,
+        };
+    }
+
+    private verifyNotifyHeaders(
+        rawBody: string,
+        headers: WechatPayRequestHeaders,
+    ) {
+        const timestamp = headers['wechatpay-timestamp'];
+        const nonce = headers['wechatpay-nonce'];
+        const signature = headers['wechatpay-signature'];
+        const serial = headers['wechatpay-serial'];
+
+        if (
+            typeof timestamp !== 'string' ||
+            typeof nonce !== 'string' ||
+            typeof signature !== 'string' ||
+            typeof serial !== 'string'
+        ) {
+            throw new Error('微信支付回调头缺失');
+        }
+
+        if (signature.startsWith('WECHATPAY/SIGNTEST/')) {
+            throw new Error('微信支付回调为签名探测流量，当前未通过探测');
+        }
+
+        if (serial.toUpperCase() !== this.platformSerialNo) {
+            throw new Error('微信支付回调证书序列号不匹配');
+        }
+
+        const verificationMessage = `${timestamp}\n${nonce}\n${rawBody}\n`;
+        const valid = verifyWechatPaySignature({
+            message: verificationMessage,
+            signature,
+            publicKeyPem: this.platformPublicKeyPem,
+        });
+
+        if (!valid) {
+            throw new Error('微信支付回调验签失败');
+        }
+    }
+
+    private parseAndDecryptNotify(rawBody: string) {
         const envelope = parseJson<WechatPayNotifyEnvelope>(rawBody);
         const decrypted = decryptWechatPayAead({
             apiV3Key: this.config.apiV3Key,
@@ -351,11 +459,10 @@ export class WechatPayClient {
             nonce: envelope.resource.nonce,
             ciphertext: envelope.resource.ciphertext,
         });
-        const transaction = parseJson<WechatPayDecryptedTransaction>(decrypted);
 
         return {
             envelope,
-            transaction,
+            decrypted,
         };
     }
 }

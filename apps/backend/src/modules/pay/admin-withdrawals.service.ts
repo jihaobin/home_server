@@ -117,7 +117,12 @@ export class AdminWithdrawalsService {
                 },
             );
 
-            await this.applyPayoutResult(withdrawal, adminId, note, payoutResult);
+            await this.applyPayoutResult(
+                withdrawal,
+                adminId,
+                note,
+                payoutResult,
+            );
         } catch (error) {
             const message =
                 error instanceof Error ? error.message : '渠道打款请求异常';
@@ -144,8 +149,10 @@ export class AdminWithdrawalsService {
         note?: string,
     ) {
         await this.db.transaction(async (tx) => {
-            const withdrawal =
-                await this.payRepository.findWithdrawalById(withdrawalId, tx);
+            const withdrawal = await this.payRepository.findWithdrawalById(
+                withdrawalId,
+                tx,
+            );
 
             if (!withdrawal) {
                 throw new NotFoundException('提现记录不存在');
@@ -184,24 +191,25 @@ export class AdminWithdrawalsService {
             const frozenAfter = frozen.minus(amountDecimal);
             const totalAfter = availableAfter.plus(frozenAfter);
 
-            const claimed = await this.payRepository.updateWithdrawalByIdWithStatusGuard(
-                withdrawal.id,
-                ['pending'],
-                {
-                    status: 'rejected',
-                    reviewedByAdminId: adminId,
-                    reviewNote: note ?? null,
-                    reviewedAt,
-                    processedAt,
-                    payoutReferenceId: null,
-                    providerState: null,
-                    providerBillNo: null,
-                    providerPackageInfo: null,
-                    providerMeta: null,
-                    failureReason: null,
-                },
-                tx,
-            );
+            const claimed =
+                await this.payRepository.updateWithdrawalByIdWithStatusGuard(
+                    withdrawal.id,
+                    ['pending'],
+                    {
+                        status: 'rejected',
+                        reviewedByAdminId: adminId,
+                        reviewNote: note ?? null,
+                        reviewedAt,
+                        processedAt,
+                        payoutReferenceId: null,
+                        providerState: null,
+                        providerBillNo: null,
+                        providerPackageInfo: null,
+                        providerMeta: null,
+                        failureReason: null,
+                    },
+                    tx,
+                );
 
             if (!claimed) {
                 const latest = await this.payRepository.findWithdrawalById(
@@ -220,7 +228,6 @@ export class AdminWithdrawalsService {
                 },
                 tx,
             );
-
         });
     }
 
@@ -242,24 +249,25 @@ export class AdminWithdrawalsService {
             this.ensureWithdrawalPendingForReview(withdrawal.status);
 
             const reviewedAt = new Date();
-            const claimed = await this.payRepository.updateWithdrawalByIdWithStatusGuard(
-                withdrawal.id,
-                ['pending'],
-                {
-                    status: 'approved',
-                    reviewedByAdminId: adminId,
-                    reviewNote: note ?? null,
-                    reviewedAt,
-                    processedAt: null,
-                    payoutReferenceId: null,
-                    providerState: null,
-                    providerBillNo: null,
-                    providerPackageInfo: null,
-                    providerMeta: null,
-                    failureReason: null,
-                },
-                tx,
-            );
+            const claimed =
+                await this.payRepository.updateWithdrawalByIdWithStatusGuard(
+                    withdrawal.id,
+                    ['pending'],
+                    {
+                        status: 'approved',
+                        reviewedByAdminId: adminId,
+                        reviewNote: note ?? null,
+                        reviewedAt,
+                        processedAt: null,
+                        payoutReferenceId: null,
+                        providerState: null,
+                        providerBillNo: null,
+                        providerPackageInfo: null,
+                        providerMeta: null,
+                        failureReason: null,
+                    },
+                    tx,
+                );
 
             if (!claimed) {
                 const latest = await this.payRepository.findWithdrawalById(
@@ -279,9 +287,7 @@ export class AdminWithdrawalsService {
         >,
         adminId: string | null | undefined,
         note: string | undefined,
-        payoutResult: Awaited<
-            ReturnType<PayoutDispatcher['executePayout']>
-        >,
+        payoutResult: Awaited<ReturnType<PayoutDispatcher['executePayout']>>,
     ) {
         if (
             payoutResult.withdrawalStatus === 'approved' ||
@@ -334,31 +340,30 @@ export class AdminWithdrawalsService {
                 throw new BadRequestException('提现金额异常');
             }
 
-            const locked = await this.payRepository.updateWithdrawalByIdWithStatusGuard(
-                latest.id,
-                ['approved', 'processing'],
-                {
-                    status: payoutResult.withdrawalStatus,
-                    reviewedByAdminId:
-                        adminId ?? latest.reviewedByAdminId ?? null,
-                    reviewNote: note ?? null,
-                    processedAt:
-                        payoutResult.processedAt ??
-                        new Date(),
-                    payoutReferenceId: payoutResult.referenceId ?? null,
-                    providerState: payoutResult.providerState ?? null,
-                    providerAppId:
-                        payoutResult.providerAppId ??
-                        latest.providerAppId ??
-                        null,
-                    providerBillNo: payoutResult.providerBillNo ?? null,
-                    providerPackageInfo:
-                        payoutResult.providerPackageInfo ?? null,
-                    providerMeta: payoutResult.providerMeta ?? null,
-                    failureReason: payoutResult.failureReason ?? null,
-                },
-                tx,
-            );
+            const locked =
+                await this.payRepository.updateWithdrawalByIdWithStatusGuard(
+                    latest.id,
+                    ['approved', 'processing'],
+                    {
+                        status: payoutResult.withdrawalStatus,
+                        reviewedByAdminId:
+                            adminId ?? latest.reviewedByAdminId ?? null,
+                        reviewNote: note ?? null,
+                        processedAt: payoutResult.processedAt ?? new Date(),
+                        payoutReferenceId: payoutResult.referenceId ?? null,
+                        providerState: payoutResult.providerState ?? null,
+                        providerAppId:
+                            payoutResult.providerAppId ??
+                            latest.providerAppId ??
+                            null,
+                        providerBillNo: payoutResult.providerBillNo ?? null,
+                        providerPackageInfo:
+                            payoutResult.providerPackageInfo ?? null,
+                        providerMeta: payoutResult.providerMeta ?? null,
+                        failureReason: payoutResult.failureReason ?? null,
+                    },
+                    tx,
+                );
 
             if (!locked) {
                 return;
@@ -455,7 +460,9 @@ export class AdminWithdrawalsService {
         this.throwWithdrawalReviewConflict(status);
     }
 
-    private throwWithdrawalReviewConflict(status?: WithdrawalStatus | null): never {
+    private throwWithdrawalReviewConflict(
+        status?: WithdrawalStatus | null,
+    ): never {
         switch (status) {
             case 'completed':
                 throw new BadRequestException('该提现已完成');
@@ -485,12 +492,13 @@ export class AdminWithdrawalsService {
 
         for (const withdrawal of candidates) {
             try {
-                const payoutResult = await this.payoutDispatcher.queryPayoutStatus(
-                    withdrawal.method,
-                    {
-                        withdrawal,
-                    },
-                );
+                const payoutResult =
+                    await this.payoutDispatcher.queryPayoutStatus(
+                        withdrawal.method,
+                        {
+                            withdrawal,
+                        },
+                    );
 
                 if (!payoutResult) {
                     skippedCount++;
