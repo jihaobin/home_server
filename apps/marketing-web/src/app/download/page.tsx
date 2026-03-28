@@ -22,6 +22,23 @@ export default function DownloadPage() {
                 你将直接下载 Android APK 文件。下载后请按照下面指引完成安装。
             </p>
 
+            <Card className="mt-8 p-6">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <div className="text-lg font-extrabold">
+                            需要下载服务人员端？
+                        </div>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                            用户端与服务人员端使用不同
+                            APK。如你需要接单与管理服务流程，请前往服务人员端介绍页查看专属下载入口。
+                        </p>
+                    </div>
+                    <ButtonLink href="/worker-app" variant="secondary">
+                        查看服务人员端
+                    </ButtonLink>
+                </div>
+            </Card>
+
             <div className="mt-8 grid gap-6 md:grid-cols-2">
                 <Card className="p-8">
                     <div className="text-lg font-extrabold">APK 直链下载</div>
@@ -70,7 +87,7 @@ export default function DownloadPage() {
                 <Card className="p-8">
                     <div className="text-lg font-extrabold">需要帮助？</div>
                     <p className="mt-3 text-sm text-muted-foreground">
-                        你可以在 App
+                        安装并登录后，你可以在 App
                         内通过“官方客服”或“投诉/售后”入口提交问题与反馈。
                     </p>
                     <div className="mt-6">

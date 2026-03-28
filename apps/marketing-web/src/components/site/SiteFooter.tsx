@@ -30,6 +30,14 @@ export function SiteFooter() {
                             <li>
                                 <Link
                                     className="text-muted-foreground hover:text-foreground"
+                                    href="/worker-app"
+                                >
+                                    服务人员端
+                                </Link>
+                            </li>
+                            <li>
+                                <Link
+                                    className="text-muted-foreground hover:text-foreground"
                                     href="/download"
                                 >
                                     下载
@@ -91,9 +99,13 @@ export function SiteFooter() {
                     </div>
                 </div>
                 <div className="mt-4 flex flex-col gap-2 text-xs text-muted-foreground md:flex-row md:items-center md:justify-center">
-                    <Link href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=42110002000301">鄂公网安备42110002000301号</Link>
+                    <Link href="https://www.beian.gov.cn/portal/registerSystemInfo?recordcode=42110002000301">
+                        鄂公网安备42110002000301号
+                    </Link>
                     <div className="hidden md:block">·</div>
-                    <Link href="https://beian.miit.gov.cn/">鄂ICP备2026000485号-1</Link>
+                    <Link href="https://beian.miit.gov.cn/">
+                        鄂ICP备2026000485号-1
+                    </Link>
                 </div>
             </Container>
         </footer>

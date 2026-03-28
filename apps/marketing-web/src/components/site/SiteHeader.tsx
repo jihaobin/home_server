@@ -12,6 +12,7 @@ import appIcon from "../../../../mobile-user/assets/images/icon.png";
 
 const NAV_ITEMS: Array<{ href: string; label: string }> = [
     { href: "/features", label: "功能" },
+    { href: "/worker-app", label: "服务人员端" },
     { href: "/download", label: "下载" },
     { href: "/blog", label: "博客" },
     { href: "/faq", label: "常见问题" },
@@ -81,12 +82,13 @@ export function SiteHeader() {
                         className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background text-sm font-semibold hover:bg-muted md:hidden"
                         aria-label={isOpen ? "关闭菜单" : "打开菜单"}
                         aria-expanded={isOpen}
+                        aria-controls="mobile-site-nav"
                         onClick={() => setIsOpen((v: boolean) => !v)}
                     >
                         {isOpen ? "×" : "≡"}
                     </button>
                     <ButtonLink href={DOWNLOAD_URL} size="sm">
-                        下载 App
+                        下载用户端 App
                     </ButtonLink>
                 </div>
             </Container>
@@ -95,6 +97,7 @@ export function SiteHeader() {
                 <div className="border-t border-border bg-background md:hidden">
                     <Container className="py-3">
                         <nav
+                            id="mobile-site-nav"
                             aria-label="移动端导航"
                             className="flex flex-col gap-1"
                         >
