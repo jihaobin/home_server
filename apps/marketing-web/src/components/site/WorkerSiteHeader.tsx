@@ -46,9 +46,6 @@ export function WorkerSiteHeader() {
                         <div className="text-sm font-black tracking-tight text-white">
                             {WORKER_SITE_NAME}
                         </div>
-                        <div className="text-[11px] text-slate-300">
-                            服务人员使用的移动工作台
-                        </div>
                     </div>
                 </Link>
 

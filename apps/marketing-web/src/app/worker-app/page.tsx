@@ -49,7 +49,7 @@ export default function WorkerAppHomePage() {
                                 {WORKER_SITE_TAGLINE}
                             </p>
                             <p className="mt-5 max-w-2xl text-sm leading-7 text-slate-600 md:text-base">
-                                进入这里后，你看到的是一套专门为平台服务人员准备的完整站点：从接单、服务推进、通知提醒到收益与提现，都用同一套产品语言和页面结构来介绍。
+                                这是叮咚上门为服务人员准备的专属介绍站点。你可以在这里快速了解如何更高效地接到附近订单、稳定推进上门服务，并把每一次服务沉淀成看得见的收入。
                             </p>
 
                             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -99,17 +99,17 @@ export default function WorkerAppHomePage() {
                                             叮咚上单工作台
                                         </div>
                                         <div className="mt-1 text-sm text-slate-500">
-                                            首页、订单、收益、聊天、我的
+                                            接单、服务、沟通、结算，一站管理
                                         </div>
                                     </div>
                                 </div>
                             </div>
                             <div className="grid gap-3 p-6">
                                 {[
-                                    "我的订单：按待接单、待服务、服务中等状态管理工作",
-                                    "我的收益：查看余额、本月收益、累计收益与提现记录",
-                                    "服务设置：维护已提供服务、服务描述与宣传图片",
-                                    "服务区域与时间：配置服务范围、详细地址与服务时间",
+                                    "订单管理：按待接单、待服务、服务中等状态高效处理工作",
+                                    "收益中心：随时查看余额、本月收益、累计收入与提现记录",
+                                    "服务展示：维护服务描述、亮点卖点与宣传图片，提升转化",
+                                    "服务范围：配置服务区域、详细地址与服务时间，接单更精准",
                                 ].map((item) => (
                                     <div
                                         key={item}
@@ -141,7 +141,7 @@ export default function WorkerAppHomePage() {
                             叮咚上单的核心价值
                         </h2>
                         <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-                            这不是主站里的单个栏目，而是围绕服务人员日常工作流单独整理的一套产品入口，让信息组织和站点感知都更聚焦。
+                            它不是单纯的下载页，而是面向服务人员的转化入口。核心信息围绕“怎么更快上手、怎么更稳接单、怎么更清楚管理收入”来组织。
                         </p>
                     </div>
                     <ButtonLink href="/worker-app/contact" variant="secondary">
@@ -216,7 +216,7 @@ export default function WorkerAppHomePage() {
                             常见问题
                         </h2>
                         <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-                            如果你第一次安装叮咚上单，建议先看下载说明和下面这些高频问题，能更快完成上手。
+                            如果你准备开始使用叮咚上单，先看下载说明和这些高频问题，通常就能更快完成安装并进入接单状态。
                         </p>
                     </div>
                     <ButtonLink href="/worker-app/faq" variant="secondary">
