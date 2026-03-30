@@ -7,7 +7,11 @@ import { absoluteWorkerUrl } from "@/lib/worker-site";
 
 export const metadata: Metadata = {
     title: "下载",
+<<<<<<< HEAD
     description: "下载叮咚上单 APK，并查看安装、通知权限与常见处理方式。",
+=======
+    description: "下载服务人员端 APK，并查看安装、通知权限与常见处理方式。",
+>>>>>>> d0f4a919ec2e0a193e2ff2fb0a99f5f6def1b2ab
     alternates: {
         canonical: absoluteWorkerUrl("/download"),
     },
