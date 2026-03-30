@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import "@/app/globals.css";
-import { SiteFooter } from "@/components/site/SiteFooter";
-import { SiteHeader } from "@/components/site/SiteHeader";
 import { SkipLink } from "@/components/a11y/SkipLink";
+import { RouteChrome } from "@/components/site/RouteChrome";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 export const viewport = {
@@ -52,11 +51,7 @@ export default function RootLayout({
         <html lang="zh-CN">
             <body>
                 <SkipLink />
-                <SiteHeader />
-                <main id="content" className="min-h-[60vh]">
-                    {children}
-                </main>
-                <SiteFooter />
+                <RouteChrome>{children}</RouteChrome>
             </body>
         </html>
     );
