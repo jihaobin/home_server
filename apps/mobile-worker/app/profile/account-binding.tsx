@@ -1,15 +1,24 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
     useExchangeWorkerAlipayAuthCode,
+    useExchangeWorkerWechatAuthCode,
     useWorkerAlipayAuthorizeParams,
     useWorkerAlipayBindingStatus,
+    useWorkerWechatBindingStatus,
     useUnbindWorkerAlipay,
+    useUnbindWorkerWechat,
 } from "@repo/hooks/api/pay";
-import { aliAuth } from "@repo/lib/pay";
+import {
+    aliAuth,
+    ensureWeChatAppRegistered,
+    isWeChatAppInstalled,
+    wechatAuth,
+} from "@repo/lib/pay";
 import {
     ActivityIndicator,
+    AppState,
     Alert,
     ScrollView,
     StyleSheet,
@@ -17,6 +26,13 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import {
+    clearPendingWechatBindingSession,
+    clearWechatBindingAuthResultSnapshot,
+    consumeWechatBindingAuthResultSnapshot,
+    getPendingWechatBindingSession,
+    setPendingWechatBindingSession,
+} from "@/lib/wechat-binding-session";
 
 const maskAccount = (value?: string | null) => {
     if (!value) return "";
@@ -24,10 +40,45 @@ const maskAccount = (value?: string | null) => {
     return `${value.slice(0, 2)}****${value.slice(-2)}`;
 };
 
+const resolveWorkerWechatSdkConfig = () => {
+    const appId =
+        process.env.EXPO_PUBLIC_WECHAT_WORKER_APP_ID?.trim() ||
+        process.env.EXPO_PUBLIC_WECHAT_APP_ID?.trim() ||
+        "";
+    const universalLink =
+        process.env.EXPO_PUBLIC_WECHAT_WORKER_UNIVERSAL_LINK?.trim() ||
+        process.env.EXPO_PUBLIC_WECHAT_UNIVERSAL_LINK?.trim() ||
+        "";
+
+    return {
+        appId,
+        universalLink,
+    };
+};
+
+const resolveWechatAuthErrorMessage = (
+    errorCode?: number,
+    message?: string | null,
+) => {
+    switch (errorCode) {
+        case -2:
+            return "您已取消微信授权";
+        case -4:
+            return "微信授权被拒绝，请重新尝试";
+        case -5:
+            return "当前微信客户端不支持该授权能力";
+        default:
+            return message || "微信授权失败，请稍后重试";
+    }
+};
+
 export default function AccountBindingScreen() {
     const router = useRouter();
     const [authError, setAuthError] = useState<string | null>(null);
     const [isBindingAlipay, setIsBindingAlipay] = useState(false);
+    const [isBindingWechat, setIsBindingWechat] = useState(false);
+    const [isHandlingWechatAuthResult, setIsHandlingWechatAuthResult] =
+        useState(false);
 
     const {
         refetch: refetchAlipayParams,
@@ -43,10 +94,19 @@ export default function AccountBindingScreen() {
         mutateAsync: exchangeAlipayAuthCode,
         isPending: isExchangingAlipayAuth,
     } = useExchangeWorkerAlipayAuthCode();
+    const { mutateAsync: unbindAlipay, isPending: isUnbindingAlipay } =
+        useUnbindWorkerAlipay();
     const {
-        mutateAsync: unbindAlipay,
-        isPending: isUnbindingAlipay,
-    } = useUnbindWorkerAlipay();
+        data: wechatBindingStatus,
+        refetch: refetchWechatBindingStatus,
+        isFetching: isFetchingWechatBindingStatus,
+    } = useWorkerWechatBindingStatus();
+    const {
+        mutateAsync: exchangeWechatAuthCode,
+        isPending: isExchangingWechatAuth,
+    } = useExchangeWorkerWechatAuthCode();
+    const { mutateAsync: unbindWechat, isPending: isUnbindingWechat } =
+        useUnbindWorkerWechat();
 
     const alipayBindingLoading =
         isBindingAlipay ||
@@ -55,6 +115,12 @@ export default function AccountBindingScreen() {
         isExchangingAlipayAuth ||
         isFetchingBindingStatus ||
         isUnbindingAlipay;
+    const wechatBindingLoading =
+        isBindingWechat ||
+        isHandlingWechatAuthResult ||
+        isFetchingWechatBindingStatus ||
+        isExchangingWechatAuth ||
+        isUnbindingWechat;
 
     const handleBindAlipay = async () => {
         if (alipayBindingLoading) return;
@@ -128,12 +194,155 @@ export default function AccountBindingScreen() {
         ]);
     };
 
+    const processPendingWechatBindingResult = useCallback(async () => {
+        const pendingSession = getPendingWechatBindingSession();
+        if (!pendingSession) {
+            return;
+        }
+
+        const snapshot = consumeWechatBindingAuthResultSnapshot();
+        if (!snapshot) {
+            return;
+        }
+
+        clearPendingWechatBindingSession();
+
+        if (snapshot.state && snapshot.state !== pendingSession.state) {
+            const message = "微信授权状态已过期，请重新绑定";
+            setAuthError(message);
+            Alert.alert("授权失败", message);
+            return;
+        }
+
+        if (snapshot.errorCode !== 0 || !snapshot.code) {
+            const message = resolveWechatAuthErrorMessage(
+                snapshot.errorCode,
+                snapshot.errorMessage,
+            );
+            if (snapshot.errorCode !== -2) {
+                setAuthError(message);
+                Alert.alert("授权失败", message);
+            }
+            return;
+        }
+
+        const { appId } = resolveWorkerWechatSdkConfig();
+
+        setAuthError(null);
+        setIsHandlingWechatAuthResult(true);
+        try {
+            await exchangeWechatAuthCode({
+                authCode: snapshot.code,
+                appId: appId || undefined,
+                state: snapshot.state ?? undefined,
+                scope: "snsapi_userinfo",
+            });
+            await refetchWechatBindingStatus();
+            Alert.alert("绑定成功", "微信收款账号已绑定。");
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : "绑定失败，请稍后再试";
+            setAuthError(message);
+            Alert.alert("绑定失败", message);
+        } finally {
+            setIsHandlingWechatAuthResult(false);
+        }
+    }, [exchangeWechatAuthCode, refetchWechatBindingStatus]);
+
+    useEffect(() => {
+        void processPendingWechatBindingResult();
+
+        const subscription = AppState.addEventListener("change", (state) => {
+            if (state === "active") {
+                void processPendingWechatBindingResult();
+            }
+        });
+
+        return () => {
+            subscription.remove();
+        };
+    }, [processPendingWechatBindingResult]);
+
+    const handleBindWechat = async () => {
+        if (wechatBindingLoading) return;
+
+        setAuthError(null);
+        setIsBindingWechat(true);
+        try {
+            const { appId, universalLink } = resolveWorkerWechatSdkConfig();
+
+            if (!appId) {
+                throw new Error("微信 AppID 缺失，请联系管理员配置后再试");
+            }
+
+            await ensureWeChatAppRegistered({
+                appId,
+                universalLink,
+            });
+
+            const installed = await isWeChatAppInstalled();
+            if (!installed) {
+                throw new Error("请先安装微信客户端");
+            }
+
+            clearWechatBindingAuthResultSnapshot();
+
+            const state = `worker_bind_${Date.now()}`;
+            setPendingWechatBindingSession({
+                state,
+                requestedAt: new Date().toISOString(),
+                appId,
+            });
+
+            const dispatched = await wechatAuth({
+                scope: "snsapi_userinfo",
+                state,
+            });
+
+            if (!dispatched) {
+                clearPendingWechatBindingSession();
+                throw new Error("无法发起微信授权，请稍后重试");
+            }
+        } catch (error) {
+            clearPendingWechatBindingSession();
+            const message =
+                error instanceof Error ? error.message : "授权失败，请稍后再试";
+            setAuthError(message);
+            Alert.alert("授权失败", message);
+        } finally {
+            setIsBindingWechat(false);
+        }
+    };
+
+    const handleUnbindWechat = () => {
+        Alert.alert("确认解绑", "解绑后需要重新微信授权才能提现，是否继续？", [
+            { text: "取消", style: "cancel" },
+            {
+                text: "确定",
+                style: "destructive",
+                onPress: async () => {
+                    try {
+                        await unbindWechat();
+                        await refetchWechatBindingStatus();
+                        Alert.alert("解绑成功");
+                    } catch (error) {
+                        const message =
+                            error instanceof Error
+                                ? error.message
+                                : "解绑失败，请稍后再试";
+                        Alert.alert("解绑失败", message);
+                    }
+                },
+            },
+        ]);
+    };
+
     const alipayAccountDisplay = maskAccount(
-        bindingStatus?.alipayUserId ||
-            bindingStatus?.alipayOpenId ||
-            "",
+        bindingStatus?.alipayUserId || bindingStatus?.alipayOpenId || "",
     );
     const isAlipayBound = Boolean(bindingStatus?.bound);
+    const wechatOpenIdDisplay = wechatBindingStatus?.openId || "已授权";
+    const isWechatBound = Boolean(wechatBindingStatus?.bound);
 
     return (
         <View style={styles.container}>
@@ -148,20 +357,37 @@ export default function AccountBindingScreen() {
                 <View style={styles.placeholder} />
             </View>
 
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                style={styles.content}
+                showsVerticalScrollIndicator={false}
+            >
                 <View style={styles.tipCard}>
-                    <Ionicons name="information-circle" size={20} color="#2196F3" />
+                    <Ionicons
+                        name="information-circle"
+                        size={20}
+                        color="#2196F3"
+                    />
                     <Text style={styles.tipText}>
-                        当前提现绑定仅开放支付宝授权。微信提现绑定将在正式接入后开放，
-                        不再提供手工填写的假绑定入口。
+                        提现绑定会直接使用平台已接入的官方授权能力。微信提现绑定会保存
+                        服务人员端 worker AppID 下的
+                        openid，仅用于后续微信提现到微信零钱。
                     </Text>
                 </View>
 
                 <View style={styles.accountCard}>
                     <View style={styles.accountHeader}>
                         <View style={styles.accountLeft}>
-                            <View style={[styles.iconWrapper, { backgroundColor: "#1677FF" }]}>
-                                <Ionicons name="logo-alipay" size={24} color="white" />
+                            <View
+                                style={[
+                                    styles.iconWrapper,
+                                    { backgroundColor: "#1677FF" },
+                                ]}
+                            >
+                                <Ionicons
+                                    name="logo-alipay"
+                                    size={24}
+                                    color="white"
+                                />
                             </View>
                             <Text style={styles.accountType}>支付宝</Text>
                         </View>
@@ -205,7 +431,9 @@ export default function AccountBindingScreen() {
 
                     {authError && (
                         <View style={styles.authError}>
-                            <Text style={styles.authErrorText}>{authError}</Text>
+                            <Text style={styles.authErrorText}>
+                                {authError}
+                            </Text>
                         </View>
                     )}
 
@@ -217,7 +445,10 @@ export default function AccountBindingScreen() {
                             </Text>
                             {bindingStatus.boundAt && (
                                 <Text style={styles.summaryText}>
-                                    更新于：{new Date(bindingStatus.boundAt).toLocaleString()}
+                                    更新于：
+                                    {new Date(
+                                        bindingStatus.boundAt,
+                                    ).toLocaleString()}
                                 </Text>
                             )}
                         </View>
@@ -227,28 +458,104 @@ export default function AccountBindingScreen() {
                 <View style={styles.accountCard}>
                     <View style={styles.accountHeader}>
                         <View style={styles.accountLeft}>
-                            <View style={[styles.iconWrapper, { backgroundColor: "#07C160" }]}>
-                                <Ionicons name="logo-wechat" size={24} color="white" />
+                            <View
+                                style={[
+                                    styles.iconWrapper,
+                                    { backgroundColor: "#07C160" },
+                                ]}
+                            >
+                                <Ionicons
+                                    name="logo-wechat"
+                                    size={24}
+                                    color="white"
+                                />
                             </View>
                             <Text style={styles.accountType}>微信</Text>
                         </View>
-                        <View style={styles.comingSoonBadge}>
-                            <Text style={styles.comingSoonText}>暂未开放</Text>
-                        </View>
+                        <TouchableOpacity
+                            style={[
+                                styles.bindButton,
+                                { backgroundColor: "#07C160" },
+                                wechatBindingLoading && styles.disabledButton,
+                            ]}
+                            onPress={handleBindWechat}
+                            disabled={wechatBindingLoading}
+                        >
+                            {wechatBindingLoading ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <Text style={styles.bindButtonText}>
+                                    {isWechatBound ? "重新授权" : "绑定"}
+                                </Text>
+                            )}
+                        </TouchableOpacity>
                     </View>
-                    <Text style={styles.unboundText}>
-                        微信提现绑定需要服务人员端真实的 openid 与 appid 闭环，当前版本尚未接入。
-                        请先使用支付宝完成提现绑定。
-                    </Text>
+
+                    {isWechatBound ? (
+                        <View style={styles.accountInfo}>
+                            <View>
+                                <Text style={styles.accountName}>
+                                    微信 openid
+                                </Text>
+                                <Text style={styles.accountNumber}>
+                                    {wechatOpenIdDisplay}
+                                </Text>
+                            </View>
+                            <TouchableOpacity onPress={handleUnbindWechat}>
+                                <Text style={styles.unbindText}>解绑</Text>
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
+                        <Text style={styles.unboundText}>
+                            暂未绑定微信提现收款微信号，点击右上角按钮完成微信官方授权。
+                        </Text>
+                    )}
+
+                    {wechatBindingStatus?.bound && (
+                        <View style={styles.authSummary}>
+                            <Text
+                                style={[
+                                    styles.summaryTitle,
+                                    { color: "#07C160" },
+                                ]}
+                            >
+                                绑定信息
+                            </Text>
+                            <Text style={styles.summaryText}>
+                                当前绑定：{wechatOpenIdDisplay}
+                            </Text>
+                            {wechatBindingStatus.appId ? (
+                                <Text style={styles.summaryText}>
+                                    AppID：{wechatBindingStatus.appId}
+                                </Text>
+                            ) : null}
+                            {wechatBindingStatus.boundAt ? (
+                                <Text style={styles.summaryText}>
+                                    更新于：
+                                    {new Date(
+                                        wechatBindingStatus.boundAt,
+                                    ).toLocaleString()}
+                                </Text>
+                            ) : null}
+                        </View>
+                    )}
                 </View>
 
                 <View style={styles.securityCard}>
                     <View style={styles.securityItem}>
-                        <Ionicons name="shield-checkmark" size={18} color="#4CAF50" />
+                        <Ionicons
+                            name="shield-checkmark"
+                            size={18}
+                            color="#4CAF50"
+                        />
                         <Text style={styles.securityText}>信息加密存储</Text>
                     </View>
                     <View style={styles.securityItem}>
-                        <Ionicons name="lock-closed" size={18} color="#4CAF50" />
+                        <Ionicons
+                            name="lock-closed"
+                            size={18}
+                            color="#4CAF50"
+                        />
                         <Text style={styles.securityText}>仅用于提现功能</Text>
                     </View>
                 </View>

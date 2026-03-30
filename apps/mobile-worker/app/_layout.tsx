@@ -12,12 +12,16 @@ import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Provider } from "@repo/mobile-ui/components/provider";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
+import { ensureWeChatAppRegistered } from "@repo/lib/pay";
 import { toast } from "sonner-native";
 import {
     useNotificationSocket,
     type NotificationSocketNotification,
 } from "../hooks/use-notification-socket";
 import { useChatSocket } from "../hooks/use-chat-socket";
+import { useWechatAuthResultListener } from "../hooks/useWechatAuthResultListener";
+import { useWechatMerchantTransferAutoTrigger } from "../hooks/useWechatMerchantTransferAutoTrigger";
+import { useWechatMerchantTransferResultListener } from "../hooks/useWechatMerchantTransferResultListener";
 import { authClient } from "../lib/auth";
 import { AppUpdateProvider } from "@repo/mobile-ui/app-update/AppUpdateProvider";
 
@@ -190,6 +194,32 @@ function RootNavigation() {
     const { colorScheme } = useColorScheme();
     const { session } = useSession();
     const isAuthenticated = !!session?.user?.id;
+
+    useWechatAuthResultListener();
+    useWechatMerchantTransferResultListener();
+    useWechatMerchantTransferAutoTrigger(isAuthenticated);
+
+    React.useEffect(() => {
+        const appId =
+            process.env.EXPO_PUBLIC_WECHAT_WORKER_APP_ID?.trim() ||
+            process.env.EXPO_PUBLIC_WECHAT_APP_ID?.trim();
+        const universalLink =
+            process.env.EXPO_PUBLIC_WECHAT_WORKER_UNIVERSAL_LINK?.trim() ||
+            process.env.EXPO_PUBLIC_WECHAT_UNIVERSAL_LINK?.trim();
+
+        if (!appId) {
+            return;
+        }
+
+        void ensureWeChatAppRegistered({
+            appId,
+            universalLink: universalLink ?? "",
+        }).catch((error) => {
+            const message =
+                error instanceof Error ? error.message : "微信 SDK 初始化失败";
+            console.warn(message);
+        });
+    }, []);
 
     return (
         <>

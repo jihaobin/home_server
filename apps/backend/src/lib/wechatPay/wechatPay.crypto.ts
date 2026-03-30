@@ -1,5 +1,7 @@
 import {
+    constants,
     createDecipheriv,
+    publicEncrypt,
     createSign,
     createVerify,
     randomBytes,
@@ -61,4 +63,21 @@ export function decryptWechatPayAead({
     const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
 
     return decrypted.toString('utf8');
+}
+
+export function encryptWechatPaySensitiveField({
+    plaintext,
+    publicKeyPem,
+}: {
+    plaintext: string;
+    publicKeyPem: string;
+}) {
+    return publicEncrypt(
+        {
+            key: publicKeyPem,
+            padding: constants.RSA_PKCS1_OAEP_PADDING,
+            oaepHash: 'sha1',
+        },
+        Buffer.from(plaintext, 'utf8'),
+    ).toString('base64');
 }

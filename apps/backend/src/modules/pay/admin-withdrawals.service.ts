@@ -93,6 +93,27 @@ export class AdminWithdrawalsService {
         await this.syncInFlightWithdrawals();
     }
 
+    async applyPayoutResultForWithdrawal(
+        withdrawalId: string,
+        payoutResult: Awaited<ReturnType<PayoutDispatcher['executePayout']>>,
+    ) {
+        const withdrawal =
+            await this.payRepository.findWithdrawalById(withdrawalId);
+
+        if (!withdrawal) {
+            throw new NotFoundException('提现记录不存在');
+        }
+
+        await this.applyPayoutResult(
+            withdrawal,
+            withdrawal.reviewedByAdminId,
+            withdrawal.reviewNote ?? undefined,
+            payoutResult,
+        );
+
+        return await this.repository.findWithdrawalById(withdrawalId);
+    }
+
     private async approveAndPayout(
         withdrawalId: string,
         adminId: string,
@@ -310,7 +331,10 @@ export class AdminWithdrawalsService {
                     providerBillNo: payoutResult.providerBillNo ?? null,
                     providerPackageInfo:
                         payoutResult.providerPackageInfo ?? null,
-                    providerMeta: payoutResult.providerMeta ?? null,
+                    providerMeta: this.mergeProviderMeta(
+                        withdrawal.providerMeta ?? null,
+                        payoutResult.providerMeta ?? null,
+                    ),
                     failureReason: payoutResult.failureReason ?? null,
                 },
             );
@@ -359,7 +383,10 @@ export class AdminWithdrawalsService {
                         providerBillNo: payoutResult.providerBillNo ?? null,
                         providerPackageInfo:
                             payoutResult.providerPackageInfo ?? null,
-                        providerMeta: payoutResult.providerMeta ?? null,
+                        providerMeta: this.mergeProviderMeta(
+                            latest.providerMeta ?? null,
+                            payoutResult.providerMeta ?? null,
+                        ),
                         failureReason: payoutResult.failureReason ?? null,
                     },
                     tx,
@@ -583,6 +610,7 @@ export class AdminWithdrawalsService {
             providerAppId: record.providerAppId ?? null,
             providerBillNo: record.providerBillNo ?? null,
             providerPackageInfo: record.providerPackageInfo ?? null,
+            providerMeta: record.providerMeta ?? null,
             failureReason: record.failureReason ?? null,
             user: record.userId
                 ? {
@@ -598,6 +626,20 @@ export class AdminWithdrawalsService {
                       name: record.reviewerName ?? null,
                   }
                 : null,
+        };
+    }
+
+    private mergeProviderMeta(
+        current: Record<string, unknown> | null | undefined,
+        incoming: Record<string, unknown> | null | undefined,
+    ) {
+        if (!current && !incoming) {
+            return null;
+        }
+
+        return {
+            ...(current ?? {}),
+            ...(incoming ?? {}),
         };
     }
 }

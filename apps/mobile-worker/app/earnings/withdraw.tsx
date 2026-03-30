@@ -5,6 +5,7 @@ import {
     useWithdraw,
     useInfiniteWorkerEarningsRecords,
     useWorkerAlipayBindingStatus,
+    useWorkerWechatBindingStatus,
 } from "@repo/hooks/api/pay";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import { useRouter } from "expo-router";
@@ -18,8 +19,11 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
+    Platform,
     View,
 } from "react-native";
+
+type WithdrawPayType = "alipay" | "wechat_pay";
 
 export default function WithdrawScreen() {
     return (
@@ -41,6 +45,13 @@ function WithdrawContent() {
         isLoading: isBindingStatusLoading,
         refetch: refetchBindingStatus,
     } = useWorkerAlipayBindingStatus();
+    const {
+        data: wechatBindingStatus,
+        isLoading: isWechatBindingStatusLoading,
+        refetch: refetchWechatBindingStatus,
+    } = useWorkerWechatBindingStatus();
+    const [selectedPayType, setSelectedPayType] =
+        useState<WithdrawPayType>("alipay");
     const withdrawalQueryParams = useMemo(
         () => ({
             limit: 3,
@@ -61,6 +72,7 @@ function WithdrawContent() {
                 refetchOverview(),
                 refetchWithdrawalRecords(),
                 refetchBindingStatus(),
+                refetchWechatBindingStatus(),
             ]),
     });
 
@@ -76,14 +88,38 @@ function WithdrawContent() {
         const pages = withdrawalRecordPages?.pages ?? [];
         return pages.flatMap((page) => page.items);
     }, [withdrawalRecordPages]);
+    const wechatPayoutSupported = Platform.OS === "android";
     const pendingHistoryReview = useMemo(
         () =>
             withdrawalRecords.some((record) => {
                 const status = record.withdrawal?.status;
-                return status === "pending" || status === "approved";
+                return (
+                    status === "pending" ||
+                    status === "approved" ||
+                    status === "processing"
+                );
             }),
         [withdrawalRecords],
     );
+
+    useEffect(() => {
+        if (selectedPayType === "alipay" && bindingStatus?.bound) {
+            return;
+        }
+        if (selectedPayType === "wechat_pay" && wechatBindingStatus?.bound) {
+            return;
+        }
+        if (wechatPayoutSupported && wechatBindingStatus?.bound) {
+            setSelectedPayType("wechat_pay");
+            return;
+        }
+        setSelectedPayType("alipay");
+    }, [
+        bindingStatus?.bound,
+        selectedPayType,
+        wechatBindingStatus?.bound,
+        wechatPayoutSupported,
+    ]);
     const hasPendingReview = frozenBalance > 0 || pendingHistoryReview;
     const latestWithdrawalRecords = useMemo(
         () => withdrawalRecords.slice(0, 3),
@@ -95,7 +131,11 @@ function WithdrawContent() {
         hasPendingReview ||
         hasSubmitted ||
         isBindingStatusLoading ||
-        !bindingStatus?.bound;
+        isWechatBindingStatusLoading ||
+        !(
+            (selectedPayType === "alipay" && bindingStatus?.bound) ||
+            (selectedPayType === "wechat_pay" && wechatBindingStatus?.bound)
+        );
 
     useEffect(() => {
         if (!hasPendingReview) {
@@ -135,11 +175,11 @@ function WithdrawContent() {
             );
             return;
         }
-        if (isBindingStatusLoading) {
-            Alert.alert("提示", "正在获取支付宝绑定信息，请稍后重试");
+        if (isBindingStatusLoading || isWechatBindingStatusLoading) {
+            Alert.alert("提示", "正在获取收款账户绑定信息，请稍后重试");
             return;
         }
-        if (!bindingStatus?.bound) {
+        if (selectedPayType === "alipay" && !bindingStatus?.bound) {
             Alert.alert("提示", "请先绑定支付宝账号后再提现。", [
                 { text: "取消", style: "cancel" },
                 {
@@ -147,6 +187,23 @@ function WithdrawContent() {
                     onPress: handleOpenBinding,
                 },
             ]);
+            return;
+        }
+        if (selectedPayType === "wechat_pay" && !wechatBindingStatus?.bound) {
+            Alert.alert("提示", "请先绑定微信提现微信账号后再提现。", [
+                { text: "取消", style: "cancel" },
+                {
+                    text: "去绑定",
+                    onPress: handleOpenBinding,
+                },
+            ]);
+            return;
+        }
+        if (selectedPayType === "wechat_pay" && !wechatPayoutSupported) {
+            Alert.alert(
+                "当前设备暂不支持",
+                "当前版本仅在 Android 设备支持微信提现确认收款，请切换到 Android 设备或改用支付宝提现。",
+            );
             return;
         }
 
@@ -178,14 +235,31 @@ function WithdrawContent() {
             return;
         }
 
+        const wechatOpenId =
+            (
+                wechatBindingStatus as unknown as {
+                    openId?: string | null;
+                    wechatOpenId?: string | null;
+                } | null
+            )?.openId ??
+            (
+                wechatBindingStatus as unknown as {
+                    wechatOpenId?: string | null;
+                } | null
+            )?.wechatOpenId ??
+            null;
         const targetAccount =
-            bindingStatus?.alipayUserId ||
-            bindingStatus?.alipayOpenId ||
-            "已绑定支付宝";
+            selectedPayType === "wechat_pay"
+                ? wechatOpenId || "已绑定微信"
+                : bindingStatus?.alipayUserId ||
+                  bindingStatus?.alipayOpenId ||
+                  "已绑定支付宝";
+        const targetLabel =
+            selectedPayType === "wechat_pay" ? "微信零钱" : "支付宝";
 
         Alert.alert(
             "确认提现",
-            `提现申请提交后将进入后台审核并打款至 ${targetAccount}，预计1-3个工作日内完成。确认提交¥${withdrawAmount}的提现申请吗？`,
+            `提现申请提交后将进入后台审核并打款至${targetLabel}账户 ${targetAccount}，预计1-3个工作日内完成。确认提交¥${withdrawAmount}的提现申请吗？`,
             [
                 { text: "取消", style: "cancel" },
                 {
@@ -201,7 +275,7 @@ function WithdrawContent() {
             await submitWithdraw({
                 amount: withdrawAmount,
                 currency: "CNY",
-                payType: "alipay",
+                payType: selectedPayType,
                 remark: remark.trim() || undefined,
             });
             setHasSubmitted(true);
@@ -210,6 +284,7 @@ function WithdrawContent() {
                 refetchOverview(),
                 refetchWithdrawalRecords(),
                 refetchBindingStatus(),
+                refetchWechatBindingStatus(),
             ]);
             setRemark("");
             Alert.alert(
@@ -465,10 +540,14 @@ function WithdrawContent() {
                 <View style={styles.accountSection}>
                     <Text style={styles.sectionTitle}>收款账户</Text>
 
-                    <View
+                    <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => setSelectedPayType("alipay")}
                         style={[
                             styles.accountCard,
                             !bindingStatus?.bound && styles.accountCardPending,
+                            selectedPayType === "alipay" &&
+                                styles.accountCardActive,
                         ]}
                     >
                         <View style={styles.accountLeft}>
@@ -504,11 +583,74 @@ function WithdrawContent() {
                                 {bindingStatus?.bound ? "更换账号" : "去绑定"}
                             </Text>
                         </TouchableOpacity>
-                    </View>
+                    </TouchableOpacity>
 
-                    {!bindingStatus?.bound ? (
+                    <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => {
+                            if (wechatPayoutSupported) {
+                                setSelectedPayType("wechat_pay");
+                            }
+                        }}
+                        style={[
+                            styles.accountCard,
+                            !wechatBindingStatus?.bound &&
+                                styles.accountCardPending,
+                            wechatPayoutSupported &&
+                                selectedPayType === "wechat_pay" &&
+                                styles.accountCardActive,
+                            !wechatPayoutSupported &&
+                                styles.accountCardDisabled,
+                        ]}
+                    >
+                        <View style={styles.accountLeft}>
+                            <View
+                                style={[
+                                    styles.accountIcon,
+                                    { backgroundColor: "#07C160" },
+                                ]}
+                            >
+                                <Ionicons
+                                    name="logo-wechat"
+                                    size={24}
+                                    color="white"
+                                />
+                            </View>
+                            <View style={styles.accountInfo}>
+                                <Text style={styles.accountType}>微信零钱</Text>
+                                <Text style={styles.accountDetail}>
+                                    {isWechatBindingStatusLoading
+                                        ? "加载中..."
+                                        : !wechatPayoutSupported
+                                          ? "当前仅 Android 支持微信提现确认收款"
+                                          : wechatBindingStatus?.bound
+                                            ? `已绑定 ${(wechatBindingStatus as unknown as { openId?: string | null; wechatOpenId?: string | null }).openId || (wechatBindingStatus as unknown as { wechatOpenId?: string | null }).wechatOpenId || "微信收款账号"}`
+                                            : "未绑定，绑定后才能提交微信提现"}
+                                </Text>
+                            </View>
+                        </View>
+                        <TouchableOpacity
+                            style={styles.accountActionButton}
+                            onPress={handleOpenBinding}
+                            disabled={isWechatBindingStatusLoading}
+                        >
+                            <Text style={styles.accountActionButtonText}>
+                                {wechatBindingStatus?.bound
+                                    ? "更换账号"
+                                    : "去绑定"}
+                            </Text>
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+
+                    {!bindingStatus?.bound && !wechatBindingStatus?.bound ? (
                         <Text style={styles.accountWarning}>
-                            绑定支付宝账号后才能发起提现，点击按钮前往绑定
+                            绑定支付宝或微信收款账号后才能发起提现，点击按钮前往绑定
+                        </Text>
+                    ) : null}
+                    {!wechatPayoutSupported ? (
+                        <Text style={styles.accountWarning}>
+                            当前版本仅在 Android 端自动拉起微信确认收款，iOS
+                            端请先使用支付宝提现。
                         </Text>
                     ) : null}
                 </View>
@@ -609,7 +751,10 @@ const WITHDRAWAL_STATUS_META: Record<string, { label: string; color: string }> =
     {
         pending: { label: "待审核", color: "#FF9800" },
         approved: { label: "审核通过，待打款", color: "#2196F3" },
+        processing: { label: "处理中，待确认收款", color: "#9C27B0" },
         completed: { label: "已打款", color: "#4CAF50" },
+        failed: { label: "打款失败", color: "#FF5722" },
+        cancelled: { label: "已取消", color: "#9E9E9E" },
         rejected: { label: "已驳回", color: "#FF5722" },
     };
 
@@ -904,6 +1049,9 @@ const styles = StyleSheet.create({
     },
     accountCardPending: {
         borderColor: "#FF9800",
+    },
+    accountCardDisabled: {
+        opacity: 0.6,
     },
     accountCardActive: {
         borderColor: "#2196F3",

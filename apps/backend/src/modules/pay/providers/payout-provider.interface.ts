@@ -12,6 +12,11 @@ export type PayoutProviderQueryRequest = {
     withdrawal: WithdrawalRecord;
 };
 
+export type PayoutProviderNotifyRequest = {
+    rawBody: string;
+    headers?: Record<string, string | string[] | undefined>;
+};
+
 export type PayoutProviderExecuteResult = {
     channel: PayoutChannel;
     withdrawalStatus:
@@ -39,6 +44,10 @@ export interface PayoutProvider {
 
     queryPayoutStatus?(
         request: PayoutProviderQueryRequest,
+    ): Promise<PayoutProviderExecuteResult | null>;
+
+    handleNotify?(
+        request: PayoutProviderNotifyRequest,
     ): Promise<PayoutProviderExecuteResult | null>;
 }
 

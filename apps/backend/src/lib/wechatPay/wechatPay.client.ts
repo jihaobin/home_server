@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import {
     createWechatPayNonce,
     decryptWechatPayAead,
+    encryptWechatPaySensitiveField,
     signWechatPayMessage,
     verifyWechatPaySignature,
 } from './wechatPay.crypto';
@@ -15,8 +16,13 @@ import type {
     WechatPayConfig,
     WechatPayCreateRefundRequest,
     WechatPayCreateRefundResponse,
+    WechatPayCreateMerchantTransferRequest,
+    WechatPayCreateMerchantTransferResponse,
+    WechatPayDecryptedMerchantTransfer,
     WechatPayDecryptedRefund,
     WechatPayDecryptedTransaction,
+    WechatPayMerchantTransferNotifyParseResult,
+    WechatPayMerchantTransferQueryResponse,
     WechatPayNotifyEnvelope,
     WechatPayNotifyParseResult,
     WechatPayOrderQueryResponse,
@@ -29,6 +35,7 @@ type WechatPayRequestOptions = {
     method: 'GET' | 'POST' | 'DELETE';
     path: string;
     body?: Record<string, unknown>;
+    headers?: Record<string, string>;
 };
 
 type WechatPayRequestWithBodyOptions = WechatPayRequestOptions & {
@@ -67,6 +74,13 @@ function resolveWechatPayConfigFromEnv(): WechatPayConfig {
     const userNotifyUrl = process.env.WECHAT_PAY_USER_NOTIFY_URL?.trim();
     const userRefundNotifyUrl =
         process.env.WECHAT_PAY_USER_REFUND_NOTIFY_URL?.trim() || userNotifyUrl;
+    const workerAppId = process.env.WECHAT_PAY_WORKER_APP_ID?.trim();
+    const workerTransferNotifyUrl =
+        process.env.WECHAT_PAY_WORKER_TRANSFER_NOTIFY_URL?.trim();
+    const workerTransferSceneId =
+        process.env.WECHAT_PAY_WORKER_TRANSFER_SCENE_ID?.trim();
+    const transferSourceIp =
+        process.env.WECHAT_PAY_TRANSFER_SOURCE_IP?.trim() || undefined;
 
     const resolveExistingPath = (candidates: Array<string | undefined>) => {
         const resolved = candidates
@@ -155,6 +169,10 @@ function resolveWechatPayConfigFromEnv(): WechatPayConfig {
         userAppId,
         userNotifyUrl,
         userRefundNotifyUrl,
+        workerAppId,
+        workerTransferNotifyUrl,
+        workerTransferSceneId,
+        transferSourceIp,
     };
 }
 
@@ -207,6 +225,22 @@ export class WechatPayClient {
 
     getMchId() {
         return this.config.mchId;
+    }
+
+    getWorkerAppId() {
+        return this.config.workerAppId;
+    }
+
+    getWorkerTransferNotifyUrl() {
+        return this.config.workerTransferNotifyUrl;
+    }
+
+    getWorkerTransferSceneId() {
+        return this.config.workerTransferSceneId;
+    }
+
+    getTransferSourceIp() {
+        return this.config.transferSourceIp;
     }
 
     getUserNotifyUrl() {
@@ -277,6 +311,7 @@ export class WechatPayClient {
         method,
         path,
         body,
+        headers,
         expectNoContent,
     }:
         | WechatPayRequestWithBodyOptions
@@ -292,6 +327,7 @@ export class WechatPayClient {
                     path,
                     body: serializedBody,
                 }),
+                ...headers,
             },
             body: serializedBody || undefined,
         });
@@ -354,6 +390,46 @@ export class WechatPayClient {
             path: '/v3/refund/domestic/refunds',
             body: request as unknown as Record<string, unknown>,
         });
+    }
+
+    encryptSensitiveField(plaintext: string) {
+        return encryptWechatPaySensitiveField({
+            plaintext,
+            publicKeyPem: this.platformPublicKeyPem,
+        });
+    }
+
+    async createMerchantTransferBill(
+        request: WechatPayCreateMerchantTransferRequest,
+    ) {
+        return this.request<WechatPayCreateMerchantTransferResponse>({
+            method: 'POST',
+            path: '/v3/fund-app/mch-transfer/transfer-bills',
+            body: request as unknown as Record<string, unknown>,
+            headers: {
+                'Wechatpay-Serial': this.config.platformVerifierId,
+            },
+        });
+    }
+
+    async queryMerchantTransferBillByOutBillNo(outBillNo: string) {
+        const encodedOutBillNo = encodeURIComponent(outBillNo);
+
+        try {
+            return await this.request<WechatPayMerchantTransferQueryResponse>({
+                method: 'GET',
+                path: `/v3/fund-app/mch-transfer/transfer-bills/out-bill-no/${encodedOutBillNo}`,
+            });
+        } catch (error) {
+            if (
+                error instanceof WechatPayApiError &&
+                error.statusCode === 404
+            ) {
+                return null;
+            }
+
+            throw error;
+        }
     }
 
     async closeOrderByOutTradeNo(outTradeNo: string) {
@@ -481,6 +557,24 @@ export class WechatPayClient {
         return {
             envelope,
             refund,
+        };
+    }
+
+    parseAndVerifyMerchantTransferNotify({
+        rawBody,
+        headers,
+    }: {
+        rawBody: string;
+        headers: WechatPayRequestHeaders;
+    }): WechatPayMerchantTransferNotifyParseResult {
+        this.verifyNotifyHeaders(rawBody, headers);
+        const { envelope, decrypted } = this.parseAndDecryptNotify(rawBody);
+        const transfer =
+            parseJson<WechatPayDecryptedMerchantTransfer>(decrypted);
+
+        return {
+            envelope,
+            transfer,
         };
     }
 

@@ -1299,6 +1299,53 @@ export type WorkerAlipayBindingStatus = z.infer<
     typeof WorkerAlipayBindingStatusSchema
 >;
 
+export const WorkerWechatAuthExchangeBodySchema = z
+    .object({
+        authCode: createBoundedString(128, "授权码"),
+        appId: z.string().optional(),
+        scope: z.string().optional(),
+        state: z.string().optional(),
+    })
+    .meta({
+        title: "服务人员微信授权回传",
+        description: "客户端将微信 auth code 传到服务端换取 openid/unionid",
+    });
+export type WorkerWechatAuthExchangeBody = z.infer<
+    typeof WorkerWechatAuthExchangeBodySchema
+>;
+
+export const WorkerWechatAuthExchangeResponseSchema = z
+    .object({
+        bound: z.literal(true),
+        openId: z.string().max(128).nullable(),
+        unionId: z.string().max(128).nullable(),
+        appId: z.string().min(1).max(128),
+        boundAt: z.string(),
+    })
+    .meta({
+        title: "服务人员微信授权绑定结果",
+        description: "换取并落库后的服务人员微信提现收款标识。",
+    });
+export type WorkerWechatAuthExchangeResponse = z.infer<
+    typeof WorkerWechatAuthExchangeResponseSchema
+>;
+
+export const WorkerWechatBindingStatusSchema = z
+    .object({
+        bound: z.boolean(),
+        openId: z.string().max(128).nullable(),
+        unionId: z.string().max(128).nullable(),
+        appId: z.string().max(128).nullable(),
+        boundAt: z.string().optional(),
+    })
+    .meta({
+        title: "服务人员微信绑定状态",
+        description: "服务人员当前微信提现收款身份绑定状态。",
+    });
+export type WorkerWechatBindingStatus = z.infer<
+    typeof WorkerWechatBindingStatusSchema
+>;
+
 export const WorkerAlipayUnbindResponseSchema = z
     .object({
         success: z.literal(true),
@@ -1309,6 +1356,71 @@ export const WorkerAlipayUnbindResponseSchema = z
     });
 export type WorkerAlipayUnbindResponse = z.infer<
     typeof WorkerAlipayUnbindResponseSchema
+>;
+
+export const WorkerWechatUnbindResponseSchema = z
+    .object({
+        success: z.literal(true),
+    })
+    .meta({
+        title: "服务人员微信解绑响应",
+        description: "解绑成功标识",
+    });
+export type WorkerWechatUnbindResponse = z.infer<
+    typeof WorkerWechatUnbindResponseSchema
+>;
+
+export const WorkerWechatMerchantTransferClientResultSchema = z
+    .enum(["success", "fail", "cancel"])
+    .meta({
+        title: "微信确认收款客户端结果",
+        description: "客户端拉起微信确认收款页后回传的页面展示结果。",
+    });
+
+export type WorkerWechatMerchantTransferClientResult = z.infer<
+    typeof WorkerWechatMerchantTransferClientResultSchema
+>;
+
+export const WorkerWechatMerchantTransferResultBodySchema = z
+    .object({
+        result: WorkerWechatMerchantTransferClientResultSchema,
+        businessType: z.string().optional(),
+        extMsg: z.string().optional(),
+        errorCode: z.number().int().optional(),
+        errorMessage: z.string().optional(),
+        transaction: z.string().optional(),
+        receivedAt: z.string().optional(),
+    })
+    .meta({
+        title: "微信提现确认收款结果上报",
+        description:
+            "worker 端将微信商家转账确认收款页面的展示结果上报给服务端。",
+    });
+
+export type WorkerWechatMerchantTransferResultBody = z.infer<
+    typeof WorkerWechatMerchantTransferResultBodySchema
+>;
+
+export const WorkerWithdrawalPayoutStatusResponseSchema = z
+    .object({
+        withdrawalId: z.string().min(1),
+        status: WithdrawalStatusEnum,
+        method: PaymentMethodEnum,
+        providerState: z.string().nullable(),
+        providerAppId: z.string().nullable(),
+        providerBillNo: z.string().nullable(),
+        providerPackageInfo: z.string().nullable(),
+        providerMeta: z.record(z.string(), z.unknown()).nullable().optional(),
+        failureReason: z.string().nullable(),
+        processedAt: z.string().nullable(),
+    })
+    .meta({
+        title: "提现渠道状态快照",
+        description: "用于 worker 端在微信提现确认收款后主动刷新提现渠道状态。",
+    });
+
+export type WorkerWithdrawalPayoutStatusResponse = z.infer<
+    typeof WorkerWithdrawalPayoutStatusResponseSchema
 >;
 
 export const UserWithdrawalItemSchema = z
@@ -1390,6 +1502,11 @@ export const WorkerEarningsWithdrawalDetailSchema = z
         remark: z.string().nullable(),
         reviewNote: z.string().nullable(),
         failureReason: z.string().nullable(),
+        providerState: z.string().nullable().optional(),
+        providerAppId: z.string().nullable().optional(),
+        providerBillNo: z.string().nullable().optional(),
+        providerPackageInfo: z.string().nullable().optional(),
+        providerMeta: z.record(z.string(), z.unknown()).nullable().optional(),
         requestedAt: z.date(),
         reviewedAt: z.date().nullable(),
         processedAt: z.date().nullable(),

@@ -27,12 +27,45 @@ export type WechatPayResult = {
     transaction: string;
 };
 
+export type WechatAuthResult = {
+    code: string;
+    state: string;
+    url: string;
+    authResult: boolean;
+    lang: string;
+    country: string;
+    errorCode: number;
+    errorMessage: string;
+    openId: string;
+    transaction: string;
+};
+
+export type WechatMerchantTransferRequest = {
+    mchId: string;
+    appId: string;
+    package: string;
+};
+
+export type WechatMerchantTransferResult = {
+    businessType: string;
+    extMsg: string;
+    result: "success" | "fail" | "cancel";
+    errorCode: number;
+    errorMessage: string;
+    openId: string;
+    transaction: string;
+};
+
 type ExpoWeChatModule = typeof import("expo-wechat");
 
 type ExpoWeChatLike = {
     isRegistered?: boolean | (() => boolean);
     registerApp: (appId: string, universalLink: string) => Promise<boolean>;
     isWXAppInstalled: () => Promise<boolean>;
+    sendAuthRequest: (scope: string, state: string) => Promise<boolean>;
+    requestMerchantTransfer: (
+        options: WechatMerchantTransferRequest,
+    ) => Promise<boolean>;
     pay: (options: {
         partnerId: string;
         prepayId: string;
@@ -54,7 +87,7 @@ async function getExpoWeChat() {
             ? loadedModule.default
             : loadedModule;
 
-    return resolvedModule as ExpoWeChatLike;
+    return resolvedModule as unknown as ExpoWeChatLike;
 }
 
 function isWeChatRegistered(module: ExpoWeChatLike) {
@@ -102,6 +135,29 @@ export async function ensureWeChatAppRegistered({
 export async function isWeChatAppInstalled() {
     const ExpoWeChat = await getExpoWeChat();
     return await ExpoWeChat.isWXAppInstalled();
+}
+
+export async function wechatAuth({
+    scope,
+    state,
+}: {
+    scope: string;
+    state: string;
+}) {
+    const ExpoWeChat = await getExpoWeChat();
+    return await ExpoWeChat.sendAuthRequest(scope, state);
+}
+
+export async function requestWechatMerchantTransfer(
+    options: WechatMerchantTransferRequest,
+) {
+    const ExpoWeChat = await getExpoWeChat();
+
+    if (typeof ExpoWeChat.requestMerchantTransfer !== "function") {
+        throw new Error("当前微信 SDK 不支持商家转账确认收款");
+    }
+
+    return await ExpoWeChat.requestMerchantTransfer(options);
 }
 
 export async function wechatPay(payInfo: WechatPayRequest) {

@@ -39,8 +39,10 @@ import { createAliPaySdk, createWorkerAliPaySdk } from 'src/lib/alipaySdk';
 import { OrderService } from '../order/order.service';
 import { OrderRepository } from '../order/order.reposityro';
 import { PayRepository } from './pay.repository';
+import { AdminWithdrawalsService } from './admin-withdrawals.service';
 import { PaymentDispatcher } from './providers/payment.dispatcher';
 import type { PaymentChannel } from './providers/payment-provider.interface';
+import { PayoutDispatcher } from './providers/payout.dispatcher';
 import { RefundDispatcher } from './providers/refund.dispatcher';
 import type { RefundChannel } from './providers/refund-provider.interface';
 
@@ -75,10 +77,65 @@ type AlipayOauthTokenResponse = {
     openId?: string;
 };
 
+type WechatOauthTokenResponse = {
+    access_token?: string;
+    expires_in?: number;
+    refresh_token?: string;
+    openid?: string;
+    unionid?: string;
+    scope?: string;
+    errcode?: number;
+    errmsg?: string;
+};
+
+type LocalWorkerWechatAuthExchangeBody = {
+    authCode: string;
+    appId?: string;
+    scope?: string;
+    state?: string;
+};
+
+type LocalWorkerWechatAuthExchangeResponse = {
+    bound: true;
+    openId: string | null;
+    unionId: string | null;
+    appId: string;
+    boundAt: string;
+};
+
+type LocalWorkerWechatMerchantTransferResultBody = {
+    result: 'success' | 'fail' | 'cancel';
+    businessType?: string;
+    extMsg?: string;
+    errorCode?: number;
+    errorMessage?: string;
+    transaction?: string;
+    receivedAt?: string;
+};
+
+type LocalWorkerWithdrawalPayoutStatusResponse = {
+    withdrawalId: string;
+    status: string;
+    method: string;
+    providerState: string | null;
+    providerAppId: string | null;
+    providerBillNo: string | null;
+    providerPackageInfo: string | null;
+    providerMeta?: Record<string, unknown> | null;
+    failureReason: string | null;
+    processedAt: string | null;
+};
+
 const maskAlipayId = (value?: string | null) => {
     if (!value) return null;
     if (value.length <= 6) return value;
     return `${value.slice(0, 3)}****${value.slice(-3)}`;
+};
+
+const maskWechatId = (value?: string | null) => {
+    if (!value) return null;
+    if (value.length <= 8) return value;
+    return `${value.slice(0, 4)}****${value.slice(-4)}`;
 };
 
 export interface EarningsOverview {
@@ -116,8 +173,14 @@ export class PayService {
     @Inject(RefundDispatcher)
     private refundDispatcher: RefundDispatcher;
 
+    @Inject(PayoutDispatcher)
+    private payoutDispatcher: PayoutDispatcher;
+
     @Inject(PaymentDispatcher)
     private paymentDispatcher: PaymentDispatcher;
+
+    @Inject(AdminWithdrawalsService)
+    private adminWithdrawalsService: AdminWithdrawalsService;
 
     private logger = new Logger(PayService.name);
 
@@ -317,6 +380,81 @@ export class PayService {
                 set: {
                     alipayUserId,
                     alipayOpenId,
+                    updatedAt: now,
+                },
+            })
+            .returning();
+
+        return record;
+    }
+
+    private getWorkerWechatBindingConfig() {
+        const appId = process.env.WECHAT_PAY_WORKER_APP_ID?.trim();
+        const appSecret = process.env.WECHAT_PAY_WORKER_APP_SECRET?.trim();
+
+        if (!appId) {
+            throw new BadRequestException('未配置服务人员端微信提现微信 AppID');
+        }
+
+        if (!appSecret) {
+            throw new BadRequestException(
+                '未配置服务人员端微信提现微信 AppSecret',
+            );
+        }
+
+        return {
+            appId,
+            appSecret,
+        };
+    }
+
+    private async saveWorkerWechatBinding(
+        userId: string,
+        info: {
+            openId: string;
+            unionId?: string | null;
+            appId: string;
+        },
+    ) {
+        const openId = info.openId.trim();
+        const unionId = info.unionId?.trim() || null;
+        const appId = info.appId.trim();
+
+        const existingProfileWithWechatOpenId =
+            await this.db.query.userProfiles.findFirst({
+                where: and(
+                    eq(userProfiles.wechatWorkerAppId, appId),
+                    eq(userProfiles.wechatWorkerOpenId, openId),
+                ),
+            });
+
+        if (
+            existingProfileWithWechatOpenId &&
+            existingProfileWithWechatOpenId.userId !== userId
+        ) {
+            throw new BadRequestException('该微信收款账号已绑定其他用户');
+        }
+
+        const now = new Date();
+
+        const [record] = await this.db
+            .insert(userProfiles)
+            .values({
+                userId,
+                wechatWorkerOpenId: openId,
+                wechatWorkerUnionId: unionId,
+                wechatWorkerAppId: appId,
+                wechatWorkerBoundAt: now,
+                createdAt: now,
+                updatedAt: now,
+            })
+            .onConflictDoUpdate({
+                target: userProfiles.userId,
+                set: {
+                    wechatWorkerOpenId: openId,
+                    wechatWorkerUnionId: unionId,
+                    wechatWorkerAppId: appId,
+                    wechatWorkerBoundAt: now,
                     updatedAt: now,
                 },
             })
@@ -834,6 +972,88 @@ export class PayService {
         };
     }
 
+    public async exchangeWorkerWechatAuthCode(
+        userId: string,
+        payload: LocalWorkerWechatAuthExchangeBody,
+    ): Promise<LocalWorkerWechatAuthExchangeResponse> {
+        if (!userId?.trim()) {
+            throw new BadRequestException('用户信息缺失');
+        }
+
+        const isWorker = await this.isUserExist(userId, 'service_personnel');
+        if (!isWorker) {
+            throw new BadRequestException('仅服务人员可发起绑定');
+        }
+
+        const authCode = payload.authCode?.trim();
+        if (!authCode) {
+            throw new BadRequestException('授权码无效，请重新授权');
+        }
+
+        const { appId, appSecret } = this.getWorkerWechatBindingConfig();
+        const clientAppId = payload.appId?.trim();
+        if (clientAppId && clientAppId !== appId) {
+            throw new BadRequestException('微信应用标识不匹配，请重新绑定');
+        }
+
+        const tokenUrl = new URL(
+            'https://api.weixin.qq.com/sns/oauth2/access_token',
+        );
+        tokenUrl.searchParams.set('appid', appId);
+        tokenUrl.searchParams.set('secret', appSecret);
+        tokenUrl.searchParams.set('code', authCode);
+        tokenUrl.searchParams.set('grant_type', 'authorization_code');
+
+        let rawResponse: WechatOauthTokenResponse;
+        try {
+            const response = await fetch(tokenUrl.toString());
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            rawResponse = (await response.json()) as WechatOauthTokenResponse;
+        } catch (error) {
+            this.logger.error(
+                '[PayService] 调用微信授权换取 openid 失败',
+                error instanceof Error ? error.message : error,
+            );
+            throw new BadRequestException('获取微信授权信息失败，请稍后重试');
+        }
+
+        if (rawResponse.errcode) {
+            this.logger.warn(
+                `[PayService] 微信授权换取失败: ${rawResponse.errcode} ${rawResponse.errmsg ?? ''}`,
+            );
+            throw new BadRequestException(
+                rawResponse.errmsg
+                    ? `微信授权失败：${rawResponse.errmsg}`
+                    : '获取微信授权信息失败，请稍后重试',
+            );
+        }
+
+        const openId = rawResponse.openid?.trim();
+        const unionId = rawResponse.unionid?.trim() || null;
+
+        if (!openId) {
+            throw new BadRequestException('未能获取到微信 openid，请重新授权');
+        }
+
+        const bindingRecord = await this.saveWorkerWechatBinding(userId, {
+            openId,
+            unionId,
+            appId,
+        });
+
+        return {
+            bound: true,
+            openId: maskWechatId(bindingRecord.wechatWorkerOpenId),
+            unionId: maskWechatId(bindingRecord.wechatWorkerUnionId),
+            appId,
+            boundAt:
+                bindingRecord.wechatWorkerBoundAt?.toISOString() ??
+                new Date().toISOString(),
+        };
+    }
+
     async getWorkerAlipayBindingStatus(userId: string): Promise<{
         bound: boolean;
         alipayUserId: string | null;
@@ -865,6 +1085,43 @@ export class PayService {
         };
     }
 
+    async getWorkerWechatBindingStatus(userId: string): Promise<{
+        bound: boolean;
+        openId: string | null;
+        unionId: string | null;
+        appId: string | null;
+        boundAt?: string;
+    }> {
+        if (!userId?.trim()) {
+            throw new BadRequestException('用户信息缺失');
+        }
+
+        const profile = await this.db.query.userProfiles.findFirst({
+            where: eq(userProfiles.userId, userId),
+            columns: {
+                wechatWorkerOpenId: true,
+                wechatWorkerUnionId: true,
+                wechatWorkerAppId: true,
+                wechatWorkerBoundAt: true,
+            },
+        });
+
+        const openId = profile?.wechatWorkerOpenId ?? null;
+        const unionId = profile?.wechatWorkerUnionId ?? null;
+        const appId = profile?.wechatWorkerAppId ?? null;
+        const bound = Boolean(openId && appId);
+
+        return {
+            bound,
+            openId: maskWechatId(openId),
+            unionId: maskWechatId(unionId),
+            appId: bound ? appId : null,
+            boundAt: bound
+                ? profile?.wechatWorkerBoundAt?.toISOString()
+                : undefined,
+        };
+    }
+
     async unbindWorkerAlipay(userId: string) {
         if (!userId?.trim()) {
             throw new BadRequestException('用户信息缺失');
@@ -880,6 +1137,204 @@ export class PayService {
             .where(eq(userProfiles.userId, userId));
 
         return { success: true };
+    }
+
+    async unbindWorkerWechat(userId: string) {
+        if (!userId?.trim()) {
+            throw new BadRequestException('用户信息缺失');
+        }
+
+        await this.db
+            .update(userProfiles)
+            .set({
+                wechatWorkerOpenId: null,
+                wechatWorkerUnionId: null,
+                wechatWorkerAppId: null,
+                wechatWorkerBoundAt: null,
+                updatedAt: new Date(),
+            })
+            .where(eq(userProfiles.userId, userId));
+
+        return { success: true };
+    }
+
+    async handleWechatPayoutNotify(payload: {
+        rawBody: string;
+        headers?: Record<string, string | string[] | undefined>;
+    }) {
+        try {
+            const payoutResult = await this.payoutDispatcher.handleNotify(
+                'wechat_pay',
+                payload,
+            );
+
+            const outBillNo =
+                payoutResult?.providerMeta?.wechatMerchantTransfer &&
+                typeof payoutResult.providerMeta.wechatMerchantTransfer ===
+                    'object' &&
+                payoutResult.providerMeta.wechatMerchantTransfer !== null &&
+                'outBillNo' in payoutResult.providerMeta.wechatMerchantTransfer
+                    ? String(
+                          payoutResult.providerMeta.wechatMerchantTransfer
+                              .outBillNo,
+                      )
+                    : null;
+
+            const withdrawalId = outBillNo ?? null;
+
+            if (!payoutResult || !withdrawalId) {
+                return false;
+            }
+
+            const withdrawal =
+                await this.payRepository.findWithdrawalById(withdrawalId);
+
+            if (
+                !withdrawal ||
+                withdrawal.method !== 'wechat_pay' ||
+                (withdrawal.providerAppId &&
+                    process.env.WECHAT_PAY_WORKER_APP_ID?.trim() &&
+                    withdrawal.providerAppId !==
+                        process.env.WECHAT_PAY_WORKER_APP_ID?.trim())
+            ) {
+                this.logger.warn(
+                    `[PayService] 忽略微信提现回调，提现单校验失败: withdrawalId=${withdrawalId}`,
+                );
+                return false;
+            }
+
+            await this.adminWithdrawalsService.applyPayoutResultForWithdrawal(
+                withdrawalId,
+                payoutResult,
+            );
+
+            return true;
+        } catch (error) {
+            this.logger.warn(
+                '[PayService] 处理微信提现回调失败',
+                error instanceof Error ? error.message : error,
+            );
+            return false;
+        }
+    }
+
+    async queryWorkerWithdrawalPayoutStatus(
+        userId: string,
+        withdrawalId: string,
+    ): Promise<LocalWorkerWithdrawalPayoutStatusResponse> {
+        const withdrawal = await this.ensureWorkerWechatWithdrawalAccessible(
+            userId,
+            withdrawalId,
+        );
+
+        const payoutResult = await this.payoutDispatcher.queryPayoutStatus(
+            'wechat_pay',
+            {
+                withdrawal,
+            },
+        );
+
+        if (payoutResult) {
+            await this.adminWithdrawalsService.applyPayoutResultForWithdrawal(
+                withdrawal.id,
+                payoutResult,
+            );
+        }
+
+        const latest = await this.payRepository.findWithdrawalById(
+            withdrawal.id,
+        );
+        if (!latest) {
+            throw new BadRequestException('提现记录不存在');
+        }
+
+        return this.buildWorkerWithdrawalPayoutStatusResponse(latest);
+    }
+
+    async reportWorkerWechatMerchantTransferResult(
+        userId: string,
+        withdrawalId: string,
+        payload: LocalWorkerWechatMerchantTransferResultBody,
+    ): Promise<LocalWorkerWithdrawalPayoutStatusResponse> {
+        const withdrawal = await this.ensureWorkerWechatWithdrawalAccessible(
+            userId,
+            withdrawalId,
+        );
+
+        const currentMeta =
+            withdrawal.providerMeta &&
+            typeof withdrawal.providerMeta === 'object'
+                ? withdrawal.providerMeta
+                : {};
+        const currentWechatMeta =
+            currentMeta.wechatMerchantTransfer &&
+            typeof currentMeta.wechatMerchantTransfer === 'object'
+                ? currentMeta.wechatMerchantTransfer
+                : {};
+
+        await this.payRepository.updateWithdrawalById(withdrawal.id, {
+            providerMeta: {
+                ...currentMeta,
+                wechatMerchantTransfer: {
+                    ...currentWechatMeta,
+                    appReport: {
+                        result: payload.result,
+                        businessType: payload.businessType ?? null,
+                        extMsg: payload.extMsg ?? null,
+                        errorCode: payload.errorCode ?? null,
+                        errorMessage: payload.errorMessage ?? null,
+                        transaction: payload.transaction ?? null,
+                        receivedAt:
+                            payload.receivedAt ?? new Date().toISOString(),
+                    },
+                },
+            },
+        });
+
+        return this.queryWorkerWithdrawalPayoutStatus(userId, withdrawalId);
+    }
+
+    private async ensureWorkerWechatWithdrawalAccessible(
+        userId: string,
+        withdrawalId: string,
+    ) {
+        if (!userId?.trim()) {
+            throw new BadRequestException('用户信息缺失');
+        }
+
+        const withdrawal =
+            await this.payRepository.findWithdrawalById(withdrawalId);
+
+        if (!withdrawal || withdrawal.userId !== userId) {
+            throw new BadRequestException('提现记录不存在');
+        }
+
+        if (withdrawal.method !== 'wechat_pay') {
+            throw new BadRequestException('当前提现记录不是微信提现');
+        }
+
+        return withdrawal;
+    }
+
+    private buildWorkerWithdrawalPayoutStatusResponse(
+        withdrawal: Awaited<ReturnType<PayRepository['findWithdrawalById']>>,
+    ): LocalWorkerWithdrawalPayoutStatusResponse {
+        if (!withdrawal) {
+            throw new BadRequestException('提现记录不存在');
+        }
+
+        return {
+            withdrawalId: withdrawal.id,
+            status: withdrawal.status,
+            method: withdrawal.method,
+            providerState: withdrawal.providerState ?? null,
+            providerAppId: withdrawal.providerAppId ?? null,
+            providerBillNo: withdrawal.providerBillNo ?? null,
+            providerPackageInfo: withdrawal.providerPackageInfo ?? null,
+            providerMeta: withdrawal.providerMeta ?? null,
+            failureReason: withdrawal.failureReason ?? null,
+            processedAt: withdrawal.processedAt?.toISOString() ?? null,
+        };
     }
 
     async pay({

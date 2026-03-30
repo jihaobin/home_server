@@ -9,6 +9,10 @@ export type WechatPayConfig = {
     userAppId: string;
     userNotifyUrl: string;
     userRefundNotifyUrl: string;
+    workerAppId?: string;
+    workerTransferNotifyUrl?: string;
+    workerTransferSceneId?: string;
+    transferSourceIp?: string;
 };
 
 export type WechatPayAppPrepayRequest = {
@@ -92,6 +96,69 @@ export type WechatPayCreateRefundResponse = {
 
 export type WechatPayRefundQueryResponse = WechatPayCreateRefundResponse;
 
+export type WechatPayMerchantTransferSceneReportInfo = {
+    info_type: string;
+    info_content: string;
+};
+
+export type WechatPayCreateMerchantTransferRequest = {
+    appid: string;
+    out_bill_no: string;
+    transfer_scene_id: string;
+    openid: string;
+    user_name?: string;
+    transfer_amount: number;
+    transfer_remark: string;
+    notify_url?: string;
+    user_recv_perception?: string;
+    transfer_scene_report_infos: WechatPayMerchantTransferSceneReportInfo[];
+};
+
+export type WechatPayMerchantTransferState =
+    | 'ACCEPTED'
+    | 'PROCESSING'
+    | 'WAIT_USER_CONFIRM'
+    | 'TRANSFERING'
+    | 'SUCCESS'
+    | 'FAIL'
+    | 'CANCELING'
+    | 'CANCELLED';
+
+export type WechatPayCreateMerchantTransferResponse = {
+    out_bill_no: string;
+    transfer_bill_no: string;
+    create_time: string;
+    state: WechatPayMerchantTransferState;
+    package_info?: string;
+};
+
+export type WechatPayMerchantTransferQueryResponse = {
+    mch_id: string;
+    out_bill_no: string;
+    transfer_bill_no: string;
+    appid: string;
+    state: WechatPayMerchantTransferState;
+    transfer_amount: number;
+    transfer_remark: string;
+    fail_reason?: string;
+    openid?: string;
+    user_name?: string;
+    create_time: string;
+    update_time: string;
+};
+
+export type WechatPayDecryptedMerchantTransfer = {
+    out_bill_no: string;
+    transfer_bill_no: string;
+    state: 'SUCCESS' | 'FAIL' | 'CANCELLED';
+    mch_id: string;
+    transfer_amount: number;
+    openid: string;
+    fail_reason?: string;
+    create_time: string;
+    update_time: string;
+};
+
 export type WechatPayRequestHeaders = Record<
     string,
     string | string[] | undefined
@@ -167,6 +234,11 @@ export type WechatPayNotifyParseResult = {
 export type WechatPayRefundNotifyParseResult = {
     envelope: WechatPayNotifyEnvelope;
     refund: WechatPayDecryptedRefund;
+};
+
+export type WechatPayMerchantTransferNotifyParseResult = {
+    envelope: WechatPayNotifyEnvelope;
+    transfer: WechatPayDecryptedMerchantTransfer;
 };
 
 export type WechatPayFailureResponse = {

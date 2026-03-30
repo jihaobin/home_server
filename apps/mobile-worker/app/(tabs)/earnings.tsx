@@ -29,7 +29,10 @@ const WITHDRAWAL_STATUS_META: Record<string, { label: string; color: string }> =
     {
         pending: { label: "待审核", color: "#FF9800" },
         approved: { label: "审核通过，待打款", color: "#2196F3" },
+        processing: { label: "处理中，待确认收款", color: "#9C27B0" },
         completed: { label: "已打款", color: "#4CAF50" },
+        failed: { label: "打款失败", color: "#FF5722" },
+        cancelled: { label: "已取消", color: "#9E9E9E" },
         rejected: { label: "已驳回", color: "#FF5722" },
     };
 

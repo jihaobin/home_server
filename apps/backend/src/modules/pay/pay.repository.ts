@@ -35,6 +35,11 @@ type FinancialTransactionQueryResult = {
     withdrawalStatus: WithdrawalStatus | null;
     withdrawalReviewNote: string | null;
     withdrawalFailureReason: string | null;
+    withdrawalProviderState: string | null;
+    withdrawalProviderAppId: string | null;
+    withdrawalProviderBillNo: string | null;
+    withdrawalProviderPackageInfo: string | null;
+    withdrawalProviderMeta: Record<string, unknown> | null;
     withdrawalRemark: string | null;
     withdrawalMethod: PaymentMethod | null;
     withdrawalRequestedAt: Date | null;
@@ -56,6 +61,11 @@ type WithdrawalQueryResult = {
     reviewedAt: Date | null;
     processedAt: Date | null;
     payoutReferenceId: string | null;
+    providerState: string | null;
+    providerAppId: string | null;
+    providerBillNo: string | null;
+    providerPackageInfo: string | null;
+    providerMeta: Record<string, unknown> | null;
 };
 
 type MixedEarningsQueryResult = {
@@ -363,6 +373,11 @@ export class PayRepository {
                 withdrawalStatus: null,
                 withdrawalReviewNote: null,
                 withdrawalFailureReason: null,
+                withdrawalProviderState: null,
+                withdrawalProviderAppId: null,
+                withdrawalProviderBillNo: null,
+                withdrawalProviderPackageInfo: null,
+                withdrawalProviderMeta: null,
                 withdrawalRemark: null,
                 withdrawalMethod: null,
                 withdrawalRequestedAt: null,
@@ -385,6 +400,11 @@ export class PayRepository {
             reviewedAt: row.reviewed_at,
             processedAt: row.processed_at,
             payoutReferenceId: row.payout_reference_id,
+            providerState: null,
+            providerAppId: null,
+            providerBillNo: null,
+            providerPackageInfo: null,
+            providerMeta: null,
         });
     }
 
@@ -424,6 +444,12 @@ export class PayRepository {
                     withdrawalStatus: withdrawals.status,
                     withdrawalReviewNote: withdrawals.reviewNote,
                     withdrawalFailureReason: withdrawals.failureReason,
+                    withdrawalProviderState: withdrawals.providerState,
+                    withdrawalProviderAppId: withdrawals.providerAppId,
+                    withdrawalProviderBillNo: withdrawals.providerBillNo,
+                    withdrawalProviderPackageInfo:
+                        withdrawals.providerPackageInfo,
+                    withdrawalProviderMeta: withdrawals.providerMeta,
                     withdrawalRemark: withdrawals.remark,
                     withdrawalMethod: withdrawals.method,
                     withdrawalRequestedAt: withdrawals.requestedAt,
@@ -475,7 +501,7 @@ export class PayRepository {
             referenceId: record.referenceId ?? null,
             occurredAt: record.createdAt ?? new Date(),
             withdrawal: record.withdrawalId
-                ? {
+                ? ({
                       id: record.withdrawalId,
                       status:
                           (record.withdrawalStatus as WithdrawalStatus) ??
@@ -486,13 +512,19 @@ export class PayRepository {
                       remark: record.withdrawalRemark ?? null,
                       reviewNote: record.withdrawalReviewNote ?? null,
                       failureReason: record.withdrawalFailureReason ?? null,
+                      providerState: record.withdrawalProviderState ?? null,
+                      providerAppId: record.withdrawalProviderAppId ?? null,
+                      providerBillNo: record.withdrawalProviderBillNo ?? null,
+                      providerPackageInfo:
+                          record.withdrawalProviderPackageInfo ?? null,
+                      providerMeta: record.withdrawalProviderMeta ?? null,
                       requestedAt:
                           record.withdrawalRequestedAt ??
                           record.createdAt ??
                           new Date(),
                       reviewedAt: record.withdrawalReviewedAt ?? null,
                       processedAt: record.withdrawalProcessedAt ?? null,
-                  }
+                  } as WorkerEarningsRecordItem['withdrawal'])
                 : undefined,
         };
     }
@@ -529,6 +561,11 @@ export class PayRepository {
                     reviewedAt: withdrawals.reviewedAt,
                     processedAt: withdrawals.processedAt,
                     payoutReferenceId: withdrawals.payoutReferenceId,
+                    providerState: withdrawals.providerState,
+                    providerAppId: withdrawals.providerAppId,
+                    providerBillNo: withdrawals.providerBillNo,
+                    providerPackageInfo: withdrawals.providerPackageInfo,
+                    providerMeta: withdrawals.providerMeta,
                 })
                 .from(withdrawals)
                 .where(whereClause)
@@ -572,10 +609,15 @@ export class PayRepository {
                 remark: record.remark ?? null,
                 reviewNote: record.reviewNote ?? null,
                 failureReason: record.failureReason ?? null,
+                providerState: record.providerState ?? null,
+                providerAppId: record.providerAppId ?? null,
+                providerBillNo: record.providerBillNo ?? null,
+                providerPackageInfo: record.providerPackageInfo ?? null,
+                providerMeta: record.providerMeta ?? null,
                 requestedAt: record.requestedAt ?? new Date(),
                 reviewedAt: record.reviewedAt ?? null,
                 processedAt: record.processedAt ?? null,
-            },
+            } as WorkerEarningsRecordItem['withdrawal'],
         };
     }
 }

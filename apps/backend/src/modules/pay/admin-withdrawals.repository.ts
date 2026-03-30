@@ -38,6 +38,7 @@ export interface AdminWithdrawalRecord {
     providerAppId: string | null;
     providerBillNo: string | null;
     providerPackageInfo: string | null;
+    providerMeta: Record<string, unknown> | null;
     failureReason: string | null;
     userId: string | null;
     userName: string | null;
@@ -79,6 +80,7 @@ export class AdminWithdrawalsRepository {
                 providerAppId: withdrawals.providerAppId,
                 providerBillNo: withdrawals.providerBillNo,
                 providerPackageInfo: withdrawals.providerPackageInfo,
+                providerMeta: withdrawals.providerMeta,
                 failureReason: withdrawals.failureReason,
                 userId: users.id,
                 userName: users.name,
@@ -133,6 +135,7 @@ export class AdminWithdrawalsRepository {
                 providerAppId: withdrawals.providerAppId,
                 providerBillNo: withdrawals.providerBillNo,
                 providerPackageInfo: withdrawals.providerPackageInfo,
+                providerMeta: withdrawals.providerMeta,
                 failureReason: withdrawals.failureReason,
                 userId: users.id,
                 userName: users.name,

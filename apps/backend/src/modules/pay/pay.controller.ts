@@ -32,6 +32,9 @@ import {
     WorkerAlipayAuthExchangeResponseSchema,
     WorkerAlipayBindingStatusSchema,
     WorkerAlipayUnbindResponseSchema,
+    WorkerWechatAuthExchangeResponseSchema,
+    WorkerWechatBindingStatusSchema,
+    WorkerWechatUnbindResponseSchema,
 } from '@repo/types';
 import type { Request, Response } from 'express';
 import { ApiErrorResponses, ApiSuccessResponse } from 'src/common/decorator';
@@ -48,6 +51,36 @@ import z from 'zod/v4';
 import { serializeParsedNotifyBody } from './pay-notify.utils';
 
 const paymentNotifyChannelSchema = z.enum(['alipay', 'wechat_pay']);
+
+const workerWechatAuthExchangeBodySchema = z.object({
+    authCode: z.string().min(1).max(128),
+    appId: z.string().optional(),
+    scope: z.string().optional(),
+    state: z.string().optional(),
+});
+
+const workerWechatMerchantTransferResultBodySchema = z.object({
+    result: z.enum(['success', 'fail', 'cancel']),
+    businessType: z.string().optional(),
+    extMsg: z.string().optional(),
+    errorCode: z.number().int().optional(),
+    errorMessage: z.string().optional(),
+    transaction: z.string().optional(),
+    receivedAt: z.string().optional(),
+});
+
+const workerWithdrawalPayoutStatusResponseSchema = z.object({
+    withdrawalId: z.string().min(1),
+    status: z.string().min(1),
+    method: z.string().min(1),
+    providerState: z.string().nullable(),
+    providerAppId: z.string().nullable(),
+    providerBillNo: z.string().nullable(),
+    providerPackageInfo: z.string().nullable(),
+    providerMeta: z.record(z.string(), z.unknown()).nullable().optional(),
+    failureReason: z.string().nullable(),
+    processedAt: z.string().nullable(),
+});
 
 @ApiTags('支付')
 @Controller('pay')
@@ -140,6 +173,23 @@ export class PayController {
     ) {
         const payload = await this.buildNotifyPayload('wechat_pay', req);
         const handled = await this.payService.handleWechatRefundNotify(payload);
+
+        if (handled) {
+            return res.status(HttpStatus.NO_CONTENT).send();
+        }
+
+        return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+            code: 'FAIL',
+            message: '处理失败',
+        });
+    }
+
+    private async handleWechatPayoutNotifyResponse(
+        req: Request,
+        res: Response,
+    ) {
+        const payload = await this.buildNotifyPayload('wechat_pay', req);
+        const handled = await this.payService.handleWechatPayoutNotify(payload);
 
         if (handled) {
             return res.status(HttpStatus.NO_CONTENT).send();
@@ -289,6 +339,37 @@ export class PayController {
         return this.handleWechatRefundNotifyResponse(req, res);
     }
 
+    @Public()
+    @SkipTransform()
+    @Post('wechat/payout/notify')
+    @HttpCode(HttpStatus.NO_CONTENT)
+    @ApiOperation({
+        summary: '微信提现商家转账异步通知回调(不要在应用中进行调用)',
+        description: '消费微信商家转账结果通知，成功时返回 204 无响应体。',
+    })
+    @ApiResponse({
+        status: HttpStatus.NO_CONTENT,
+        description: '微信提现回调处理成功后返回 204，无响应体',
+    })
+    @ApiResponse({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        description: '微信提现回调处理失败',
+        schema: {
+            type: 'object',
+            properties: {
+                code: { type: 'string', example: 'FAIL' },
+                message: { type: 'string', example: '处理失败' },
+            },
+            required: ['code', 'message'],
+        },
+    })
+    async handleWechatPayoutNotify(
+        @Req() req: RequestWithRawBody,
+        @Res({ passthrough: false }) res: Response,
+    ) {
+        return this.handleWechatPayoutNotifyResponse(req, res);
+    }
+
     @ApiOperation({
         summary: '用户提现',
         description:
@@ -409,6 +490,111 @@ export class PayController {
     })
     async unbindWorkerAlipay(@Req() req: Request) {
         return this.payService.unbindWorkerAlipay(req.user.id);
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Post('worker/wechat/auth/exchange')
+    @UsePipes(
+        createZodPipe(
+            workerWechatAuthExchangeBodySchema,
+            '微信授权数据校验失败',
+        ),
+    )
+    @ApiOperation({
+        summary: '换取并保存服务人员微信收款标识',
+        description:
+            '客户端完成微信授权后上传 auth_code，服务端通过微信开放平台接口换取 worker appid 对应的 openid/unionid 并落库',
+    })
+    @ApiBodies(workerWechatAuthExchangeBodySchema)
+    @ApiSuccessResponse(WorkerWechatAuthExchangeResponseSchema, {
+        description: '返回绑定结果与微信收款标识',
+    })
+    async exchangeWorkerWechatAuthCode(
+        @Body() body: z.infer<typeof workerWechatAuthExchangeBodySchema>,
+        @Req() req: Request,
+    ) {
+        return this.payService.exchangeWorkerWechatAuthCode(req.user.id, body);
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Get('worker/wechat/binding')
+    @ApiOperation({
+        summary: '查询服务人员微信提现微信绑定状态',
+        description: '返回当前绑定的 worker 端微信 openid/appid 信息',
+    })
+    @ApiSuccessResponse(WorkerWechatBindingStatusSchema, {
+        description: '绑定状态',
+    })
+    async getWorkerWechatBinding(@Req() req: Request) {
+        return this.payService.getWorkerWechatBindingStatus(req.user.id);
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Delete('worker/wechat/binding')
+    @ApiOperation({
+        summary: '解绑服务人员微信提现微信账号',
+        description: '清空用户资料中的 worker 微信 openid/unionid/appid',
+    })
+    @ApiSuccessResponse(WorkerWechatUnbindResponseSchema, {
+        description: '解绑结果',
+    })
+    async unbindWorkerWechat(@Req() req: Request) {
+        return this.payService.unbindWorkerWechat(req.user.id);
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Post('withdrawals/:withdrawalId/payout/query')
+    @ApiOperation({
+        summary: '主动刷新微信提现状态',
+        description:
+            'worker 端在确认收款页返回后主动向服务端发起微信提现查单。',
+    })
+    @ApiSuccessResponse(workerWithdrawalPayoutStatusResponseSchema, {
+        description: '最新提现渠道状态快照',
+    })
+    async queryWithdrawalPayoutStatus(
+        @Param('withdrawalId') withdrawalId: string,
+        @Req() req: Request,
+    ) {
+        return this.payService.queryWorkerWithdrawalPayoutStatus(
+            req.user.id,
+            withdrawalId,
+        );
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Post('withdrawals/:withdrawalId/wechat/merchant-transfer/result')
+    @UsePipes(
+        createZodPipe(
+            workerWechatMerchantTransferResultBodySchema,
+            '微信提现确认收款结果参数校验失败',
+        ),
+    )
+    @ApiOperation({
+        summary: '上报微信提现确认收款页面结果',
+        description:
+            'worker 端拉起微信确认收款页后，将页面返回结果上报给服务端并立即触发查单。',
+    })
+    @ApiBodies(workerWechatMerchantTransferResultBodySchema)
+    @ApiSuccessResponse(workerWithdrawalPayoutStatusResponseSchema, {
+        description: '最新提现渠道状态快照',
+    })
+    async reportWechatMerchantTransferResult(
+        @Param('withdrawalId') withdrawalId: string,
+        @Body()
+        body: z.infer<typeof workerWechatMerchantTransferResultBodySchema>,
+        @Req() req: Request,
+    ) {
+        return this.payService.reportWorkerWechatMerchantTransferResult(
+            req.user.id,
+            withdrawalId,
+            body,
+        );
     }
 
     @UseGuards(AuthGuard)

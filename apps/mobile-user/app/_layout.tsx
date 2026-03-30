@@ -25,7 +25,7 @@ export default function RootLayout() {
 
     useIsomorphicLayoutEffect(() => {
         if (hasMounted.current) {
-            return;
+            return
         }
 
         if (Platform.OS === "web") {

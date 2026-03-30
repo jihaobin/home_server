@@ -5,6 +5,7 @@ import {
     text,
     timestamp,
     index,
+    uniqueIndex,
     primaryKey,
 } from 'drizzle-orm/pg-core';
 
@@ -56,6 +57,11 @@ export const userProfiles = pgTable(
             table.faceRecognitionData,
             table.userId,
         ),
+        uniqueIndex('user_profiles_wechat_worker_openid_appid_unique')
+            .on(table.wechatWorkerAppId, table.wechatWorkerOpenId)
+            .where(
+                sql`${table.wechatWorkerAppId} IS NOT NULL AND ${table.wechatWorkerOpenId} IS NOT NULL`,
+            ),
         primaryKey({ columns: [table.id, table.userId] }),
     ],
 );

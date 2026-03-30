@@ -5,6 +5,7 @@ import {
     type PayoutProvider,
     type PayoutProviderExecuteRequest,
     type PayoutProviderExecuteResult,
+    type PayoutProviderNotifyRequest,
     type PayoutProviderQueryRequest,
 } from './payout-provider.interface';
 
@@ -44,5 +45,17 @@ export class PayoutDispatcher {
         }
 
         return provider.queryPayoutStatus(request);
+    }
+
+    async handleNotify(
+        channel: PayoutChannel,
+        request: PayoutProviderNotifyRequest,
+    ): Promise<PayoutProviderExecuteResult | null> {
+        const provider = this.getProvider(channel);
+        if (!provider.handleNotify) {
+            return null;
+        }
+
+        return provider.handleNotify(request);
     }
 }
