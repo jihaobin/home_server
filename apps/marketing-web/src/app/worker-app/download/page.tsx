@@ -7,7 +7,7 @@ import { absoluteWorkerUrl } from "@/lib/worker-site";
 
 export const metadata: Metadata = {
     title: "下载",
-    description: "下载叮咚上单 APK，并查看安装、通知权限与常见处理方式。",
+    description: "下载叮咚上单 APK，快速完成安装与权限配置，尽快进入接单状态。",
     alternates: {
         canonical: absoluteWorkerUrl("/download"),
     },
@@ -20,8 +20,7 @@ export default function WorkerDownloadPage() {
                 下载叮咚上单 APK
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600">
-                这里是叮咚上单独立站点的下载页。你将直接获取 Android
-                APK，并按下方指引完成安装与初始设置。
+                下载安装后，你就能更快进入接单和服务状态。按下方指引完成 APK 安装与首次设置，即可开始使用叮咚上单。
             </p>
 
             <div className="mt-8 grid gap-6 md:grid-cols-2">
@@ -30,7 +29,7 @@ export default function WorkerDownloadPage() {
                         APK 直链下载
                     </div>
                     <p className="mt-3 text-sm leading-7 text-slate-600">
-                        点击下方按钮开始下载。如浏览器拦截下载，请在系统或浏览器设置里允许当前文件下载。
+                        点击下方按钮立即下载。如浏览器拦截，请在系统或浏览器设置里允许当前文件下载。
                     </p>
                     <div className="mt-6">
                         <ButtonLink
@@ -56,7 +55,7 @@ export default function WorkerDownloadPage() {
                             如出现“禁止安装未知来源应用”，请为当前浏览器或文件管理器开启安装权限。
                         </li>
                         <li>
-                            安装完成并登录后，建议开启通知、后台运行等必要权限，以便正常接收接单提醒。
+                            安装完成并登录后，建议开启通知、后台运行等必要权限，确保订单提醒及时送达。
                         </li>
                     </ol>
                     <p className="mt-4 text-xs text-slate-500">
@@ -72,7 +71,7 @@ export default function WorkerDownloadPage() {
                     </div>
                     <ul className="mt-4 list-disc space-y-2 pl-5 text-sm leading-7 text-slate-600">
                         <li>通知权限是否开启</li>
-                        <li>是否允许后台运行，避免错过接单提醒</li>
+                        <li>是否允许后台运行，避免错过订单机会</li>
                         <li>登录状态是否正常，可否进入订单与收益页面</li>
                     </ul>
                 </Card>
@@ -82,8 +81,7 @@ export default function WorkerDownloadPage() {
                         需要更多帮助？
                     </div>
                     <p className="mt-3 text-sm leading-7 text-slate-600">
-                        如果你在安装或登录过程中遇到问题，可以继续查看
-                        FAQ，或前往支持页获取帮助入口。
+                        如果你在安装或登录过程中遇到问题，可以继续查看 FAQ，或前往支持页获取帮助入口，尽快恢复使用。
                     </p>
                     <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                         <ButtonLink href="/worker-app/faq" variant="secondary">

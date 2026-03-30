@@ -5,7 +5,7 @@ export const SITE_URL = "https://dingsm.com";
 
 export const DOWNLOAD_URL = "https://dingsm.com/file/apk/mobile-user";
 
-export const WORKER_DOWNLOAD_URL = "https://dingsm.com/file/apk/mobile-work";
+export const WORKER_DOWNLOAD_URL = "https://dingsm.com/file/apk/mobile-worker";
 
 export const BRAND_COLOR_HSL = "33.094 94% 54%";
 

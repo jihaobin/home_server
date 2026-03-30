@@ -8,7 +8,7 @@ import { WORKER_FAQ_ITEMS, absoluteWorkerUrl } from "@/lib/worker-site";
 export const metadata: Metadata = {
     title: "常见问题",
     description:
-        "查看叮咚上单关于安装、通知、适用人群、下载与支持方式的常见问题。",
+        "查看叮咚上单关于安装、接单提醒、适用人群、下载与支持方式的常见问题。",
     alternates: {
         canonical: absoluteWorkerUrl("/faq"),
     },
@@ -21,8 +21,7 @@ export default function WorkerFaqPage() {
                 叮咚上单常见问题
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-600">
-                这里整理的是叮咚上单专属
-                FAQ，与你在主站看到的用户端说明不同，内容更偏向安装、接单与使用流程。
+                这里整理的是服务人员最常关心的问题，重点覆盖安装、通知、接单与使用流程，帮助你更快完成上手。
             </p>
 
             <div className="mt-8">
@@ -42,7 +41,7 @@ export default function WorkerFaqPage() {
                             还没安装？
                         </div>
                         <div className="mt-2 text-sm text-slate-600">
-                            直接进入下载页，按独立站点的安装指引完成配置即可。
+                            直接进入下载页，按安装指引完成配置后即可开始使用。
                         </div>
                     </div>
                     <ButtonLink
