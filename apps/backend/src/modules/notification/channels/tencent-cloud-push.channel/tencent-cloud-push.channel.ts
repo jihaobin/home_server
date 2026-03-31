@@ -139,7 +139,10 @@ export class TencentCloudPushChannel implements NotificationChannel {
         body: string;
     } {
         const title =
-            ctx.payload.serviceName ?? ctx.payload.event ?? '叮咚服务提醒';
+            ctx.payload.title ??
+            ctx.payload.serviceName ??
+            ctx.payload.event ??
+            '叮咚服务提醒';
         const body =
             ctx.payload.message ??
             (ctx.payload.status
@@ -155,6 +158,7 @@ export class TencentCloudPushChannel implements NotificationChannel {
             event: ctx.payload.event,
             notificationId: ctx.payload.notificationId,
             orderId: ctx.payload.orderId,
+            withdrawalId: ctx.payload.withdrawalId,
             status: ctx.payload.status,
             deliveryMode: ctx.deliveryMode,
         };

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "user_profiles_wechat_worker_openid_appid_unique" ON "user_profiles" USING btree ("wechat_worker_app_id","wechat_worker_open_id") WHERE "user_profiles"."wechat_worker_app_id" IS NOT NULL AND "user_profiles"."wechat_worker_open_id" IS NOT NULL;

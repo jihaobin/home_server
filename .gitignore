@@ -47,10 +47,14 @@ yarn-error.log*
 **/apps/**/android
 
 env/development/**
+!env/development/.env.mobile-user
+!env/development/.env.mobile-worker
 **/env.development
 todos.md
 
 env/production/**
+!env/production/.env.mobile-user
+!env/production/.env.mobile-worker
 env/production/.env.api
 env/production/.env.common
 env/production/.env.mobile

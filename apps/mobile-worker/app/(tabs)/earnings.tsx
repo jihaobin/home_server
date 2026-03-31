@@ -206,91 +206,196 @@ function EarningsContent() {
 
     const renderTransaction = (item: TransactionItem) => {
         const isIncome = item.flowType === "income";
-        const amountColor = isIncome ? "#4CAF50" : "#FF5722";
-        const statusMeta = !isIncome
-            ? getWithdrawalStatusMeta(item.withdrawal?.status)
-            : null;
-        const withdrawNote = !isIncome ? getWithdrawalNote(item) : null;
+        const amountColor = "#4CAF50";
+        const customerLabel = getIncomeCustomerLabel(item);
+        const customerPhone = getIncomeCustomerPhone(item);
+        const incomeTimeLabel = formatTransactionTime(item.occurredAt);
 
-        return (
-            <View key={item.id} style={styles.transactionCard}>
-                <View style={styles.transactionIcon}>
-                    <Ionicons
-                        name={isIncome ? "arrow-down" : "arrow-up"}
-                        size={24}
-                        color={amountColor}
-                    />
-                </View>
-                <View style={styles.transactionInfo}>
-                    <Text style={styles.transactionDesc}>
-                        {getTransactionDescription(item)}
-                    </Text>
-                    <Text style={styles.transactionTime}>
-                        {formatTransactionTime(item.occurredAt)}
-                    </Text>
-                    {statusMeta ? (
+        if (isIncome) {
+            const resolvedIncomeSummary = getIncomeSummary(item);
+            return (
+                <View key={item.id} style={styles.incomeCard}>
+                    <View style={styles.incomeCardTop}>
+                        <View style={styles.incomeCardTopLeft}>
+                            <View style={styles.incomeIconWrap}>
+                                <Ionicons
+                                    name="arrow-down"
+                                    size={20}
+                                    color="#12B76A"
+                                />
+                            </View>
+                            <View style={styles.incomeTitleWrap}>
+                                <Text style={styles.incomeTitle}>
+                                    {resolvedIncomeSummary.title}
+                                </Text>
+                                <Text style={styles.incomeSubtitle}>
+                                    {resolvedIncomeSummary.subtitle}
+                                </Text>
+                            </View>
+                        </View>
                         <Text
                             style={[
-                                styles.transactionStatus,
-                                { color: statusMeta.color },
+                                styles.incomeAmount,
+                                { color: amountColor },
                             ]}
                         >
-                            {statusMeta.label}
+                            +¥{formatCurrency(Math.abs(item.amount))}
                         </Text>
-                    ) : null}
-                    {withdrawNote ? (
-                        <Text style={styles.transactionNote}>
-                            审核备注：{withdrawNote}
-                        </Text>
-                    ) : null}
+                    </View>
+
+                    <View style={styles.incomeInfoGrid}>
+                        <View style={styles.incomeInfoItem}>
+                            <Text style={styles.incomeInfoLabel}>
+                                下单用户
+                            </Text>
+                            <Text style={styles.incomeInfoValue}>
+                                {customerLabel}
+                            </Text>
+                        </View>
+                        <View style={styles.incomeInfoItem}>
+                            <Text style={styles.incomeInfoLabel}>
+                                联系手机
+                            </Text>
+                            <Text style={styles.incomeInfoValue}>
+                                {customerPhone}
+                            </Text>
+                        </View>
+                        <View
+                            style={[
+                                styles.incomeInfoItem,
+                                styles.incomeInfoItemFull,
+                            ]}
+                        >
+                            <Text style={styles.incomeInfoLabel}>
+                                入账时间
+                            </Text>
+                            <Text style={styles.incomeInfoValue}>
+                                {incomeTimeLabel}
+                            </Text>
+                        </View>
+                    </View>
                 </View>
-                <Text
-                    style={[styles.transactionAmount, { color: amountColor }]}
-                >
-                    {isIncome ? "+" : "-"}¥
-                    {formatCurrency(Math.abs(item.amount))}
-                </Text>
-            </View>
-        );
+            );
+        }
+
+        return renderWithdrawalTransaction(item);
     };
 
     const renderWithdrawalTransaction = (item: WithdrawalItem) => {
         const amountColor = "#FF5722";
         const statusMeta = getWithdrawalStatusMeta(item.withdrawal?.status);
         const withdrawNote = getWithdrawalNote(item) ?? "";
-        const timestamp = item.withdrawal?.requestedAt ?? item.occurredAt;
+        const methodMeta = getWithdrawalMethodMeta(item.withdrawal?.method);
+        const requestedTime = formatTransactionTime(
+            item.withdrawal?.requestedAt ?? item.occurredAt,
+        );
+        const resultTime = getWithdrawalResultTimeLabel(item);
 
         return (
-            <View key={item.id} style={styles.transactionCard}>
-                <View style={styles.transactionIcon}>
-                    <Ionicons name="arrow-up" size={24} color={amountColor} />
-                </View>
-                <View style={styles.transactionInfo}>
-                    <Text style={styles.transactionDesc}>余额提现</Text>
-                    <Text style={styles.transactionTime}>
-                        {formatTransactionTime(timestamp)}
-                    </Text>
-                    {statusMeta ? (
-                        <Text
+            <View key={item.id} style={styles.withdrawalCard}>
+                <View style={styles.withdrawalCardTop}>
+                    <View style={styles.withdrawalCardTopLeft}>
+                        <View
                             style={[
-                                styles.transactionStatus,
-                                { color: statusMeta.color },
+                                styles.withdrawalMethodIcon,
+                                {
+                                    backgroundColor: methodMeta.iconBackground,
+                                },
                             ]}
                         >
-                            {statusMeta.label}
-                        </Text>
-                    ) : null}
-                    {withdrawNote ? (
-                        <Text style={styles.transactionNote}>
-                            审核备注：{withdrawNote}
-                        </Text>
+                            <Ionicons
+                                name={methodMeta.icon}
+                                size={20}
+                                color={methodMeta.iconColor}
+                            />
+                        </View>
+                        <View style={styles.withdrawalCardTitleWrap}>
+                            <Text style={styles.withdrawalCardTitle}>
+                                余额提现
+                            </Text>
+                            <Text style={styles.withdrawalCardMethod}>
+                                {methodMeta.label}
+                            </Text>
+                        </View>
+                    </View>
+                    {statusMeta ? (
+                        <View
+                            style={[
+                                styles.withdrawalStatusBadge,
+                                {
+                                    backgroundColor: `${statusMeta.color}14`,
+                                    borderColor: `${statusMeta.color}26`,
+                                },
+                            ]}
+                        >
+                            <Text
+                                style={[
+                                    styles.withdrawalStatusBadgeText,
+                                    { color: statusMeta.color },
+                                ]}
+                            >
+                                {statusMeta.label}
+                            </Text>
+                        </View>
                     ) : null}
                 </View>
-                <Text
-                    style={[styles.transactionAmount, { color: amountColor }]}
-                >
-                    -¥{formatCurrency(Math.abs(item.amount))}
-                </Text>
+
+                <View style={styles.withdrawalAmountRow}>
+                    <Text style={styles.withdrawalAmountLabel}>提现金额</Text>
+                    <Text
+                        style={[
+                            styles.withdrawalAmountValue,
+                            { color: amountColor },
+                        ]}
+                    >
+                        -¥{formatCurrency(Math.abs(item.amount))}
+                    </Text>
+                </View>
+
+                <View style={styles.withdrawalMetaGrid}>
+                    <View style={styles.withdrawalMetaItem}>
+                        <Text style={styles.withdrawalMetaLabel}>
+                            提现方式
+                        </Text>
+                        <Text style={styles.withdrawalMetaValue}>
+                            {methodMeta.label}
+                        </Text>
+                    </View>
+                    <View style={styles.withdrawalMetaItem}>
+                        <Text style={styles.withdrawalMetaLabel}>
+                            申请时间
+                        </Text>
+                        <Text style={styles.withdrawalMetaValue}>
+                            {requestedTime}
+                        </Text>
+                    </View>
+                    <View
+                        style={[
+                            styles.withdrawalMetaItem,
+                            styles.withdrawalMetaItemFull,
+                        ]}
+                    >
+                        <Text style={styles.withdrawalMetaLabel}>
+                            {resultTime.label}
+                        </Text>
+                        <Text style={styles.withdrawalMetaValue}>
+                            {resultTime.value}
+                        </Text>
+                    </View>
+                </View>
+
+                {withdrawNote ? (
+                    <View style={styles.withdrawalNoteBox}>
+                        <Ionicons
+                            name="document-text-outline"
+                            size={14}
+                            color="#8A6A2F"
+                        />
+                        <Text style={styles.withdrawalNoteText}>
+                            处理备注：{withdrawNote}
+                        </Text>
+                    </View>
+                ) : null}
             </View>
         );
     };
@@ -657,52 +762,190 @@ const styles = StyleSheet.create({
         paddingVertical: 16,
         alignItems: "center",
     },
-    transactionCard: {
-        flexDirection: "row",
-        alignItems: "center",
+    withdrawalCard: {
         backgroundColor: "white",
-        borderRadius: 12,
+        borderRadius: 18,
         padding: 16,
         marginBottom: 12,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
+        shadowColor: "#10233d",
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.06,
+        shadowRadius: 16,
         elevation: 3,
+        gap: 14,
     },
-    transactionIcon: {
+    withdrawalCardTop: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+    },
+    withdrawalCardTopLeft: {
+        flexDirection: "row",
+        alignItems: "center",
+        flex: 1,
+        gap: 12,
+    },
+    withdrawalMethodIcon: {
         width: 40,
         height: 40,
-        borderRadius: 20,
-        backgroundColor: "#f5f5f5",
+        borderRadius: 14,
         justifyContent: "center",
         alignItems: "center",
-        marginRight: 12,
     },
-    transactionInfo: {
+    withdrawalCardTitleWrap: {
         flex: 1,
+        gap: 2,
     },
-    transactionDesc: {
+    withdrawalCardTitle: {
         fontSize: 16,
-        color: "#333",
-        marginBottom: 4,
+        fontWeight: "700",
+        color: "#1d2939",
     },
-    transactionTime: {
+    withdrawalCardMethod: {
         fontSize: 12,
-        color: "#999",
+        color: "#667085",
     },
-    transactionStatus: {
+    withdrawalStatusBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 999,
+        borderWidth: 1,
+    },
+    withdrawalStatusBadgeText: {
         fontSize: 12,
-        marginTop: 4,
+        fontWeight: "600",
     },
-    transactionNote: {
+    withdrawalAmountRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "flex-end",
+    },
+    withdrawalAmountLabel: {
         fontSize: 12,
-        color: "#666",
-        marginTop: 2,
+        color: "#98A2B3",
     },
-    transactionAmount: {
-        fontSize: 18,
-        fontWeight: "bold",
+    withdrawalAmountValue: {
+        fontSize: 24,
+        fontWeight: "700",
+        letterSpacing: -0.3,
+    },
+    withdrawalMetaGrid: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: 10,
+    },
+    withdrawalMetaItem: {
+        width: "48%",
+        backgroundColor: "#F8FAFC",
+        borderRadius: 14,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        gap: 4,
+    },
+    withdrawalMetaItemFull: {
+        width: "100%",
+    },
+    withdrawalMetaLabel: {
+        fontSize: 11,
+        color: "#98A2B3",
+    },
+    withdrawalMetaValue: {
+        fontSize: 13,
+        color: "#344054",
+        fontWeight: "500",
+        lineHeight: 18,
+    },
+    withdrawalNoteBox: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        gap: 8,
+        backgroundColor: "#FFF8E8",
+        borderRadius: 14,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+    },
+    withdrawalNoteText: {
+        flex: 1,
+        fontSize: 12,
+        lineHeight: 18,
+        color: "#7A5A20",
+    },
+    incomeCard: {
+        backgroundColor: "white",
+        borderRadius: 18,
+        padding: 16,
+        marginBottom: 12,
+        shadowColor: "#0f172a",
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.05,
+        shadowRadius: 16,
+        elevation: 3,
+        gap: 14,
+    },
+    incomeCardTop: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+    },
+    incomeCardTopLeft: {
+        flexDirection: "row",
+        alignItems: "center",
+        flex: 1,
+        gap: 12,
+    },
+    incomeIconWrap: {
+        width: 42,
+        height: 42,
+        borderRadius: 15,
+        backgroundColor: "#EAFBF3",
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    incomeTitleWrap: {
+        flex: 1,
+        gap: 2,
+    },
+    incomeTitle: {
+        fontSize: 16,
+        fontWeight: "700",
+        color: "#1D2939",
+    },
+    incomeSubtitle: {
+        fontSize: 12,
+        color: "#667085",
+    },
+    incomeAmount: {
+        fontSize: 24,
+        fontWeight: "700",
+        letterSpacing: -0.3,
+    },
+    incomeInfoGrid: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: 10,
+    },
+    incomeInfoItem: {
+        width: "48%",
+        backgroundColor: "#F8FAFC",
+        borderRadius: 14,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        gap: 4,
+    },
+    incomeInfoItemFull: {
+        width: "100%",
+    },
+    incomeInfoLabel: {
+        fontSize: 11,
+        color: "#98A2B3",
+    },
+    incomeInfoValue: {
+        fontSize: 13,
+        color: "#344054",
+        fontWeight: "500",
+        lineHeight: 18,
     },
     emptyContainer: {
         alignItems: "center",
@@ -844,6 +1087,98 @@ function getWithdrawalNote(item: TransactionItem) {
         return null;
     }
     return note.trim();
+}
+
+function getIncomeSummary(item: TransactionItem) {
+    switch (item.transactionType) {
+        case "service_earning":
+            return {
+                title: "服务收益入账",
+                subtitle: "订单完成后系统已入账",
+            };
+        case "bonus":
+            return {
+                title: "平台奖励",
+                subtitle: "奖励金额已发放到账户",
+            };
+        case "adjustment":
+            return {
+                title: "财务调整",
+                subtitle: "平台已更新本次收入流水",
+            };
+        default:
+            return {
+                title: getTransactionDescription(item),
+                subtitle: "收入已计入账户余额",
+            };
+    }
+}
+
+function getIncomeCustomerLabel(item: TransactionItem) {
+    return item.customerName?.trim() || "未知用户";
+}
+
+function getIncomeCustomerPhone(item: TransactionItem) {
+    return item.customerPhone?.trim() || "暂无手机号";
+}
+
+function getWithdrawalMethodMeta(method?: string | null) {
+    switch (method) {
+        case "wechat_pay":
+            return {
+                label: "微信提现",
+                icon: "logo-wechat" as const,
+                iconColor: "#07C160",
+                iconBackground: "#E9FBF1",
+            };
+        case "alipay":
+            return {
+                label: "支付宝提现",
+                icon: "logo-alipay" as const,
+                iconColor: "#1677FF",
+                iconBackground: "#EEF4FF",
+            };
+        default:
+            return {
+                label: "账户提现",
+                icon: "wallet-outline" as const,
+                iconColor: "#667085",
+                iconBackground: "#F2F4F7",
+            };
+    }
+}
+
+function getWithdrawalResultTimeLabel(item: TransactionItem) {
+    const status = item.withdrawal?.status;
+    if (status === "rejected") {
+        return {
+            label: "驳回时间",
+            value: formatOptionalTransactionTime(item.withdrawal?.reviewedAt),
+        };
+    }
+    if (
+        status === "completed" ||
+        status === "failed" ||
+        status === "cancelled"
+    ) {
+        return {
+            label: "完成时间",
+            value: formatOptionalTransactionTime(
+                item.withdrawal?.processedAt ?? item.withdrawal?.reviewedAt,
+            ),
+        };
+    }
+    return {
+        label: "处理时间",
+        value: "处理中",
+    };
+}
+
+function formatOptionalTransactionTime(value?: string | Date | null) {
+    if (!value) {
+        return "暂无";
+    }
+    return formatTransactionTime(value) || "暂无";
 }
 
 function mapTabToCategory(tab: TabFilter): "mixed" | "income" | "withdrawal" {

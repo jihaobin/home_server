@@ -20,4 +20,5 @@ pnpm env:setup
 
 - `apps/backend` → `.env.api + .env.common`
 - `apps/admin-web` → `.env.admin + .env.common`
-- `apps/mobile-*` → `.env.mobile + .env.common`
+- `apps/mobile-user` → `.env.mobile + .env.mobile-user + .env.common`
+- `apps/mobile-worker` → `.env.mobile + .env.mobile-worker + .env.common`

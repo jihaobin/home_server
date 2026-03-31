@@ -429,6 +429,139 @@ function WithdrawContent() {
                     </View>
                 </View>
 
+
+                <View style={styles.accountSection}>
+                    <View style={styles.methodHeader}>
+                        <Text style={styles.sectionTitle}>提现方式</Text>
+                        <Text style={styles.methodHeaderHint}>
+                            当前选择：
+                            {selectedPayType === "wechat_pay"
+                                ? "微信提现"
+                                : "支付宝提现"}
+                        </Text>
+                    </View>
+
+                    <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => setSelectedPayType("alipay")}
+                        style={[
+                            styles.accountCard,
+                            !bindingStatus?.bound && styles.accountCardPending,
+                            selectedPayType === "alipay" &&
+                                styles.accountCardActive,
+                        ]}
+                    >
+                        <View style={styles.accountLeft}>
+                            <View
+                                style={[
+                                    styles.accountIcon,
+                                    { backgroundColor: "#1677FF" },
+                                ]}
+                            >
+                                <Ionicons
+                                    name="logo-alipay"
+                                    size={24}
+                                    color="white"
+                                />
+                            </View>
+                            <View style={styles.accountInfo}>
+                                <Text style={styles.accountType}>
+                                    支付宝提现
+                                </Text>
+                                <Text style={styles.accountDetail}>
+                                    {isBindingStatusLoading
+                                        ? "加载中..."
+                                        : bindingStatus?.bound
+                                          ? `已绑定 ${bindingStatus.alipayUserId || bindingStatus.alipayOpenId || ""}`
+                                          : "未绑定，绑定后才能提交提现"}
+                                </Text>
+                            </View>
+                        </View>
+                        <TouchableOpacity
+                            style={styles.accountActionButton}
+                            onPress={handleOpenBinding}
+                            disabled={isBindingStatusLoading}
+                        >
+                            <Text style={styles.accountActionButtonText}>
+                                {bindingStatus?.bound ? "更换账号" : "去绑定"}
+                            </Text>
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => {
+                            if (wechatPayoutSupported) {
+                                setSelectedPayType("wechat_pay");
+                            }
+                        }}
+                        style={[
+                            styles.accountCard,
+                            !wechatBindingStatus?.bound &&
+                                styles.accountCardPending,
+                            wechatPayoutSupported &&
+                                selectedPayType === "wechat_pay" &&
+                                styles.accountCardActive,
+                            !wechatPayoutSupported &&
+                                styles.accountCardDisabled,
+                        ]}
+                    >
+                        <View style={styles.accountLeft}>
+                            <View
+                                style={[
+                                    styles.accountIcon,
+                                    { backgroundColor: "#07C160" },
+                                ]}
+                            >
+                                <Ionicons
+                                    name="logo-wechat"
+                                    size={24}
+                                    color="white"
+                                />
+                            </View>
+                            <View style={styles.accountInfo}>
+                                <Text style={styles.accountType}>微信提现</Text>
+                                <Text style={styles.accountDetail}>
+                                    {isWechatBindingStatusLoading
+                                        ? "加载中..."
+                                        : !wechatPayoutSupported
+                                          ? "当前仅 Android 支持微信提现确认收款"
+                                          : wechatBindingStatus?.bound
+                                            ? `已绑定 ${(wechatBindingStatus as unknown as { openId?: string | null; wechatOpenId?: string | null }).openId || (wechatBindingStatus as unknown as { wechatOpenId?: string | null }).wechatOpenId || "微信收款账号"}`
+                                            : "未绑定，绑定后才能提交微信提现"}
+                                </Text>
+                            </View>
+                        </View>
+                        <TouchableOpacity
+                            style={styles.accountActionButton}
+                            onPress={handleOpenBinding}
+                            disabled={isWechatBindingStatusLoading}
+                        >
+                            <Text style={styles.accountActionButtonText}>
+                                {wechatBindingStatus?.bound
+                                    ? "更换账号"
+                                    : "去绑定"}
+                            </Text>
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+
+                    {!bindingStatus?.bound && !wechatBindingStatus?.bound ? (
+                        <Text style={styles.accountWarning}>
+                            绑定支付宝或微信收款账号后才能发起提现，点击按钮前往绑定
+                        </Text>
+                    ) : null}
+                    <Text style={styles.methodHint}>
+                        提现申请提交后，会按当前选中的方式进入审核与打款流程。
+                    </Text>
+                    {!wechatPayoutSupported ? (
+                        <Text style={styles.accountWarning}>
+                            当前版本仅在 Android 端自动拉起微信确认收款，iOS
+                            端请先使用支付宝提现。
+                        </Text>
+                    ) : null}
+                </View>
+
+
                 <View style={styles.remarkSection}>
                     <Text style={styles.sectionTitle}>提现备注</Text>
                     <View style={[styles.inputCard, styles.remarkInputCard]}>
@@ -493,8 +626,15 @@ function WithdrawContent() {
                                 detail?.failureReason ??
                                 detail?.remark ??
                                 "";
-                            const timestamp =
-                                detail?.requestedAt ?? record.occurredAt;
+                            const methodMeta = getWithdrawalMethodMeta(
+                                detail?.method,
+                            );
+                            const requestedTime = formatTransactionTime(
+                                detail?.requestedAt ?? record.occurredAt,
+                            );
+                            const resultTime = getWithdrawalResultTimeLabel(
+                                record,
+                            );
 
                             return (
                                 <View
@@ -504,155 +644,117 @@ function WithdrawContent() {
                                         index === 0 && styles.historyCardFirst,
                                     ]}
                                 >
-                                    <View style={styles.historyRow}>
+                                    <View style={styles.historyTopRow}>
+                                        <View style={styles.historyTopLeft}>
+                                            <View
+                                                style={[
+                                                    styles.historyMethodIcon,
+                                                    {
+                                                        backgroundColor:
+                                                            methodMeta.iconBackground,
+                                                    },
+                                                ]}
+                                            >
+                                                <Ionicons
+                                                    name={methodMeta.icon}
+                                                    size={18}
+                                                    color={
+                                                        methodMeta.iconColor
+                                                    }
+                                                />
+                                            </View>
+                                            <View style={styles.historyTitleWrap}>
+                                                <Text
+                                                    style={styles.historyTitle}
+                                                >
+                                                    余额提现
+                                                </Text>
+                                                <Text
+                                                    style={styles.historyMethod}
+                                                >
+                                                    {methodMeta.label}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                        {statusMeta ? (
+                                            <View
+                                                style={[
+                                                    styles.historyStatusBadge,
+                                                    {
+                                                        backgroundColor: `${statusMeta.color}14`,
+                                                        borderColor: `${statusMeta.color}26`,
+                                                    },
+                                                ]}
+                                            >
+                                                <Text
+                                                    style={[
+                                                        styles.historyStatusText,
+                                                        {
+                                                            color: statusMeta.color,
+                                                        },
+                                                    ]}
+                                                >
+                                                    {statusMeta.label}
+                                                </Text>
+                                            </View>
+                                        ) : null}
+                                    </View>
+
+                                    <View style={styles.historyAmountRow}>
+                                        <Text style={styles.historyAmountLabel}>
+                                            提现金额
+                                        </Text>
                                         <Text style={styles.historyAmount}>
-                                            ¥
+                                            -¥
                                             {formatCurrency(
                                                 Math.abs(record.amount),
                                             )}
                                         </Text>
-                                        <Text style={styles.historyTime}>
-                                            {formatTransactionTime(timestamp)}
-                                        </Text>
                                     </View>
-                                    {statusMeta ? (
-                                        <Text
-                                            style={[
-                                                styles.historyStatus,
-                                                { color: statusMeta.color },
-                                            ]}
-                                        >
-                                            {statusMeta.label}
-                                        </Text>
-                                    ) : null}
+
+                                    <View style={styles.historyMetaGrid}>
+                                        <View style={styles.historyMetaItem}>
+                                            <Text
+                                                style={styles.historyMetaLabel}
+                                            >
+                                                申请时间
+                                            </Text>
+                                            <Text
+                                                style={styles.historyMetaValue}
+                                            >
+                                                {requestedTime}
+                                            </Text>
+                                        </View>
+                                        <View style={styles.historyMetaItem}>
+                                            <Text
+                                                style={styles.historyMetaLabel}
+                                            >
+                                                {resultTime.label}
+                                            </Text>
+                                            <Text
+                                                style={styles.historyMetaValue}
+                                            >
+                                                {resultTime.value}
+                                            </Text>
+                                        </View>
+                                    </View>
+
                                     {note ? (
-                                        <Text style={styles.historyNote}>
-                                            审核备注：{note}
-                                        </Text>
+                                        <View style={styles.historyNoteBox}>
+                                            <Ionicons
+                                                name="document-text-outline"
+                                                size={14}
+                                                color="#8A6A2F"
+                                            />
+                                            <Text style={styles.historyNote}>
+                                                处理备注：{note}
+                                            </Text>
+                                        </View>
                                     ) : null}
                                 </View>
                             );
                         })
                     )}
-                </View>
-
-                {/* 收款账户 */}
-                <View style={styles.accountSection}>
-                    <Text style={styles.sectionTitle}>收款账户</Text>
-
-                    <TouchableOpacity
-                        activeOpacity={0.9}
-                        onPress={() => setSelectedPayType("alipay")}
-                        style={[
-                            styles.accountCard,
-                            !bindingStatus?.bound && styles.accountCardPending,
-                            selectedPayType === "alipay" &&
-                                styles.accountCardActive,
-                        ]}
-                    >
-                        <View style={styles.accountLeft}>
-                            <View
-                                style={[
-                                    styles.accountIcon,
-                                    { backgroundColor: "#1677FF" },
-                                ]}
-                            >
-                                <Ionicons
-                                    name="logo-alipay"
-                                    size={24}
-                                    color="white"
-                                />
-                            </View>
-                            <View style={styles.accountInfo}>
-                                <Text style={styles.accountType}>支付宝</Text>
-                                <Text style={styles.accountDetail}>
-                                    {isBindingStatusLoading
-                                        ? "加载中..."
-                                        : bindingStatus?.bound
-                                          ? `已绑定 ${bindingStatus.alipayUserId || bindingStatus.alipayOpenId || ""}`
-                                          : "未绑定，绑定后才能提交提现"}
-                                </Text>
-                            </View>
-                        </View>
-                        <TouchableOpacity
-                            style={styles.accountActionButton}
-                            onPress={handleOpenBinding}
-                            disabled={isBindingStatusLoading}
-                        >
-                            <Text style={styles.accountActionButtonText}>
-                                {bindingStatus?.bound ? "更换账号" : "去绑定"}
-                            </Text>
-                        </TouchableOpacity>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        activeOpacity={0.9}
-                        onPress={() => {
-                            if (wechatPayoutSupported) {
-                                setSelectedPayType("wechat_pay");
-                            }
-                        }}
-                        style={[
-                            styles.accountCard,
-                            !wechatBindingStatus?.bound &&
-                                styles.accountCardPending,
-                            wechatPayoutSupported &&
-                                selectedPayType === "wechat_pay" &&
-                                styles.accountCardActive,
-                            !wechatPayoutSupported &&
-                                styles.accountCardDisabled,
-                        ]}
-                    >
-                        <View style={styles.accountLeft}>
-                            <View
-                                style={[
-                                    styles.accountIcon,
-                                    { backgroundColor: "#07C160" },
-                                ]}
-                            >
-                                <Ionicons
-                                    name="logo-wechat"
-                                    size={24}
-                                    color="white"
-                                />
-                            </View>
-                            <View style={styles.accountInfo}>
-                                <Text style={styles.accountType}>微信零钱</Text>
-                                <Text style={styles.accountDetail}>
-                                    {isWechatBindingStatusLoading
-                                        ? "加载中..."
-                                        : !wechatPayoutSupported
-                                          ? "当前仅 Android 支持微信提现确认收款"
-                                          : wechatBindingStatus?.bound
-                                            ? `已绑定 ${(wechatBindingStatus as unknown as { openId?: string | null; wechatOpenId?: string | null }).openId || (wechatBindingStatus as unknown as { wechatOpenId?: string | null }).wechatOpenId || "微信收款账号"}`
-                                            : "未绑定，绑定后才能提交微信提现"}
-                                </Text>
-                            </View>
-                        </View>
-                        <TouchableOpacity
-                            style={styles.accountActionButton}
-                            onPress={handleOpenBinding}
-                            disabled={isWechatBindingStatusLoading}
-                        >
-                            <Text style={styles.accountActionButtonText}>
-                                {wechatBindingStatus?.bound
-                                    ? "更换账号"
-                                    : "去绑定"}
-                            </Text>
-                        </TouchableOpacity>
-                    </TouchableOpacity>
-
-                    {!bindingStatus?.bound && !wechatBindingStatus?.bound ? (
-                        <Text style={styles.accountWarning}>
-                            绑定支付宝或微信收款账号后才能发起提现，点击按钮前往绑定
-                        </Text>
-                    ) : null}
-                    {!wechatPayoutSupported ? (
-                        <Text style={styles.accountWarning}>
-                            当前版本仅在 Android 端自动拉起微信确认收款，iOS
-                            端请先使用支付宝提现。
-                        </Text>
-                    ) : null}
                 </View>
 
                 {/* 提现说明 */}
@@ -747,6 +849,13 @@ function formatTransactionTime(value: string | Date) {
     return `${dayLabel} ${timeLabel}`;
 }
 
+function formatOptionalTransactionTime(value?: string | Date | null) {
+    if (!value) {
+        return "暂无";
+    }
+    return formatTransactionTime(value) || "暂无";
+}
+
 const WITHDRAWAL_STATUS_META: Record<string, { label: string; color: string }> =
     {
         pending: { label: "待审核", color: "#FF9800" },
@@ -768,6 +877,64 @@ function getWithdrawalStatusMeta(status?: string | null) {
             color: "#FF9800",
         }
     );
+}
+
+function getWithdrawalMethodMeta(method?: string | null) {
+    switch (method) {
+        case "wechat_pay":
+            return {
+                label: "微信提现",
+                icon: "logo-wechat" as const,
+                iconColor: "#07C160",
+                iconBackground: "#E9FBF1",
+            };
+        case "alipay":
+            return {
+                label: "支付宝提现",
+                icon: "logo-alipay" as const,
+                iconColor: "#1677FF",
+                iconBackground: "#EEF4FF",
+            };
+        default:
+            return {
+                label: "账户提现",
+                icon: "wallet-outline" as const,
+                iconColor: "#667085",
+                iconBackground: "#F2F4F7",
+            };
+    }
+}
+
+function getWithdrawalResultTimeLabel(record: {
+    withdrawal?: {
+        status?: string | null;
+        reviewedAt?: string | Date | null;
+        processedAt?: string | Date | null;
+    };
+}) {
+    const status = record.withdrawal?.status;
+    if (status === "rejected") {
+        return {
+            label: "驳回时间",
+            value: formatOptionalTransactionTime(record.withdrawal?.reviewedAt),
+        };
+    }
+    if (
+        status === "completed" ||
+        status === "failed" ||
+        status === "cancelled"
+    ) {
+        return {
+            label: "完成时间",
+            value: formatOptionalTransactionTime(
+                record.withdrawal?.processedAt ?? record.withdrawal?.reviewedAt,
+            ),
+        };
+    }
+    return {
+        label: "处理时间",
+        value: "处理中",
+    };
 }
 
 const styles = StyleSheet.create({
@@ -867,36 +1034,107 @@ const styles = StyleSheet.create({
     historyCard: {
         borderTopWidth: 1,
         borderTopColor: "#f0f0f0",
-        paddingVertical: 12,
+        paddingTop: 14,
+        paddingBottom: 4,
+        gap: 12,
     },
     historyCardFirst: {
         borderTopWidth: 0,
         paddingTop: 4,
     },
-    historyRow: {
+    historyTopRow: {
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
-        marginBottom: 6,
+        gap: 12,
+    },
+    historyTopLeft: {
+        flexDirection: "row",
+        alignItems: "center",
+        flex: 1,
+        gap: 10,
+    },
+    historyMethodIcon: {
+        width: 34,
+        height: 34,
+        borderRadius: 12,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    historyTitleWrap: {
+        flex: 1,
+        gap: 2,
+    },
+    historyTitle: {
+        fontSize: 14,
+        fontWeight: "700",
+        color: "#1d2939",
+    },
+    historyMethod: {
+        fontSize: 12,
+        color: "#667085",
+    },
+    historyStatusBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 999,
+        borderWidth: 1,
+    },
+    historyStatusText: {
+        fontSize: 11,
+        fontWeight: "600",
+    },
+    historyAmountRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "flex-end",
+    },
+    historyAmountLabel: {
+        fontSize: 11,
+        color: "#98A2B3",
     },
     historyAmount: {
-        fontSize: 18,
-        fontWeight: "bold",
-        color: "#333",
+        fontSize: 22,
+        fontWeight: "700",
+        color: "#FF5722",
+        letterSpacing: -0.2,
     },
-    historyTime: {
+    historyMetaGrid: {
+        flexDirection: "row",
+        gap: 10,
+    },
+    historyMetaItem: {
+        flex: 1,
+        backgroundColor: "#F8FAFC",
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        gap: 4,
+    },
+    historyMetaLabel: {
+        fontSize: 11,
+        color: "#98A2B3",
+    },
+    historyMetaValue: {
         fontSize: 12,
-        color: "#999",
-    },
-    historyStatus: {
-        fontSize: 13,
+        color: "#344054",
         fontWeight: "500",
+        lineHeight: 17,
+    },
+    historyNoteBox: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        gap: 8,
+        backgroundColor: "#FFF8E8",
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
     },
     historyNote: {
         fontSize: 12,
-        color: "#666",
-        marginTop: 4,
+        color: "#7A5A20",
         lineHeight: 18,
+        flex: 1,
     },
     historyEmpty: {
         alignItems: "center",
@@ -1030,6 +1268,24 @@ const styles = StyleSheet.create({
     accountSection: {
         paddingHorizontal: 16,
         marginBottom: 16,
+    },
+    methodHeader: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        marginBottom: 12,
+        gap: 12,
+    },
+    methodHeaderHint: {
+        fontSize: 12,
+        color: "#666",
+        fontWeight: "500",
+    },
+    methodHint: {
+        fontSize: 12,
+        color: "#666",
+        marginTop: 2,
+        marginLeft: 4,
     },
     accountCard: {
         backgroundColor: "white",

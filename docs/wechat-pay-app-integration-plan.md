@@ -1,12 +1,17 @@
 # 微信支付、退款与商家转账接入方案
 
-> 2026-03-26 同步说明：
-> 当前仓库已经完成“微信 App 支付”首阶段落地，包含后端 v3 下单/查单/回调验签、`WechatPaymentProvider` 注册，以及 `mobile-user` 端基于 `expo-wechat` 的真实拉起与回跳确认。
-> 目前真正未完成的核心工作已经收敛为三块：
+> 2026-03-31 同步说明：
+> 当前仓库已经完成微信三条主链路的首版落地，包含：
 >
-> 1. `WechatRefundProvider` 与退款查单/回调；
-> 2. `WechatPayoutProvider` 与微信提现查单/回调；
-> 3. `mobile-worker` 端微信提现绑定闭环与 `requestMerchantTransfer` 确认收款原生能力。
+> 1. 微信 App 支付：后端 v3 下单/查单/回调验签、`WechatPaymentProvider` 注册、关单，以及 `mobile-user` 端基于 `expo-wechat` 的真实拉起与回跳确认；
+> 2. 微信退款：`WechatRefundProvider`、退款申请、退款查单、退款回调与退款结算；
+> 3. 微信商家转账：`WechatPayoutProvider`、worker 微信绑定闭环、微信提现查单/回调/撤销、后台审核异步终态，以及 `mobile-worker` 端基于 `requestMerchantTransfer` 的自动确认收款。
+>
+> 截至 2026-03-31，真正仍需继续补的重点已经收敛为：
+>
+> 1. 支付/退款/转账三条链路更系统的集成测试、真机回归与异常场景验证；
+> 2. `packages/types` 中微信商家转账底层 query/notify/request schema 与少量文档细节补齐；
+> 3. 更完整的统一对账、审计与运营补偿能力。
 
 ## 1. 结论
 
@@ -20,17 +25,17 @@
 
 | 能力               | 是否可做         | 关键前置条件                                                            | 与当前仓库的主要差异                                                                                 |
 | ------------------ | ---------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| 微信 App 支付      | 已完成首版       | 商户号绑定移动应用 AppID，后端接 v3 签名与回调                          | 已落地 payment provider、v3 client、移动端拉起与支付回跳；剩余缺口主要是关单、更多异常补偿与测试完善 |
-| 微信退款           | 可以             | 已有微信支付成功订单，补退款 provider、回调与查单                       | 退款分发器已具备，但微信退款 provider、回调与查单尚未接入                                            |
-| 微信商家转账到零钱 | 可以，但限制最多 | 必须有商家转账权限、用户 `openid`、用户确认收款、场景报备、运营账户资金 | 提现状态机和后台审核流已扩展，但微信绑定、商家转账 provider 与确认收款闭环尚未打通                   |
+| 微信 App 支付      | 已完成首版               | 商户号绑定移动应用 AppID，后端接 v3 签名与回调                          | 已落地 payment provider、v3 client、移动端拉起与支付回跳、关单与定时补偿；剩余缺口主要是异常验证与测试完善 |
+| 微信退款           | 已完成首版               | 已有微信支付成功订单，补退款 provider、回调与查单                       | 已落地微信 refund provider、退款申请、查单、回调与结算；剩余缺口主要是后台可视化、退款实体建模与测试      |
+| 微信商家转账到零钱 | 已完成首版（Android 闭环） | 必须有商家转账权限、用户 `openid`、用户确认收款、场景报备、运营账户资金 | 已落地 worker 微信绑定、商家转账 provider、查单/回调/撤销与自动确认收款；剩余缺口主要是端到端验证、对账与 iOS 能力确认 |
 
 最重要的结论有五个：
 
-- 微信支付和退款可以比较自然地接入现有 `pay` 模块；
+- 微信支付、退款与商家转账三类 provider 已经都能接入现有 `pay` 模块；
 - 微信提现不是“打到微信号”，而是 **商家转账到零钱**，必须依赖 `openid`；
 - 结合当前业务前提，微信提现只服务于“服务人员提现平台收益”，因此微信绑定应围绕 `mobile-worker` 端展开，而不是泛化成全站统一微信账户；
 - `openid` 是 **appid 维度** 的，所以即便现在微信提现只发生在 `mobile-worker`，也至少要明确“这是 worker appid 对应的 openid”，不能与用户端支付场景混用；
-- 微信商家转账成功后 **不支持退回**，只能在用户确认收款前撤销，因此提现状态机必须重做。
+- 微信商家转账成功后 **不支持退回**，只能在用户确认收款前撤销，因此提现状态机必须继续围绕“冻结余额 + 异步终态”维护。
 
 ## 2. 这次调研确认的官方规则
 
@@ -123,43 +128,43 @@
 - [financial.ts](/mnt/f/home_server/apps/backend/src/common/database/schema/financial.ts)
   - 提现记录已增加 `providerState / providerAppId / providerBillNo / providerPackageInfo / providerMeta`，并扩展 `processing / failed / cancelled` 状态。
 
-### 3.2 当前阻塞点
+### 3.2 当前剩余工作
 
 - [pay.service.ts](/mnt/f/home_server/apps/backend/src/modules/pay/pay.service.ts)
-  - `pay()`、支付回调、查单、定时扫描、`withdraw()` 已经按渠道改造；
-  - `wechat_pay` 已可执行并接入真实 provider；当前真正未完成的是微信关单、退款、提现三条后续链路。
+  - `pay()`、支付回调、查单、关单、退款、提现、微信提现结果上报/查单都已经按渠道接入；
+  - 当前主要剩余的是更系统的异常补偿验证与端到端测试。
 - [pay.ts](/mnt/f/home_server/packages/types/src/pay.ts)
-  - 基础类型已兼容微信支付与微信提现；
-  - 仍缺微信退款回调、微信提现查询/回调、商家转账确认收款等更细粒度 schema。
+  - 基础类型已兼容微信支付、微信退款、worker 绑定与微信提现结果同步；
+  - 当前还缺部分微信商家转账底层 schema 的继续补齐。
 - [packages/lib/src/pay.ts](/mnt/f/home_server/packages/lib/src/pay.ts)
-  - 已有微信支付原生封装；
-  - 当前缺的是微信提现 `requestMerchantTransfer` 确认收款能力。
+  - 已同时提供微信支付、微信授权与 `requestMerchantTransfer` 确认收款封装；
+  - 当前主要剩余的是围绕 Expo/真机兼容性的回归验证。
 - [admin-withdrawals.service.ts](/mnt/f/home_server/apps/backend/src/modules/pay/admin-withdrawals.service.ts)
-  - 审核流已经支持 `approved / processing / completed / failed / cancelled`；
-  - 当前缺的是微信打款 provider、微信状态映射与确认收款链路。
+  - 审核流、微信打款 provider 对接、WAIT_USER_CONFIRM 通知与异步终态回写都已完成；
+  - 当前主要剩余的是对账、告警与更细的补偿治理。
 - [user-profiles.ts](/mnt/f/home_server/apps/backend/src/common/database/schema/user-profiles.ts)
-  - 微信 worker 维度字段已经落库；
-  - 当前缺的是正式的绑定接口、绑定页面流程和数据写入闭环。
+  - 微信 worker 维度字段、绑定接口、绑定页面流程和数据写入闭环都已接入；
+  - 当前更多是长期是否升级为独立绑定表的架构决策。
 - [pay.module.ts](/mnt/f/home_server/apps/backend/src/modules/pay/pay.module.ts)
-  - 当前已注册 `AlipayPaymentProvider`、`WechatPaymentProvider`、`AlipayRefundProvider`、`AlipayPayoutProvider`；
-  - 微信退款、微信打款 provider 仍未注册。
+  - 当前已注册 `AlipayPaymentProvider`、`WechatPaymentProvider`、`AlipayRefundProvider`、`WechatRefundProvider`、`AlipayPayoutProvider`、`WechatPayoutProvider`。
 - [useOrderPayment.ts](/mnt/f/home_server/apps/mobile-user/hooks/useOrderPayment.ts)
   - 已完成微信支付拉起、前后台切回、结果对账；
   - 当前仍缺更完整的异常回流覆盖与端到端测试验证。
 - [account-binding.tsx](/mnt/f/home_server/apps/mobile-worker/app/profile/account-binding.tsx)
-  - 服务人员端仍只开放支付宝绑定，微信提现绑定入口尚未接入。
+  - 服务人员端已经接入微信提现绑定入口、授权回跳消费与解绑闭环；
+  - 当前主要剩余的是体验打磨与真机回归验证。
 
 ### 3.3 一个关键数据问题
 
-虽然仓库里已经有 [user-profiles.ts](/mnt/f/home_server/apps/backend/src/common/database/schema/user-profiles.ts) 里的 worker 微信字段作为稳定落库结构，但当前仍缺少正式的绑定闭环。
+虽然仓库里已经有 [user-profiles.ts](/mnt/f/home_server/apps/backend/src/common/database/schema/user-profiles.ts) 里的 worker 微信字段作为稳定落库结构，但截至 2026-03-31，正式的绑定闭环实际上已经补齐。
 
 当前的实际问题是：
 
 - 微信商家转账必须使用 `openid`；
 - `openid` 是 **`appid` 维度** 的；
 - 现阶段已经明确按“服务人员在 `mobile-worker` 下的微信提现收款身份”建模；
-- 但 [wechat.controller.ts](/mnt/f/home_server/apps/backend/src/modules/auth/wechat/wechat.controller.ts) 当前仍主要承担内部 OAuth 转发能力，不等同于微信提现绑定接口；
-- 因此短期的关键任务不再是补数据库字段，而是补齐 worker 端微信绑定的授权、换取和落库流程。
+- [pay.controller.ts](/mnt/f/home_server/apps/backend/src/modules/pay/pay.controller.ts) 已经补上 worker 微信绑定的专用接口，不再依赖 [wechat.controller.ts](/mnt/f/home_server/apps/backend/src/modules/auth/wechat/wechat.controller.ts) 这类内部 OAuth 转发入口；
+- 因此短期的关键任务已经从“补齐 worker 端微信绑定的授权、换取和落库流程”转为“继续验证绑定/打款/确认收款的端到端稳定性”。
 
 ## 4. 推荐的总体架构
 
@@ -219,7 +224,7 @@
 
 由于你这个仓库有用户端与服务人员端两套 App，建议微信配置从一开始就区分：
 
-当前代码里“微信支付首版”已经实际读取并依赖的最小环境变量包括：
+当前代码里已经实际读取并依赖的最小环境变量包括：
 
 - 后端：
   - `WECHAT_PAY_MCH_ID`
@@ -231,11 +236,19 @@
   - `WECHAT_PAY_BASE_URL`
   - `WECHAT_PAY_USER_APP_ID`
   - `WECHAT_PAY_USER_NOTIFY_URL`
+  - `WECHAT_PAY_USER_REFUND_NOTIFY_URL`
+  - `WECHAT_PAY_WORKER_APP_ID`
+  - `WECHAT_PAY_WORKER_APP_SECRET`
+  - `WECHAT_PAY_WORKER_TRANSFER_NOTIFY_URL`
+  - `WECHAT_PAY_WORKER_TRANSFER_SCENE_ID`
 - `mobile-user`：
   - `EXPO_PUBLIC_WECHAT_USER_APP_ID` 或 `EXPO_PUBLIC_WECHAT_APP_ID`
   - `EXPO_PUBLIC_WECHAT_USER_UNIVERSAL_LINK` 或 `EXPO_PUBLIC_WECHAT_UNIVERSAL_LINK`
+- `mobile-worker`：
+  - `EXPO_PUBLIC_WECHAT_WORKER_APP_ID` 或 `EXPO_PUBLIC_WECHAT_APP_ID`
+  - `EXPO_PUBLIC_WECHAT_WORKER_UNIVERSAL_LINK` 或 `EXPO_PUBLIC_WECHAT_UNIVERSAL_LINK`
 
-下面这组是建议中的完整目标配置，其中退款、商家转账相关变量目前仍属于后续阶段预留：
+下面这组是当前实现已经用到或明确预留的完整目标配置：
 
 ```env
 WECHAT_PAY_MCH_ID=
@@ -252,6 +265,7 @@ WECHAT_PAY_USER_NOTIFY_URL=
 WECHAT_PAY_USER_REFUND_NOTIFY_URL=
 
 WECHAT_PAY_WORKER_APP_ID=
+WECHAT_PAY_WORKER_APP_SECRET=
 WECHAT_PAY_WORKER_TRANSFER_NOTIFY_URL=
 WECHAT_PAY_WORKER_TRANSFER_SCENE_ID=
 
@@ -264,11 +278,18 @@ WECHAT_PAY_TRANSFER_SOURCE_IP=
   - 用户端 `mobile-user` 的微信开放平台移动应用 AppID，用于 App 支付；
 - `WECHAT_PAY_WORKER_APP_ID`
   - 服务人员端 `mobile-worker` 的微信开放平台移动应用 AppID，用于微信提现确认收款；
+- `WECHAT_PAY_WORKER_APP_SECRET`
+  - 服务人员端微信提现绑定换取 `openid/unionid` 所需的开放平台应用密钥；
 - `WECHAT_PAY_WORKER_TRANSFER_SCENE_ID`
   - 商家转账场景 ID。对“服务人员提现”更可能使用“佣金报酬”场景；
 - `WECHAT_PAY_TRANSFER_SOURCE_IP`
   - 商家转账必须配置接口安全 IP；
 - 通知 URL 必须全部走环境变量，不能硬编码。
+
+当前 `mobile-worker` 端实际还依赖：
+
+- `EXPO_PUBLIC_WECHAT_WORKER_APP_ID` 或 `EXPO_PUBLIC_WECHAT_APP_ID`
+- `EXPO_PUBLIC_WECHAT_WORKER_UNIVERSAL_LINK` 或 `EXPO_PUBLIC_WECHAT_UNIVERSAL_LINK`
 
 如果后续确认两个 App 共用同一个微信 AppID，可以合并；但设计上不要先假定它们一定相同。
 
@@ -376,11 +397,11 @@ type InitiatePaymentResponse =
 
 ### 6.4 支付侧当前剩余工作
 
-- [alipay-payment.provider.ts](/mnt/f/home_server/apps/backend/src/modules/pay/providers/alipay-payment.provider.ts) 里支付宝 `notify_url` 仍然写死测试域名，接微信时要一并清掉；
-- [wechatPay.client.ts](/mnt/f/home_server/apps/backend/src/lib/wechatPay/wechatPay.client.ts) 当前只覆盖支付下单、查单与回调验签，尚未补“关单”接口；
-- [packages/lib/src/pay.ts](/mnt/f/home_server/packages/lib/src/pay.ts) 已接入 `expo-wechat` 支付能力，但还没有 worker 端商家转账确认收款封装；
-- [useOrderPayment.ts](/mnt/f/home_server/apps/mobile-user/hooks/useOrderPayment.ts) 与 [wechat-payment-return.tsx](/mnt/f/home_server/apps/mobile-user/app/servicePersonnel/wechat-payment-return.tsx) 已完成首版结果处理，但还缺更系统的异常场景验证；
-- 订单超时/系统取消时，对微信支付仍需补“关单”。
+- [alipay-payment.provider.ts](/mnt/f/home_server/apps/backend/src/modules/pay/providers/alipay-payment.provider.ts) 里的支付宝 `notify_url` 已切到环境变量，不再是微信接入阻塞项；
+- [wechatPay.client.ts](/mnt/f/home_server/apps/backend/src/lib/wechatPay/wechatPay.client.ts) 已覆盖支付下单、查单、回调验签与“关单”接口；
+- [packages/lib/src/pay.ts](/mnt/f/home_server/packages/lib/src/pay.ts) 已同时补上 worker 端商家转账确认收款封装；
+- [useOrderPayment.ts](/mnt/f/home_server/apps/mobile-user/hooks/useOrderPayment.ts) 与 [wechat-payment-return.tsx](/mnt/f/home_server/apps/mobile-user/app/servicePersonnel/wechat-payment-return.tsx) 已完成首版结果处理，当前剩余重点是更系统的异常场景验证与真机回归；
+- 支付闭环当前不再缺核心代码能力，后续重点已经转为补偿验证、日志审计与端到端测试。
 
 ## 7. 微信退款接入设计
 
@@ -427,11 +448,13 @@ type InitiatePaymentResponse =
 | `ABNORMAL`           | 退款异常，需人工/补偿处理 |
 | `PROCESSING`         | 处理中，保留中间态        |
 
-### 7.4 当前仓库需要补的点
+### 7.4 当前仓库进展与剩余工作
 
-- 当前 `RefundDispatcher` 只有支付宝 provider；
-- 当前文档和类型里没有微信退款回调/查单结构；
-- 如果本地没有独立退款实体，建议至少补一层退款记录，否则后续多次部分退款会变得难以维护。
+- 当前 `RefundDispatcher` 已同时注册支付宝与微信 provider；
+- [pay.controller.ts](/mnt/f/home_server/apps/backend/src/modules/pay/pay.controller.ts) 已暴露 `POST /pay/wechat/refund/notify`；
+- [pay.service.ts](/mnt/f/home_server/apps/backend/src/modules/pay/pay.service.ts) 已支持微信退款受理、`PROCESSING` 中间态与回调后结算；
+- [pay.ts](/mnt/f/home_server/packages/types/src/pay.ts) 已补微信退款回调与退款查单 schema；
+- 当前仍建议补独立 `refunds` 实体或至少更清晰的退款聚合视图，否则后续多次部分退款与运营追踪会越来越难维护。
 
 ## 8. 微信提现与商家转账设计
 
@@ -711,12 +734,18 @@ providerAppId;
 - 支持推进到 `approved / processing / completed / failed / cancelled`；
 - 终态时才执行冻结余额扣减或退回。
 
-这意味着后台审核流的可插拔改造已经完成。当前剩余工作是：
+这意味着后台审核流的可插拔改造已经完成。并且截至 2026-03-31，下面几项也已经落地：
 
-- 补 `WechatPayoutProvider`；
-- 接入微信商家转账查单/回调；
-- 在 worker 端接上“基于现有页面生命周期自动触发”的用户确认收款能力（不新增按钮/页面）；
-- 将微信终态继续写回现有提现审核流。
+- `WechatPayoutProvider` 已接入；
+- 微信商家转账查单/回调/撤销已接入；
+- worker 端已接上“基于现有页面生命周期自动触发”的用户确认收款能力（不新增按钮/页面）；
+- 微信终态已经回写现有提现审核流，并在 `WAIT_USER_CONFIRM` 时联动通知。
+
+当前剩余工作主要变成：
+
+- 真机端到端验证，尤其是 Android 微信版本兼容性与异常回流；
+- iOS 侧是否要补同等确认收款能力，还是明确维持“仅 Android 支持”；
+- 更完整的提现对账、告警与运营补偿。
 
 ## 9. 类型与接口建议
 
@@ -732,13 +761,13 @@ providerAppId;
 - `QueryPaymentStatusResponseSchema`
   - 已统一为渠道无关结构
 
-当前仍需补：
+当前已经补齐：
 
-- 微信支付回调 schema
+- 微信支付拉起参数 schema
 - 微信退款回调 schema
-- 微信商家转账请求/响应 schema
-- 微信转账查询响应 schema
-- 微信转账回调 schema
+- 微信退款查单 schema
+- worker 微信绑定/解绑/状态 schema
+- worker 微信确认收款结果上报与提现渠道状态快照 schema
 
 提现相关类型当前已去掉支付宝专属语义，但后续还可以继续补：
 
@@ -747,6 +776,12 @@ providerAppId;
     - `providerBillNo`
     - `requiresUserConfirm`
     - `providerPackageInfo`
+
+当前仍建议继续补：
+
+- 微信商家转账底层请求/响应 schema
+- 微信商家转账查单响应 schema
+- 微信商家转账回调 schema
 
 ### 9.2 数据库与实体建议
 
@@ -781,9 +816,10 @@ providerAppId;
 
 - 服务端 payment dispatcher、统一查单结构、统一回调入口已经到位；
 - `WechatPaymentProvider`、`WechatPayClient`、移动端 `expo-wechat` 拉起、回跳后的主动查单确认均已落地；
-- 当前剩余工作主要是“关单”、异常补偿与端到端验证，不再属于首版支付闭环阻塞项。
+- 微信关单也已经补上，并已接入订单超时/取消/定时扫描补偿；
+- 当前剩余工作主要是异常补偿验证与端到端测试，不再属于首版支付闭环阻塞项。
 
-### 第二阶段：退款闭环（进行中）
+### 第二阶段：退款闭环（已完成首版）
 
 目标：
 
@@ -795,9 +831,10 @@ providerAppId;
 当前进展：
 
 - 退款 dispatcher 和按渠道退款入口已经完成；
-- 微信 refund provider、退款通知与查单尚未接入。
+- 微信 refund provider、退款通知、退款查单与退款结算都已接入；
+- 当前剩余工作主要是退款实体建模、运营可视化与更系统的回归测试。
 
-### 第三阶段：微信提现基础设施（进行中）
+### 第三阶段：微信提现基础设施（已完成首版）
 
 目标：
 
@@ -810,9 +847,10 @@ providerAppId;
 当前进展：
 
 - worker 维度微信字段、提现状态机扩展、后台审核异步终态能力已落地；
-- 服务人员端微信绑定能力、微信转账 client 与 provider 尚未完成。
+- 服务人员端微信绑定能力、微信转账 client 与 provider 已完成；
+- 微信转账查单、回调、撤销与通知也已接入。
 
-### 第四阶段：服务人员端确认收款（未开始）
+### 第四阶段：服务人员端确认收款（已完成 Android 首版）
 
 目标：
 
@@ -820,13 +858,26 @@ providerAppId;
 - 基于现有页面与生命周期自动检测 `WAIT_USER_CONFIRM` 并拉起确认（不新增按钮/页面）；
 - 用户返回 App 后主动查单。
 
-### 第五阶段：撤销、补偿与对账（未开始）
+当前进展：
+
+- `mobile-worker` 已接入 `requestMerchantTransfer` 封装与结果监听；
+- 已基于 App 前后台切换、通知事件和提现列表状态自动检测 `WAIT_USER_CONFIRM` 并拉起确认；
+- 用户返回 App 后已会上报结果并主动查单；
+- 当前实现仍以 Android 为主，iOS 是否补齐需单独确认。
+
+### 第五阶段：撤销、补偿与对账（部分完成）
 
 目标：
 
 - 用户未确认前可撤销转账；
 - 转账失败自动解冻；
 - 支付/退款/转账三条链路统一审计与对账。
+
+当前进展：
+
+- 微信商家转账撤销接口已经接入，worker 端取消确认收款时会触发撤销/查单补偿；
+- 转账失败、取消后的冻结余额回退已回写现有提现状态机；
+- 统一审计、对账报表与更细粒度运营补偿仍未完成。
 
 ## 11. 我对这个仓库的建议落地顺序
 
@@ -837,6 +888,8 @@ providerAppId;
 3. 再补微信退款；
 4. 再补 worker 端微信绑定与商家转账 provider；
 5. 最后做微信商家转账确认收款、撤销和对账。
+
+截至 2026-03-31，这个顺序已经基本执行到第 5 步，其中“确认收款、撤销”已完成首版，真正剩下的是“对账”和更系统的补偿治理。
 
 原因：
 

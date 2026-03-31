@@ -8,7 +8,8 @@ export type NotificationTemplateKey =
     | 'order_cancelled'
     | 'order_payment_expired'
     | 'order_pending_acceptance_warning'
-    | 'order_service_eta_warning';
+    | 'order_service_eta_warning'
+    | 'withdrawal_wechat_wait_user_confirm';
 
 const DEFAULT_NOTIFICATION_TEMPLATES: Record<NotificationTemplateKey, string> =
     {
@@ -20,6 +21,8 @@ const DEFAULT_NOTIFICATION_TEMPLATES: Record<NotificationTemplateKey, string> =
         order_payment_expired: '订单支付超时，系统自动取消',
         order_pending_acceptance_warning: '{{orderLabel}} {{escalateLabel}}',
         order_service_eta_warning: '{{orderLabel}} {{escalateLabel}}',
+        withdrawal_wechat_wait_user_confirm:
+            '微信提现审核已通过，请打开 App 在微信中确认收款。',
     };
 
 @Injectable()

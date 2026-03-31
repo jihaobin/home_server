@@ -30,7 +30,7 @@ const WECHAT_TRANSFER_RESULT_SNAPSHOT_KEY =
 const WECHAT_TRANSFER_COOLDOWN_PREFIX = "wechat-merchant-transfer-cooldown:";
 
 const SESSION_TTL_MS = 10 * 60 * 1000;
-const DEFAULT_COOLDOWN_MS = 30 * 1000;
+export const DEFAULT_WECHAT_MERCHANT_TRANSFER_COOLDOWN_MS = 30 * 1000;
 
 const isExpired = (timestamp: string, ttlMs = SESSION_TTL_MS) => {
     const value = new Date(timestamp).getTime();
@@ -191,7 +191,7 @@ export function markWechatMerchantTransferAttempt(
 
 export function isWechatMerchantTransferCoolingDown(
     withdrawalId: string,
-    cooldownMs = DEFAULT_COOLDOWN_MS,
+    cooldownMs = DEFAULT_WECHAT_MERCHANT_TRANSFER_COOLDOWN_MS,
 ) {
     const raw = WECHAT_TRANSFER_STORAGE.getString(getCooldownKey(withdrawalId));
     if (!raw) {
@@ -204,4 +204,28 @@ export function isWechatMerchantTransferCoolingDown(
     }
 
     return true;
+}
+
+export function getWechatMerchantTransferCooldownRemainingMs(
+    withdrawalId: string,
+    cooldownMs = DEFAULT_WECHAT_MERCHANT_TRANSFER_COOLDOWN_MS,
+) {
+    const raw = WECHAT_TRANSFER_STORAGE.getString(getCooldownKey(withdrawalId));
+    if (!raw) {
+        return 0;
+    }
+
+    const attemptAt = new Date(raw).getTime();
+    if (Number.isNaN(attemptAt)) {
+        WECHAT_TRANSFER_STORAGE.delete(getCooldownKey(withdrawalId));
+        return 0;
+    }
+
+    const remaining = cooldownMs - (Date.now() - attemptAt);
+    if (remaining <= 0) {
+        WECHAT_TRANSFER_STORAGE.delete(getCooldownKey(withdrawalId));
+        return 0;
+    }
+
+    return remaining;
 }

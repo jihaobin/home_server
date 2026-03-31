@@ -12,6 +12,10 @@ export type PayoutProviderQueryRequest = {
     withdrawal: WithdrawalRecord;
 };
 
+export type PayoutProviderCancelRequest = {
+    withdrawal: WithdrawalRecord;
+};
+
 export type PayoutProviderNotifyRequest = {
     rawBody: string;
     headers?: Record<string, string | string[] | undefined>;
@@ -44,6 +48,10 @@ export interface PayoutProvider {
 
     queryPayoutStatus?(
         request: PayoutProviderQueryRequest,
+    ): Promise<PayoutProviderExecuteResult | null>;
+
+    cancelPayout?(
+        request: PayoutProviderCancelRequest,
     ): Promise<PayoutProviderExecuteResult | null>;
 
     handleNotify?(

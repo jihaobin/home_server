@@ -1529,6 +1529,8 @@ export const WorkerEarningsRecordItemSchema = z
         currency: z.string().min(1),
         description: z.string().nullable(),
         referenceId: z.string().nullable(),
+        customerName: z.string().nullable().optional(),
+        customerPhone: z.string().nullable().optional(),
         occurredAt: z.date(),
         withdrawal: WorkerEarningsWithdrawalDetailSchema.optional(),
     })

@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { NotificationModule } from '../notification/notification.module';
 import { PayService } from './pay.service';
 import { PayController } from './pay.controller';
 import { PayRepository } from './pay.repository';
@@ -69,7 +70,7 @@ import { WechatRefundProvider } from './providers/wechat-refund.provider';
             inject: [AlipayRefundProvider, WechatRefundProvider],
         },
     ],
-    imports: [forwardRef(() => OrderModule)],
+    imports: [forwardRef(() => OrderModule), NotificationModule],
     exports: [PayService],
 })
 export class PayModule {}

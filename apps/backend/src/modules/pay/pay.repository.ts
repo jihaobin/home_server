@@ -10,8 +10,10 @@ import { DB } from 'src/common/database/database.provider';
 import { DbType } from 'src/common/database/db';
 import {
     financialTransactions,
+    orders,
     payments,
     userBalances,
+    users,
     withdrawals,
 } from 'src/common/database/schema';
 
@@ -29,6 +31,8 @@ type FinancialTransactionQueryResult = {
     currency: string | null;
     description: string | null;
     referenceId: string | null;
+    customerName: string | null;
+    customerPhone: string | null;
     transactionType: TransactionType;
     createdAt: Date | null;
     withdrawalId: string | null;
@@ -76,6 +80,8 @@ type MixedEarningsQueryResult = {
     transaction_type: TransactionType;
     description: string | null;
     reference_id: string | null;
+    customer_name: string | null;
+    customer_phone: string | null;
     created_at: Date | null;
     status: WithdrawalStatus | null;
     method: PaymentMethod | null;
@@ -249,6 +255,16 @@ export class PayRepository {
         return record ?? null;
     }
 
+    findFinancialTransactionByWithdrawalId(
+        withdrawalId: string,
+        executor?: Executor,
+    ) {
+        const db = this.getExecutor(executor);
+        return db.query.financialTransactions.findFirst({
+            where: eq(financialTransactions.withdrawalId, withdrawalId),
+        });
+    }
+
     async getMixedEarningsRecords(
         userId: string,
         options: { page: number; limit: number; offset: number },
@@ -263,6 +279,8 @@ export class PayRepository {
                     ft.transaction_type,
                     ft.description,
                     ft.reference_id,
+                    customer_user.name AS customer_name,
+                    customer_user.phone_number AS customer_phone,
                     ft.created_at,
                     NULL::text AS status,
                     NULL::text AS method,
@@ -275,6 +293,8 @@ export class PayRepository {
                     NULL::text AS payout_reference_id,
                     ft.created_at AS occurred_at
                 FROM financial_transactions AS ft
+                LEFT JOIN orders AS o ON ft.order_id = o.id
+                LEFT JOIN users AS customer_user ON o.customer_id = customer_user.id
                 WHERE ft.user_id = ${userId}
                     AND ft.withdrawal_id IS NULL
                 UNION ALL
@@ -286,6 +306,8 @@ export class PayRepository {
                     'withdrawal' AS transaction_type,
                     NULL::text AS description,
                     w.payout_reference_id AS reference_id,
+                    NULL::text AS customer_name,
+                    NULL::text AS customer_phone,
                     w.requested_at AS created_at,
                     w.status::text AS status,
                     w.method::text AS method,
@@ -308,6 +330,8 @@ export class PayRepository {
                 transaction_type,
                 description,
                 reference_id,
+                customer_name,
+                customer_phone,
                 created_at,
                 status,
                 method,
@@ -367,6 +391,8 @@ export class PayRepository {
                 currency: row.currency,
                 description: row.description,
                 referenceId: row.reference_id,
+                customerName: row.customer_name,
+                customerPhone: row.customer_phone,
                 transactionType: row.transaction_type,
                 createdAt: row.created_at,
                 withdrawalId: null,
@@ -438,6 +464,8 @@ export class PayRepository {
                     currency: financialTransactions.currency,
                     description: financialTransactions.description,
                     referenceId: financialTransactions.referenceId,
+                    customerName: users.name,
+                    customerPhone: users.phoneNumber,
                     transactionType: financialTransactions.transactionType,
                     createdAt: financialTransactions.createdAt,
                     withdrawalId: financialTransactions.withdrawalId,
@@ -458,6 +486,8 @@ export class PayRepository {
                     withdrawalPayoutReferenceId: withdrawals.payoutReferenceId,
                 })
                 .from(financialTransactions)
+                .leftJoin(orders, eq(financialTransactions.orderId, orders.id))
+                .leftJoin(users, eq(orders.customerId, users.id))
                 .leftJoin(
                     withdrawals,
                     eq(financialTransactions.withdrawalId, withdrawals.id),
@@ -499,6 +529,8 @@ export class PayRepository {
             currency: record.currency ?? 'CNY',
             description: record.description ?? null,
             referenceId: record.referenceId ?? null,
+            customerName: record.customerName ?? null,
+            customerPhone: record.customerPhone ?? null,
             occurredAt: record.createdAt ?? new Date(),
             withdrawal: record.withdrawalId
                 ? ({
@@ -526,7 +558,7 @@ export class PayRepository {
                       processedAt: record.withdrawalProcessedAt ?? null,
                   } as WorkerEarningsRecordItem['withdrawal'])
                 : undefined,
-        };
+        } as WorkerEarningsRecordItem;
     }
 
     async queryWithdrawalRecords(

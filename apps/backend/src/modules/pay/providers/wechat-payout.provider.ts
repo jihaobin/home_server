@@ -3,6 +3,7 @@ import Decimal from 'decimal.js';
 import { WechatPayClient } from 'src/lib/wechatPay/wechatPay.client';
 import type { WechatPayMerchantTransferState } from 'src/lib/wechatPay/wechatPay.types';
 import type {
+    PayoutProviderCancelRequest,
     PayoutProvider,
     PayoutProviderExecuteRequest,
     PayoutProviderExecuteResult,
@@ -15,6 +16,7 @@ const WECHAT_PAYOUT_TERMINAL_STATES = new Set<WechatPayMerchantTransferState>([
     'FAIL',
     'CANCELLED',
 ]);
+const WECHAT_PAYOUT_USER_NAME_MIN_AMOUNT = new Decimal(0.3);
 
 @Injectable()
 export class WechatPayoutProvider implements PayoutProvider {
@@ -68,26 +70,41 @@ export class WechatPayoutProvider implements PayoutProvider {
             throw new Error('未配置 WECHAT_PAY_WORKER_TRANSFER_NOTIFY_URL');
         }
 
-        const response = await this.wechatPayClient.createMerchantTransferBill({
-            appid: withdrawal.providerAppId,
-            out_bill_no: withdrawal.id,
-            transfer_scene_id: transferSceneId,
-            openid: withdrawal.payeeAccount,
-            ...(withdrawal.payeeName?.trim()
-                ? {
-                      user_name: this.wechatPayClient.encryptSensitiveField(
-                          withdrawal.payeeName.trim(),
-                      ),
-                  }
-                : {}),
-            transfer_amount: this.toFen(amount),
-            transfer_remark: this.buildTransferRemark(withdrawal.remark),
-            notify_url: notifyUrl,
-            user_recv_perception: '服务收益提现',
-            transfer_scene_report_infos: this.buildSceneReportInfos(
-                withdrawal.remark,
-            ),
-        });
+        let response;
+        const normalizedPayeeName = withdrawal.payeeName?.trim();
+        const shouldIncludeUserName =
+            !!normalizedPayeeName &&
+            amount.greaterThanOrEqualTo(WECHAT_PAYOUT_USER_NAME_MIN_AMOUNT);
+
+        try {
+            response = await this.wechatPayClient.createMerchantTransferBill({
+                appid: withdrawal.providerAppId,
+                out_bill_no: withdrawal.id,
+                transfer_scene_id: transferSceneId,
+                openid: withdrawal.payeeAccount,
+                ...(shouldIncludeUserName
+                    ? {
+                          user_name:
+                              this.wechatPayClient.encryptSensitiveField(
+                                  normalizedPayeeName,
+                              ),
+                      }
+                    : {}),
+                transfer_amount: this.toFen(amount),
+                transfer_remark: this.buildTransferRemark(withdrawal.remark),
+                notify_url: notifyUrl,
+                transfer_scene_report_infos: this.buildSceneReportInfos(
+                    withdrawal.remark,
+                ),
+            });
+        } catch (error) {
+            this.logger.error('[WechatPayoutProvider] 微信打款请求失败', {
+                withdrawalId: withdrawal.id,
+                providerAppId: withdrawal.providerAppId,
+                error: this.serializeError(error),
+            });
+            throw error;
+        }
 
         return this.mapProviderResult({
             withdrawalId: withdrawal.id,
@@ -98,6 +115,7 @@ export class WechatPayoutProvider implements PayoutProvider {
             providerBillNo: response.transfer_bill_no,
             providerPackageInfo: response.package_info ?? null,
             createTime: response.create_time,
+            source: 'execute',
             raw: response,
         });
     }
@@ -126,6 +144,37 @@ export class WechatPayoutProvider implements PayoutProvider {
             failReason: result.fail_reason,
             createTime: result.create_time,
             updateTime: result.update_time,
+            source: 'query',
+            raw: result,
+        });
+    }
+
+    async cancelPayout(
+        request: PayoutProviderCancelRequest,
+    ): Promise<PayoutProviderExecuteResult | null> {
+        const { withdrawal } = request;
+        const result =
+            await this.wechatPayClient.cancelMerchantTransferBillByOutBillNo(
+                withdrawal.id,
+            );
+
+        return this.mapProviderResult({
+            withdrawalId: withdrawal.id,
+            appId: withdrawal.providerAppId ?? null,
+            mchId: this.wechatPayClient.getMchId(),
+            state: result.state,
+            referenceId:
+                result.transfer_bill_no ??
+                withdrawal.providerBillNo ??
+                withdrawal.payoutReferenceId ??
+                null,
+            providerBillNo:
+                result.transfer_bill_no ??
+                withdrawal.providerBillNo ??
+                null,
+            providerPackageInfo: withdrawal.providerPackageInfo ?? null,
+            updateTime: result.update_time,
+            source: 'cancel',
             raw: result,
         });
     }
@@ -164,6 +213,7 @@ export class WechatPayoutProvider implements PayoutProvider {
             failReason: notify.transfer.fail_reason,
             createTime: notify.transfer.create_time,
             updateTime: notify.transfer.update_time,
+            source: 'notify',
             raw: notify,
         });
     }
@@ -214,6 +264,30 @@ export class WechatPayoutProvider implements PayoutProvider {
         ];
     }
 
+    private serializeError(error: unknown) {
+        if (error instanceof Error) {
+            const details = Object.fromEntries(
+                Object.getOwnPropertyNames(error).map((key) => [
+                    key,
+                    Reflect.get(error, key),
+                ]),
+            );
+
+            return {
+                ...details,
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+                cause:
+                    error.cause instanceof Error
+                        ? this.serializeError(error.cause)
+                        : error.cause,
+            };
+        }
+
+        return error;
+    }
+
     private mapProviderResult({
         withdrawalId,
         appId,
@@ -225,6 +299,7 @@ export class WechatPayoutProvider implements PayoutProvider {
         failReason,
         createTime,
         updateTime,
+        source,
         raw,
     }: {
         withdrawalId: string;
@@ -237,6 +312,7 @@ export class WechatPayoutProvider implements PayoutProvider {
         failReason?: string | null;
         createTime?: string;
         updateTime?: string;
+        source: 'execute' | 'query' | 'notify' | 'cancel';
         raw: unknown;
     }): PayoutProviderExecuteResult {
         const processedAt =
@@ -252,7 +328,7 @@ export class WechatPayoutProvider implements PayoutProvider {
             providerAppId: appId,
             providerBillNo: providerBillNo ?? null,
             providerPackageInfo: providerPackageInfo ?? null,
-            failureReason: failReason ?? null,
+            failureReason: this.resolveDisplayFailureReason(state, failReason),
             processedAt,
             providerMeta: {
                 wechatMerchantTransfer: {
@@ -263,7 +339,7 @@ export class WechatPayoutProvider implements PayoutProvider {
                     failReason: failReason ?? null,
                     createTime: createTime ?? null,
                     updateTime: updateTime ?? null,
-                    source: 'execute',
+                    source,
                 },
                 raw,
             },
@@ -288,6 +364,24 @@ export class WechatPayoutProvider implements PayoutProvider {
             default:
                 return 'processing';
         }
+    }
+
+    private resolveDisplayFailureReason(
+        state: WechatPayMerchantTransferState,
+        failReason?: string | null,
+    ) {
+        const normalized = failReason?.trim().toUpperCase();
+        if (!normalized) {
+            return null;
+        }
+
+        if (normalized === 'MCH_CANCEL') {
+            return state === 'CANCELLED'
+                ? '用户已拒绝收款，微信提现已撤销'
+                : '用户已拒绝收款，微信提现撤销处理中';
+        }
+
+        return failReason ?? null;
     }
 
     private toFen(amount: Decimal) {

@@ -196,8 +196,11 @@ function RootNavigation() {
     const isAuthenticated = !!session?.user?.id;
 
     useWechatAuthResultListener();
-    useWechatMerchantTransferResultListener();
-    useWechatMerchantTransferAutoTrigger(isAuthenticated);
+    const { triggerTransferConfirm, processTransferStatusSync } =
+        useWechatMerchantTransferAutoTrigger(isAuthenticated);
+    useWechatMerchantTransferResultListener({
+        onResultReceived: processTransferStatusSync,
+    });
 
     React.useEffect(() => {
         const appId =
@@ -224,7 +227,10 @@ function RootNavigation() {
     return (
         <>
             {isAuthenticated ? (
-                <NotificationSocketBridge enabled={isAuthenticated} />
+                <NotificationSocketBridge
+                    enabled={isAuthenticated}
+                    onWechatWithdrawalWaitUserConfirm={triggerTransferConfirm}
+                />
             ) : null}
             {isAuthenticated ? (
                 <ChatSocketBridge enabled={isAuthenticated} />
@@ -349,7 +355,15 @@ function ChatSocketBridge({ enabled }: { enabled: boolean }) {
     return null;
 }
 
-function NotificationSocketBridge({ enabled }: { enabled: boolean }) {
+function NotificationSocketBridge({
+    enabled,
+    onWechatWithdrawalWaitUserConfirm,
+}: {
+    enabled: boolean;
+    onWechatWithdrawalWaitUserConfirm?: (
+        withdrawalId?: string | null,
+    ) => Promise<boolean>;
+}) {
     const queryClient = useQueryClient();
     useNotificationPermission(enabled);
     const registrationId = useRegistrationIdValue();
@@ -368,8 +382,26 @@ function NotificationSocketBridge({ enabled }: { enabled: boolean }) {
         [queryClient],
     );
 
+    const invalidateEarnings = React.useCallback(async () => {
+        await Promise.allSettled([
+            queryClient.invalidateQueries({
+                queryKey: ["worker-earnings-records"],
+            }),
+            queryClient.invalidateQueries({ queryKey: ["earnings-overview"] }),
+        ]);
+    }, [queryClient]);
+
     const buildNotificationContent = React.useCallback(
         (payload: NotificationSocketNotification["payload"]) => {
+            if (payload.event === "withdrawal_wechat_wait_user_confirm") {
+                return {
+                    title: payload.title ?? "微信提现待确认",
+                    body:
+                        payload.message ??
+                        "您的提现审核已通过，请打开 App 在微信中确认收款",
+                };
+            }
+
             const orderLabel =
                 payload.serviceName ??
                 (payload.orderId ? `订单 ${payload.orderId}` : "订单");
@@ -407,7 +439,7 @@ function NotificationSocketBridge({ enabled }: { enabled: boolean }) {
                     };
                 default:
                     return {
-                        title: "订单提醒",
+                        title: payload.title ?? "订单提醒",
                         body:
                             payload.message ??
                             "您有新的订单消息，请打开应用查看",
@@ -429,6 +461,7 @@ function NotificationSocketBridge({ enabled }: { enabled: boolean }) {
                         ...content,
                         data: {
                             orderId: payload.orderId,
+                            withdrawalId: payload.withdrawalId,
                             event: payload.event,
                         },
                     },
@@ -477,11 +510,23 @@ function NotificationSocketBridge({ enabled }: { enabled: boolean }) {
                     void presentNativeNotification(payload);
                     break;
                 }
+                case "withdrawal_wechat_wait_user_confirm": {
+                    void invalidateEarnings();
+                    void onWechatWithdrawalWaitUserConfirm?.(
+                        payload.withdrawalId,
+                    );
+                    break;
+                }
                 default:
                     void presentNativeNotification(payload);
             }
         },
-        [invalidateOrders, presentNativeNotification],
+        [
+            invalidateEarnings,
+            invalidateOrders,
+            onWechatWithdrawalWaitUserConfirm,
+            presentNativeNotification,
+        ],
     );
 
     const { lastError, lastAckError } = useNotificationSocket({

@@ -14,6 +14,7 @@ import type {
     WechatPayAppPrepayResponse,
     WechatPayCloseOrderRequest,
     WechatPayConfig,
+    WechatPayCancelMerchantTransferResponse,
     WechatPayCreateRefundRequest,
     WechatPayCreateRefundResponse,
     WechatPayCreateMerchantTransferRequest,
@@ -430,6 +431,18 @@ export class WechatPayClient {
 
             throw error;
         }
+    }
+
+    async cancelMerchantTransferBillByOutBillNo(outBillNo: string) {
+        const encodedOutBillNo = encodeURIComponent(outBillNo);
+
+        return this.request<WechatPayCancelMerchantTransferResponse>({
+            method: 'POST',
+            path: `/v3/fund-app/mch-transfer/transfer-bills/out-bill-no/${encodedOutBillNo}/cancel`,
+            headers: {
+                'Wechatpay-Serial': this.config.platformVerifierId,
+            },
+        });
     }
 
     async closeOrderByOutTradeNo(outTradeNo: string) {

@@ -9,7 +9,9 @@ import {
     setWechatMerchantTransferResultSnapshot,
 } from "@/lib/wechat-merchant-transfer-session";
 
-export function useWechatMerchantTransferResultListener() {
+export function useWechatMerchantTransferResultListener(options?: {
+    onResultReceived?: (withdrawalId: string) => void | Promise<void>;
+}) {
     const transferResult = useEvent(
         ExpoWechat,
         "onRequestMerchantTransferResult",
@@ -36,5 +38,6 @@ export function useWechatMerchantTransferResultListener() {
             receivedAt: new Date().toISOString(),
         });
         clearPendingWechatMerchantTransferSession();
-    }, [transferResult]);
+        void options?.onResultReceived?.(pendingSession.withdrawalId);
+    }, [options, transferResult]);
 }

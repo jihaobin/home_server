@@ -7,12 +7,16 @@ env/
 ├── development/           # 开发环境配置
 │   ├── .env.api          # Backend项目专用配置
 │   ├── .env.admin          # Admin Web项目专用配置
-│   ├── .env.mobile       # 移动端项目专用配置
+│   ├── .env.mobile       # 移动端共享配置（mobile-user + mobile-worker）
+│   ├── .env.mobile-user  # 用户端移动端特有配置
+│   ├── .env.mobile-worker # 服务人员端移动端特有配置
 │   └── .env.common       # 公共配置
 ├── production/           # 生产环境配置
 │   ├── .env.api          # Backend项目专用配置
 │   ├── .env.admin          # Admin Web项目专用配置
-│   ├── .env.mobile       # 移动端项目专用配置
+│   ├── .env.mobile       # 移动端共享配置（mobile-user + mobile-worker）
+│   ├── .env.mobile-user  # 用户端移动端特有配置
+│   ├── .env.mobile-worker # 服务人员端移动端特有配置
 │   └── .env.common       # 公共配置
 ├── scripts/              # 管理脚本
 │   └── setup-env-links.js # 环境变量软连接设置脚本
@@ -69,8 +73,10 @@ npx dotenvx run -f .env.production -- your-command
 
 1. **Backend项目专用变量**: 编辑 `env/development/.env.api` 或 `env/production/.env.api`
 2. **Admin Web项目专用变量**: 编辑 `env/development/.env.admin` 或 `env/production/.env.web`
-3. **移动端项目专用变量**: 编辑 `env/development/.env.mobile` 或 `env/production/.env.mobile`
-4. **公共变量**: 编辑 `env/development/.env.common` 或 `env/production/.env.common`
+3. **移动端共享变量**: 编辑 `env/development/.env.mobile` 或 `env/production/.env.mobile`
+4. **用户端移动端特有变量**: 编辑 `env/development/.env.mobile-user` 或 `env/production/.env.mobile-user`
+5. **服务人员端移动端特有变量**: 编辑 `env/development/.env.mobile-worker` 或 `env/production/.env.mobile-worker`
+6. **公共变量**: 编辑 `env/development/.env.common` 或 `env/production/.env.common`
 
 ### 重新生成环境变量文件
 

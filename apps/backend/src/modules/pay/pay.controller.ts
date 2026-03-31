@@ -59,7 +59,7 @@ const workerWechatAuthExchangeBodySchema = z.object({
     state: z.string().optional(),
 });
 
-const workerWechatMerchantTransferResultBodySchema = z.object({
+const workerWechatMerchantTransferResultBodyCoreSchema = z.object({
     result: z.enum(['success', 'fail', 'cancel']),
     businessType: z.string().optional(),
     extMsg: z.string().optional(),
@@ -570,24 +570,24 @@ export class PayController {
     @Roles(['service_personnel'])
     @Post('withdrawals/:withdrawalId/wechat/merchant-transfer/result')
     @UsePipes(
-        createZodPipe(
-            workerWechatMerchantTransferResultBodySchema,
-            '微信提现确认收款结果参数校验失败',
-        ),
+        createMultiZodPipe({
+            body: workerWechatMerchantTransferResultBodyCoreSchema,
+            errorMessage: '微信提现确认收款结果参数校验失败',
+        }),
     )
     @ApiOperation({
         summary: '上报微信提现确认收款页面结果',
         description:
             'worker 端拉起微信确认收款页后，将页面返回结果上报给服务端并立即触发查单。',
     })
-    @ApiBodies(workerWechatMerchantTransferResultBodySchema)
+    @ApiBodies(workerWechatMerchantTransferResultBodyCoreSchema)
     @ApiSuccessResponse(workerWithdrawalPayoutStatusResponseSchema, {
         description: '最新提现渠道状态快照',
     })
     async reportWechatMerchantTransferResult(
         @Param('withdrawalId') withdrawalId: string,
         @Body()
-        body: z.infer<typeof workerWechatMerchantTransferResultBodySchema>,
+        body: z.infer<typeof workerWechatMerchantTransferResultBodyCoreSchema>,
         @Req() req: Request,
     ) {
         return this.payService.reportWorkerWechatMerchantTransferResult(

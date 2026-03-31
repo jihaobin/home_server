@@ -13,8 +13,10 @@ import type { WorkerEarningsRecordListResponse } from "@repo/types";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { AppState, Platform } from "react-native";
 import {
+    DEFAULT_WECHAT_MERCHANT_TRANSFER_COOLDOWN_MS,
     clearPendingWechatMerchantTransferSession,
     clearWechatMerchantTransferResultSnapshot,
+    getWechatMerchantTransferCooldownRemainingMs,
     getPendingWechatMerchantTransferSession,
     getWechatMerchantTransferResultSnapshot,
     isWechatMerchantTransferCoolingDown,
@@ -23,6 +25,11 @@ import {
 } from "@/lib/wechat-merchant-transfer-session";
 
 type WithdrawalRecordItem = WorkerEarningsRecordListResponse["items"][number];
+type WithdrawalPagesData =
+    | {
+          pages?: WorkerEarningsRecordListResponse[];
+      }
+    | undefined;
 
 const resolveWorkerWechatSdkConfig = () => ({
     appId:
@@ -83,6 +90,11 @@ export function useWechatMerchantTransferAutoTrigger(enabled: boolean) {
     const queryClient = useQueryClient();
     const launchingRef = useRef(false);
     const syncingRef = useRef(false);
+    const queuedWithdrawalIdRef = useRef<string | null>(null);
+    const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const triggerTransferConfirmRef = useRef<
+        ((withdrawalId?: string | null) => Promise<boolean>) | null
+    >(null);
 
     const {
         data: withdrawalPages,
@@ -118,6 +130,35 @@ export function useWechatMerchantTransferAutoTrigger(enabled: boolean) {
             })[0];
     }, [withdrawalItems]);
 
+    const findEligibleWithdrawal = useCallback(
+        (
+            data: WithdrawalPagesData,
+            withdrawalId?: string | null,
+        ): WithdrawalRecordItem | undefined => {
+            const items = (data?.pages ?? []).flatMap((page) => page.items);
+            const eligibleItems = items
+                .filter(isEligibleWithdrawal)
+                .sort((left, right) => {
+                    const leftTime = new Date(
+                        left.withdrawal?.requestedAt ?? left.occurredAt,
+                    ).getTime();
+                    const rightTime = new Date(
+                        right.withdrawal?.requestedAt ?? right.occurredAt,
+                    ).getTime();
+                    return leftTime - rightTime;
+                });
+
+            if (withdrawalId) {
+                return eligibleItems.find(
+                    (item) => item.withdrawal?.id === withdrawalId,
+                );
+            }
+
+            return eligibleItems[0];
+        },
+        [],
+    );
+
     const invalidateWithdrawalQueries = useCallback(async () => {
         await Promise.allSettled([
             queryClient.invalidateQueries({
@@ -126,6 +167,32 @@ export function useWechatMerchantTransferAutoTrigger(enabled: boolean) {
             queryClient.invalidateQueries({ queryKey: ["earnings-overview"] }),
         ]);
     }, [queryClient]);
+
+    const clearRetryTimer = useCallback(() => {
+        if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = null;
+        }
+    }, []);
+
+    const scheduleRetry = useCallback(
+        (withdrawalId?: string | null, delayMs = 1_000) => {
+            queuedWithdrawalIdRef.current = withdrawalId ?? null;
+            clearRetryTimer();
+            retryTimerRef.current = setTimeout(
+                () => {
+                    retryTimerRef.current = null;
+                    const queuedWithdrawalId = queuedWithdrawalIdRef.current;
+                    queuedWithdrawalIdRef.current = null;
+                    void triggerTransferConfirmRef.current?.(
+                        queuedWithdrawalId,
+                    );
+                },
+                Math.max(500, delayMs),
+            );
+        },
+        [clearRetryTimer],
+    );
 
     const processTransferStatusSync = useCallback(async () => {
         if (!isSupported || syncingRef.current) {
@@ -155,6 +222,7 @@ export function useWechatMerchantTransferAutoTrigger(enabled: boolean) {
                     },
                 });
                 clearWechatMerchantTransferResultSnapshot();
+                clearPendingWechatMerchantTransferSession();
             } else if (pendingSession) {
                 await queryPayoutStatus(pendingSession.withdrawalId);
                 clearPendingWechatMerchantTransferSession();
@@ -183,21 +251,21 @@ export function useWechatMerchantTransferAutoTrigger(enabled: boolean) {
     const launchTransferConfirm = useCallback(
         async (record: WithdrawalRecordItem) => {
             if (!record.withdrawal || launchingRef.current) {
-                return;
+                return false;
             }
 
             const providerAppId = record.withdrawal.providerAppId;
             const providerPackageInfo = record.withdrawal.providerPackageInfo;
             const mchId = extractMchId(record);
             if (!providerAppId || !providerPackageInfo || !mchId) {
-                return;
+                return false;
             }
 
             const { appId: sdkAppId, universalLink } =
                 resolveWorkerWechatSdkConfig();
             const appId = providerAppId || sdkAppId;
             if (!appId) {
-                return;
+                return false;
             }
 
             launchingRef.current = true;
@@ -219,7 +287,6 @@ export function useWechatMerchantTransferAutoTrigger(enabled: boolean) {
                     packageInfo: providerPackageInfo,
                     requestedAt: new Date().toISOString(),
                 });
-                markWechatMerchantTransferAttempt(record.withdrawal.id);
 
                 const dispatched = await requestWechatMerchantTransfer({
                     mchId,
@@ -229,19 +296,155 @@ export function useWechatMerchantTransferAutoTrigger(enabled: boolean) {
 
                 if (!dispatched) {
                     clearPendingWechatMerchantTransferSession();
+                    return false;
                 }
+
+                markWechatMerchantTransferAttempt(record.withdrawal.id);
+                return true;
             } catch (error) {
                 clearPendingWechatMerchantTransferSession();
                 console.warn(
                     "[wechat-transfer] launch merchant transfer failed",
                     error instanceof Error ? error.message : error,
                 );
+                return false;
             } finally {
                 launchingRef.current = false;
             }
         },
         [],
     );
+
+    const triggerTransferConfirm = useCallback(
+        async (withdrawalId?: string | null) => {
+            if (!isSupported) {
+                return false;
+            }
+
+            if (
+                launchingRef.current ||
+                syncingRef.current ||
+                getPendingWechatMerchantTransferSession() ||
+                getWechatMerchantTransferResultSnapshot()
+            ) {
+                scheduleRetry(withdrawalId, 1_500);
+                return false;
+            }
+
+            const immediateCandidate = findEligibleWithdrawal(
+                withdrawalPages,
+                withdrawalId,
+            );
+
+            if (immediateCandidate?.withdrawal?.id) {
+                const cooldownRemaining =
+                    getWechatMerchantTransferCooldownRemainingMs(
+                        immediateCandidate.withdrawal.id,
+                    );
+                if (cooldownRemaining > 0) {
+                    scheduleRetry(
+                        immediateCandidate.withdrawal.id,
+                        cooldownRemaining + 300,
+                    );
+                    return false;
+                }
+
+                clearRetryTimer();
+                queuedWithdrawalIdRef.current = null;
+                return await launchTransferConfirm(immediateCandidate);
+            }
+
+            const refreshed = await refetchWithdrawals();
+            const refreshedCandidate = findEligibleWithdrawal(
+                refreshed.data,
+                withdrawalId,
+            );
+
+            if (refreshedCandidate?.withdrawal?.id) {
+                const cooldownRemaining =
+                    getWechatMerchantTransferCooldownRemainingMs(
+                        refreshedCandidate.withdrawal.id,
+                    );
+                if (cooldownRemaining > 0) {
+                    scheduleRetry(
+                        refreshedCandidate.withdrawal.id,
+                        cooldownRemaining + 300,
+                    );
+                    return false;
+                }
+
+                clearRetryTimer();
+                queuedWithdrawalIdRef.current = null;
+                return await launchTransferConfirm(refreshedCandidate);
+            }
+
+            return false;
+        },
+        [
+            clearRetryTimer,
+            findEligibleWithdrawal,
+            getWechatMerchantTransferCooldownRemainingMs,
+            isSupported,
+            launchTransferConfirm,
+            refetchWithdrawals,
+            scheduleRetry,
+            withdrawalPages,
+        ],
+    );
+
+    useEffect(() => {
+        triggerTransferConfirmRef.current = triggerTransferConfirm;
+    }, [triggerTransferConfirm]);
+
+    useEffect(() => {
+        return () => {
+            clearRetryTimer();
+        };
+    }, [clearRetryTimer]);
+
+    useEffect(() => {
+        const queuedWithdrawalId = queuedWithdrawalIdRef.current;
+        if (
+            !queuedWithdrawalId ||
+            !isSupported ||
+            isFetchingWithdrawals ||
+            launchingRef.current ||
+            syncingRef.current ||
+            getPendingWechatMerchantTransferSession() ||
+            getWechatMerchantTransferResultSnapshot() ||
+            retryTimerRef.current
+        ) {
+            return;
+        }
+
+        const candidateId =
+            candidate?.withdrawal?.id === queuedWithdrawalId
+                ? candidate.withdrawal?.id
+                : queuedWithdrawalId;
+        const cooldownRemaining = candidateId
+            ? getWechatMerchantTransferCooldownRemainingMs(
+                  candidateId,
+                  DEFAULT_WECHAT_MERCHANT_TRANSFER_COOLDOWN_MS,
+              )
+            : 0;
+
+        if (cooldownRemaining > 0) {
+            scheduleRetry(candidateId, cooldownRemaining + 300);
+            return;
+        }
+
+        clearRetryTimer();
+        queuedWithdrawalIdRef.current = null;
+        void triggerTransferConfirm(candidateId);
+    }, [
+        candidate,
+        clearRetryTimer,
+        getWechatMerchantTransferCooldownRemainingMs,
+        isFetchingWithdrawals,
+        isSupported,
+        scheduleRetry,
+        triggerTransferConfirm,
+    ]);
 
     useEffect(() => {
         if (!isSupported) {
@@ -277,6 +480,11 @@ export function useWechatMerchantTransferAutoTrigger(enabled: boolean) {
             return;
         }
 
-        void launchTransferConfirm(candidate);
-    }, [candidate, isFetchingWithdrawals, isSupported, launchTransferConfirm]);
+        void triggerTransferConfirm(candidate.withdrawal?.id);
+    }, [candidate, isFetchingWithdrawals, isSupported, triggerTransferConfirm]);
+
+    return {
+        triggerTransferConfirm,
+        processTransferStatusSync,
+    };
 }

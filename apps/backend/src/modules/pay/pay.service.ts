@@ -51,9 +51,7 @@ type PaymentInsert = typeof payments.$inferInsert;
 type PaymentRecord = typeof payments.$inferSelect;
 type OrderRecord = typeof orders.$inferSelect;
 type PaymentRecordWithOrder = PaymentRecord & { order: OrderRecord | null };
-
 type PaymentStatus = (typeof payments.status.enumValues)[number];
-type WithdrawalStatus = (typeof payments.status.enumValues)[number];
 
 type BuildAlipayAuthParamOptions = {
     appId: string;
@@ -1291,7 +1289,149 @@ export class PayService {
             },
         });
 
+        if (payload.result === 'cancel') {
+            const latestBeforeCancel =
+                await this.payRepository.findWithdrawalById(withdrawal.id);
+            if (!latestBeforeCancel) {
+                throw new BadRequestException('提现记录不存在');
+            }
+
+            const latestProviderResult =
+                await this.payoutDispatcher.queryPayoutStatus('wechat_pay', {
+                    withdrawal: latestBeforeCancel,
+                });
+
+            const hasTerminalProviderResult =
+                latestProviderResult &&
+                (latestProviderResult.withdrawalStatus === 'completed' ||
+                    latestProviderResult.withdrawalStatus === 'failed' ||
+                    latestProviderResult.withdrawalStatus === 'cancelled');
+
+            if (latestProviderResult && hasTerminalProviderResult) {
+                await this.adminWithdrawalsService.applyPayoutResultForWithdrawal(
+                    withdrawal.id,
+                    latestProviderResult,
+                );
+            } else {
+                let latestAfterCancelHandling = latestBeforeCancel;
+
+                try {
+                    const cancelResult = await this.payoutDispatcher.cancelPayout(
+                        'wechat_pay',
+                        {
+                            withdrawal: latestBeforeCancel,
+                        },
+                    );
+
+                    if (cancelResult) {
+                        await this.adminWithdrawalsService.applyPayoutResultForWithdrawal(
+                            withdrawal.id,
+                            {
+                                ...cancelResult,
+                                failureReason:
+                                    this.resolveWorkerWechatTransferCancelMessage(
+                                        cancelResult.failureReason,
+                                        cancelResult.withdrawalStatus,
+                                    ) ??
+                                    payload.errorMessage?.trim() ??
+                                    (cancelResult.withdrawalStatus ===
+                                    'cancelled'
+                                        ? '用户取消微信提现确认收款'
+                                        : '用户取消微信提现确认收款，微信提现撤销处理中'),
+                                providerMeta: {
+                                    wechatMerchantTransfer: {
+                                        source: 'app_cancel',
+                                        appReportResult: payload.result,
+                                        appReportAt:
+                                            payload.receivedAt ??
+                                            new Date().toISOString(),
+                                        cancelRequestState:
+                                            cancelResult.providerState ?? null,
+                                    },
+                                },
+                            },
+                        );
+                    }
+                } catch (error) {
+                    this.logger.warn(
+                        '[PayService] 调用微信提现撤销接口失败，回退到查单同步',
+                        error instanceof Error ? error.message : String(error),
+                    );
+                }
+
+                latestAfterCancelHandling =
+                    (await this.payRepository.findWithdrawalById(
+                        withdrawal.id,
+                    )) ?? latestBeforeCancel;
+
+                const providerResultAfterCancel =
+                    await this.payoutDispatcher.queryPayoutStatus('wechat_pay', {
+                        withdrawal: latestAfterCancelHandling,
+                    });
+
+                if (providerResultAfterCancel) {
+                    await this.adminWithdrawalsService.applyPayoutResultForWithdrawal(
+                        withdrawal.id,
+                        {
+                            ...providerResultAfterCancel,
+                            failureReason:
+                                this.resolveWorkerWechatTransferCancelMessage(
+                                    providerResultAfterCancel.failureReason,
+                                    providerResultAfterCancel.withdrawalStatus,
+                                ) ??
+                                payload.errorMessage?.trim() ??
+                                (providerResultAfterCancel.withdrawalStatus ===
+                                'cancelled'
+                                    ? '用户取消微信提现确认收款'
+                                    : providerResultAfterCancel.withdrawalStatus ===
+                                        'processing'
+                                      ? '用户取消微信提现确认收款，微信提现撤销处理中'
+                                      : null),
+                            providerMeta: {
+                                wechatMerchantTransfer: {
+                                    source: 'app_cancel_query',
+                                    appReportResult: payload.result,
+                                    appReportAt:
+                                        payload.receivedAt ??
+                                        new Date().toISOString(),
+                                },
+                            },
+                        },
+                    );
+                }
+            }
+
+            const latestAfterCancel =
+                await this.payRepository.findWithdrawalById(withdrawal.id);
+            return this.buildWorkerWithdrawalPayoutStatusResponse(
+                latestAfterCancel,
+            );
+        }
+
         return this.queryWorkerWithdrawalPayoutStatus(userId, withdrawalId);
+    }
+
+    private resolveWorkerWechatTransferCancelMessage(
+        providerFailureReason: string | null | undefined,
+        withdrawalStatus:
+            | 'approved'
+            | 'processing'
+            | 'completed'
+            | 'failed'
+            | 'cancelled',
+    ) {
+        const normalized = providerFailureReason?.trim().toUpperCase();
+        if (!normalized) {
+            return null;
+        }
+
+        if (normalized === 'MCH_CANCEL') {
+            return withdrawalStatus === 'cancelled'
+                ? '用户已拒绝收款，微信提现已撤销'
+                : '用户已拒绝收款，微信提现撤销处理中';
+        }
+
+        return providerFailureReason;
     }
 
     private async ensureWorkerWechatWithdrawalAccessible(

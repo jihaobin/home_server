@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import {
     PAYOUT_PROVIDERS,
+    type PayoutProviderCancelRequest,
     type PayoutChannel,
     type PayoutProvider,
     type PayoutProviderExecuteRequest,
@@ -45,6 +46,18 @@ export class PayoutDispatcher {
         }
 
         return provider.queryPayoutStatus(request);
+    }
+
+    async cancelPayout(
+        channel: PayoutChannel,
+        request: PayoutProviderCancelRequest,
+    ): Promise<PayoutProviderExecuteResult | null> {
+        const provider = this.getProvider(channel);
+        if (!provider.cancelPayout) {
+            return null;
+        }
+
+        return provider.cancelPayout(request);
     }
 
     async handleNotify(

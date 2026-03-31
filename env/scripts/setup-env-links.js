@@ -44,10 +44,12 @@ const ENV_CONFIG = {
     "apps/mobile-user": {
         development: [
             "env/development/.env.mobile",
+            "env/development/.env.mobile-user",
             "env/development/.env.common",
         ],
         production: [
             "env/production/.env.mobile",
+            "env/production/.env.mobile-user",
             "env/production/.env.common",
         ],
     },
@@ -55,10 +57,12 @@ const ENV_CONFIG = {
     "apps/mobile-worker": {
         development: [
             "env/development/.env.mobile",
+            "env/development/.env.mobile-worker",
             "env/development/.env.common",
         ],
         production: [
             "env/production/.env.mobile",
+            "env/production/.env.mobile-worker",
             "env/production/.env.common",
         ],
     },

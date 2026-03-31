@@ -132,6 +132,13 @@ export type WechatPayCreateMerchantTransferResponse = {
     package_info?: string;
 };
 
+export type WechatPayCancelMerchantTransferResponse = {
+    out_bill_no: string;
+    transfer_bill_no?: string;
+    state: WechatPayMerchantTransferState;
+    update_time?: string;
+};
+
 export type WechatPayMerchantTransferQueryResponse = {
     mch_id: string;
     out_bill_no: string;

@@ -141,11 +141,14 @@ export class AlipayPayoutProvider implements PayoutProvider {
         const successData =
             alipayWithdrawSuccessResponseSchema.safeParse(responsePayload);
         if (!successData.success) {
-            this.logger.warn('[AlipayPayoutProvider] 支付宝打款成功但响应字段缺失', {
-                withdrawalId: withdrawal.id,
-                response: responsePayload,
-                errors: successData.error.flatten(),
-            });
+            this.logger.warn(
+                '[AlipayPayoutProvider] 支付宝打款成功但响应字段缺失',
+                {
+                    withdrawalId: withdrawal.id,
+                    response: responsePayload,
+                    errors: successData.error.flatten(),
+                },
+            );
             throw new BadRequestException('支付宝打款结果解析失败，请稍后重试');
         }
 
