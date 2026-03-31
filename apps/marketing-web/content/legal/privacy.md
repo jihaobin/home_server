@@ -90,6 +90,12 @@ updated: 2026-03-16
   第三方机构名称：支付宝(杭州)信息技术有限公司。
   隐私权政策链接：<https://opendocs.alipay.com/open/54/01g6qm>
 
+- **微信OpenSDK Android**
+  使用场景：用于订单或服务的支付、退款。
+  收集个人信息类型：IMEI、IMSI、硬件序列号、MAC 地址、SSID、BSSID、传感器信息、网络类型、设备型号、操作系统、IP 地址；下列信息仅安卓设备适用：Android ID、Wi-Fi 状态/参数/列素、运营商信息、系统设置、系统属性、设备品牌。
+  第三方机构名称：深圳市腾讯计算机系统有限公司。
+  隐私权政策链接：[<https://opendocs.alipay.com/open/54/01g6qm>](https://support.weixin.qq.com/cgi-bin/mmsupportacctnodeweb-bin/pages/RYiYJkLOrQwu0nb8)
+
 - **腾讯云消息推送SDK**
   使用目的或场景：消息推送。
   收集个人信息类型：网络连接状态、设备型号、系统版本。
