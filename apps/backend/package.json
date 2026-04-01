@@ -6,7 +6,7 @@
     "private": true,
     "license": "UNLICENSED",
     "scripts": {
-        "build": "nest build",
+        "build": "dotenvx run -f .env.production -- nest build",
         "dev": "dotenvx run -f .env.development -- nest start --watch",
         "start": "dotenvx run -f .env.production -- nest start",
         "start:debug": "dotenvx run -f .env.development -- nest start --debug --watch",
