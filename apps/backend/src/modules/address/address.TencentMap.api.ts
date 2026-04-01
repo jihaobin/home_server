@@ -1,6 +1,7 @@
 import {
     BadRequestException,
     InternalServerErrorException,
+    Logger,
 } from '@nestjs/common';
 import {
     type DistrictSearchRequest,
@@ -29,6 +30,60 @@ interface TencentMapError {
     message: string;
     request_id?: string;
 }
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+    return typeof value === 'object' && value !== null;
+};
+
+const parseLocation = (location: string) => {
+    const [lat, lng] = location.split(',');
+
+    return {
+        lat,
+        lng,
+    };
+};
+
+const getErrorContext = (error: unknown) => {
+    if (error instanceof Error) {
+        const details: Record<string, unknown> = {
+            name: error.name,
+            message: error.message,
+        };
+
+        if ('cause' in error) {
+            details.cause = error.cause;
+        }
+
+        if (isRecord(error)) {
+            if ('status' in error) {
+                details.status = error.status;
+            }
+
+            if ('statusCode' in error) {
+                details.statusCode = error.statusCode;
+            }
+
+            if ('data' in error) {
+                details.data = error.data;
+            }
+
+            const response = error.response;
+            if (isRecord(response)) {
+                details.response = {
+                    status: response.status,
+                    data: '_data' in response ? response._data : undefined,
+                };
+            }
+        }
+
+        return details;
+    }
+
+    return {
+        value: String(error),
+    };
+};
 
 type DistrictSearchApiResponse = Omit<DistrictSearchResponse, 'result'> & {
     result: DistrictSearchResponse['result'][];
@@ -67,6 +122,8 @@ const buildPoiOptionsString = (
  * 腾讯地图逆地址解析API服务
  */
 export class TencentReverseGeocodeService {
+    private readonly logger = new Logger(TencentReverseGeocodeService.name);
+
     /**
      * 关键词输入提示
      * 根据用户输入的关键词返回搜索建议
@@ -196,6 +253,7 @@ export class TencentReverseGeocodeService {
     async reverseGeocodeWithValidation(
         params: ReverseGeocodeRequest,
     ): Promise<ReverseGeocodeResponse> {
+        const requestPath = '/ws/geocoder/v1/';
         try {
             // 处理poi_options参数
             let poiOptionsString: string | undefined;
@@ -237,6 +295,25 @@ export class TencentReverseGeocodeService {
 
             if (response.status !== 0) {
                 const error = response as TencentMapError;
+                const { lat, lng } = parseLocation(params.location);
+
+                this.logger.error(
+                    `腾讯地图逆地址解析业务错误: ${JSON.stringify({
+                        path: requestPath,
+                        location: params.location,
+                        lat,
+                        lng,
+                        radius: params.radius,
+                        get_poi: params.get_poi,
+                        poi_options: poiOptionsString,
+                        output: params.output,
+                        callback: params.callback,
+                        tencent_status: error.status,
+                        tencent_message: error.message,
+                        request_id: error.request_id,
+                    })}`,
+                );
+
                 throw new BadRequestException(
                     `腾讯地图API错误: ${error.message} (状态码: ${error.status})`,
                     {
@@ -287,6 +364,28 @@ export class TencentReverseGeocodeService {
                 // 重新抛出已知的业务错误
                 throw error;
             }
+
+            const { lat, lng } = parseLocation(params.location);
+
+            this.logger.error(
+                `腾讯地图逆地址解析请求异常: ${JSON.stringify({
+                    path: requestPath,
+                    location: params.location,
+                    lat,
+                    lng,
+                    radius: params.radius,
+                    get_poi: params.get_poi,
+                    poi_options:
+                        typeof params.poi_options === 'string'
+                            ? params.poi_options
+                            : params.poi_options
+                              ? buildPoiOptionsString(params.poi_options)
+                              : undefined,
+                    output: params.output,
+                    callback: params.callback,
+                    error: getErrorContext(error),
+                })}`,
+            );
 
             // 网络或其他未知错误
             throw new InternalServerErrorException(
