@@ -31,6 +31,7 @@ type FinancialTransactionQueryResult = {
     currency: string | null;
     description: string | null;
     referenceId: string | null;
+    metadata: string | null;
     customerName: string | null;
     customerPhone: string | null;
     transactionType: TransactionType;
@@ -80,6 +81,7 @@ type MixedEarningsQueryResult = {
     transaction_type: TransactionType;
     description: string | null;
     reference_id: string | null;
+    metadata: string | null;
     customer_name: string | null;
     customer_phone: string | null;
     created_at: Date | null;
@@ -279,6 +281,7 @@ export class PayRepository {
                     ft.transaction_type,
                     ft.description,
                     ft.reference_id,
+                    ft.metadata,
                     customer_user.name AS customer_name,
                     customer_user.phone_number AS customer_phone,
                     ft.created_at,
@@ -306,6 +309,7 @@ export class PayRepository {
                     'withdrawal' AS transaction_type,
                     NULL::text AS description,
                     w.payout_reference_id AS reference_id,
+                    NULL::text AS metadata,
                     NULL::text AS customer_name,
                     NULL::text AS customer_phone,
                     w.requested_at AS created_at,
@@ -330,6 +334,7 @@ export class PayRepository {
                 transaction_type,
                 description,
                 reference_id,
+                metadata,
                 customer_name,
                 customer_phone,
                 created_at,
@@ -391,6 +396,7 @@ export class PayRepository {
                 currency: row.currency,
                 description: row.description,
                 referenceId: row.reference_id,
+                metadata: row.metadata,
                 customerName: row.customer_name,
                 customerPhone: row.customer_phone,
                 transactionType: row.transaction_type,
@@ -464,6 +470,7 @@ export class PayRepository {
                     currency: financialTransactions.currency,
                     description: financialTransactions.description,
                     referenceId: financialTransactions.referenceId,
+                    metadata: financialTransactions.metadata,
                     customerName: users.name,
                     customerPhone: users.phoneNumber,
                     transactionType: financialTransactions.transactionType,
@@ -520,6 +527,9 @@ export class PayRepository {
         const amountNumber = Number(record.amount ?? 0) || 0;
         const flowType: WorkerEarningsRecordItem['flowType'] =
             amountNumber >= 0 ? 'income' : 'withdrawal';
+        const serviceEarningSnapshot = this.extractServiceEarningSnapshot(
+            record.metadata,
+        );
 
         return {
             id: record.id,
@@ -531,7 +541,12 @@ export class PayRepository {
             referenceId: record.referenceId ?? null,
             customerName: record.customerName ?? null,
             customerPhone: record.customerPhone ?? null,
+            commissionRate: serviceEarningSnapshot.commissionRate,
+            settlementAmount: serviceEarningSnapshot.settlementAmount,
+            originalOrderPrice: serviceEarningSnapshot.originalOrderPrice,
+            commissionAmount: serviceEarningSnapshot.commissionAmount,
             occurredAt: record.createdAt ?? new Date(),
+            createdAt: record.createdAt ?? new Date(),
             withdrawal: record.withdrawalId
                 ? ({
                       id: record.withdrawalId,
@@ -634,6 +649,7 @@ export class PayRepository {
             description: record.remark ?? '余额提现',
             referenceId: record.payoutReferenceId ?? null,
             occurredAt: record.requestedAt ?? new Date(),
+            createdAt: record.requestedAt ?? new Date(),
             withdrawal: {
                 id: record.id,
                 status: (record.status as WithdrawalStatus) ?? 'pending',
@@ -651,5 +667,53 @@ export class PayRepository {
                 processedAt: record.processedAt ?? null,
             } as WorkerEarningsRecordItem['withdrawal'],
         };
+    }
+
+    private extractServiceEarningSnapshot(metadata?: string | null): {
+        commissionRate: number | null;
+        settlementAmount: number | null;
+        originalOrderPrice: number | null;
+        commissionAmount: number | null;
+    } {
+        if (!metadata) {
+            return {
+                commissionRate: null,
+                settlementAmount: null,
+                originalOrderPrice: null,
+                commissionAmount: null,
+            };
+        }
+
+        try {
+            const parsed = JSON.parse(metadata) as Record<string, unknown>;
+
+            return {
+                commissionRate: this.toNullableNumber(parsed.commissionRate),
+                settlementAmount: this.toNullableNumber(
+                    parsed.settlementAmount,
+                ),
+                originalOrderPrice: this.toNullableNumber(
+                    parsed.originalOrderPrice,
+                ),
+                commissionAmount: this.toNullableNumber(
+                    parsed.commissionAmount,
+                ),
+            };
+        } catch {
+            return {
+                commissionRate: null,
+                settlementAmount: null,
+                originalOrderPrice: null,
+                commissionAmount: null,
+            };
+        }
+    }
+
+    private toNullableNumber(value: unknown): number | null {
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+            return null;
+        }
+
+        return value;
     }
 }

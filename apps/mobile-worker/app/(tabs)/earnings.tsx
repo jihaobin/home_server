@@ -20,6 +20,10 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import {
+    formatOptionalTransactionTime,
+    formatTransactionTime,
+} from "../../lib/transaction-time";
 
 type TabFilter = "all" | "income" | "withdrawal";
 type TransactionItem = WorkerEarningsRecordListResponse["items"][number];
@@ -209,7 +213,19 @@ function EarningsContent() {
         const amountColor = "#4CAF50";
         const customerLabel = getIncomeCustomerLabel(item);
         const customerPhone = getIncomeCustomerPhone(item);
-        const incomeTimeLabel = formatTransactionTime(item.occurredAt);
+        const incomeTimeLabel = formatOptionalTransactionTime(
+            resolveTransactionOccurredAt(item),
+        );
+        const commissionRateLabel = formatCommissionRate(item.commissionRate);
+        const settlementAmountLabel = formatOptionalAmount(
+            item.settlementAmount,
+        );
+        const originalOrderPriceLabel = formatOptionalAmount(
+            item.originalOrderPrice,
+        );
+        const commissionAmountLabel = formatOptionalAmount(
+            item.commissionAmount,
+        );
 
         if (isIncome) {
             const resolvedIncomeSummary = getIncomeSummary(item);
@@ -245,34 +261,48 @@ function EarningsContent() {
 
                     <View style={styles.incomeInfoGrid}>
                         <View style={styles.incomeInfoItem}>
-                            <Text style={styles.incomeInfoLabel}>
-                                下单用户
-                            </Text>
+                            <Text style={styles.incomeInfoLabel}>下单用户</Text>
                             <Text style={styles.incomeInfoValue}>
                                 {customerLabel}
                             </Text>
                         </View>
                         <View style={styles.incomeInfoItem}>
-                            <Text style={styles.incomeInfoLabel}>
-                                联系手机
-                            </Text>
+                            <Text style={styles.incomeInfoLabel}>联系手机</Text>
                             <Text style={styles.incomeInfoValue}>
                                 {customerPhone}
                             </Text>
                         </View>
-                        <View
-                            style={[
-                                styles.incomeInfoItem,
-                                styles.incomeInfoItemFull,
-                            ]}
-                        >
-                            <Text style={styles.incomeInfoLabel}>
-                                入账时间
-                            </Text>
+                        <View style={styles.incomeInfoItem}>
+                            <Text style={styles.incomeInfoLabel}>抽成比例</Text>
                             <Text style={styles.incomeInfoValue}>
-                                {incomeTimeLabel}
+                                {commissionRateLabel}
                             </Text>
                         </View>
+                        <View style={styles.incomeInfoItem}>
+                            <Text style={styles.incomeInfoLabel}>订单原价</Text>
+                            <Text style={styles.incomeInfoValue}>
+                                {originalOrderPriceLabel}
+                            </Text>
+                        </View>
+                        <View style={styles.incomeInfoItem}>
+                            <Text style={styles.incomeInfoLabel}>订单实付</Text>
+                            <Text style={styles.incomeInfoValue}>
+                                {settlementAmountLabel}
+                            </Text>
+                        </View>
+                        <View style={styles.incomeInfoItem}>
+                            <Text style={styles.incomeInfoLabel}>平台抽成</Text>
+                            <Text style={styles.incomeInfoValue}>
+                                {commissionAmountLabel}
+                            </Text>
+                        </View>
+                    </View>
+
+                    <View style={styles.incomeTimeBox}>
+                        <Text style={styles.incomeInfoLabel}>入账时间</Text>
+                        <Text style={styles.incomeInfoValue}>
+                            {incomeTimeLabel}
+                        </Text>
                     </View>
                 </View>
             );
@@ -286,8 +316,8 @@ function EarningsContent() {
         const statusMeta = getWithdrawalStatusMeta(item.withdrawal?.status);
         const withdrawNote = getWithdrawalNote(item) ?? "";
         const methodMeta = getWithdrawalMethodMeta(item.withdrawal?.method);
-        const requestedTime = formatTransactionTime(
-            item.withdrawal?.requestedAt ?? item.occurredAt,
+        const requestedTime = formatOptionalTransactionTime(
+            item.withdrawal?.requestedAt ?? resolveTransactionOccurredAt(item),
         );
         const resultTime = getWithdrawalResultTimeLabel(item);
 
@@ -354,17 +384,13 @@ function EarningsContent() {
 
                 <View style={styles.withdrawalMetaGrid}>
                     <View style={styles.withdrawalMetaItem}>
-                        <Text style={styles.withdrawalMetaLabel}>
-                            提现方式
-                        </Text>
+                        <Text style={styles.withdrawalMetaLabel}>提现方式</Text>
                         <Text style={styles.withdrawalMetaValue}>
                             {methodMeta.label}
                         </Text>
                     </View>
                     <View style={styles.withdrawalMetaItem}>
-                        <Text style={styles.withdrawalMetaLabel}>
-                            申请时间
-                        </Text>
+                        <Text style={styles.withdrawalMetaLabel}>申请时间</Text>
                         <Text style={styles.withdrawalMetaValue}>
                             {requestedTime}
                         </Text>
@@ -460,8 +486,7 @@ function EarningsContent() {
                 <View style={styles.infoBanner}>
                     <Text style={styles.infoTitle}>收益分成说明</Text>
                     <Text style={styles.infoText}>
-                        平台抽取 30%，服务人员实际到账
-                        70%（按订单实付金额计算）。
+                        每笔订单按所属服务分类的抽成比例结算，平台抽成按订单实付金额计算，以下明细展示订单原价、订单实付、平台抽成和实际入账金额。
                     </Text>
                 </View>
 
@@ -937,6 +962,13 @@ const styles = StyleSheet.create({
     incomeInfoItemFull: {
         width: "100%",
     },
+    incomeTimeBox: {
+        backgroundColor: "#F8FAFC",
+        borderRadius: 14,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        gap: 4,
+    },
     incomeInfoLabel: {
         fontSize: 11,
         color: "#98A2B3",
@@ -1006,32 +1038,6 @@ function formatCurrency(value?: number | string | null) {
         return "0.00";
     }
     return amount.toFixed(2);
-}
-
-function formatTransactionTime(value: string | Date) {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-        return "";
-    }
-    const now = new Date();
-    const sameDay = date.toDateString() === now.toDateString();
-    const yesterday = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate() - 1,
-    );
-    let dayLabel = `${date.getFullYear()}-${String(
-        date.getMonth() + 1,
-    ).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-    if (sameDay) {
-        dayLabel = "今天";
-    } else if (date.toDateString() === yesterday.toDateString()) {
-        dayLabel = "昨天";
-    }
-    const timeLabel = `${String(date.getHours()).padStart(2, "0")}:${String(
-        date.getMinutes(),
-    ).padStart(2, "0")}`;
-    return `${dayLabel} ${timeLabel}`;
 }
 
 function getTransactionDescription(item: TransactionItem) {
@@ -1122,6 +1128,22 @@ function getIncomeCustomerPhone(item: TransactionItem) {
     return item.customerPhone?.trim() || "暂无手机号";
 }
 
+function formatCommissionRate(value?: number | null) {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+        return "暂无";
+    }
+
+    return `${value}%`;
+}
+
+function formatOptionalAmount(value?: number | null) {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+        return "暂无";
+    }
+
+    return `¥${formatCurrency(value)}`;
+}
+
 function getWithdrawalMethodMeta(method?: string | null) {
     switch (method) {
         case "wechat_pay":
@@ -1174,11 +1196,16 @@ function getWithdrawalResultTimeLabel(item: TransactionItem) {
     };
 }
 
-function formatOptionalTransactionTime(value?: string | Date | null) {
-    if (!value) {
-        return "暂无";
-    }
-    return formatTransactionTime(value) || "暂无";
+function resolveTransactionOccurredAt(
+    item: TransactionItem,
+): string | Date | null {
+    const legacyCreatedAt = (
+        item as TransactionItem & {
+            createdAt?: string | Date | null;
+        }
+    ).createdAt;
+
+    return item.occurredAt ?? legacyCreatedAt ?? null;
 }
 
 function mapTabToCategory(tab: TabFilter): "mixed" | "income" | "withdrawal" {

@@ -1,5 +1,4 @@
-import { optional, z } from 'zod/v4';
-
+import { optional, z } from "zod/v4";
 
 // ==================== 枚举定义 ====================
 
@@ -28,7 +27,12 @@ export const OrderStatusEnum = z.enum([
 export type OrderStatus = z.infer<typeof OrderStatusEnum>;
 
 // 支付状态枚举
-export const PaymentStatusEnum = z.enum(["pending", "succeeded", "failed", "refunded"]);
+export const PaymentStatusEnum = z.enum([
+    "pending",
+    "succeeded",
+    "failed",
+    "refunded",
+]);
 export type PaymentStatus = z.infer<typeof PaymentStatusEnum>;
 
 // 支付方法
@@ -109,9 +113,7 @@ export const NotificationTraceLevelEnum = z.enum([
     "minimal", // 只记录关键节点
     "full", // 详细记录调度与重试
 ]);
-export type NotificationTraceLevel = z.infer<
-    typeof NotificationTraceLevelEnum
->;
+export type NotificationTraceLevel = z.infer<typeof NotificationTraceLevelEnum>;
 
 export const NotificationChannelEnum = z.enum([
     "in_app", // 应用内 WS/Socket 推送
@@ -127,9 +129,7 @@ export const NotificationTargetTypeEnum = z.enum([
     "role", // 按角色广播
     "custom", // 业务自定义主体
 ]);
-export type NotificationTargetType = z.infer<
-    typeof NotificationTargetTypeEnum
->;
+export type NotificationTargetType = z.infer<typeof NotificationTargetTypeEnum>;
 
 export const NotificationDeliveryStatusEnum = z.enum([
     "pending", // 等待渠道执行
@@ -183,16 +183,18 @@ export type UserCouponStatus = z.infer<typeof UserCouponStatusEnum>;
 
 export const NotificationDeviceInfoSchema = z.object({
     deviceId: z.string().max(255, "设备ID长度不能超过255个字符").optional(),
-    platform: z.enum(['ios', 'android', 'web', 'unknown']).optional(),
+    platform: z.enum(["ios", "android", "web", "unknown"]).optional(),
     appVersion: z.string().max(64, "App 版本号长度不能超过64个字符").optional(),
     connectionId: z.string().max(255, "连接ID长度不能超过255个字符").optional(),
-    registrationId: z.string().max(512, "RegistrationID 长度不能超过512个字符").optional(),
+    registrationId: z
+        .string()
+        .max(512, "RegistrationID 长度不能超过512个字符")
+        .optional(),
     updatedAt: z.string().optional(),
 });
 export type NotificationDeviceInfo = z.infer<
     typeof NotificationDeviceInfoSchema
 >;
-
 
 // 订单到场核验状态枚举
 export const OrderCheckinStatusEnum = z.enum([
@@ -204,10 +206,7 @@ export const OrderCheckinStatusEnum = z.enum([
 export type OrderCheckinStatus = z.infer<typeof OrderCheckinStatusEnum>;
 
 // 应用发布枚举
-export const AppReleaseAppEnum = z.enum([
-    "mobile-user",
-    "mobile-worker",
-]);
+export const AppReleaseAppEnum = z.enum(["mobile-user", "mobile-worker"]);
 export type AppReleaseApp = z.infer<typeof AppReleaseAppEnum>;
 
 export const AppReleasePlatformEnum = z.enum(["android", "ios"]);
@@ -281,16 +280,19 @@ export const UsersSchema = z
                 description: "用户的手机号码",
                 title: "手机号码",
             }),
-        role: z.array(UserRoleEnum).default(["customer"]).meta({
-            description: "用户角色",
-            examples: [
-                "customer (客户)",
-                "service_personnel (服务人员)",
-                "shop_admin (店铺管理员)",
-                "admin (管理员)",
-                "super_admin (超级管理员)",
-            ],
-        }),
+        role: z
+            .array(UserRoleEnum)
+            .default(["customer"])
+            .meta({
+                description: "用户角色",
+                examples: [
+                    "customer (客户)",
+                    "service_personnel (服务人员)",
+                    "shop_admin (店铺管理员)",
+                    "admin (管理员)",
+                    "super_admin (超级管理员)",
+                ],
+            }),
         isActive: z.boolean().default(true).meta({
             title: "该用户是否可用",
         }),
@@ -302,13 +304,11 @@ export const UsersSchema = z
                 description: "用户头像的URL",
                 title: "头像URL",
             }),
-        devices: z
-            .array(NotificationDeviceInfoSchema)
-            .default([])
-            .meta({
-                description: "用户绑定的设备列表，用于记录 RegistrationID 等推送信息",
-                title: "设备列表",
-            }),
+        devices: z.array(NotificationDeviceInfoSchema).default([]).meta({
+            description:
+                "用户绑定的设备列表，用于记录 RegistrationID 等推送信息",
+            title: "设备列表",
+        }),
         createdAt: z.date().meta({
             description: "用户创建时间",
             title: "创建时间",
@@ -610,16 +610,10 @@ export const AppReleasesSchema = z
             description: "发布渠道/环境",
             title: "发布渠道",
         }),
-        rolloutPercent: z
-            .number()
-            .int()
-            .min(0)
-            .max(100)
-            .default(100)
-            .meta({
-                description: "灰度比例 0-100",
-                title: "灰度比例",
-            }),
+        rolloutPercent: z.number().int().min(0).max(100).default(100).meta({
+            description: "灰度比例 0-100",
+            title: "灰度比例",
+        }),
         fileId: z.string().max(255).optional().nullable().meta({
             description: "关联文件 ID",
             title: "文件 ID",
@@ -789,53 +783,30 @@ export const UserProfilesSchema = z
             description: "用户ID",
             title: "用户ID",
         }),
-        alipayUserId: z
-            .string()
-            .max(64)
-            .optional()
-            .meta({
-                description: "支付宝 userId",
-                title: "支付宝用户ID",
-            }),
-        alipayOpenId: z
-            .string()
-            .max(64)
-            .optional()
-            .meta({
-                description: "支付宝 openId",
-                title: "支付宝 openId",
-            }),
-        wechatWorkerOpenId: z
-            .string()
-            .max(128)
-            .optional()
-            .meta({
-                description: "服务人员端微信提现 openid",
-                title: "服务人员微信提现 openid",
-            }),
-        wechatWorkerUnionId: z
-            .string()
-            .max(128)
-            .optional()
-            .meta({
-                description: "服务人员端微信提现 unionid",
-                title: "服务人员微信提现 unionid",
-            }),
-        wechatWorkerAppId: z
-            .string()
-            .max(128)
-            .optional()
-            .meta({
-                description: "服务人员端微信提现 appid",
-                title: "服务人员微信提现 appid",
-            }),
-        wechatWorkerBoundAt: z
-            .date()
-            .optional()
-            .meta({
-                description: "服务人员端微信提现绑定时间",
-                title: "服务人员微信提现绑定时间",
-            }),
+        alipayUserId: z.string().max(64).optional().meta({
+            description: "支付宝 userId",
+            title: "支付宝用户ID",
+        }),
+        alipayOpenId: z.string().max(64).optional().meta({
+            description: "支付宝 openId",
+            title: "支付宝 openId",
+        }),
+        wechatWorkerOpenId: z.string().max(128).optional().meta({
+            description: "服务人员端微信提现 openid",
+            title: "服务人员微信提现 openid",
+        }),
+        wechatWorkerUnionId: z.string().max(128).optional().meta({
+            description: "服务人员端微信提现 unionid",
+            title: "服务人员微信提现 unionid",
+        }),
+        wechatWorkerAppId: z.string().max(128).optional().meta({
+            description: "服务人员端微信提现 appid",
+            title: "服务人员微信提现 appid",
+        }),
+        wechatWorkerBoundAt: z.date().optional().meta({
+            description: "服务人员端微信提现绑定时间",
+            title: "服务人员微信提现绑定时间",
+        }),
         realName: z.string().max(50).meta({
             description: "真实姓名",
             title: "真实姓名",
@@ -953,15 +924,14 @@ export const ServiceCategoriesSchema = z
             description: "服务分类是否启用",
             title: "服务分类是否启用",
         }),
-        sortOrder: z
-            .number()
-            .int()
-            .nonnegative()
-            .default(0)
-            .meta({
-                description: "服务分类排序值，越小越靠前",
-                title: "服务分类排序值",
-            }),
+        sortOrder: z.number().int().nonnegative().default(0).meta({
+            description: "服务分类排序值，越小越靠前",
+            title: "服务分类排序值",
+        }),
+        commissionRate: z.number().int().min(0).max(100).default(30).meta({
+            description: "平台对该服务分类收取的抽成比例，单位百分比",
+            title: "抽成比例",
+        }),
         iconFileId: z
             .string()
             .max(255)
@@ -972,14 +942,10 @@ export const ServiceCategoriesSchema = z
                 description: "分类图标文件ID",
                 title: "分类图标文件ID",
             }),
-        iconFileUrl: z
-            .string()
-            .nullable()
-            .optional()
-            .meta({
-                description: "分类图标访问地址（派生字段）",
-                title: "分类图标访问地址",
-            }),
+        iconFileUrl: z.string().nullable().optional().meta({
+            description: "分类图标访问地址（派生字段）",
+            title: "分类图标访问地址",
+        }),
     })
     .meta({
         title: "服务分类表",
@@ -1015,14 +981,10 @@ export const ServicesSchema = z
                 description: "服务图片文件ID",
                 title: "服务图片文件ID",
             }),
-        imageFileUrl: z
-            .string()
-            .nullable()
-            .optional()
-            .meta({
-                description: "服务图片访问地址（派生字段）",
-                title: "服务图片访问地址",
-            }),
+        imageFileUrl: z.string().nullable().optional().meta({
+            description: "服务图片访问地址（派生字段）",
+            title: "服务图片访问地址",
+        }),
         isActive: z.boolean().meta({
             description: "服务是否可用",
             title: "服务可用状态",
@@ -1101,24 +1063,26 @@ export const ServicePersonnelSchema = z
         workDays: z
             .string()
             .max(7)
-            .regex(/^[1-7]{1,7}$/, "工作日格式不正确，应为1-7的组合，如：1234567")
-            .default('1234567')
+            .regex(
+                /^[1-7]{1,7}$/,
+                "工作日格式不正确，应为1-7的组合，如：1234567",
+            )
+            .default("1234567")
             .meta({
                 description: "工作日，1-7代表周一到周日",
                 title: "工作日",
             }),
-        currentStatus: z
-            .string()
-            .max(20)
-            .default("available")
-            .meta({
-                description: "当前状态：available, busy, offline",
-                title: "当前状态",
-            }),
-        lastActiveAt: z.date().default(() => new Date()).meta({
-            description: "最后活跃时间",
-            title: "最后活跃时间",
+        currentStatus: z.string().max(20).default("available").meta({
+            description: "当前状态：available, busy, offline",
+            title: "当前状态",
         }),
+        lastActiveAt: z
+            .date()
+            .default(() => new Date())
+            .meta({
+                description: "最后活跃时间",
+                title: "最后活跃时间",
+            }),
     })
     .refine(
         (data) => {
@@ -1148,10 +1112,15 @@ export const ServicePersonnelPricingSchema = z
             description: "服务人员用户ID",
             title: "服务人员用户ID",
         }),
-        name: z.string().max(100).meta({
-            description: "定价的的简单描述",
-            title: "定价的的简单描述",
-        }).default("").nullish(),
+        name: z
+            .string()
+            .max(100)
+            .meta({
+                description: "定价的的简单描述",
+                title: "定价的的简单描述",
+            })
+            .default("")
+            .nullish(),
         serviceId: z.string().max(255).meta({
             description: "服务项目ID",
             title: "服务项目ID",
@@ -1297,10 +1266,13 @@ export const UserAddressesSchema = z
             description: "是否为默认地址",
             title: "默认地址状态",
         }),
-        province: z.string("省份不能为空").max(100, "省份不能超过100个字符").meta({
-            description: "省份",
-            title: "省份",
-        }),
+        province: z
+            .string("省份不能为空")
+            .max(100, "省份不能超过100个字符")
+            .meta({
+                description: "省份",
+                title: "省份",
+            }),
         city: z.string().max(100, "城市不能超过100个字符").optional().meta({
             description: "市",
             title: "市",
@@ -1593,10 +1565,14 @@ export const OrdersSchema = z
                 title: "折扣金额",
                 description: "折扣金额",
             }),
-        totalAmount: z.number().multipleOf(0.01).min(0, "总金额不能为负数").meta({
-            title: "总金额",
-            description: "总金额",
-        }),
+        totalAmount: z
+            .number()
+            .multipleOf(0.01)
+            .min(0, "总金额不能为负数")
+            .meta({
+                title: "总金额",
+                description: "总金额",
+            }),
         couponCode: z.string().max(50).optional().meta({
             description: "使用的优惠券代码",
             title: "使用的优惠券代码",
@@ -1893,13 +1869,10 @@ export const ReviewsSchema = z
         }),
         imageIds: z
             .array(
-                z
-                    .string()
-                    .max(255, "文件ID长度不能超过255个字符")
-                    .meta({
-                        description: "评价图片文件ID",
-                        title: "评价图片文件ID",
-                    }),
+                z.string().max(255, "文件ID长度不能超过255个字符").meta({
+                    description: "评价图片文件ID",
+                    title: "评价图片文件ID",
+                }),
             )
             .max(6, "最多支持上传6张评价图片")
             .default([])
@@ -1955,10 +1928,16 @@ export const ReviewStatsDataBaseSchema = z
             description: "平均评分*100（如450表示4.50星）",
             title: "平均评分",
         }),
-        averageServiceQuality: z.number().int().min(0).nullable().default(0).meta({
-            description: "平均服务质量评分*100",
-            title: "平均服务质量评分",
-        }),
+        averageServiceQuality: z
+            .number()
+            .int()
+            .min(0)
+            .nullable()
+            .default(0)
+            .meta({
+                description: "平均服务质量评分*100",
+                title: "平均服务质量评分",
+            }),
         averageAttitude: z.number().int().min(0).nullable().default(0).meta({
             description: "平均态度评分*100",
             title: "平均态度评分",
@@ -2024,15 +2003,10 @@ export const WithdrawalsSchema = z
             description: "用户ID",
             title: "用户ID",
         }),
-        currency: z
-            .string()
-            .min(1)
-            .max(3)
-            .default("CNY")
-            .meta({
-                description: "提现币种",
-                title: "提现币种",
-            }),
+        currency: z.string().min(1).max(3).default("CNY").meta({
+            description: "提现币种",
+            title: "提现币种",
+        }),
         method: PaymentMethodEnum.default("alipay").meta({
             description: "提现方式（支付宝/微信/银行转账）",
             title: "提现方式",
@@ -2047,15 +2021,10 @@ export const WithdrawalsSchema = z
             description: "收款账号类型（如 ALIPAY_LOGON_ID）",
             title: "收款账号类型",
         }),
-        payeeName: z
-            .string()
-            .max(255)
-            .nullable()
-            .optional()
-            .meta({
-                description: "收款人姓名",
-                title: "收款人姓名",
-            }),
+        payeeName: z.string().max(255).nullable().optional().meta({
+            description: "收款人姓名",
+            title: "收款人姓名",
+        }),
         amount: z
             .number()
             .multipleOf(0.01)
@@ -2064,15 +2033,10 @@ export const WithdrawalsSchema = z
                 description: "提现金额",
                 title: "提现金额",
             }),
-        remark: z
-            .string()
-            .max(500)
-            .optional()
-            .nullable()
-            .meta({
-                description: "用户提交提现时的备注",
-                title: "提现备注",
-            }),
+        remark: z.string().max(500).optional().nullable().meta({
+            description: "用户提交提现时的备注",
+            title: "提现备注",
+        }),
         status: WithdrawalStatusEnum.default("pending").meta({
             description: "提现状态",
             title: "提现状态",
@@ -2086,73 +2050,38 @@ export const WithdrawalsSchema = z
                 "completed (已完成)",
             ],
         }),
-        reviewNote: z
-            .string()
-            .max(1000)
-            .nullable()
-            .optional()
-            .meta({
-                description: "管理员审核备注",
-                title: "审核备注",
-            }),
-        reviewedByAdminId: z
-            .string()
-            .max(255)
-            .nullable()
-            .optional()
-            .meta({
-                description: "审核管理员ID",
-                title: "审核管理员ID",
-            }),
+        reviewNote: z.string().max(1000).nullable().optional().meta({
+            description: "管理员审核备注",
+            title: "审核备注",
+        }),
+        reviewedByAdminId: z.string().max(255).nullable().optional().meta({
+            description: "审核管理员ID",
+            title: "审核管理员ID",
+        }),
         reviewedAt: z.date().optional().meta({
             description: "审核时间",
             title: "审核时间",
         }),
-        payoutReferenceId: z
-            .string()
-            .max(255)
-            .nullable()
-            .optional()
-            .meta({
-                description: "第三方打款参考号",
-                title: "打款参考号",
-            }),
-        providerState: z
-            .string()
-            .max(64)
-            .nullable()
-            .optional()
-            .meta({
-                description: "渠道原始状态",
-                title: "渠道原始状态",
-            }),
-        providerAppId: z
-            .string()
-            .max(128)
-            .nullable()
-            .optional()
-            .meta({
-                description: "渠道 appId",
-                title: "渠道 appId",
-            }),
-        providerBillNo: z
-            .string()
-            .max(255)
-            .nullable()
-            .optional()
-            .meta({
-                description: "渠道侧单号",
-                title: "渠道侧单号",
-            }),
-        providerPackageInfo: z
-            .string()
-            .max(1000)
-            .nullable()
-            .optional()
-            .meta({
-                description: "渠道确认收款或补充信息",
-                title: "渠道补充信息",
-            }),
+        payoutReferenceId: z.string().max(255).nullable().optional().meta({
+            description: "第三方打款参考号",
+            title: "打款参考号",
+        }),
+        providerState: z.string().max(64).nullable().optional().meta({
+            description: "渠道原始状态",
+            title: "渠道原始状态",
+        }),
+        providerAppId: z.string().max(128).nullable().optional().meta({
+            description: "渠道 appId",
+            title: "渠道 appId",
+        }),
+        providerBillNo: z.string().max(255).nullable().optional().meta({
+            description: "渠道侧单号",
+            title: "渠道侧单号",
+        }),
+        providerPackageInfo: z.string().max(1000).nullable().optional().meta({
+            description: "渠道确认收款或补充信息",
+            title: "渠道补充信息",
+        }),
         providerMeta: z
             .record(z.string(), z.unknown())
             .nullable()
@@ -2161,15 +2090,10 @@ export const WithdrawalsSchema = z
                 description: "渠道扩展元数据",
                 title: "渠道扩展元数据",
             }),
-        failureReason: z
-            .string()
-            .max(500)
-            .nullable()
-            .optional()
-            .meta({
-                description: "打款失败原因",
-                title: "打款失败原因",
-            }),
+        failureReason: z.string().max(500).nullable().optional().meta({
+            description: "打款失败原因",
+            title: "打款失败原因",
+        }),
         requestedAt: z
             .date()
             .default(() => new Date())
@@ -2331,24 +2255,14 @@ export const NotificationDeliveriesSchema = z
             description: "当前投递状态",
             title: "状态",
         }),
-        attempt: z
-            .number()
-            .int()
-            .min(1)
-            .default(1)
-            .meta({
-                description: "第几次尝试",
-                title: "尝试次数",
-            }),
-        lastError: z
-            .string()
-            .max(2000)
-            .nullable()
-            .optional()
-            .meta({
-                description: "最近一次失败原因",
-                title: "错误信息",
-            }),
+        attempt: z.number().int().min(1).default(1).meta({
+            description: "第几次尝试",
+            title: "尝试次数",
+        }),
+        lastError: z.string().max(2000).nullable().optional().meta({
+            description: "最近一次失败原因",
+            title: "错误信息",
+        }),
         context: JsonRecordSchema.default({}).meta({
             description: "渠道调用上下文或响应",
             title: "上下文",
@@ -2388,15 +2302,10 @@ export const NotificationOutboxSchema = z
             description: "关联的通知事件ID",
             title: "通知ID",
         }),
-        retryCount: z
-            .number()
-            .int()
-            .min(0)
-            .default(0)
-            .meta({
-                description: "重试次数",
-                title: "重试次数",
-            }),
+        retryCount: z.number().int().min(0).default(0).meta({
+            description: "重试次数",
+            title: "重试次数",
+        }),
         lockedAt: z.date().nullable().optional().meta({
             description: "锁定时间，防止重复消费",
             title: "锁定时间",
@@ -2409,15 +2318,10 @@ export const NotificationOutboxSchema = z
             description: "是否已经写入队列",
             title: "是否已发送",
         }),
-        lastError: z
-            .string()
-            .max(2000)
-            .nullable()
-            .optional()
-            .meta({
-                description: "最近一次推进失败原因",
-                title: "错误",
-            }),
+        lastError: z.string().max(2000).nullable().optional().meta({
+            description: "最近一次推进失败原因",
+            title: "错误",
+        }),
         createdAt: z
             .date()
             .default(() => new Date())
@@ -2468,15 +2372,10 @@ export const NotificationPreferencesSchema = z
             description: "附加配置，例如免打扰时间",
             title: "元数据",
         }),
-        version: z
-            .number()
-            .int()
-            .min(1)
-            .default(1)
-            .meta({
-                description: "配置版本号，可用于缓存校验",
-                title: "版本",
-            }),
+        version: z.number().int().min(1).default(1).meta({
+            description: "配置版本号，可用于缓存校验",
+            title: "版本",
+        }),
         createdAt: z
             .date()
             .default(() => new Date())
@@ -2567,7 +2466,9 @@ export type ServicePersonnel = z.infer<typeof ServicePersonnelSchema>;
 export type ServicePersonnelPricing = z.infer<
     typeof ServicePersonnelPricingSchema
 >;
-export type ServicePersonnelSkills = z.infer<typeof ServicePersonnelSkillsSchema>;
+export type ServicePersonnelSkills = z.infer<
+    typeof ServicePersonnelSkillsSchema
+>;
 export type UserAddresses = z.infer<typeof UserAddressesSchema>;
 export type Orders = z.infer<typeof OrdersSchema>;
 export type OrderAssignments = z.infer<typeof OrderAssignmentsSchema>;
@@ -2588,8 +2489,12 @@ export type NotificationPreferences = z.infer<
     typeof NotificationPreferencesSchema
 >;
 export type Coupons = z.infer<typeof CouponsSchema>;
-export type CouponCategoryRestrictions = z.infer<typeof CouponCategoryRestrictionsSchema>;
-export type CouponServiceRestrictions = z.infer<typeof CouponServiceRestrictionsSchema>;
+export type CouponCategoryRestrictions = z.infer<
+    typeof CouponCategoryRestrictionsSchema
+>;
+export type CouponServiceRestrictions = z.infer<
+    typeof CouponServiceRestrictionsSchema
+>;
 export type UserCoupons = z.infer<typeof UserCouponsSchema>;
 export type CouponUsageRecords = z.infer<typeof CouponUsageRecordsSchema>;
 export type ChinaCity = z.infer<typeof ChinaCitySchema>;

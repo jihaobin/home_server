@@ -1,0 +1,1 @@
+ALTER TABLE "service_categories" ADD COLUMN "commission_rate" integer DEFAULT 30 NOT NULL;

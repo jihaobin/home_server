@@ -555,8 +555,9 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
         }
 
         const selectedSlot =
-            slots.find((slot) => isSameTimeValue(slot.start, rescheduleDraft)) ??
-            null;
+            slots.find((slot) =>
+                isSameTimeValue(slot.start, rescheduleDraft),
+            ) ?? null;
 
         return {
             canReschedule: true,
@@ -1090,7 +1091,7 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                     <TouchableOpacity
                         style={styles.scanButton}
                         onPress={() => {
-                            router.push("/scan" as never);
+                            router.push(`/scan?source=order` as never);
                         }}
                     >
                         <Text style={styles.scanButtonText}>前往扫码核验</Text>

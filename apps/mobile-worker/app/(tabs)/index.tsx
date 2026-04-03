@@ -142,7 +142,9 @@ function HomeContent() {
                         欢迎回来，祝您服务顺利
                     </Text>
                 </View>
-                <TouchableOpacity onPress={() => router.push("/scan" as never)}>
+                <TouchableOpacity
+                    onPress={() => router.push(`/scan?source=home` as never)}
+                >
                     <Ionicons name="qr-code-outline" size={28} color="#333" />
                 </TouchableOpacity>
             </View>
@@ -196,7 +198,9 @@ function HomeContent() {
                         <QuickActionButton
                             icon="qr-code-outline"
                             label="扫码接单"
-                            onPress={() => router.push("/scan" as never)}
+                            onPress={() =>
+                                router.push(`/scan?source=home` as never)
+                            }
                             color="#4CAF50"
                         />
                         <QuickActionButton

@@ -33,6 +33,7 @@ export const serviceCategories = pgTable(
         description: text('description'), // 分类描述
         isActive: boolean('is_active').default(true).notNull(),
         sortOrder: integer('sort_order').default(0).notNull(),
+        commissionRate: integer('commission_rate').default(30).notNull(),
         iconFileId: varchar('icon_file_id', { length: 255 }).references(
             () => files.id,
             { onDelete: 'set null' },

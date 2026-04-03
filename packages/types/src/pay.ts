@@ -1531,7 +1531,12 @@ export const WorkerEarningsRecordItemSchema = z
         referenceId: z.string().nullable(),
         customerName: z.string().nullable().optional(),
         customerPhone: z.string().nullable().optional(),
+        commissionRate: z.number().nullable().optional(),
+        settlementAmount: z.number().nullable().optional(),
+        originalOrderPrice: z.number().nullable().optional(),
+        commissionAmount: z.number().nullable().optional(),
         occurredAt: z.date(),
+        createdAt: z.date().optional(),
         withdrawal: WorkerEarningsWithdrawalDetailSchema.optional(),
     })
     .meta({

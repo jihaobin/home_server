@@ -398,6 +398,7 @@ export type OrderListSimplifiedResponse = z.infer<
 export const StaffOrderListItemSchema = z.object({
     id: z.string(),
     status: OrderStatusEnum,
+    createdAt: z.date(),
     appointmentTime: z.date(),
     totalAmount: z.number(),
     serviceName: z.string(),

@@ -474,6 +474,9 @@ const AdminServiceCategoryEditableSchema = z.object({
     sortOrder: ServiceCategoriesSchema.shape.sortOrder
         .optional()
         .describe("排序值"),
+    commissionRate: ServiceCategoriesSchema.shape.commissionRate
+        .optional()
+        .describe("平台抽成比例"),
     iconFileId: ServiceCategoriesSchema.shape.iconFileId
         .optional()
         .describe("分类图标文件 ID"),

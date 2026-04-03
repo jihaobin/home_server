@@ -23,6 +23,7 @@ export class AdminServiceCategoriesRepository {
             iconFileId: row.iconFileId ?? null,
             description: row.description ?? null,
             parentId: row.parentId ?? null,
+            commissionRate: row.commissionRate ?? 30,
             iconFileUrl: null,
         };
     }
@@ -37,6 +38,7 @@ export class AdminServiceCategoriesRepository {
                 dep: serviceCategories.dep,
                 isActive: serviceCategories.isActive,
                 sortOrder: serviceCategories.sortOrder,
+                commissionRate: serviceCategories.commissionRate,
                 iconFileId: serviceCategories.iconFileId,
             })
             .from(serviceCategories)
@@ -59,6 +61,7 @@ export class AdminServiceCategoriesRepository {
                 dep: serviceCategories.dep,
                 isActive: serviceCategories.isActive,
                 sortOrder: serviceCategories.sortOrder,
+                commissionRate: serviceCategories.commissionRate,
                 iconFileId: serviceCategories.iconFileId,
             })
             .from(serviceCategories)

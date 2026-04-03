@@ -52,6 +52,13 @@ import {
 } from "@repo/web-ui/components/dialog";
 import { Input } from "@repo/web-ui/components/input";
 import { Label } from "@repo/web-ui/components/label";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@repo/web-ui/components/select";
 import { Switch } from "@repo/web-ui/components/switch";
 import {
     Table,
@@ -89,6 +96,7 @@ import {
     ChevronRight,
     FolderTree,
     GripVertical,
+    ImageIcon,
     PenSquare,
     PlusCircle,
     RefreshCcw,
@@ -107,6 +115,7 @@ type ServiceCategoryFormValues = {
     name: string;
     description: string;
     sortOrder: string;
+    commissionRate: string;
     isActive: boolean;
     icon: UploadValue | null;
 };
@@ -141,6 +150,12 @@ type MoveServiceCategoryInput = {
     targetCategoryId: string;
 };
 
+type CategoryStatusFilter = "all" | "active" | "inactive";
+
+type ServiceCategoryTreeNode = AdminServiceCategory & {
+    children?: ServiceCategoryTreeNode[];
+};
+
 type DragServiceMeta = {
     serviceId: string;
     serviceName: string;
@@ -159,6 +174,120 @@ function normalizeIconUrl(value?: string | null) {
         return trimmed;
     }
     return resolveFileUrl(trimmed) ?? null;
+}
+
+function matchesCategoryStatus(
+    category: Pick<AdminServiceCategory, "isActive">,
+    filter: CategoryStatusFilter,
+) {
+    if (filter === "all") {
+        return true;
+    }
+
+    return filter === "active" ? category.isActive : !category.isActive;
+}
+
+function collectVisibleCategoryIds(
+    categories: ServiceCategoryTreeNode[],
+    filter: CategoryStatusFilter,
+) {
+    const visibleIds = new Set<string>();
+
+    const visit = (category: ServiceCategoryTreeNode) => {
+        const childMatched = (category.children ?? []).some((child) =>
+            visit(child),
+        );
+        const selfMatched = matchesCategoryStatus(category, filter);
+        const shouldShow = selfMatched || childMatched;
+
+        if (shouldShow) {
+            visibleIds.add(category.id);
+        }
+
+        return shouldShow;
+    };
+
+    categories.forEach((category) => {
+        visit(category);
+    });
+
+    return visibleIds;
+}
+
+function CategoryIconThumbnail({
+    iconUrl,
+    alt,
+    className,
+    iconClassName,
+}: {
+    iconUrl: string | null;
+    alt: string;
+    className?: string;
+    iconClassName?: string;
+}) {
+    const [hasImageError, setHasImageError] = useState(false);
+
+    useEffect(() => {
+        setHasImageError(false);
+    }, [iconUrl]);
+
+    const shouldShowImage = Boolean(iconUrl && !hasImageError);
+
+    return (
+        <div
+            className={cn(
+                "relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted",
+                className,
+            )}
+        >
+            {shouldShowImage ? (
+                <img
+                    src={iconUrl!}
+                    alt={alt}
+                    className="size-full object-cover"
+                    onError={() => setHasImageError(true)}
+                />
+            ) : (
+                <ImageIcon
+                    className={cn(
+                        "size-4 text-muted-foreground",
+                        iconClassName,
+                    )}
+                />
+            )}
+        </div>
+    );
+}
+
+function CategoryIconPreviewPanel({
+    iconUrl,
+    categoryName,
+}: {
+    iconUrl: string | null;
+    categoryName: string;
+}) {
+    return (
+        <div className="rounded-lg border bg-muted/20 p-4">
+            <div className="flex items-center gap-4">
+                <CategoryIconThumbnail
+                    iconUrl={iconUrl}
+                    alt={`${categoryName} 图标预览`}
+                    className="size-20 rounded-xl"
+                    iconClassName="size-8"
+                />
+                <div className="space-y-1">
+                    <p className="text-sm font-medium text-foreground">
+                        当前图标预览
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                        {iconUrl
+                            ? "该图标会直接显示在分类列表中。"
+                            : "未设置图标时，列表中会显示默认占位图标。"}
+                    </p>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 export function ServiceCategoriesPageContent() {
@@ -187,6 +316,8 @@ export function ServiceCategoriesPageContent() {
     const [togglingServiceId, setTogglingServiceId] = useState<string | null>(
         null,
     );
+    const [statusFilter, setStatusFilter] =
+        useState<CategoryStatusFilter>("all");
 
     const selectedCategoryId = useMemo(() => {
         if (data.flat.length === 0) {
@@ -259,9 +390,29 @@ export function ServiceCategoriesPageContent() {
         [data.flat],
     );
 
+    const visibleCategoryIds = useMemo(
+        () =>
+            collectVisibleCategoryIds(
+                data.tree as ServiceCategoryTreeNode[],
+                statusFilter,
+            ),
+        [data.tree, statusFilter],
+    );
+
+    const filteredCategories = useMemo(
+        () =>
+            categories.filter((category) =>
+                visibleCategoryIds.has(category.id),
+            ),
+        [categories, visibleCategoryIds],
+    );
+
     const parentCategoryRows = useMemo<ParentCategoryRow[]>(() => {
-        return categories.map((category) => {
+        return filteredCategories.map((category) => {
             const services = (servicesByCategoryId.get(category.id) ?? [])
+                .filter((service) =>
+                    matchesCategoryStatus(service, statusFilter),
+                )
                 .map((service) => ({
                     service,
                     category: parentsMap.get(service.categoryId) ?? null,
@@ -279,11 +430,14 @@ export function ServiceCategoriesPageContent() {
                 services,
             };
         });
-    }, [categories, parentsMap, servicesByCategoryId]);
+    }, [filteredCategories, parentsMap, servicesByCategoryId, statusFilter]);
 
     const totals = useMemo(() => {
-        return { total: categories.length };
-    }, [categories.length]);
+        return {
+            total: categories.length,
+            visible: filteredCategories.length,
+        };
+    }, [categories.length, filteredCategories.length]);
 
     const handleRefresh = useCallback(async () => {
         await Promise.all([refetch(), refetchServices()]);
@@ -307,7 +461,7 @@ export function ServiceCategoriesPageContent() {
             const response = await uploadFile.mutateAsync({ file });
             return {
                 id: response.id,
-                url: response.fileUrl,
+                url: resolveFileUrl(response.fileUrl ?? response.id) ?? "",
                 name: response.originalName,
                 mimeType: response.mimeType,
             };
@@ -318,16 +472,18 @@ export function ServiceCategoriesPageContent() {
     const handleCreateCategory = useCallback(
         async (values: ServiceCategoryFormValues) => {
             try {
-                await createMutation.mutateAsync({
+                const payload = {
                     name: values.name.trim(),
                     description: values.description.trim()
                         ? values.description.trim()
                         : null,
                     parentId: null,
                     sortOrder: Number(values.sortOrder) || 0,
+                    commissionRate: Number(values.commissionRate) || 0,
                     isActive: values.isActive,
                     iconFileId: values.icon?.id ?? null,
-                });
+                };
+                await createMutation.mutateAsync(payload);
                 toast.success("已创建分类");
                 closeDialog();
             } catch (error) {
@@ -340,18 +496,20 @@ export function ServiceCategoriesPageContent() {
     const handleUpdateCategory = useCallback(
         async (categoryId: string, values: ServiceCategoryFormValues) => {
             try {
+                const data = {
+                    name: values.name.trim(),
+                    description: values.description.trim()
+                        ? values.description.trim()
+                        : null,
+                    parentId: null,
+                    sortOrder: Number(values.sortOrder) || 0,
+                    commissionRate: Number(values.commissionRate) || 0,
+                    isActive: values.isActive,
+                    iconFileId: values.icon?.id ?? null,
+                };
                 await updateMutation.mutateAsync({
                     id: categoryId,
-                    data: {
-                        name: values.name.trim(),
-                        description: values.description.trim()
-                            ? values.description.trim()
-                            : null,
-                        parentId: null,
-                        sortOrder: Number(values.sortOrder) || 0,
-                        isActive: values.isActive,
-                        iconFileId: values.icon?.id ?? null,
-                    },
+                    data,
                 });
                 toast.success("已更新分类信息");
                 closeDialog();
@@ -616,8 +774,30 @@ export function ServiceCategoriesPageContent() {
                 }
             >
                 <PageHeaderToolbar className="flex-wrap gap-3">
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                            分类状态
+                        </span>
+                        <Select
+                            value={statusFilter}
+                            onValueChange={(value) =>
+                                setStatusFilter(value as CategoryStatusFilter)
+                            }
+                        >
+                            <SelectTrigger className="h-8 w-[140px]">
+                                <SelectValue placeholder="全部状态" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">全部状态</SelectItem>
+                                <SelectItem value="active">启用</SelectItem>
+                                <SelectItem value="inactive">停用</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
                     <span className="text-xs text-muted-foreground">
-                        共 {totals.total} 个分类
+                        {statusFilter === "all"
+                            ? `共 ${totals.total} 个分类`
+                            : `筛选结果 ${totals.visible} / ${totals.total} 个分类`}
                     </span>
                     <span className="text-xs text-muted-foreground">
                         图标上传复用 @repo/web-ui/upload，提交前请检查校验提示。
@@ -660,6 +840,12 @@ export function ServiceCategoriesPageContent() {
                         isUpdatingService={updateServiceMutation.isPending}
                         isUpdatingCategory={updateMutation.isPending}
                         isDeletingCategory={deleteCategoryMutation.isPending}
+                        statusFilter={statusFilter}
+                        emptyMessage={
+                            statusFilter === "all"
+                                ? "暂无分类数据，请先新增分类。"
+                                : "当前筛选条件下暂无匹配的分类。"
+                        }
                     />
                 </CardContent>
             </Card>
@@ -828,6 +1014,8 @@ function CategoryServiceTablePanel({
     isUpdatingService,
     isUpdatingCategory,
     isDeletingCategory,
+    statusFilter,
+    emptyMessage,
 }: {
     rows: ParentCategoryRow[];
     isLoading: boolean;
@@ -844,6 +1032,8 @@ function CategoryServiceTablePanel({
     isUpdatingService: boolean;
     isUpdatingCategory: boolean;
     isDeletingCategory: boolean;
+    statusFilter: CategoryStatusFilter;
+    emptyMessage: string;
 }) {
     const [expanded, setExpanded] = useState<ExpandedState>({});
     const [activeDragService, setActiveDragService] =
@@ -879,16 +1069,29 @@ function CategoryServiceTablePanel({
             {
                 id: "category",
                 header: "分类",
-                cell: ({ row }) => (
-                    <div className="space-y-1">
-                        <p className="text-sm font-semibold text-foreground">
-                            {row.original.category.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                            {row.original.category.description || "暂无描述"}
-                        </p>
-                    </div>
-                ),
+                cell: ({ row }) => {
+                    const iconUrl = normalizeIconUrl(
+                        row.original.category.iconFileUrl,
+                    );
+
+                    return (
+                        <div className="flex items-start gap-3">
+                            <CategoryIconThumbnail
+                                iconUrl={iconUrl}
+                                alt={`${row.original.category.name} 图标`}
+                            />
+                            <div className="space-y-1">
+                                <p className="text-sm font-semibold text-foreground">
+                                    {row.original.category.name}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    {row.original.category.description ||
+                                        "暂无描述"}
+                                </p>
+                            </div>
+                        </div>
+                    );
+                },
             },
             {
                 id: "services",
@@ -903,6 +1106,15 @@ function CategoryServiceTablePanel({
                         </div>
                     );
                 },
+            },
+            {
+                id: "commissionRate",
+                header: "抽成比例",
+                cell: ({ row }) => (
+                    <span className="text-xs text-muted-foreground">
+                        {readCategoryCommissionRate(row.original.category)}%
+                    </span>
+                ),
             },
             {
                 id: "status",
@@ -1061,7 +1273,7 @@ function CategoryServiceTablePanel({
     if (rows.length === 0 && !isLoading) {
         return (
             <div className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-                暂无分类数据，请先新增分类。
+                {emptyMessage}
             </div>
         );
     }
@@ -1127,6 +1339,9 @@ function CategoryServiceTablePanel({
                                               >
                                                   <ParentCategoryExpandedPanel
                                                       row={row.original}
+                                                      statusFilter={
+                                                          statusFilter
+                                                      }
                                                       onAddService={
                                                           onAddService
                                                       }
@@ -1297,6 +1512,7 @@ function DraggableServiceTableRow({
 
 function ParentCategoryExpandedPanel({
     row,
+    statusFilter,
     onAddService,
     onEditService,
     onToggleServiceStatus,
@@ -1305,6 +1521,7 @@ function ParentCategoryExpandedPanel({
     isUpdatingService,
 }: {
     row: ParentCategoryRow;
+    statusFilter: CategoryStatusFilter;
     onAddService: (categoryId: string | null) => void;
     onEditService: (service: ServiceListItem) => void;
     onToggleServiceStatus: (service: ServiceListItem) => void;
@@ -1352,7 +1569,9 @@ function ParentCategoryExpandedPanel({
                                     colSpan={6}
                                     className="py-5 text-sm text-muted-foreground"
                                 >
-                                    该分类下暂无服务，点击上方按钮可快速新增。
+                                    {statusFilter === "all"
+                                        ? "该分类下暂无服务，点击上方按钮可快速新增。"
+                                        : "当前筛选条件下，该分类暂无匹配服务。"}
                                 </TableCell>
                             </TableRow>
                         ) : (
@@ -1404,6 +1623,7 @@ function ServiceCategoryFormDialog({
             category?.sortOrder !== undefined
                 ? String(category.sortOrder)
                 : String(suggestedSortOrder ?? 0),
+        commissionRate: String(readCategoryCommissionRate(category)),
         icon: category?.iconFileId
             ? {
                   id: category.iconFileId,
@@ -1530,6 +1750,44 @@ function ServiceCategoryFormDialog({
                             )}
                         </form.Field>
 
+                        <form.Field
+                            name="commissionRate"
+                            validators={{
+                                onChange: z
+                                    .string()
+                                    .refine(
+                                        (value) => /^\d+$/.test(value.trim()),
+                                        "请输入 0-100 的整数",
+                                    )
+                                    .refine((value) => {
+                                        const parsed = Number(value.trim());
+                                        return parsed >= 0 && parsed <= 100;
+                                    }, "抽成比例必须在 0-100 之间"),
+                            }}
+                        >
+                            {(field) => (
+                                <div className="space-y-2">
+                                    <Label>抽成比例（%）</Label>
+                                    <Input
+                                        type="number"
+                                        min={0}
+                                        max={100}
+                                        value={field.state.value}
+                                        onChange={(event) =>
+                                            field.handleChange(
+                                                event.target.value,
+                                            )
+                                        }
+                                        onBlur={field.handleBlur}
+                                    />
+                                    <p className="text-xs text-muted-foreground">
+                                        填写平台对该分类订单统一抽成的百分比。
+                                    </p>
+                                    <FieldError field={field} />
+                                </div>
+                            )}
+                        </form.Field>
+
                         <form.Field name="isActive">
                             {(field) => (
                                 <div className="flex items-center justify-between rounded-lg border px-3 py-2">
@@ -1554,15 +1812,21 @@ function ServiceCategoryFormDialog({
 
                     <form.Field name="icon">
                         {(field) => (
-                            <UploadField
-                                label="分类图标"
-                                description="推荐 SVG/PNG，尺寸 256x256"
-                                value={field.state.value}
-                                onChange={field.handleChange}
-                                onUpload={uploadIcon}
-                                accept="image/png,image/jpeg,image/svg+xml"
-                                helperText="上传后自动生成文件标识，可在详情中预览"
-                            />
+                            <div className="space-y-3">
+                                <CategoryIconPreviewPanel
+                                    iconUrl={field.state.value?.url ?? null}
+                                    categoryName={category?.name ?? "服务分类"}
+                                />
+                                <UploadField
+                                    label="分类图标"
+                                    description="推荐 SVG/PNG，尺寸 256x256"
+                                    value={field.state.value}
+                                    onChange={field.handleChange}
+                                    onUpload={uploadIcon}
+                                    accept="image/png,image/jpeg,image/svg+xml"
+                                    helperText="上传后可在上方直接查看最终展示效果"
+                                />
+                            </div>
                         )}
                     </form.Field>
 
@@ -1603,6 +1867,16 @@ function ServiceCategoryFormDialog({
             </DialogContent>
         </Dialog>
     );
+}
+
+function readCategoryCommissionRate(
+    category: AdminServiceCategory | null | undefined,
+) {
+    const rawValue = (category as Record<string, unknown> | null)
+        ?.commissionRate;
+    return typeof rawValue === "number" && Number.isFinite(rawValue)
+        ? rawValue
+        : 30;
 }
 
 function ServiceFormDialog({

@@ -456,6 +456,13 @@
       "when": 1774863504932,
       "tag": "0064_busy_silverclaw",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1775102536381,
+      "tag": "0065_glamorous_captain_stacy",
+      "breakpoints": true
     }
   ]
 }

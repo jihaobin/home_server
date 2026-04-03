@@ -22,6 +22,10 @@ import {
     Platform,
     View,
 } from "react-native";
+import {
+    formatOptionalTransactionTime,
+    formatTransactionTime,
+} from "../../lib/transaction-time";
 
 type WithdrawPayType = "alipay" | "wechat_pay";
 
@@ -429,7 +433,6 @@ function WithdrawContent() {
                     </View>
                 </View>
 
-
                 <View style={styles.accountSection}>
                     <View style={styles.methodHeader}>
                         <Text style={styles.sectionTitle}>提现方式</Text>
@@ -561,7 +564,6 @@ function WithdrawContent() {
                     ) : null}
                 </View>
 
-
                 <View style={styles.remarkSection}>
                     <Text style={styles.sectionTitle}>提现备注</Text>
                     <View style={[styles.inputCard, styles.remarkInputCard]}>
@@ -632,9 +634,8 @@ function WithdrawContent() {
                             const requestedTime = formatTransactionTime(
                                 detail?.requestedAt ?? record.occurredAt,
                             );
-                            const resultTime = getWithdrawalResultTimeLabel(
-                                record,
-                            );
+                            const resultTime =
+                                getWithdrawalResultTimeLabel(record);
 
                             return (
                                 <View
@@ -658,12 +659,12 @@ function WithdrawContent() {
                                                 <Ionicons
                                                     name={methodMeta.icon}
                                                     size={18}
-                                                    color={
-                                                        methodMeta.iconColor
-                                                    }
+                                                    color={methodMeta.iconColor}
                                                 />
                                             </View>
-                                            <View style={styles.historyTitleWrap}>
+                                            <View
+                                                style={styles.historyTitleWrap}
+                                            >
                                                 <Text
                                                     style={styles.historyTitle}
                                                 >
@@ -821,39 +822,6 @@ function WithdrawContent() {
 
 function formatCurrency(value: number) {
     return value.toFixed(2);
-}
-
-function formatTransactionTime(value: string | Date) {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-        return "";
-    }
-    const now = new Date();
-    const sameDay = date.toDateString() === now.toDateString();
-    const yesterday = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate() - 1,
-    );
-    let dayLabel = `${date.getFullYear()}-${String(
-        date.getMonth() + 1,
-    ).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-    if (sameDay) {
-        dayLabel = "今天";
-    } else if (date.toDateString() === yesterday.toDateString()) {
-        dayLabel = "昨天";
-    }
-    const timeLabel = `${String(date.getHours()).padStart(2, "0")}:${String(
-        date.getMinutes(),
-    ).padStart(2, "0")}`;
-    return `${dayLabel} ${timeLabel}`;
-}
-
-function formatOptionalTransactionTime(value?: string | Date | null) {
-    if (!value) {
-        return "暂无";
-    }
-    return formatTransactionTime(value) || "暂无";
 }
 
 const WITHDRAWAL_STATUS_META: Record<string, { label: string; color: string }> =

@@ -282,7 +282,8 @@ function OrderDetailContent({
     const order = orderDetailQuery.data;
     const queryClient = useQueryClient();
     const upsertConversation = useChatUpsertConversation();
-    const { cancelOrder, isCancelling, reorder } = useOrderActions();
+    const { cancelOrder, isCancelling, completeOrder, isCompleting, reorder } =
+        useOrderActions();
     const { confirm, confirmDialog } = useConfirmDialog();
 
     const createReview = useCreateReview();
@@ -338,10 +339,6 @@ function OrderDetailContent({
             await Promise.all(tasks);
         },
     });
-
-    if (showPageLoading) {
-        return <OrderDetailSkeleton />;
-    }
 
     const canPay = Boolean(order.canPay);
     const canCancel = Boolean(order.canCancel);
@@ -445,6 +442,10 @@ function OrderDetailContent({
             setIsPaySheetVisible(true);
             return;
         }
+        if (order.status === "in_progress") {
+            void completeOrder({ orderId: order.id });
+            return;
+        }
         if (order.status === "completed" && needsReview) {
             setDraftRating(5);
             setDraftComment("");
@@ -454,7 +455,7 @@ function OrderDetailContent({
             return;
         }
         reorder();
-    }, [canPay, needsReview, order.status, reorder]);
+    }, [canPay, completeOrder, needsReview, order.id, order.status, reorder]);
 
     const handleSecondaryAction = useCallback(() => {
         if (order.status === "completed" && needsReview) {
@@ -485,10 +486,15 @@ function OrderDetailContent({
     }, [canCancel, cancelOrder, needsReview, order.id, order.status, reorder]);
 
     const shouldShowSecondaryButton =
-        canCancel || (order.status === "completed" && needsReview);
+        order.status !== "in_progress" &&
+        (canCancel || (order.status === "completed" && needsReview));
 
     const primaryButtonText = canPay
         ? "立即支付"
+        : order.status === "in_progress"
+          ? isCompleting
+              ? "确认中..."
+              : "确认验收"
         : order.status === "completed" && needsReview
           ? "评价"
           : "再次预约";
@@ -563,6 +569,10 @@ function OrderDetailContent({
         reviewTargetId,
         uploadFiles.isPending,
     ]);
+
+    if (showPageLoading) {
+        return <OrderDetailSkeleton />;
+    }
 
     return (
         <>
@@ -878,6 +888,12 @@ function OrderDetailContent({
                         <TouchableOpacity
                             activeOpacity={0.7}
                             onPress={handlePrimaryAction}
+                            disabled={order.status === "in_progress" && isCompleting}
+                            style={
+                                order.status === "in_progress" && isCompleting
+                                    ? { opacity: 0.6 }
+                                    : undefined
+                            }
                             className="h-11 min-w-0 flex-1 items-center justify-center rounded-full bg-primary px-2"
                         >
                             <Text

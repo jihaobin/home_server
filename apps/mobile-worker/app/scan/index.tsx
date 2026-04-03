@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
     ActivityIndicator,
@@ -21,6 +22,8 @@ export default function ScanQRScreen() {
     const [facing, setFacing] = useState<"front" | "back">("back");
     const [permission, requestPermission] = useCameraPermissions();
     const router = useRouter();
+    const params = useLocalSearchParams<{ source?: string }>();
+    const queryClient = useQueryClient();
     const [hasScanned, setHasScanned] = useState(false);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [statusType, setStatusType] = useState<"info" | "success" | "error">(
@@ -65,6 +68,30 @@ export default function ScanQRScreen() {
         setStatusMessage(null);
     }, []);
 
+    const refreshOrderState = useCallback(
+        async (orderId: string) => {
+            await Promise.allSettled([
+                queryClient.invalidateQueries({
+                    queryKey: ["staff-orders-list"],
+                }),
+                queryClient.refetchQueries({
+                    queryKey: ["staff-orders-list"],
+                    type: "all",
+                }),
+                queryClient.invalidateQueries({
+                    queryKey: ["order-detail", orderId],
+                    exact: true,
+                }),
+                queryClient.refetchQueries({
+                    queryKey: ["order-detail", orderId],
+                    exact: true,
+                    type: "all",
+                }),
+            ]);
+        },
+        [queryClient],
+    );
+
     const showBlockingAlert = useCallback(
         (title: string, message: string) => {
             Alert.alert(
@@ -80,6 +107,32 @@ export default function ScanQRScreen() {
             );
         },
         [handleResetScan],
+    );
+
+    const navigateAfterSuccess = useCallback(() => {
+        if (params.source === "order") {
+            router.back();
+            return;
+        }
+
+        router.replace("/(tabs)" as never);
+    }, [params.source, router]);
+
+    const showSuccessAlert = useCallback(
+        (message: string) => {
+            Alert.alert(
+                "核验成功",
+                message,
+                [
+                    {
+                        text: "我知道了",
+                        onPress: navigateAfterSuccess,
+                    },
+                ],
+                { cancelable: false, onDismiss: navigateAfterSuccess },
+            );
+        },
+        [navigateAfterSuccess],
     );
 
     const handleBarCodeScanned = useCallback(
@@ -130,9 +183,10 @@ export default function ScanQRScreen() {
                 const successMessage =
                     (response as { message?: string } | undefined)?.message ||
                     "核验成功";
+                await refreshOrderState(payload.orderId);
                 setStatusType("success");
                 setStatusMessage(successMessage);
-                showBlockingAlert("核验成功", successMessage);
+                showSuccessAlert(successMessage);
             } catch (error) {
                 const message =
                     error instanceof Error ? error.message : "核验失败，请重试";
@@ -147,8 +201,10 @@ export default function ScanQRScreen() {
             hasScanned,
             isVerifying,
             parsePayload,
+            refreshOrderState,
             verifyMutation,
             showBlockingAlert,
+            showSuccessAlert,
         ],
     );
 
@@ -177,7 +233,9 @@ export default function ScanQRScreen() {
             <CameraView
                 style={styles.camera}
                 facing={facing}
-                onBarcodeScanned={handleBarCodeScanned}
+                onBarcodeScanned={
+                    hasScanned || isVerifying ? undefined : handleBarCodeScanned
+                }
                 barcodeScannerSettings={{
                     barcodeTypes: ["qr"],
                 }}
@@ -216,6 +274,21 @@ export default function ScanQRScreen() {
                     <Text style={styles.instruction}>
                         将二维码置于框内，系统会自动核验
                     </Text>
+                    {statusMessage ? (
+                        <Text
+                            style={[
+                                styles.statusMessage,
+                                statusType === "success"
+                                    ? styles.statusMessageSuccess
+                                    : null,
+                                statusType === "error"
+                                    ? styles.statusMessageError
+                                    : null,
+                            ]}
+                        >
+                            {statusMessage}
+                        </Text>
+                    ) : null}
                     {hasScanned && !isVerifying ? (
                         <TouchableOpacity
                             style={styles.rescanButton}

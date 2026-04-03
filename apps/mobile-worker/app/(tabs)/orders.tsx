@@ -186,7 +186,8 @@ function OrdersList({
     const renderOrderCard = ({ item }: { item: StaffOrder }) => {
         const meta =
             ORDER_STATUS_DISPLAY[item.status] ?? ORDER_STATUS_DISPLAY.cancelled;
-        const appointment = formatDateTime(item.appointmentTime);
+        const orderTime = formatFriendlyTime(item.createdAt);
+        const appointment = formatFriendlyAppointmentTime(item.appointmentTime);
         const price = formatCurrency(item.totalAmount);
         const decisionMeta =
             DECISION_STATUS_DISPLAY[item.decisionStatus ?? "pending"];
@@ -239,7 +240,11 @@ function OrdersList({
 
                 <View style={styles.orderInfo}>
                     <Ionicons name="time-outline" size={16} color="#666" />
-                    <Text style={styles.infoText}>{appointment}</Text>
+                    <Text style={styles.infoText}>下单时间：{orderTime}</Text>
+                </View>
+                <View style={styles.orderInfo}>
+                    <Ionicons name="calendar-outline" size={16} color="#666" />
+                    <Text style={styles.infoText}>预约时间：{appointment}</Text>
                 </View>
                 <View style={styles.orderInfo}>
                     <Ionicons name="location-outline" size={16} color="#666" />
@@ -324,19 +329,46 @@ function OrdersListSkeleton() {
     );
 }
 
-function formatDateTime(value?: string | Date | null) {
-    if (!value) return "--";
+function normalizeDate(value?: string | Date | null) {
+    if (!value) return null;
     const date = typeof value === "string" ? new Date(value) : value;
-    if (Number.isNaN(date.getTime())) return "--";
+    if (Number.isNaN(date.getTime())) return null;
+    return date;
+}
+
+function formatFriendlyDayLabel(date: Date) {
+    const now = new Date();
+    const sameDay = date.toDateString() === now.toDateString();
+    const yesterday = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() - 1,
+    );
+
+    if (sameDay) {
+        return "今天";
+    }
+    if (date.toDateString() === yesterday.toDateString()) {
+        return "昨天";
+    }
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function formatTimeOnly(date: Date) {
+    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatFriendlyTime(value?: string | Date | null) {
+    const date = normalizeDate(value);
+    if (!date) return "--";
+    return `${formatFriendlyDayLabel(date)} ${formatTimeOnly(date)}`;
+}
+
+function formatFriendlyAppointmentTime(value?: string | Date | null) {
+    const date = normalizeDate(value);
+    if (!date) return "--";
     const end = new Date(date.getTime() + 2 * 60 * 60 * 1000);
-    const yyyy = date.getFullYear();
-    const mm = `${date.getMonth() + 1}`.padStart(2, "0");
-    const dd = `${date.getDate()}`.padStart(2, "0");
-    const hh = `${date.getHours()}`.padStart(2, "0");
-    const mi = `${date.getMinutes()}`.padStart(2, "0");
-    const endHh = `${end.getHours()}`.padStart(2, "0");
-    const endMi = `${end.getMinutes()}`.padStart(2, "0");
-    return `${yyyy}-${mm}-${dd} ${hh}:${mi}-${endHh}:${endMi}`;
+    return `${formatFriendlyDayLabel(date)} ${formatTimeOnly(date)}-${formatTimeOnly(end)}`;
 }
 
 function formatCurrency(value?: number | string | null) {

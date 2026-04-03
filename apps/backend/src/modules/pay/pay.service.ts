@@ -21,7 +21,7 @@ import {
     OrderStatus,
 } from '@repo/types';
 import Decimal from 'decimal.js';
-import { and, arrayOverlaps, eq, gte, sql } from 'drizzle-orm';
+import { and, arrayOverlaps, desc, eq, gte, sql } from 'drizzle-orm';
 import { CACHE_SERVICE, type IAdvancedCacheService } from 'src/common/cache';
 import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
@@ -31,6 +31,8 @@ import {
     orderAssignments,
     orders,
     payments,
+    serviceCategories,
+    services,
     userBalances,
     userProfiles,
     users,
@@ -630,6 +632,12 @@ export class PayService {
                             tx,
                         ));
 
+                    const paymentCommissionSnapshot =
+                        await this.buildCommissionSnapshotFromOrder(
+                            tx,
+                            orderForPayment,
+                        );
+
                     const transactionValues: typeof financialTransactions.$inferInsert =
                         {
                             orderId: orderId,
@@ -640,6 +648,7 @@ export class PayService {
                             currency: orderForPayment.currency ?? 'CNY',
                             description: `客户支付订单${orderForPayment.orderSerial ?? orderForPayment.id}`,
                             referenceId: transactionId ?? null,
+                            metadata: JSON.stringify(paymentCommissionSnapshot),
                         };
 
                     await this.payRepository.createFinancialTransaction(
@@ -1316,12 +1325,10 @@ export class PayService {
                 let latestAfterCancelHandling = latestBeforeCancel;
 
                 try {
-                    const cancelResult = await this.payoutDispatcher.cancelPayout(
-                        'wechat_pay',
-                        {
+                    const cancelResult =
+                        await this.payoutDispatcher.cancelPayout('wechat_pay', {
                             withdrawal: latestBeforeCancel,
-                        },
-                    );
+                        });
 
                     if (cancelResult) {
                         await this.adminWithdrawalsService.applyPayoutResultForWithdrawal(
@@ -1365,9 +1372,12 @@ export class PayService {
                     )) ?? latestBeforeCancel;
 
                 const providerResultAfterCancel =
-                    await this.payoutDispatcher.queryPayoutStatus('wechat_pay', {
-                        withdrawal: latestAfterCancelHandling,
-                    });
+                    await this.payoutDispatcher.queryPayoutStatus(
+                        'wechat_pay',
+                        {
+                            withdrawal: latestAfterCancelHandling,
+                        },
+                    );
 
                 if (providerResultAfterCancel) {
                     await this.adminWithdrawalsService.applyPayoutResultForWithdrawal(
@@ -1948,30 +1958,38 @@ export class PayService {
             return;
         }
 
-        // 使用高精度 Decimal 避免金额浮点误差
-        let totalAmountDecimal: Decimal;
-        try {
-            totalAmountDecimal = new Decimal(order.totalAmount);
-        } catch (error) {
-            this.logger.warn(
-                `[PayService] 订单${order.id}金额解析失败`,
-                error instanceof Error ? error.message : error,
-            );
+        const commissionSnapshot =
+            (await this.findPaymentCommissionSnapshot(tx, order.id)) ??
+            (await this.buildCommissionSnapshotFromOrder(tx, order));
+
+        const settlementAmountDecimal = new Decimal(
+            commissionSnapshot.settlementAmount,
+        ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+        if (settlementAmountDecimal.lte(0)) {
             return;
         }
 
-        if (totalAmountDecimal.lte(0)) {
-            return;
-        }
+        const commissionRate = commissionSnapshot.commissionRate;
+        const originalOrderPriceDecimal = new Decimal(
+            commissionSnapshot.originalOrderPrice,
+        ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const commissionAmountDecimal = new Decimal(
+            commissionSnapshot.commissionAmount,
+        ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
-        // 按 70% 给服务人员、30% 留给平台计算拆分金额
-        const serviceShareDecimal = totalAmountDecimal
-            .mul(70)
-            .div(100)
+        const serviceShareDecimal = settlementAmountDecimal
+            .minus(commissionAmountDecimal)
             .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
         const serviceShare = serviceShareDecimal.toFixed(2);
         const currency = order.currency ?? 'CNY';
+        const transactionMetadata = JSON.stringify({
+            commissionRate,
+            settlementAmount: settlementAmountDecimal.toNumber(),
+            originalOrderPrice: originalOrderPriceDecimal.toNumber(),
+            commissionAmount: commissionAmountDecimal.toNumber(),
+        });
 
         // 使用数据库原子 upsert 累加服务人员余额，避免并发竞争
         const [balanceRow] = await tx
@@ -2025,6 +2043,7 @@ export class PayService {
                 currency,
                 description: `订单${order.orderSerial ?? order.id}收益入账`,
                 referenceId: order.id,
+                metadata: transactionMetadata,
             },
             tx,
         );
@@ -2091,6 +2110,121 @@ export class PayService {
         } catch {
             return null;
         }
+    }
+
+    private async findPaymentCommissionSnapshot(
+        tx: DbType,
+        orderId: string,
+    ): Promise<{
+        commissionRate: number;
+        settlementAmount: number;
+        originalOrderPrice: number;
+        commissionAmount: number;
+    } | null> {
+        const paymentReceivedTransaction =
+            await tx.query.financialTransactions.findFirst({
+                where: and(
+                    eq(financialTransactions.orderId, orderId),
+                    eq(
+                        financialTransactions.transactionType,
+                        'payment_received',
+                    ),
+                ),
+                orderBy: [desc(financialTransactions.createdAt)],
+            });
+
+        return this.extractCommissionSnapshot(
+            paymentReceivedTransaction?.metadata ?? null,
+        );
+    }
+
+    private async buildCommissionSnapshotFromOrder(
+        tx: DbType,
+        order: OrderRecord,
+    ): Promise<{
+        commissionRate: number;
+        settlementAmount: number;
+        originalOrderPrice: number;
+        commissionAmount: number;
+    }> {
+        const serviceCategoryRecord = order.serviceId
+            ? await tx
+                  .select({
+                      commissionRate: serviceCategories.commissionRate,
+                  })
+                  .from(services)
+                  .innerJoin(
+                      serviceCategories,
+                      eq(services.categoryId, serviceCategories.id),
+                  )
+                  .where(eq(services.id, order.serviceId))
+                  .limit(1)
+                  .then((rows) => rows[0] ?? null)
+            : null;
+
+        const commissionRate = serviceCategoryRecord?.commissionRate ?? 30;
+        const settlementAmount = new Decimal(order.totalAmount ?? '0')
+            .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+            .toNumber();
+        const originalOrderPrice = new Decimal(
+            order.originalAmount ?? order.totalAmount ?? '0',
+        )
+            .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+            .toNumber();
+        const commissionAmount = new Decimal(order.totalAmount ?? '0')
+            .mul(commissionRate)
+            .div(100)
+            .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+            .toNumber();
+
+        return {
+            commissionRate,
+            settlementAmount,
+            originalOrderPrice,
+            commissionAmount,
+        };
+    }
+
+    private extractCommissionSnapshot(metadata?: string | null): {
+        commissionRate: number;
+        settlementAmount: number;
+        originalOrderPrice: number;
+        commissionAmount: number;
+    } | null {
+        const parsed = this.parseTransactionMetadata(metadata);
+        if (!parsed) {
+            return null;
+        }
+
+        const commissionRate = this.toFiniteNumber(parsed.commissionRate);
+        const originalOrderPrice = this.toFiniteNumber(
+            parsed.originalOrderPrice,
+        );
+        const settlementAmount =
+            this.toFiniteNumber(parsed.settlementAmount) ?? originalOrderPrice;
+        const commissionAmount = this.toFiniteNumber(parsed.commissionAmount);
+
+        if (
+            commissionRate === null ||
+            settlementAmount === null ||
+            originalOrderPrice === null ||
+            commissionAmount === null
+        ) {
+            return null;
+        }
+
+        return {
+            commissionRate,
+            settlementAmount,
+            originalOrderPrice,
+            commissionAmount,
+        };
+    }
+
+    private toFiniteNumber(value: unknown) {
+        return typeof value === 'number' && Number.isFinite(value)
+            ? value
+            : null;
     }
 
     private extractProviderStatus(metadata?: Record<string, unknown>) {

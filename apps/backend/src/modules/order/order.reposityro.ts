@@ -398,6 +398,7 @@ export class OrderRepository {
                 .select({
                     orderId: orders.id,
                     status: orders.status,
+                    createdAt: orders.createdAt,
                     appointmentTime: orders.appointmentTime,
                     totalAmount: orders.totalAmount,
                     serviceName: services.name,
@@ -446,6 +447,7 @@ export class OrderRepository {
         const items = rows.map((row) => ({
             id: row.orderId,
             status: row.status,
+            createdAt: row.createdAt,
             appointmentTime: row.appointmentTime,
             totalAmount: Number(row.totalAmount ?? 0),
             serviceName: row.serviceName ?? '',

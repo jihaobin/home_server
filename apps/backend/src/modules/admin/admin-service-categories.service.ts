@@ -76,6 +76,7 @@ export class AdminServiceCategoriesService {
         const iconFileId = await this.normalizeIconFileId(
             payload.iconFileId ?? null,
         );
+        const commissionRate = payload.commissionRate ?? 30;
 
         return await this.toCategory(
             await this.repository.create({
@@ -90,6 +91,8 @@ export class AdminServiceCategoriesService {
                 isActive: payload.isActive ?? true,
 
                 sortOrder,
+
+                commissionRate,
 
                 iconFileId,
             }),
@@ -157,6 +160,10 @@ export class AdminServiceCategoriesService {
 
         if (payload.sortOrder !== undefined) {
             updatePayload.sortOrder = payload.sortOrder;
+        }
+
+        if (payload.commissionRate !== undefined) {
+            updatePayload.commissionRate = payload.commissionRate;
         }
 
         if (iconFileId !== undefined) {
