@@ -19,7 +19,12 @@ import { toast } from "@repo/mobile-ui/lib/toast";
 import { authClient } from "@repo/lib/auth-client";
 import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
 import { Image } from "expo-image";
+import { LoginLegalGuideDialog } from "@/components/login-legal-guide-dialog";
 import type { LegalDocKey } from "@/lib/legal-documents";
+import {
+    hasSeenLoginLegalGuide,
+    markLoginLegalGuideSeen,
+} from "@/lib/login-legal-guide";
 import { LegalWebModal } from "@/components/legal-web-modal";
 import { LEGAL_DOCUMENT_CONFIG } from "@/lib/legal-documents";
 
@@ -30,6 +35,9 @@ export default function LoginScreen() {
     const [phone, setPhone] = useState("");
     const [agreeToTerms, setAgreeToTerms] = useState(false);
     const [isSendingOtp, setIsSendingOtp] = useState(false);
+    const [isLegalGuideOpen, setIsLegalGuideOpen] = useState(
+        () => !hasSeenLoginLegalGuide(),
+    );
     const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocKey | null>(
         null,
     );
@@ -74,6 +82,11 @@ export default function LoginScreen() {
 
     const handleOpenLegalDoc = useCallback((doc: LegalDocKey) => {
         setActiveLegalDoc(doc);
+    }, []);
+
+    const handleConfirmLegalGuide = useCallback(() => {
+        markLoginLegalGuideSeen();
+        setIsLegalGuideOpen(false);
     }, []);
 
     const handleOpenLegalDocFromPressable = useCallback(
@@ -232,6 +245,11 @@ export default function LoginScreen() {
                         : ""
                 }
                 onClose={() => setActiveLegalDoc(null)}
+            />
+            <LoginLegalGuideDialog
+                open={isLegalGuideOpen}
+                onConfirm={handleConfirmLegalGuide}
+                onOpenLegalDoc={handleOpenLegalDoc}
             />
         </KeyboardAvoidingView>
     );
