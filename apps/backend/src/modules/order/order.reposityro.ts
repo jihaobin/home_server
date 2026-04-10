@@ -356,6 +356,7 @@ export class OrderRepository {
         page = 1,
         limit = 10,
         status,
+        sortOrder = 'desc',
         servicePersonnelId,
         startTime,
         endTime,
@@ -364,6 +365,7 @@ export class OrderRepository {
         page?: number;
         limit?: number;
         status?: OrderStatus;
+        sortOrder?: 'asc' | 'desc';
         servicePersonnelId: string;
         startTime?: Date;
         endTime?: Date;
@@ -428,7 +430,11 @@ export class OrderRepository {
                 .leftJoin(users, eq(orders.customerId, users.id))
                 .leftJoin(userAddresses, eq(orders.addressId, userAddresses.id))
                 .where(whereClause)
-                .orderBy(desc(orders.appointmentTime))
+                .orderBy(
+                    sortOrder === 'asc'
+                        ? asc(orders.appointmentTime)
+                        : desc(orders.appointmentTime),
+                )
                 .limit(limit)
                 .offset((page - 1) * limit),
             this.db

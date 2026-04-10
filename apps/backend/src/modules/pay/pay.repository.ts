@@ -12,6 +12,8 @@ import {
     financialTransactions,
     orders,
     payments,
+    servicePersonnelPricing,
+    services,
     userBalances,
     users,
     withdrawals,
@@ -51,6 +53,8 @@ type FinancialTransactionQueryResult = {
     withdrawalReviewedAt: Date | null;
     withdrawalProcessedAt: Date | null;
     withdrawalPayoutReferenceId: string | null;
+    serviceName: string | null;
+    specificationName: string | null;
 };
 
 type WithdrawalQueryResult = {
@@ -84,6 +88,8 @@ type MixedEarningsQueryResult = {
     metadata: string | null;
     customer_name: string | null;
     customer_phone: string | null;
+    service_name: string | null;
+    specification_name: string | null;
     created_at: Date | null;
     status: WithdrawalStatus | null;
     method: PaymentMethod | null;
@@ -284,6 +290,8 @@ export class PayRepository {
                     ft.metadata,
                     customer_user.name AS customer_name,
                     customer_user.phone_number AS customer_phone,
+                    s.name AS service_name,
+                    spp.name AS specification_name,
                     ft.created_at,
                     NULL::text AS status,
                     NULL::text AS method,
@@ -297,6 +305,8 @@ export class PayRepository {
                     ft.created_at AS occurred_at
                 FROM financial_transactions AS ft
                 LEFT JOIN orders AS o ON ft.order_id = o.id
+                LEFT JOIN services AS s ON o.service_id = s.id
+                LEFT JOIN service_personnel_pricing AS spp ON o.specification_id = spp.id
                 LEFT JOIN users AS customer_user ON o.customer_id = customer_user.id
                 WHERE ft.user_id = ${userId}
                     AND ft.withdrawal_id IS NULL
@@ -312,6 +322,8 @@ export class PayRepository {
                     NULL::text AS metadata,
                     NULL::text AS customer_name,
                     NULL::text AS customer_phone,
+                    NULL::text AS service_name,
+                    NULL::text AS specification_name,
                     w.requested_at AS created_at,
                     w.status::text AS status,
                     w.method::text AS method,
@@ -337,6 +349,8 @@ export class PayRepository {
                 metadata,
                 customer_name,
                 customer_phone,
+                service_name,
+                specification_name,
                 created_at,
                 status,
                 method,
@@ -399,6 +413,8 @@ export class PayRepository {
                 metadata: row.metadata,
                 customerName: row.customer_name,
                 customerPhone: row.customer_phone,
+                serviceName: row.service_name,
+                specificationName: row.specification_name,
                 transactionType: row.transaction_type,
                 createdAt: row.created_at,
                 withdrawalId: null,
@@ -473,6 +489,8 @@ export class PayRepository {
                     metadata: financialTransactions.metadata,
                     customerName: users.name,
                     customerPhone: users.phoneNumber,
+                    serviceName: services.name,
+                    specificationName: servicePersonnelPricing.name,
                     transactionType: financialTransactions.transactionType,
                     createdAt: financialTransactions.createdAt,
                     withdrawalId: financialTransactions.withdrawalId,
@@ -494,6 +512,11 @@ export class PayRepository {
                 })
                 .from(financialTransactions)
                 .leftJoin(orders, eq(financialTransactions.orderId, orders.id))
+                .leftJoin(services, eq(orders.serviceId, services.id))
+                .leftJoin(
+                    servicePersonnelPricing,
+                    eq(orders.specificationId, servicePersonnelPricing.id),
+                )
                 .leftJoin(users, eq(orders.customerId, users.id))
                 .leftJoin(
                     withdrawals,
@@ -530,6 +553,18 @@ export class PayRepository {
         const serviceEarningSnapshot = this.extractServiceEarningSnapshot(
             record.metadata,
         );
+        const serviceName =
+            record.transactionType === 'service_earning'
+                ? (serviceEarningSnapshot.serviceName ??
+                  record.serviceName ??
+                  null)
+                : null;
+        const specificationName =
+            record.transactionType === 'service_earning'
+                ? (serviceEarningSnapshot.specificationName ??
+                  record.specificationName ??
+                  null)
+                : null;
 
         return {
             id: record.id,
@@ -541,7 +576,14 @@ export class PayRepository {
             referenceId: record.referenceId ?? null,
             customerName: record.customerName ?? null,
             customerPhone: record.customerPhone ?? null,
+            serviceName,
+            specificationName,
             commissionRate: serviceEarningSnapshot.commissionRate,
+            commissionRuleType: serviceEarningSnapshot.commissionRuleType,
+            commissionThreshold: serviceEarningSnapshot.commissionThreshold,
+            commissionStrategyVersionId:
+                serviceEarningSnapshot.commissionStrategyVersionId,
+            monthlyIncomeSnapshot: serviceEarningSnapshot.monthlyIncomeSnapshot,
             settlementAmount: serviceEarningSnapshot.settlementAmount,
             originalOrderPrice: serviceEarningSnapshot.originalOrderPrice,
             commissionAmount: serviceEarningSnapshot.commissionAmount,
@@ -671,16 +713,28 @@ export class PayRepository {
 
     private extractServiceEarningSnapshot(metadata?: string | null): {
         commissionRate: number | null;
+        commissionRuleType: WorkerEarningsRecordItem['commissionRuleType'];
+        commissionThreshold: number | null;
+        commissionStrategyVersionId: string | null;
+        monthlyIncomeSnapshot: number | null;
         settlementAmount: number | null;
         originalOrderPrice: number | null;
         commissionAmount: number | null;
+        serviceName: string | null;
+        specificationName: string | null;
     } {
         if (!metadata) {
             return {
                 commissionRate: null,
+                commissionRuleType: null,
+                commissionThreshold: null,
+                commissionStrategyVersionId: null,
+                monthlyIncomeSnapshot: null,
                 settlementAmount: null,
                 originalOrderPrice: null,
                 commissionAmount: null,
+                serviceName: null,
+                specificationName: null,
             };
         }
 
@@ -689,6 +743,18 @@ export class PayRepository {
 
             return {
                 commissionRate: this.toNullableNumber(parsed.commissionRate),
+                commissionRuleType: this.toNullableCommissionRuleType(
+                    parsed.commissionRuleType,
+                ),
+                commissionThreshold: this.toNullableNumber(
+                    parsed.commissionThreshold,
+                ),
+                commissionStrategyVersionId: this.toNullableString(
+                    parsed.commissionStrategyVersionId,
+                ),
+                monthlyIncomeSnapshot: this.toNullableNumber(
+                    parsed.monthlyIncomeSnapshot,
+                ),
                 settlementAmount: this.toNullableNumber(
                     parsed.settlementAmount,
                 ),
@@ -698,13 +764,23 @@ export class PayRepository {
                 commissionAmount: this.toNullableNumber(
                     parsed.commissionAmount,
                 ),
+                serviceName: this.toNullableString(parsed.serviceName),
+                specificationName: this.toNullableString(
+                    parsed.specificationName,
+                ),
             };
         } catch {
             return {
                 commissionRate: null,
+                commissionRuleType: null,
+                commissionThreshold: null,
+                commissionStrategyVersionId: null,
+                monthlyIncomeSnapshot: null,
                 settlementAmount: null,
                 originalOrderPrice: null,
                 commissionAmount: null,
+                serviceName: null,
+                specificationName: null,
             };
         }
     }
@@ -715,5 +791,19 @@ export class PayRepository {
         }
 
         return value;
+    }
+
+    private toNullableString(value: unknown): string | null {
+        return typeof value === 'string' && value.trim() ? value : null;
+    }
+
+    private toNullableCommissionRuleType(
+        value: unknown,
+    ): WorkerEarningsRecordItem['commissionRuleType'] {
+        return value === 'fixed' ||
+            value === 'dynamic' ||
+            value === 'beginner-protection'
+            ? (value as WorkerEarningsRecordItem['commissionRuleType'])
+            : null;
     }
 }

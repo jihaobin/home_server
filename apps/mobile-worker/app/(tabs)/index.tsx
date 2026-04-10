@@ -21,6 +21,7 @@ import {
     View,
 } from "react-native";
 import { ErrorBoundary } from "react-error-boundary";
+import { selectTopPendingWorkOrders } from "../../lib/order-priority";
 
 type StaffOrder = StaffOrderListResponse["items"][number];
 
@@ -457,19 +458,7 @@ function countTodayOrders(orders: StaffOrder[]) {
 }
 
 function selectUpcomingOrders(orders: StaffOrder[]) {
-    const TARGET_STATUSES = new Set([
-        "pending_acceptance",
-        "paid",
-        "in_progress",
-    ]);
-    return orders
-        .filter((order) => TARGET_STATUSES.has(order.status))
-        .sort((a, b) => {
-            const dateA = normalizeDate(a.appointmentTime)?.getTime() ?? 0;
-            const dateB = normalizeDate(b.appointmentTime)?.getTime() ?? 0;
-            return dateA - dateB;
-        })
-        .slice(0, 5);
+    return selectTopPendingWorkOrders(orders, 5);
 }
 
 function normalizeDate(value?: string | Date | null) {

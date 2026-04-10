@@ -18,6 +18,7 @@ export * from './file';
 export * from './app-releases';
 export * from './home';
 export * from './chat';
+export * from './category-commission-strategies';
 
 export const createId = init({
     length: 15,

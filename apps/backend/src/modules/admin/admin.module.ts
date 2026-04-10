@@ -25,6 +25,9 @@ import { AdminServiceCategoriesRepository } from './admin-service-categories.rep
 import { AdminHomeConfigController } from './admin-home-config.controller';
 import { AdminHomeConfigService } from './admin-home-config.service';
 import { AdminHomeConfigRepository } from './admin-home-config.repository';
+import { AdminServiceCategoryCommissionStrategyController } from './admin-service-category-commission-strategy.controller';
+import { AdminServiceCategoryCommissionStrategyService } from './admin-service-category-commission-strategy.service';
+import { AdminServiceCategoryCommissionStrategyRepository } from './admin-service-category-commission-strategy.repository';
 
 @Module({
     imports: [OrderModule, FilesModule],
@@ -35,6 +38,7 @@ import { AdminHomeConfigRepository } from './admin-home-config.repository';
         AdminOrdersController,
         AdminServiceCategoriesController,
         AdminHomeConfigController,
+        AdminServiceCategoryCommissionStrategyController,
     ],
     providers: [
         AdminAuthService,
@@ -49,6 +53,8 @@ import { AdminHomeConfigRepository } from './admin-home-config.repository';
         AdminServiceCategoriesRepository,
         AdminHomeConfigService,
         AdminHomeConfigRepository,
+        AdminServiceCategoryCommissionStrategyService,
+        AdminServiceCategoryCommissionStrategyRepository,
     ],
 })
 export class AdminModule implements NestModule {

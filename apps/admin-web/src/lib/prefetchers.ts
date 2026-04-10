@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation"
+import { redirect } from "next/navigation";
 import {
     adminDashboardOverviewQueryOptions,
     adminProfileQueryOptions,
@@ -7,172 +7,194 @@ import {
     type AdminUsersQueryInput,
     type AdminOrdersQueryInput,
     adminServiceCategoriesQueryOptions,
+    adminServiceCategoryCommissionStrategyDetailQueryOptions,
     adminRevenueLogsQueryOptions,
     type AdminRevenueLogsQueryInput,
     adminWithdrawalsQueryOptions,
     type AdminWithdrawalsQueryInput,
     adminAppReleasesQueryOptions,
     type AdminAppReleasesQueryInput,
-} from "@repo/hooks/api/ssr"
-import { ErrorCode, type AdminDashboardRange } from "@repo/types"
-import { ApiClientError } from "@repo/utils/api-client"
-import { prefetchDehydratedState } from "@/lib/react-query-server"
-import { ensureSsrApiClient } from "@/lib/ssr-api-client"
+} from "@repo/hooks/api/ssr";
+import { ErrorCode, type AdminDashboardRange } from "@repo/types";
+import { ApiClientError } from "@repo/utils/api-client";
+import { prefetchDehydratedState } from "@/lib/react-query-server";
+import { ensureSsrApiClient } from "@/lib/ssr-api-client";
 
 export async function preloadAdminShellState() {
-    ensureSsrApiClient()
+    ensureSsrApiClient();
 
     try {
         return await prefetchDehydratedState(async (queryClient) => {
-            await queryClient.fetchQuery(adminProfileQueryOptions())
-        })
+            await queryClient.fetchQuery(adminProfileQueryOptions());
+        });
     } catch (error) {
         if (
             error instanceof ApiClientError &&
             (error.code === ErrorCode.UNAUTHORIZED ||
                 error.code === ErrorCode.FORBIDDEN)
         ) {
-            redirect("/auth/login")
+            redirect("/auth/login");
         }
 
-        throw error
+        throw error;
     }
 }
 
 export async function preloadDashboardOverviewState(
     range: AdminDashboardRange = "30d",
 ) {
-    ensureSsrApiClient()
+    ensureSsrApiClient();
 
     return prefetchDehydratedState(async (queryClient) => {
-        await queryClient.fetchQuery(adminDashboardOverviewQueryOptions(range))
-    })
+        await queryClient.fetchQuery(adminDashboardOverviewQueryOptions(range));
+    });
 }
 
-export async function preloadUsersPageState(
-    query: AdminUsersQueryInput = {},
-) {
-    ensureSsrApiClient()
+export async function preloadUsersPageState(query: AdminUsersQueryInput = {}) {
+    ensureSsrApiClient();
 
     try {
         return await prefetchDehydratedState(async (queryClient) => {
-            await queryClient.fetchQuery(adminUsersQueryOptions(query))
-        })
+            await queryClient.fetchQuery(adminUsersQueryOptions(query));
+        });
     } catch (error) {
         if (
             error instanceof ApiClientError &&
             (error.code === ErrorCode.UNAUTHORIZED ||
                 error.code === ErrorCode.FORBIDDEN)
         ) {
-            redirect("/auth/login")
+            redirect("/auth/login");
         }
 
-        throw error
+        throw error;
     }
 }
 
 export async function preloadOrdersPageState(
     query: AdminOrdersQueryInput = {},
 ) {
-    ensureSsrApiClient()
+    ensureSsrApiClient();
 
     try {
         return await prefetchDehydratedState(async (queryClient) => {
-            await queryClient.fetchQuery(adminOrdersQueryOptions(query))
-        })
+            await queryClient.fetchQuery(adminOrdersQueryOptions(query));
+        });
     } catch (error) {
         if (
             error instanceof ApiClientError &&
             (error.code === ErrorCode.UNAUTHORIZED ||
                 error.code === ErrorCode.FORBIDDEN)
         ) {
-            redirect("/auth/login")
+            redirect("/auth/login");
         }
 
-        throw error
+        throw error;
     }
 }
 
 export async function preloadServiceCategoriesPageState() {
-    ensureSsrApiClient()
+    ensureSsrApiClient();
 
     try {
         return await prefetchDehydratedState(async (queryClient) => {
-            await queryClient.fetchQuery(
-                adminServiceCategoriesQueryOptions(),
-            )
-        })
+            await queryClient.fetchQuery(adminServiceCategoriesQueryOptions());
+        });
     } catch (error) {
         if (
             error instanceof ApiClientError &&
             (error.code === ErrorCode.UNAUTHORIZED ||
                 error.code === ErrorCode.FORBIDDEN)
         ) {
-            redirect("/auth/login")
+            redirect("/auth/login");
         }
-        throw error
+        throw error;
+    }
+}
+
+export async function preloadServiceCategoryCommissionStrategyPageState(
+    categoryId: string,
+) {
+    ensureSsrApiClient();
+
+    try {
+        return await prefetchDehydratedState(async (queryClient) => {
+            await queryClient.fetchQuery(
+                adminServiceCategoryCommissionStrategyDetailQueryOptions(
+                    categoryId,
+                ),
+            );
+        });
+    } catch (error) {
+        if (
+            error instanceof ApiClientError &&
+            (error.code === ErrorCode.UNAUTHORIZED ||
+                error.code === ErrorCode.FORBIDDEN)
+        ) {
+            redirect("/auth/login");
+        }
+        throw error;
     }
 }
 
 export async function preloadRevenueLogsPageState(
     query: AdminRevenueLogsQueryInput = {},
 ) {
-    ensureSsrApiClient()
+    ensureSsrApiClient();
 
     try {
         return await prefetchDehydratedState(async (queryClient) => {
-            await queryClient.fetchQuery(adminRevenueLogsQueryOptions(query))
-        })
+            await queryClient.fetchQuery(adminRevenueLogsQueryOptions(query));
+        });
     } catch (error) {
         if (
             error instanceof ApiClientError &&
             (error.code === ErrorCode.UNAUTHORIZED ||
                 error.code === ErrorCode.FORBIDDEN)
         ) {
-            redirect("/auth/login")
+            redirect("/auth/login");
         }
-        throw error
+        throw error;
     }
 }
 
 export async function preloadWithdrawalsPageState(
     query: AdminWithdrawalsQueryInput = {},
 ) {
-    ensureSsrApiClient()
+    ensureSsrApiClient();
 
     try {
         return await prefetchDehydratedState(async (queryClient) => {
-            await queryClient.fetchQuery(adminWithdrawalsQueryOptions(query))
-        })
+            await queryClient.fetchQuery(adminWithdrawalsQueryOptions(query));
+        });
     } catch (error) {
         if (
             error instanceof ApiClientError &&
             (error.code === ErrorCode.UNAUTHORIZED ||
                 error.code === ErrorCode.FORBIDDEN)
         ) {
-            redirect("/auth/login")
+            redirect("/auth/login");
         }
-        throw error
+        throw error;
     }
 }
 
 export async function preloadAppReleasesPageState(
     query: AdminAppReleasesQueryInput = {},
 ) {
-    ensureSsrApiClient()
+    ensureSsrApiClient();
 
     try {
         return await prefetchDehydratedState(async (queryClient) => {
-            await queryClient.fetchQuery(adminAppReleasesQueryOptions(query))
-        })
+            await queryClient.fetchQuery(adminAppReleasesQueryOptions(query));
+        });
     } catch (error) {
         if (
             error instanceof ApiClientError &&
             (error.code === ErrorCode.UNAUTHORIZED ||
                 error.code === ErrorCode.FORBIDDEN)
         ) {
-            redirect("/auth/login")
+            redirect("/auth/login");
         }
-        throw error
+        throw error;
     }
 }

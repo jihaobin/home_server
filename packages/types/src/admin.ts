@@ -1,6 +1,8 @@
 import { z } from "zod/v4";
 import { PaginatedDataSchema, PaginationQuerySchema } from "./common";
 import {
+    AdminCommissionStrategyStatusEnum,
+    AdminCommissionStrategyVersionStatusEnum,
     AssignmentTypeEnum,
     OrderStatusEnum,
     PaymentMethodEnum,
@@ -494,6 +496,260 @@ export const UpdateAdminServiceCategorySchema =
 
 export type UpdateAdminServiceCategoryInput = z.infer<
     typeof UpdateAdminServiceCategorySchema
+>;
+
+// =========================
+// 服务分类抽成策略管理
+// =========================
+
+const AdminCommissionStrategyRuleThresholdSchema = z
+    .number()
+    .nonnegative()
+    .multipleOf(0.01, "规则阈值最多支持两位小数")
+    .describe("规则阈值（>= 0）");
+
+const AdminCommissionStrategyRuleRateSchema = z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .describe("抽成比例（0-100）");
+
+const AdminCommissionStrategyProtectionPeriodDaysSchema = z
+    .number()
+    .int()
+    .min(1)
+    .describe("保护期天数（>= 1）");
+
+const AdminCommissionStrategyMonthlyIncomeThresholdSchema = z
+    .number()
+    .nonnegative()
+    .multipleOf(0.01, "月收入阈值最多支持两位小数")
+    .describe("保护期月收入阈值（>= 0）");
+
+const AdminCommissionStrategyFixedCommissionRateSchema = z
+    .number()
+    .int()
+    .min(0)
+    .max(100)
+    .describe("保护期固定抽成比例（0-100）");
+
+export const AdminCommissionStrategyRuleSchema = z
+    .object({
+        id: z.string().min(1, "规则 ID 不能为空").describe("规则 ID"),
+        threshold: AdminCommissionStrategyRuleThresholdSchema,
+        commissionRate: AdminCommissionStrategyRuleRateSchema,
+        isEnabled: z.boolean().default(true).describe("规则是否启用"),
+        sortOrder: z.number().int().nonnegative().default(0).describe("排序"),
+    })
+    .describe("管理员抽成策略规则");
+
+export type AdminCommissionStrategyRule = z.infer<
+    typeof AdminCommissionStrategyRuleSchema
+>;
+
+export const AdminCommissionStrategyBeginnerProtectionSchema = z
+    .object({
+        isEnabled: z.boolean().describe("是否启用新手保护期"),
+        protectionDays: AdminCommissionStrategyProtectionPeriodDaysSchema,
+        monthlyIncomeThreshold: AdminCommissionStrategyMonthlyIncomeThresholdSchema,
+        fixedCommissionRate: AdminCommissionStrategyFixedCommissionRateSchema,
+    })
+    .describe("新手保护期配置");
+
+export type AdminCommissionStrategyBeginnerProtection = z.infer<
+    typeof AdminCommissionStrategyBeginnerProtectionSchema
+>;
+
+export const AdminCommissionStrategyVersionSchema = z
+    .object({
+        id: z.string().describe("版本 ID"),
+        strategyId: z.string().describe("策略 ID"),
+        versionNo: z.number().int().positive().describe("版本号"),
+        status: AdminCommissionStrategyVersionStatusEnum.describe("版本状态"),
+        versionNote: z.string().nullable().optional().describe("版本备注"),
+        effectiveFrom: IsoDateTimeStringSchema.nullable()
+            .optional()
+            .describe("生效开始时间"),
+        effectiveTo: IsoDateTimeStringSchema.nullable()
+            .optional()
+            .describe("生效结束时间"),
+        beginnerProtection:
+            AdminCommissionStrategyBeginnerProtectionSchema.describe(
+                "版本级新手保护期配置",
+            ),
+        publishedAt: IsoDateTimeStringSchema.nullable()
+            .optional()
+            .describe("发布时间"),
+        createdAt: IsoDateTimeStringSchema.describe("创建时间"),
+        updatedAt: IsoDateTimeStringSchema.describe("更新时间"),
+        rules: z.array(AdminCommissionStrategyRuleSchema).default([]),
+    })
+    .describe("管理员抽成策略版本");
+
+export type AdminCommissionStrategyVersion = z.infer<
+    typeof AdminCommissionStrategyVersionSchema
+>;
+
+export const AdminCommissionStrategySchema = z
+    .object({
+        id: z.string().describe("策略 ID"),
+        categoryId: z.string().describe("服务分类 ID"),
+        strategyName: z.string().describe("策略名称"),
+        status: AdminCommissionStrategyStatusEnum.describe("策略状态"),
+        currentVersionId: z.string().nullable().optional().describe("当前生效版本 ID"),
+        publishedAt: IsoDateTimeStringSchema.nullable()
+            .optional()
+            .describe("策略发布时间"),
+        createdAt: IsoDateTimeStringSchema.describe("创建时间"),
+        updatedAt: IsoDateTimeStringSchema.describe("更新时间"),
+        versions: z.array(AdminCommissionStrategyVersionSchema).default([]),
+    })
+    .describe("管理员抽成策略");
+
+export type AdminCommissionStrategy = z.infer<
+    typeof AdminCommissionStrategySchema
+>;
+
+export const AdminCommissionStrategyDraftSchema = z
+    .object({
+        categoryId: z.string().min(1, "categoryId 不能为空").describe("服务分类 ID"),
+        draftVersionId: z
+            .string()
+            .min(1, "draftVersionId 不能为空")
+            .describe("草稿版本 ID"),
+        beginnerProtection:
+            AdminCommissionStrategyBeginnerProtectionSchema.describe(
+                "新手保护期配置",
+            ),
+        rules: z
+            .array(AdminCommissionStrategyRuleSchema)
+            .min(1, "至少提供一条规则")
+            .describe("规则列表"),
+    })
+    .describe("抽成策略草稿主契约");
+
+export type AdminCommissionStrategyDraft = z.infer<
+    typeof AdminCommissionStrategyDraftSchema
+>;
+
+const AdminCommissionStrategyDraftUpsertInputSchema =
+    AdminCommissionStrategyDraftSchema.omit({
+        draftVersionId: true,
+    }).describe("创建/保存抽成策略草稿输入");
+
+export const CreateAdminCommissionStrategyDraftSchema =
+    AdminCommissionStrategyDraftUpsertInputSchema;
+
+export type CreateAdminCommissionStrategyDraftInput =
+    z.infer<typeof CreateAdminCommissionStrategyDraftSchema>;
+
+export const SaveAdminCommissionStrategyDraftSchema =
+    AdminCommissionStrategyDraftUpsertInputSchema.describe(
+        "保存抽成策略草稿输入；仅有已发布版本且无草稿时，服务端会先复制已发布版本为新草稿，再应用本次输入覆盖",
+    );
+
+export type SaveAdminCommissionStrategyDraftInput = z.infer<
+    typeof SaveAdminCommissionStrategyDraftSchema
+>;
+
+export const AdminCommissionStrategyPublishInputSchema = z
+    .object({
+        categoryId: z.string().min(1, "categoryId 不能为空").describe("服务分类 ID"),
+        publishReason: z
+            .string()
+            .max(500, "publishReason 长度不能超过 500")
+            .optional()
+            .describe("发布说明"),
+    })
+    .describe("发布抽成策略请求");
+
+export type AdminCommissionStrategyPublishInput = z.infer<
+    typeof AdminCommissionStrategyPublishInputSchema
+>;
+
+export const AdminCommissionStrategyDetailSchema = z
+    .object({
+        categoryId: z.string().describe("服务分类 ID"),
+        categoryName: z.string().describe("服务分类名称"),
+        fixedCommissionRate: AdminCommissionStrategyRuleRateSchema.describe(
+            "分类固定抽成比例",
+        ),
+        strategyId: z.string().nullable().describe("策略 ID"),
+        strategyName: z.string().nullable().describe("策略名称"),
+        status: AdminCommissionStrategyStatusEnum.nullable().describe(
+            "策略当前状态",
+        ),
+        draftVersion: AdminCommissionStrategyVersionSchema.nullable().describe(
+            "当前草稿版本",
+        ),
+        currentPublishedVersion:
+            AdminCommissionStrategyVersionSchema.nullable().describe(
+                "当前已发布版本",
+            ),
+    })
+    .describe("管理员抽成策略详情");
+
+export type AdminCommissionStrategyDetail = z.infer<
+    typeof AdminCommissionStrategyDetailSchema
+>;
+
+export const AdminCommissionStrategySimulationRuleTypeSchema = z
+    .enum(["fixed", "dynamic", "beginner-protection"])
+    .describe("试算命中规则类型");
+
+export type AdminCommissionStrategySimulationRuleType = z.infer<
+    typeof AdminCommissionStrategySimulationRuleTypeSchema
+>;
+
+export const AdminCommissionStrategySimulationInputSchema = z
+    .object({
+        categoryId: z.string().min(1, "categoryId 不能为空").describe("服务分类 ID"),
+        workerId: z.string().min(1, "workerId 不能为空").describe("服务人员 ID"),
+        settlementDate: IsoDateTimeStringSchema.describe("试算结算时间"),
+        monthlyIncomeBeforeSettlement:
+            AdminCommissionStrategyMonthlyIncomeThresholdSchema.describe(
+                "结算前当月已入账收益",
+            ),
+        isWithinBeginnerProtection: z
+            .boolean()
+            .describe("是否处于新手保护期"),
+    })
+    .describe("抽成策略试算输入");
+
+export type AdminCommissionStrategySimulationInput = z.infer<
+    typeof AdminCommissionStrategySimulationInputSchema
+>;
+
+export const AdminCommissionStrategySimulationResultSchema = z
+    .object({
+        categoryId: z.string().describe("服务分类 ID"),
+        strategyVersionId: z.string().nullable().describe("命中的策略版本 ID"),
+        ruleType: AdminCommissionStrategySimulationRuleTypeSchema,
+        commissionRate: AdminCommissionStrategyRuleRateSchema.describe(
+            "最终抽成比例",
+        ),
+        matchedRuleId: z.string().nullable().describe("命中的动态规则 ID"),
+        matchedThreshold:
+            AdminCommissionStrategyRuleThresholdSchema.nullable().describe(
+                "命中的动态规则门槛",
+            ),
+        fixedCommissionRate: AdminCommissionStrategyRuleRateSchema.describe(
+            "分类固定抽成比例",
+        ),
+        monthlyIncomeBeforeSettlement:
+            AdminCommissionStrategyMonthlyIncomeThresholdSchema.describe(
+                "结算前当月已入账收益",
+            ),
+        isWithinBeginnerProtection: z
+            .boolean()
+            .describe("试算时是否处于新手保护期"),
+        settlementDate: IsoDateTimeStringSchema.describe("试算结算时间"),
+    })
+    .describe("抽成策略试算结果");
+
+export type AdminCommissionStrategySimulationResult = z.infer<
+    typeof AdminCommissionStrategySimulationResultSchema
 >;
 
 // =========================

@@ -613,6 +613,7 @@ export class OrderService {
                 page: params.page || 1,
                 limit: params.limit || 10,
                 status: params.status,
+                sortOrder: params.sortOrder,
                 startTime: params.startTime,
                 endTime: params.endTime,
                 onlyAccepted: params.onlyAccepted,

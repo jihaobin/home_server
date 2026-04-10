@@ -1,5 +1,6 @@
 import { z } from "zod/v4";
 import {
+    AdminCommissionStrategyRuleTypeEnum,
     PaymentMethodEnum,
     PaymentStatusEnum,
     TransactionTypeEnum,
@@ -1531,7 +1532,14 @@ export const WorkerEarningsRecordItemSchema = z
         referenceId: z.string().nullable(),
         customerName: z.string().nullable().optional(),
         customerPhone: z.string().nullable().optional(),
+        serviceName: z.string().nullable().optional(),
+        specificationName: z.string().nullable().optional(),
         commissionRate: z.number().nullable().optional(),
+        commissionRuleType:
+            AdminCommissionStrategyRuleTypeEnum.nullable().optional(),
+        commissionThreshold: z.number().nullable().optional(),
+        commissionStrategyVersionId: z.string().nullable().optional(),
+        monthlyIncomeSnapshot: z.number().nullable().optional(),
         settlementAmount: z.number().nullable().optional(),
         originalOrderPrice: z.number().nullable().optional(),
         commissionAmount: z.number().nullable().optional(),

@@ -13,6 +13,10 @@ import {
     View,
 } from "react-native";
 import { ErrorBoundary } from "react-error-boundary";
+import {
+    buildWorkerOrderGroups,
+    sortWorkerOrdersForTab,
+} from "../../lib/order-priority";
 
 type StaffOrder = StaffOrderListResponse["items"][number];
 
@@ -30,6 +34,9 @@ const STATUS_TABS = [
 
 type StatusFilter = (typeof STATUS_TABS)[number]["key"];
 type OrdersTabStatus = Exclude<StatusFilter, "all">;
+type GroupedOrderRow =
+    | { type: "group"; key: string; title: string; count: number }
+    | { type: "order"; key: string; order: StaffOrder };
 
 const ORDER_STATUS_DISPLAY: Record<string, { label: string; color: string }> = {
     pending_payment: { label: "待支付", color: "#FF9800" },
@@ -88,7 +95,7 @@ function OrdersContent() {
         <View style={styles.container}>
             <View style={styles.header}>
                 <Text style={styles.title}>我的订单</Text>
-                <Text style={styles.subtitle}>基于状态查看预约进展</Text>
+                <Text style={styles.subtitle}>优先显示待接单和服务中订单</Text>
             </View>
 
             <View style={styles.tabsContainer}>
@@ -166,22 +173,38 @@ function OrdersList({
     });
 
     const orders = useMemo(() => data?.items ?? [], [data]);
-
-    const sortedOrders = useMemo(() => {
-        return [...orders].sort((a, b) => {
-            const dateA = new Date(a.appointmentTime ?? Date.now()).getTime();
-            const dateB = new Date(b.appointmentTime ?? Date.now()).getTime();
-            return dateB - dateA;
-        });
-    }, [orders]);
-    const filteredOrders = useMemo(() => {
-        if (!decisionStatusFilter) {
-            return sortedOrders;
+    const isAllTabView = !status && !decisionStatusFilter;
+    const sortedOrders = useMemo(
+        () =>
+            sortWorkerOrdersForTab(orders, {
+                statusFilter: status,
+                decisionStatusFilter,
+            }),
+        [decisionStatusFilter, orders, status],
+    );
+    const groupedRows = useMemo<GroupedOrderRow[]>(() => {
+        if (!isAllTabView) {
+            return [];
         }
-        return sortedOrders.filter(
-            (order) => order.decisionStatus === decisionStatusFilter,
-        );
-    }, [decisionStatusFilter, sortedOrders]);
+        return buildWorkerOrderGroups(orders).flatMap((group) => {
+            const rows: GroupedOrderRow[] = [
+                {
+                    type: "group",
+                    key: `group-${group.key}`,
+                    title: group.title,
+                    count: group.items.length,
+                },
+            ];
+            for (const order of group.items) {
+                rows.push({
+                    type: "order",
+                    key: `order-${order.id}`,
+                    order,
+                });
+            }
+            return rows;
+        });
+    }, [isAllTabView, orders]);
 
     const renderOrderCard = ({ item }: { item: StaffOrder }) => {
         const meta =
@@ -283,9 +306,49 @@ function OrdersList({
         );
     };
 
+    const renderGroupedRow = ({ item }: { item: GroupedOrderRow }) => {
+        if (item.type === "group") {
+            return (
+                <View style={styles.groupHeader}>
+                    <Text style={styles.groupTitle}>{item.title}</Text>
+                    <Text style={styles.groupCount}>{item.count} 单</Text>
+                </View>
+            );
+        }
+        return renderOrderCard({ item: item.order });
+    };
+
+    const emptyView = (
+        <View style={styles.emptyContainer}>
+            <Ionicons name="cube-outline" size={48} color="#bbb" />
+            <Text style={styles.emptyText}>暂无相关订单</Text>
+        </View>
+    );
+
+    if (isAllTabView) {
+        return (
+            <FlatList
+                data={groupedRows}
+                keyExtractor={(item) => item.key}
+                contentContainerStyle={styles.listContent}
+                renderItem={renderGroupedRow}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing || isFetching}
+                        onRefresh={() => {
+                            void onRefresh();
+                        }}
+                        tintColor="#2196F3"
+                    />
+                }
+                ListEmptyComponent={emptyView}
+            />
+        );
+    }
+
     return (
         <FlatList
-            data={filteredOrders}
+            data={sortedOrders}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
             renderItem={renderOrderCard}
@@ -298,12 +361,7 @@ function OrdersList({
                     tintColor="#2196F3"
                 />
             }
-            ListEmptyComponent={
-                <View style={styles.emptyContainer}>
-                    <Ionicons name="cube-outline" size={48} color="#bbb" />
-                    <Text style={styles.emptyText}>暂无相关订单</Text>
-                </View>
-            }
+            ListEmptyComponent={emptyView}
         />
     );
 }
@@ -433,6 +491,22 @@ const styles = StyleSheet.create({
     listContent: {
         padding: 16,
         paddingBottom: 40,
+    },
+    groupHeader: {
+        marginBottom: 8,
+        paddingHorizontal: 2,
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+    },
+    groupTitle: {
+        fontSize: 14,
+        color: "#555",
+        fontWeight: "bold",
+    },
+    groupCount: {
+        fontSize: 12,
+        color: "#999",
     },
     orderCard: {
         backgroundColor: "white",

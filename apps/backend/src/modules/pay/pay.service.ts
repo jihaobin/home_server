@@ -47,11 +47,18 @@ import type { PaymentChannel } from './providers/payment-provider.interface';
 import { PayoutDispatcher } from './providers/payout.dispatcher';
 import { RefundDispatcher } from './providers/refund.dispatcher';
 import type { RefundChannel } from './providers/refund-provider.interface';
+import { WorkerCategoryCommissionService } from './worker-category-commission.service';
 
 type PaymentInsert = typeof payments.$inferInsert;
 
 type PaymentRecord = typeof payments.$inferSelect;
 type OrderRecord = typeof orders.$inferSelect;
+type OrderRevenueContext = OrderRecord & {
+    service?: {
+        name?: string | null;
+    } | null;
+    specificationName?: string | null;
+};
 type PaymentRecordWithOrder = PaymentRecord & { order: OrderRecord | null };
 type PaymentStatus = (typeof payments.status.enumValues)[number];
 
@@ -181,6 +188,9 @@ export class PayService {
 
     @Inject(AdminWithdrawalsService)
     private adminWithdrawalsService: AdminWithdrawalsService;
+
+    @Inject(WorkerCategoryCommissionService)
+    private workerCategoryCommissionService: WorkerCategoryCommissionService;
 
     private logger = new Logger(PayService.name);
 
@@ -632,10 +642,29 @@ export class PayService {
                             tx,
                         ));
 
+                    const assignment =
+                        await tx.query.orderAssignments.findFirst({
+                            where: eq(orderAssignments.orderId, orderId),
+                        });
                     const paymentCommissionSnapshot =
-                        await this.buildCommissionSnapshotFromOrder(
-                            tx,
-                            orderForPayment,
+                        await this.workerCategoryCommissionService.resolveCommissionSnapshot(
+                            {
+                                orderId: orderForPayment.id,
+                                workerId:
+                                    assignment?.servicePersonnelId ?? null,
+                                settlementAt:
+                                    orderForPayment.serviceCompletedAt ??
+                                    paidAt ??
+                                    new Date(),
+                                settlementAmount: Number(
+                                    orderForPayment.totalAmount ?? '0',
+                                ),
+                                originalOrderPrice: Number(
+                                    orderForPayment.originalAmount ??
+                                        orderForPayment.totalAmount ??
+                                        '0',
+                                ),
+                            },
                         );
 
                     const transactionValues: typeof financialTransactions.$inferInsert =
@@ -1927,7 +1956,7 @@ export class PayService {
         order,
     }: {
         tx: DbType;
-        order: OrderRecord;
+        order: OrderRevenueContext;
         payment?: PaymentRecord | null;
         tradeNo?: string;
     }) {
@@ -1959,8 +1988,17 @@ export class PayService {
         }
 
         const commissionSnapshot =
-            (await this.findPaymentCommissionSnapshot(tx, order.id)) ??
-            (await this.buildCommissionSnapshotFromOrder(tx, order));
+            await this.workerCategoryCommissionService.resolveCommissionSnapshot(
+                {
+                    orderId: order.id,
+                    workerId: servicePersonnelId,
+                    settlementAt: order.serviceCompletedAt ?? new Date(),
+                    settlementAmount: Number(order.totalAmount ?? '0'),
+                    originalOrderPrice: Number(
+                        order.originalAmount ?? order.totalAmount ?? '0',
+                    ),
+                },
+            );
 
         const settlementAmountDecimal = new Decimal(
             commissionSnapshot.settlementAmount,
@@ -1989,6 +2027,13 @@ export class PayService {
             settlementAmount: settlementAmountDecimal.toNumber(),
             originalOrderPrice: originalOrderPriceDecimal.toNumber(),
             commissionAmount: commissionAmountDecimal.toNumber(),
+            commissionRuleType: commissionSnapshot.commissionRuleType,
+            commissionThreshold: commissionSnapshot.commissionThreshold,
+            commissionStrategyVersionId:
+                commissionSnapshot.commissionStrategyVersionId,
+            monthlyIncomeSnapshot: commissionSnapshot.monthlyIncomeSnapshot,
+            serviceName: order.service?.name?.trim() || null,
+            specificationName: order.specificationName?.trim() || null,
         });
 
         // 使用数据库原子 upsert 累加服务人员余额，避免并发竞争
@@ -2120,6 +2165,10 @@ export class PayService {
         settlementAmount: number;
         originalOrderPrice: number;
         commissionAmount: number;
+        commissionRuleType: 'fixed' | 'dynamic' | 'beginner-protection';
+        commissionThreshold: number | null;
+        commissionStrategyVersionId: string | null;
+        monthlyIncomeSnapshot: number | null;
     } | null> {
         const paymentReceivedTransaction =
             await tx.query.financialTransactions.findFirst({
@@ -2138,58 +2187,15 @@ export class PayService {
         );
     }
 
-    private async buildCommissionSnapshotFromOrder(
-        tx: DbType,
-        order: OrderRecord,
-    ): Promise<{
-        commissionRate: number;
-        settlementAmount: number;
-        originalOrderPrice: number;
-        commissionAmount: number;
-    }> {
-        const serviceCategoryRecord = order.serviceId
-            ? await tx
-                  .select({
-                      commissionRate: serviceCategories.commissionRate,
-                  })
-                  .from(services)
-                  .innerJoin(
-                      serviceCategories,
-                      eq(services.categoryId, serviceCategories.id),
-                  )
-                  .where(eq(services.id, order.serviceId))
-                  .limit(1)
-                  .then((rows) => rows[0] ?? null)
-            : null;
-
-        const commissionRate = serviceCategoryRecord?.commissionRate ?? 30;
-        const settlementAmount = new Decimal(order.totalAmount ?? '0')
-            .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
-            .toNumber();
-        const originalOrderPrice = new Decimal(
-            order.originalAmount ?? order.totalAmount ?? '0',
-        )
-            .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
-            .toNumber();
-        const commissionAmount = new Decimal(order.totalAmount ?? '0')
-            .mul(commissionRate)
-            .div(100)
-            .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
-            .toNumber();
-
-        return {
-            commissionRate,
-            settlementAmount,
-            originalOrderPrice,
-            commissionAmount,
-        };
-    }
-
     private extractCommissionSnapshot(metadata?: string | null): {
         commissionRate: number;
         settlementAmount: number;
         originalOrderPrice: number;
         commissionAmount: number;
+        commissionRuleType: 'fixed' | 'dynamic' | 'beginner-protection';
+        commissionThreshold: number | null;
+        commissionStrategyVersionId: string | null;
+        monthlyIncomeSnapshot: number | null;
     } | null {
         const parsed = this.parseTransactionMetadata(metadata);
         if (!parsed) {
@@ -2203,12 +2209,27 @@ export class PayService {
         const settlementAmount =
             this.toFiniteNumber(parsed.settlementAmount) ?? originalOrderPrice;
         const commissionAmount = this.toFiniteNumber(parsed.commissionAmount);
+        const commissionRuleType = this.toCommissionRuleType(
+            parsed.commissionRuleType,
+        );
+        const commissionThreshold = this.toFiniteNumber(
+            parsed.commissionThreshold,
+        );
+        const commissionStrategyVersionId =
+            typeof parsed.commissionStrategyVersionId === 'string' &&
+            parsed.commissionStrategyVersionId.trim()
+                ? parsed.commissionStrategyVersionId
+                : null;
+        const monthlyIncomeSnapshot = this.toFiniteNumber(
+            parsed.monthlyIncomeSnapshot,
+        );
 
         if (
             commissionRate === null ||
             settlementAmount === null ||
             originalOrderPrice === null ||
-            commissionAmount === null
+            commissionAmount === null ||
+            commissionRuleType === null
         ) {
             return null;
         }
@@ -2218,11 +2239,23 @@ export class PayService {
             settlementAmount,
             originalOrderPrice,
             commissionAmount,
+            commissionRuleType,
+            commissionThreshold,
+            commissionStrategyVersionId,
+            monthlyIncomeSnapshot,
         };
     }
 
     private toFiniteNumber(value: unknown) {
         return typeof value === 'number' && Number.isFinite(value)
+            ? value
+            : null;
+    }
+
+    private toCommissionRuleType(value: unknown) {
+        return value === 'fixed' ||
+            value === 'dynamic' ||
+            value === 'beginner-protection'
             ? value
             : null;
     }

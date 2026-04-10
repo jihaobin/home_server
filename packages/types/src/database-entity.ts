@@ -222,6 +222,34 @@ export type AppReleaseStatus = z.infer<typeof AppReleaseStatusEnum>;
 export const AppReleaseChannelEnum = z.enum(["production", "staging"]);
 export type AppReleaseChannel = z.infer<typeof AppReleaseChannelEnum>;
 
+// 管理端抽成策略枚举
+export const AdminCommissionStrategyStatusEnum = z.enum([
+    "draft",
+    "published",
+    "archived",
+]);
+export type AdminCommissionStrategyStatus = z.infer<
+    typeof AdminCommissionStrategyStatusEnum
+>;
+
+export const AdminCommissionStrategyVersionStatusEnum = z.enum([
+    "draft",
+    "published",
+    "archived",
+]);
+export type AdminCommissionStrategyVersionStatus = z.infer<
+    typeof AdminCommissionStrategyVersionStatusEnum
+>;
+
+export const AdminCommissionStrategyRuleTypeEnum = z.enum([
+    "fixed",
+    "dynamic",
+    "beginner-protection",
+]);
+export type AdminCommissionStrategyRuleType = z.infer<
+    typeof AdminCommissionStrategyRuleTypeEnum
+>;
+
 const semverRegex =
     /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
 

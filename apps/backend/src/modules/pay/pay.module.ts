@@ -22,6 +22,8 @@ import { REFUND_PROVIDERS } from './providers/refund-provider.interface';
 import { WechatPaymentProvider } from './providers/wechat-payment.provider';
 import { WechatPayoutProvider } from './providers/wechat-payout.provider';
 import { WechatRefundProvider } from './providers/wechat-refund.provider';
+import { WorkerCategoryCommissionRepository } from './worker-category-commission.repository';
+import { WorkerCategoryCommissionService } from './worker-category-commission.service';
 
 @Module({
     controllers: [
@@ -32,6 +34,8 @@ import { WechatRefundProvider } from './providers/wechat-refund.provider';
     providers: [
         PayService,
         PayRepository,
+        WorkerCategoryCommissionRepository,
+        WorkerCategoryCommissionService,
         AdminRevenueLogsService,
         AdminRevenueLogsRepository,
         AdminWithdrawalsService,

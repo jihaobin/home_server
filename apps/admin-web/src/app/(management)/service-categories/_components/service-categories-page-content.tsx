@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
     type ComponentProps,
     type ReactNode,
@@ -1141,6 +1142,15 @@ function CategoryServiceTablePanel({
 
                     return (
                         <div className="flex flex-wrap gap-2">
+                            {row.original.category.name === "上门按摩" ? (
+                                <Button variant="outline" size="sm" asChild>
+                                    <Link
+                                        href={`/service-categories/${row.original.category.id}/commission-strategy`}
+                                    >
+                                        抽成策略
+                                    </Link>
+                                </Button>
+                            ) : null}
                             <Button
                                 variant="outline"
                                 size="sm"

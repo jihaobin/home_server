@@ -28,6 +28,16 @@ import {
 type TabFilter = "all" | "income" | "withdrawal";
 type TransactionItem = WorkerEarningsRecordListResponse["items"][number];
 type WithdrawalItem = TransactionItem;
+type IncomeBadgeMeta = {
+    label: string;
+    textColor: string;
+    backgroundColor: string;
+    borderColor: string;
+};
+type IncomeInfoItemMeta = {
+    label: string;
+    value: string;
+};
 
 const WITHDRAWAL_STATUS_META: Record<string, { label: string; color: string }> =
     {
@@ -213,19 +223,38 @@ function EarningsContent() {
         const amountColor = "#4CAF50";
         const customerLabel = getIncomeCustomerLabel(item);
         const customerPhone = getIncomeCustomerPhone(item);
+        const financialFallback =
+            item.transactionType === "service_earning" ? "暂无" : "不涉及";
         const incomeTimeLabel = formatOptionalTransactionTime(
             resolveTransactionOccurredAt(item),
         );
-        const commissionRateLabel = formatCommissionRate(item.commissionRate);
+        const incomeExplainMeta = getIncomeExplainMeta(item, customerLabel);
+        const commissionRateLabel = formatCommissionRate(
+            item.commissionRate,
+            financialFallback,
+        );
         const settlementAmountLabel = formatOptionalAmount(
             item.settlementAmount,
+            financialFallback,
         );
         const originalOrderPriceLabel = formatOptionalAmount(
             item.originalOrderPrice,
+            financialFallback,
         );
         const commissionAmountLabel = formatOptionalAmount(
             item.commissionAmount,
+            financialFallback,
         );
+        const incomeInfoItems = getIncomeInfoItems(item, {
+            customerLabel,
+            customerPhone,
+            serviceName: item.serviceName?.trim() || "未知服务",
+            specificationName: item.specificationName?.trim() || "未提供规格",
+            commissionRateLabel,
+            originalOrderPriceLabel,
+            settlementAmountLabel,
+            commissionAmountLabel,
+        });
 
         if (isIncome) {
             const resolvedIncomeSummary = getIncomeSummary(item);
@@ -259,43 +288,100 @@ function EarningsContent() {
                         </Text>
                     </View>
 
+                    <View style={styles.incomeBadgeRow}>
+                        <View
+                            style={[
+                                styles.incomeBadge,
+                                {
+                                    backgroundColor:
+                                        incomeExplainMeta.sourceBadge
+                                            .backgroundColor,
+                                    borderColor:
+                                        incomeExplainMeta.sourceBadge
+                                            .borderColor,
+                                },
+                            ]}
+                        >
+                            <Text
+                                style={[
+                                    styles.incomeBadgeText,
+                                    {
+                                        color: incomeExplainMeta.sourceBadge
+                                            .textColor,
+                                    },
+                                ]}
+                            >
+                                {incomeExplainMeta.sourceBadge.label}
+                            </Text>
+                        </View>
+                        {incomeExplainMeta.ruleBadge ? (
+                            <View
+                                style={[
+                                    styles.incomeBadge,
+                                    {
+                                        backgroundColor:
+                                            incomeExplainMeta.ruleBadge
+                                                .backgroundColor,
+                                        borderColor:
+                                            incomeExplainMeta.ruleBadge
+                                                .borderColor,
+                                    },
+                                ]}
+                            >
+                                <Text
+                                    style={[
+                                        styles.incomeBadgeText,
+                                        {
+                                            color: incomeExplainMeta.ruleBadge
+                                                .textColor,
+                                        },
+                                    ]}
+                                >
+                                    {incomeExplainMeta.ruleBadge.label}
+                                </Text>
+                            </View>
+                        ) : null}
+                    </View>
+
+                    <View style={styles.incomeExplainBox}>
+                        <View style={styles.incomeExplainRow}>
+                            <Ionicons
+                                name="pricetag-outline"
+                                size={14}
+                                color="#1f5fb8"
+                            />
+                            <Text style={styles.incomeExplainText}>
+                                {incomeExplainMeta.sourceDescription}
+                            </Text>
+                        </View>
+                        {incomeExplainMeta.ruleDescription ? (
+                            <View style={styles.incomeExplainRow}>
+                                <Ionicons
+                                    name="information-circle-outline"
+                                    size={14}
+                                    color="#1f5fb8"
+                                />
+                                <Text style={styles.incomeExplainText}>
+                                    {incomeExplainMeta.ruleDescription}
+                                </Text>
+                            </View>
+                        ) : null}
+                    </View>
+
                     <View style={styles.incomeInfoGrid}>
-                        <View style={styles.incomeInfoItem}>
-                            <Text style={styles.incomeInfoLabel}>下单用户</Text>
-                            <Text style={styles.incomeInfoValue}>
-                                {customerLabel}
-                            </Text>
-                        </View>
-                        <View style={styles.incomeInfoItem}>
-                            <Text style={styles.incomeInfoLabel}>联系手机</Text>
-                            <Text style={styles.incomeInfoValue}>
-                                {customerPhone}
-                            </Text>
-                        </View>
-                        <View style={styles.incomeInfoItem}>
-                            <Text style={styles.incomeInfoLabel}>抽成比例</Text>
-                            <Text style={styles.incomeInfoValue}>
-                                {commissionRateLabel}
-                            </Text>
-                        </View>
-                        <View style={styles.incomeInfoItem}>
-                            <Text style={styles.incomeInfoLabel}>订单原价</Text>
-                            <Text style={styles.incomeInfoValue}>
-                                {originalOrderPriceLabel}
-                            </Text>
-                        </View>
-                        <View style={styles.incomeInfoItem}>
-                            <Text style={styles.incomeInfoLabel}>订单实付</Text>
-                            <Text style={styles.incomeInfoValue}>
-                                {settlementAmountLabel}
-                            </Text>
-                        </View>
-                        <View style={styles.incomeInfoItem}>
-                            <Text style={styles.incomeInfoLabel}>平台抽成</Text>
-                            <Text style={styles.incomeInfoValue}>
-                                {commissionAmountLabel}
-                            </Text>
-                        </View>
+                        {incomeInfoItems.map((infoItem) => (
+                            <View
+                                key={`${item.id}-${infoItem.label}`}
+                                style={styles.incomeInfoItem}
+                            >
+                                <Text style={styles.incomeInfoLabel}>
+                                    {infoItem.label}
+                                </Text>
+                                <Text style={styles.incomeInfoValue}>
+                                    {infoItem.value}
+                                </Text>
+                            </View>
+                        ))}
                     </View>
 
                     <View style={styles.incomeTimeBox}>
@@ -486,7 +572,7 @@ function EarningsContent() {
                 <View style={styles.infoBanner}>
                     <Text style={styles.infoTitle}>收益分成说明</Text>
                     <Text style={styles.infoText}>
-                        每笔订单按所属服务分类的抽成比例结算，平台抽成按订单实付金额计算，以下明细展示订单原价、订单实付、平台抽成和实际入账金额。
+                        服务订单会按固定抽成、动态档位或新手保护规则结算；下面每条收入都会说明收益来源、命中的抽成规则，以及订单原价、订单实付、平台抽成和实际入账金额。
                     </Text>
                 </View>
 
@@ -946,6 +1032,41 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         letterSpacing: -0.3,
     },
+    incomeBadgeRow: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: 8,
+    },
+    incomeBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 999,
+        borderWidth: 1,
+    },
+    incomeBadgeText: {
+        fontSize: 12,
+        fontWeight: "600",
+    },
+    incomeExplainBox: {
+        backgroundColor: "#F5F9FF",
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: "#DCE9FF",
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        gap: 8,
+    },
+    incomeExplainRow: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        gap: 8,
+    },
+    incomeExplainText: {
+        flex: 1,
+        fontSize: 12,
+        lineHeight: 18,
+        color: "#3B4D65",
+    },
     incomeInfoGrid: {
         flexDirection: "row",
         flexWrap: "wrap",
@@ -1120,6 +1241,19 @@ function getIncomeSummary(item: TransactionItem) {
     }
 }
 
+function getIncomeExplainMeta(item: TransactionItem, customerLabel: string) {
+    const sourceBadge = getIncomeSourceBadge(item.transactionType);
+    const sourceDescription = getIncomeSourceDescription(item, customerLabel);
+    const ruleMeta = getIncomeRuleMeta(item);
+
+    return {
+        sourceBadge,
+        sourceDescription,
+        ruleBadge: ruleMeta?.badge,
+        ruleDescription: ruleMeta?.description,
+    };
+}
+
 function getIncomeCustomerLabel(item: TransactionItem) {
     return item.customerName?.trim() || "未知用户";
 }
@@ -1128,17 +1262,266 @@ function getIncomeCustomerPhone(item: TransactionItem) {
     return item.customerPhone?.trim() || "暂无手机号";
 }
 
-function formatCommissionRate(value?: number | null) {
+function getIncomeSourceBadge(
+    transactionType: TransactionItem["transactionType"],
+): IncomeBadgeMeta {
+    switch (transactionType) {
+        case "service_earning":
+            return {
+                label: "服务订单",
+                textColor: "#127A4C",
+                backgroundColor: "#EAFBF3",
+                borderColor: "#CBEFD9",
+            };
+        case "bonus":
+            return {
+                label: "平台奖励",
+                textColor: "#A15C07",
+                backgroundColor: "#FFF5E8",
+                borderColor: "#F7D7A0",
+            };
+        case "adjustment":
+            return {
+                label: "财务调整",
+                textColor: "#2457B2",
+                backgroundColor: "#EEF4FF",
+                borderColor: "#D4E2FF",
+            };
+        default:
+            return {
+                label: "其他收入",
+                textColor: "#475467",
+                backgroundColor: "#F2F4F7",
+                borderColor: "#E4E7EC",
+            };
+    }
+}
+
+function getIncomeSourceDescription(
+    item: TransactionItem,
+    customerLabel: string,
+) {
+    switch (item.transactionType) {
+        case "service_earning":
+            return item.customerName?.trim()
+                ? `这笔收入来自 ${customerLabel} 的服务订单，订单完成后系统已自动入账。`
+                : "这笔收入来自已完成的服务订单，订单完成后系统已自动入账。";
+        case "bonus":
+            return "这笔收入来自平台奖励，金额已直接计入您的账户余额。";
+        case "adjustment":
+            return "这笔收入来自平台调整，平台已按规则更新本次收入流水。";
+        default:
+            return `${getTransactionDescription(item)}已计入您的账户余额。`;
+    }
+}
+
+function getIncomeRuleMeta(item: TransactionItem) {
+    const shouldExplainCommission =
+        item.transactionType === "service_earning" ||
+        Boolean(item.commissionRuleType) ||
+        typeof item.commissionRate === "number" ||
+        typeof item.commissionAmount === "number";
+
+    if (!shouldExplainCommission) {
+        return null;
+    }
+
+    const commissionRateLabel = formatCommissionRate(
+        item.commissionRate,
+        "当前规则",
+    );
+    const thresholdAmountLabel = formatCurrencyAmount(item.commissionThreshold);
+    const monthlyIncomeLabel = formatCurrencyAmount(item.monthlyIncomeSnapshot);
+
+    switch (item.commissionRuleType) {
+        case "fixed":
+            return {
+                badge: {
+                    label: "固定抽成",
+                    textColor: "#2457B2",
+                    backgroundColor: "#EEF4FF",
+                    borderColor: "#D4E2FF",
+                },
+                description:
+                    commissionRateLabel === "当前规则"
+                        ? "这笔服务收入按固定抽成规则结算。"
+                        : `这笔服务收入按固定抽成规则结算，本单抽成比例为 ${commissionRateLabel}。`,
+            };
+        case "dynamic": {
+            const badge = {
+                label: "动态抽成",
+                textColor: "#0F6CBD",
+                backgroundColor: "#EDF7FF",
+                borderColor: "#CFE5FF",
+            } satisfies IncomeBadgeMeta;
+
+            if (monthlyIncomeLabel && thresholdAmountLabel) {
+                return {
+                    badge,
+                    description:
+                        commissionRateLabel === "当前规则"
+                            ? `结算前当月收入 ${monthlyIncomeLabel}，命中 ${thresholdAmountLabel} 档，按动态规则结算。`
+                            : `结算前当月收入 ${monthlyIncomeLabel}，命中 ${thresholdAmountLabel} 档，因此本单按 ${commissionRateLabel} 抽成。`,
+                };
+            }
+
+            if (monthlyIncomeLabel) {
+                return {
+                    badge,
+                    description:
+                        commissionRateLabel === "当前规则"
+                            ? `结算前当月收入为 ${monthlyIncomeLabel}，本单按动态规则结算。`
+                            : `结算前当月收入为 ${monthlyIncomeLabel}，本单按动态规则以 ${commissionRateLabel} 抽成。`,
+                };
+            }
+
+            if (thresholdAmountLabel) {
+                return {
+                    badge,
+                    description:
+                        commissionRateLabel === "当前规则"
+                            ? `本单命中 ${thresholdAmountLabel} 档，按动态规则结算。`
+                            : `本单命中 ${thresholdAmountLabel} 档，因此按 ${commissionRateLabel} 抽成。`,
+                };
+            }
+
+            return {
+                badge,
+                description:
+                    commissionRateLabel === "当前规则"
+                        ? "这笔服务收入按动态抽成规则结算。"
+                        : `这笔服务收入按动态抽成规则结算，本单抽成比例为 ${commissionRateLabel}。`,
+            };
+        }
+        case "beginner-protection":
+            return {
+                badge: {
+                    label: "新手保护",
+                    textColor: "#127A4C",
+                    backgroundColor: "#ECFDF3",
+                    borderColor: "#CBEFD9",
+                },
+                description:
+                    commissionRateLabel === "当前规则"
+                        ? "当前命中新手保护规则，这笔服务收入按保护期规则结算。"
+                        : `当前命中新手保护规则，因此本单按 ${commissionRateLabel} 抽成。`,
+            };
+        default:
+            return {
+                badge: {
+                    label: "规则结算",
+                    textColor: "#475467",
+                    backgroundColor: "#F2F4F7",
+                    borderColor: "#E4E7EC",
+                },
+                description:
+                    commissionRateLabel === "当前规则"
+                        ? "这笔收入按平台结算规则入账。"
+                        : `这笔收入按平台结算规则入账，当前抽成比例为 ${commissionRateLabel}。`,
+            };
+    }
+}
+
+function getIncomeInfoItems(
+    item: TransactionItem,
+    values: {
+        customerLabel: string;
+        customerPhone: string;
+        serviceName: string;
+        specificationName: string;
+        commissionRateLabel: string;
+        originalOrderPriceLabel: string;
+        settlementAmountLabel: string;
+        commissionAmountLabel: string;
+    },
+): IncomeInfoItemMeta[] {
+    const shouldShowCustomerInfo =
+        item.transactionType === "service_earning" ||
+        Boolean(item.customerName?.trim()) ||
+        Boolean(item.customerPhone?.trim());
+    const amountLabels =
+        item.transactionType === "service_earning"
+            ? {
+                  commissionRate: "抽成比例",
+                  originalOrderPrice: "订单原价",
+                  settlementAmount: "订单实付",
+                  commissionAmount: "平台抽成",
+              }
+            : {
+                  commissionRate: "规则比例",
+                  originalOrderPrice: "原始金额",
+                  settlementAmount: "结算金额",
+                  commissionAmount: "规则扣减",
+              };
+    const items: IncomeInfoItemMeta[] = [];
+
+    if (shouldShowCustomerInfo) {
+        if (item.transactionType === "service_earning") {
+            items.push(
+                {
+                    label: "服务项目",
+                    value: values.serviceName,
+                },
+                {
+                    label: "服务规格",
+                    value: values.specificationName,
+                },
+            );
+        }
+
+        items.push(
+            {
+                label: "下单用户",
+                value: values.customerLabel,
+            },
+            {
+                label: "联系手机",
+                value: values.customerPhone,
+            },
+        );
+    }
+
+    items.push(
+        {
+            label: amountLabels.commissionRate,
+            value: values.commissionRateLabel,
+        },
+        {
+            label: amountLabels.originalOrderPrice,
+            value: values.originalOrderPriceLabel,
+        },
+        {
+            label: amountLabels.settlementAmount,
+            value: values.settlementAmountLabel,
+        },
+        {
+            label: amountLabels.commissionAmount,
+            value: values.commissionAmountLabel,
+        },
+    );
+
+    return items;
+}
+
+function formatCommissionRate(value?: number | null, fallback = "暂无") {
     if (typeof value !== "number" || Number.isNaN(value)) {
-        return "暂无";
+        return fallback;
     }
 
     return `${value}%`;
 }
 
-function formatOptionalAmount(value?: number | null) {
+function formatOptionalAmount(value?: number | null, fallback = "暂无") {
     if (typeof value !== "number" || Number.isNaN(value)) {
-        return "暂无";
+        return fallback;
+    }
+
+    return `¥${formatCurrency(value)}`;
+}
+
+function formatCurrencyAmount(value?: number | null) {
+    if (typeof value !== "number" || Number.isNaN(value)) {
+        return null;
     }
 
     return `¥${formatCurrency(value)}`;
