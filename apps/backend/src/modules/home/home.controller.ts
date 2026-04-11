@@ -12,8 +12,14 @@ import {
     HomeBaseResponseSchema,
     HomeRecommendationsResponseSchema,
     HomeResponseSchema,
+    HomeSearchQuerySchema,
+    HomeSearchResponseSchema,
+    HomeSearchSuggestionsQuerySchema,
+    HomeSearchSuggestionResponseSchema,
     serviceCategoriesSchema,
     type HomeQuery,
+    type HomeSearchQuery,
+    type HomeSearchSuggestionsQuery,
     type ServiceCategoryTree,
 } from '@repo/types';
 import {
@@ -71,6 +77,36 @@ export class HomeController {
         @Req() req: Request,
     ) {
         return await this.homeService.getHome(req.user?.id, query);
+    }
+
+    @UseGuards(AuthGuard)
+    @Get('search/suggestions')
+    @AuthOptional()
+    @UsePipes(new ZodValidationPipe(HomeSearchSuggestionsQuerySchema))
+    @ApiOperation({
+        summary: '用户端首页搜索候选词',
+        description: '返回移动端搜索页输入联想所需的轻量候选词数据',
+    })
+    @ApiQueries(HomeSearchSuggestionsQuerySchema)
+    @ApiSuccessResponse(HomeSearchSuggestionResponseSchema)
+    @ApiErrorResponses()
+    async getHomeSearchSuggestions(@Query() query: HomeSearchSuggestionsQuery) {
+        return await this.homeService.searchSuggestions(query);
+    }
+
+    @UseGuards(AuthGuard)
+    @Get('search')
+    @AuthOptional()
+    @UsePipes(new ZodValidationPipe(HomeSearchQuerySchema))
+    @ApiOperation({
+        summary: '用户端首页搜索结果',
+        description: '返回移动端搜索结果页统一搜索结果，由后端决定渲染模式',
+    })
+    @ApiQueries(HomeSearchQuerySchema)
+    @ApiSuccessResponse(HomeSearchResponseSchema)
+    @ApiErrorResponses()
+    async searchHome(@Query() query: HomeSearchQuery, @Req() req: Request) {
+        return await this.homeService.search(req.user?.id, query);
     }
 
     @UseGuards(AuthGuard)

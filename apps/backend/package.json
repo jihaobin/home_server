@@ -54,6 +54,7 @@
         "decimal.js": "^10.6.0",
         "drizzle-orm": "^0.44.3",
         "expo-server-sdk": "^4.0.0",
+        "file-type": "^22.0.1",
         "ioredis": "^5.6.1",
         "multer": "^2.0.2",
         "nestjs-zod": "5.0.0-beta.20250731T202215",
@@ -112,8 +113,19 @@
         "rootDir": "src",
         "testRegex": ".*\\.spec\\.ts$",
         "transform": {
-            "^.+\\.(t|j)s$": "ts-jest"
+            "^.+\\.(t|j)s$": [
+                "ts-jest",
+                {
+                    "tsconfig": {
+                        "allowJs": true,
+                        "module": "commonjs"
+                    }
+                }
+            ]
         },
+        "transformIgnorePatterns": [
+            "/node_modules/(?!(file-type|strtok3|token-types|uint8array-extras|@tokenizer/inflate|@tokenizer/token|@borewit/text-codec)/)"
+        ],
         "moduleNameMapper": {
             "^src/(.*)$": "<rootDir>/$1"
         },

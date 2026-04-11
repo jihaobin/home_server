@@ -4,11 +4,16 @@ import type {
     HomeQuery,
     HomeRecommendationsResponse,
     HomeResponse,
+    HomeSearchQuery,
+    HomeSearchResponse,
+    HomeSearchSuggestionResponse,
+    HomeSearchSuggestionsQuery,
     ServiceCategoryTree,
     Services,
 } from '@repo/types';
 import { HomeRepository } from './home.repository';
 import { ServiceService } from '../service/service.service';
+import { ServicePersonnelService } from '../service-personnel/service-personnel.service';
 
 type HomeQueryWithCategoryId = HomeQuery & {
     categoryId?: string;
@@ -19,7 +24,12 @@ export class HomeService {
     constructor(
         private readonly homeRepository: HomeRepository,
         private readonly serviceService: ServiceService,
+        private readonly servicePersonnelService: ServicePersonnelService,
     ) {}
+
+    private normalizeSearchKeyword(keyword: string) {
+        return keyword.trim().replace(/\s+/g, ' ');
+    }
 
     async getHome(
         userId: string | undefined,
@@ -115,6 +125,159 @@ export class HomeService {
 
         return {
             categories: attachServices(categories),
+        };
+    }
+
+    async searchSuggestions(
+        query: HomeSearchSuggestionsQuery,
+    ): Promise<HomeSearchSuggestionResponse> {
+        const keyword = this.normalizeSearchKeyword(query.keyword);
+        const limit = query.limit ?? 10;
+
+        const [personnelSuggestions, serviceSuggestions] = await Promise.all([
+            this.servicePersonnelService.findSearchPersonnelSuggestions(
+                keyword,
+                Math.min(limit, 5),
+            ),
+            this.serviceService.searchActiveServicesByKeyword(
+                keyword,
+                Math.min(limit, 5),
+            ),
+        ]);
+
+        return {
+            suggestions: [
+                ...personnelSuggestions.map((item) => ({
+                    type: 'personnel' as const,
+                    label: item.name?.trim() || '服务人员',
+                    personnelId: item.id,
+                })),
+                ...serviceSuggestions.map((item) => ({
+                    type: 'service' as const,
+                    label: item.name,
+                    serviceId: item.id,
+                })),
+            ].slice(0, limit),
+        };
+    }
+
+    async search(
+        userId: string | undefined,
+        query: HomeSearchQuery,
+    ): Promise<HomeSearchResponse> {
+        const keyword = this.normalizeSearchKeyword(query.keyword);
+        const page = query.page ?? 1;
+        const limit = query.limit ?? 20;
+
+        if (query.personnelId) {
+            const summary =
+                await this.servicePersonnelService.getPersonnelServicesSummary(
+                    query.personnelId,
+                );
+
+            return {
+                mode: 'personnel_services',
+                keyword,
+                ...summary,
+            };
+        }
+
+        if (query.serviceId) {
+            const service = await this.serviceService.findActiveServiceById(
+                query.serviceId,
+            );
+            const personnel =
+                await this.servicePersonnelService.searchPersonnelByServiceIds({
+                    serviceIds: [query.serviceId],
+                    page,
+                    limit,
+                    lat: query.lat,
+                    lng: query.lng,
+                    excludePersonnelUserId: userId,
+                });
+
+            return {
+                mode: 'personnel_list',
+                keyword,
+                serviceHint: service
+                    ? { serviceId: service.id, serviceName: service.name }
+                    : { serviceId: query.serviceId },
+                ...personnel,
+            };
+        }
+
+        const exactPersonnel =
+            await this.servicePersonnelService.findExactPersonnelByName(
+                keyword,
+            );
+
+        if (exactPersonnel) {
+            const summary =
+                await this.servicePersonnelService.getPersonnelServicesSummary(
+                    exactPersonnel.id,
+                );
+
+            return {
+                mode: 'personnel_services',
+                keyword,
+                ...summary,
+            };
+        }
+
+        const exactService =
+            await this.serviceService.findExactActiveServiceByName(keyword);
+
+        if (exactService) {
+            const personnel =
+                await this.servicePersonnelService.searchPersonnelByServiceIds({
+                    serviceIds: [exactService.id],
+                    page,
+                    limit,
+                    lat: query.lat,
+                    lng: query.lng,
+                    excludePersonnelUserId: userId,
+                });
+
+            return {
+                mode: 'personnel_list',
+                keyword,
+                serviceHint: {
+                    serviceId: exactService.id,
+                    serviceName: exactService.name,
+                },
+                ...personnel,
+            };
+        }
+
+        const matchedServices =
+            await this.serviceService.searchActiveServicesByKeyword(
+                keyword,
+                10,
+            );
+        const serviceIds = matchedServices.map((item) => item.id);
+        const serviceHint =
+            matchedServices.length === 1 && matchedServices[0]
+                ? {
+                      serviceId: matchedServices[0].id,
+                      serviceName: matchedServices[0].name,
+                  }
+                : undefined;
+
+        const personnel =
+            await this.servicePersonnelService.searchPersonnelByServiceIds({
+                serviceIds,
+                page,
+                limit,
+                lat: query.lat,
+                lng: query.lng,
+                excludePersonnelUserId: userId,
+            });
+
+        return {
+            mode: 'personnel_list',
+            keyword,
+            serviceHint,
+            ...personnel,
         };
     }
 

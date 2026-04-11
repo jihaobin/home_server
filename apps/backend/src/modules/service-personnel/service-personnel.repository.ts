@@ -3,7 +3,18 @@ import type {
     ServicePersonnelFilterRequest,
     UpdateServicePersonnelProfileRequest,
 } from '@repo/types';
-import { and, asc, desc, eq, gte, like, type SQL, sql } from 'drizzle-orm';
+import {
+    and,
+    asc,
+    desc,
+    eq,
+    gte,
+    inArray,
+    like,
+    ne,
+    type SQL,
+    sql,
+} from 'drizzle-orm';
 import { DB } from 'src/common/database/database.provider';
 import { DbType } from 'src/common/database/db';
 import {
@@ -11,6 +22,7 @@ import {
     servicePersonnel,
     servicePersonnelPricing,
     servicePersonnelSkills,
+    services,
     users,
 } from 'src/common/database/schema';
 import { GeoLocationService } from 'src/common/services/geo-location.service';
@@ -337,6 +349,208 @@ export class ServicePersonnelRepository {
                 phoneNumber: true,
             },
         });
+    }
+
+    async findSearchPersonnelSuggestions(keyword: string, limit = 5) {
+        const normalizedKeyword = keyword.trim();
+        if (!normalizedKeyword) {
+            return [];
+        }
+
+        return await this.db
+            .select({
+                id: servicePersonnel.userId,
+                name: servicePersonnel.name,
+            })
+            .from(servicePersonnel)
+            .where(
+                and(
+                    eq(servicePersonnel.isAvailable, true),
+                    like(servicePersonnel.name, `%${normalizedKeyword}%`),
+                ),
+            )
+            .orderBy(asc(servicePersonnel.name), asc(servicePersonnel.userId))
+            .limit(limit);
+    }
+
+    async findExactPersonnelByName(keyword: string) {
+        const normalizedKeyword = keyword.trim().replace(/\s+/g, ' ');
+        if (!normalizedKeyword) {
+            return null;
+        }
+
+        const rows = await this.db
+            .select({
+                id: servicePersonnel.userId,
+                name: servicePersonnel.name,
+            })
+            .from(servicePersonnel)
+            .where(
+                and(
+                    eq(servicePersonnel.isAvailable, true),
+                    sql`regexp_replace(trim(${servicePersonnel.name}), '\s+', ' ', 'g') = ${normalizedKeyword}`,
+                ),
+            )
+            .limit(2);
+
+        return rows.length === 1 ? rows[0] : null;
+    }
+
+    async searchPersonnelByServiceIds({
+        serviceIds,
+        page,
+        limit,
+        lat,
+        lng,
+        excludePersonnelUserId,
+    }: {
+        serviceIds: string[];
+        page: number;
+        limit: number;
+        lat?: number;
+        lng?: number;
+        excludePersonnelUserId?: string;
+    }) {
+        const normalizedServiceIds = Array.from(
+            new Set(serviceIds.map((item) => item.trim()).filter(Boolean)),
+        );
+
+        if (!normalizedServiceIds.length) {
+            return {
+                personnel: [],
+                page,
+                limit,
+                hasMore: false,
+                nextPage: null,
+            };
+        }
+
+        const offset = (page - 1) * limit;
+        const distanceSelect =
+            lat !== undefined && lng !== undefined
+                ? this.geoService.createDistanceCalculation(
+                      sql`${servicePersonnel.geom}`,
+                      this.geoService.createUserPoint(lng, lat),
+                  )
+                : sql<number>`0`.as('distance_km');
+
+        const optimalPricingCTE = this.db.$with('optimal_pricing').as(
+            this.db
+                .select({
+                    userId: servicePersonnelPricing.userId,
+                    serviceId: servicePersonnelPricing.serviceId,
+                    pricingId: servicePersonnelPricing.id,
+                    price: servicePersonnelPricing.price,
+                    serviceName: services.name,
+                    rowNum: sql<number>`ROW_NUMBER() OVER (
+                        PARTITION BY ${servicePersonnelPricing.userId}, ${servicePersonnelPricing.serviceId}
+                        ORDER BY CAST(${servicePersonnelPricing.price} AS DECIMAL(18,2)) ASC,
+                                 ${servicePersonnelPricing.estimatedDurationMinutes} ASC,
+                                 ${servicePersonnelPricing.id} ASC
+                    )`.as('row_num'),
+                })
+                .from(servicePersonnelPricing)
+                .innerJoin(
+                    services,
+                    eq(services.id, servicePersonnelPricing.serviceId),
+                )
+                .where(
+                    and(
+                        inArray(
+                            servicePersonnelPricing.serviceId,
+                            normalizedServiceIds,
+                        ),
+                        eq(servicePersonnelPricing.isActive, true),
+                        eq(services.isActive, true),
+                    ),
+                ),
+        );
+
+        const rows = await this.db
+            .with(optimalPricingCTE)
+            .select({
+                personnelId: servicePersonnel.userId,
+                name: servicePersonnel.name,
+                avatar: servicePersonnel.avatar,
+                serviceId: optimalPricingCTE.serviceId,
+                serviceName: optimalPricingCTE.serviceName,
+                pricingId: optimalPricingCTE.pricingId,
+                minPrice:
+                    sql<number>`CAST(${optimalPricingCTE.price} AS DECIMAL(18,2))`.as(
+                        'min_price',
+                    ),
+                distanceKm: distanceSelect,
+                addressText: servicePersonnel.detailedAddress,
+                workDays: servicePersonnel.workDays,
+                workStartTime: servicePersonnel.workStartTime,
+                workEndTime: servicePersonnel.workEndTime,
+                reviewCount:
+                    sql<number>`COALESCE(${reviewStats.totalCount}, 0)`.as(
+                        'review_count',
+                    ),
+                goodRatePercentage: sql<number>`CASE
+                        WHEN COALESCE(${reviewStats.totalCount}, 0) = 0 THEN 0
+                        ELSE ROUND(COALESCE(${reviewStats.goodCount}, 0)::decimal / ${reviewStats.totalCount} * 100, 2)
+                    END`.as('good_rate_percentage'),
+                ratingValue:
+                    sql<number>`COALESCE(${reviewStats.averageRating}, 0) / 100.0`.as(
+                        'rating_value',
+                    ),
+            })
+            .from(servicePersonnel)
+            .innerJoin(
+                optimalPricingCTE,
+                and(
+                    eq(optimalPricingCTE.userId, servicePersonnel.userId),
+                    sql`${optimalPricingCTE.rowNum} = 1`,
+                ),
+            )
+            .leftJoin(
+                reviewStats,
+                and(
+                    eq(reviewStats.targetId, servicePersonnel.userId),
+                    sql`${reviewStats.targetType} = 'personnel'`,
+                    eq(reviewStats.serviceId, optimalPricingCTE.serviceId),
+                ),
+            )
+            .where(
+                and(
+                    eq(servicePersonnel.isAvailable, true),
+                    ...(excludePersonnelUserId
+                        ? [ne(servicePersonnel.userId, excludePersonnelUserId)]
+                        : []),
+                ),
+            )
+            .orderBy(asc(distanceSelect), asc(servicePersonnel.userId))
+            .limit(limit + 1)
+            .offset(offset);
+
+        const hasMore = rows.length > limit;
+
+        return {
+            personnel: rows.slice(0, limit).map((row) => ({
+                personnelId: row.personnelId,
+                name: row.name ?? '服务人员',
+                avatar: row.avatar?.trim() || null,
+                serviceId: row.serviceId,
+                serviceName: row.serviceName,
+                pricingId: row.pricingId ?? undefined,
+                minPrice: Number(row.minPrice ?? 0),
+                distanceKm: Number(row.distanceKm ?? 0),
+                addressText: row.addressText ?? '',
+                workDays: row.workDays,
+                workStartTime: row.workStartTime,
+                workEndTime: row.workEndTime,
+                tag: row.serviceName,
+                reviewCount: Number(row.reviewCount ?? 0),
+                goodRatePercentage: Number(row.goodRatePercentage ?? 0),
+                ratingValue: Number(row.ratingValue ?? 0),
+            })),
+            page,
+            limit,
+            hasMore,
+            nextPage: hasMore ? page + 1 : null,
+        };
     }
 
     async updatePersonnelProfile(

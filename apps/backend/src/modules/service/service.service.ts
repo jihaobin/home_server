@@ -121,6 +121,24 @@ export class ServiceService {
             rows.map((row) => this.attachServiceImage(row)),
         );
     }
+
+    async searchActiveServicesByKeyword(keyword: string, limit = 10) {
+        return await this.serviceRepository.searchActiveServicesByKeyword(
+            keyword,
+            limit,
+        );
+    }
+
+    async findExactActiveServiceByName(keyword: string) {
+        return await this.serviceRepository.findExactActiveServiceByName(
+            keyword,
+        );
+    }
+
+    async findActiveServiceById(serviceId: string) {
+        return await this.serviceRepository.findActiveServiceById(serviceId);
+    }
+
     // ========== 服务项目相关业务方法 ==========
 
     /**

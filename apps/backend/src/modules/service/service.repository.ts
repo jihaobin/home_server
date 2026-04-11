@@ -302,6 +302,67 @@ export class ServiceRepository {
             );
     }
 
+    async searchActiveServicesByKeyword(keyword: string, limit = 10) {
+        const normalizedKeyword = keyword.trim();
+        if (!normalizedKeyword) {
+            return [];
+        }
+
+        return await this.db
+            .select({
+                id: services.id,
+                name: services.name,
+                categoryId: services.categoryId,
+            })
+            .from(services)
+            .where(
+                and(
+                    eq(services.isActive, true),
+                    sql`${services.name} &@~ ${normalizedKeyword} OR ${services.description} &@~ ${normalizedKeyword}`,
+                ),
+            )
+            .orderBy(asc(services.name), asc(services.id))
+            .limit(limit);
+    }
+
+    async findExactActiveServiceByName(keyword: string) {
+        const normalizedKeyword = keyword.trim().replace(/\s+/g, ' ');
+        if (!normalizedKeyword) {
+            return null;
+        }
+
+        const rows = await this.db
+            .select({
+                id: services.id,
+                name: services.name,
+                categoryId: services.categoryId,
+            })
+            .from(services)
+            .where(
+                and(
+                    eq(services.isActive, true),
+                    sql`regexp_replace(trim(${services.name}), '\s+', ' ', 'g') = ${normalizedKeyword}`,
+                ),
+            )
+            .limit(2);
+
+        return rows.length === 1 ? rows[0] : null;
+    }
+
+    async findActiveServiceById(serviceId: string) {
+        const [service] = await this.db
+            .select({
+                id: services.id,
+                name: services.name,
+                categoryId: services.categoryId,
+            })
+            .from(services)
+            .where(and(eq(services.id, serviceId), eq(services.isActive, true)))
+            .limit(1);
+
+        return service ?? null;
+    }
+
     // ========== 服务项目相关方法 ==========
 
     /**

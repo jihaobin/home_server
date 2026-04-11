@@ -47,7 +47,7 @@ const Image = ExpoImage as unknown as React.ComponentType<
 type ImageSource = React.ComponentProps<typeof ExpoImage>["source"];
 
 // DEV: 调试开关——设为 true 时，总是显示“更多服务”入口。
-const FORCE_SHOW_MORE_SERVICES_ENTRY = true;
+const FORCE_SHOW_MORE_SERVICES_ENTRY = false;
 
 type GuaranteeItem = {
     id: string;
@@ -893,16 +893,19 @@ export default function HomeScreen() {
                                     </Pressable>
                                 </View>
 
-                                <View className="mx-4 mt-3 h-10 w-[343px] flex-row items-center rounded-full bg-card">
+                                <Pressable
+                                    className="mx-4 mt-3 h-10 w-[343px] flex-row items-center rounded-full bg-card"
+                                    onPress={() => router.push("../search")}
+                                >
                                     <Text className="ml-3 flex-1 text-sm text-muted-foreground font-puhui-regular">
                                         搜索你想要的服务
                                     </Text>
-                                    <Button className="mr-0.5 h-9 w-[60px] items-center justify-center rounded-full bg-primary">
+                                    <View className="mr-0.5 h-9 w-[60px] items-center justify-center rounded-full bg-primary">
                                         <Text className="text-sm text-foreground font-puhui-regular">
                                             搜索
                                         </Text>
-                                    </Button>
-                                </View>
+                                    </View>
+                                </Pressable>
                             </View>
                         </SafeAreaView>
                     </View>

@@ -214,3 +214,179 @@ export const HomeRecommendationsResponseSchema = z
 export type HomeRecommendationsResponse = z.infer<
     typeof HomeRecommendationsResponseSchema
 >;
+
+// ==================== Home Search ====================
+
+export const HomeSearchSuggestionsQuerySchema = z
+    .object({
+        keyword: z.string().trim().min(1).max(64).meta({
+            title: "搜索关键词",
+            description: "搜索页候选词联想使用的关键词",
+        }),
+        lat: z.number().min(-90).max(90).optional().meta({
+            title: "纬度",
+            description: "用户当前搜索位置纬度（可选）",
+        }),
+        lng: z.number().min(-180).max(180).optional().meta({
+            title: "经度",
+            description: "用户当前搜索位置经度（可选）",
+        }),
+        limit: z.number().int().min(1).max(10).default(10).meta({
+            title: "返回数量",
+            description: "候选词返回上限，第一版限制在 10 条以内",
+        }),
+    })
+    .meta({
+        title: "首页搜索候选词查询参数",
+        description: "用户端移动搜索页候选词联想查询参数",
+    });
+
+export type HomeSearchSuggestionsQuery = z.infer<
+    typeof HomeSearchSuggestionsQuerySchema
+>;
+
+export const HomeSearchSuggestionItemSchema = z
+    .object({
+        type: z.enum(["personnel", "service"]).meta({
+            title: "候选词类型",
+            description: "personnel 表示服务人员，service 表示服务项目",
+        }),
+        label: z.string().min(1).meta({
+            title: "候选词文案",
+            description: "候选词展示名称",
+        }),
+        subtitle: z.string().optional().meta({
+            title: "候选词副标题",
+            description: "候选词可选补充说明",
+        }),
+        personnelId: z.string().max(255).optional().meta({
+            title: "服务人员 ID",
+            description: "当候选词为服务人员时返回",
+        }),
+        serviceId: z.string().max(255).optional().meta({
+            title: "服务项目 ID",
+            description: "当候选词为服务项目时返回",
+        }),
+    })
+    .meta({
+        title: "首页搜索候选词项",
+        description: "移动端搜索页单条候选词数据",
+    });
+
+export const HomeSearchSuggestionResponseSchema = z
+    .object({
+        suggestions: z.array(HomeSearchSuggestionItemSchema),
+    })
+    .meta({
+        title: "首页搜索候选词响应",
+        description: "移动端搜索页候选词联想响应数据",
+    });
+
+export type HomeSearchSuggestionResponse = z.infer<
+    typeof HomeSearchSuggestionResponseSchema
+>;
+
+export const HomeSearchQuerySchema = z
+    .object({
+        keyword: z.string().trim().min(1).max(64).meta({
+            title: "搜索关键词",
+            description: "结果页确认后的关键词",
+        }),
+        lat: z.number().min(-90).max(90).optional().meta({
+            title: "纬度",
+            description: "用户当前搜索位置纬度（可选）",
+        }),
+        lng: z.number().min(-180).max(180).optional().meta({
+            title: "经度",
+            description: "用户当前搜索位置经度（可选）",
+        }),
+        page: z.number().int().min(1).default(1).meta({
+            title: "页码",
+            description: "结果页分页页码",
+        }),
+        limit: z.number().int().min(1).max(20).default(20).meta({
+            title: "每页数量",
+            description: "结果页每页返回数量，第一版上限 20",
+        }),
+        personnelId: z.string().max(255).optional().meta({
+            title: "服务人员 ID",
+            description: "点击服务人员候选词进入结果页时透传",
+        }),
+        serviceId: z.string().max(255).optional().meta({
+            title: "服务项目 ID",
+            description: "点击服务项目候选词进入结果页时透传",
+        }),
+    })
+    .meta({
+        title: "首页搜索结果查询参数",
+        description: "用户端移动搜索结果页查询参数",
+    });
+
+export type HomeSearchQuery = z.infer<typeof HomeSearchQuerySchema>;
+
+export const HomeSearchPersonnelServicesResponseSchema = z
+    .object({
+        mode: z.literal("personnel_services"),
+        keyword: z.string(),
+        matchedPersonnel: z.object({
+            id: z.string().max(255),
+            name: z.string(),
+            avatarUrl: z.string().url().nullable().optional(),
+            avatarBlurhash: z.string().nullable().optional(),
+        }),
+        services: z.array(
+            z.object({
+                serviceId: z.string().max(255),
+                serviceName: z.string(),
+                pricingId: z.string().max(255).optional(),
+                price: z.number().optional(),
+                estimatedDurationMinutes: z.number().int().optional(),
+                categoryId: z.string().max(255).optional(),
+            }),
+        ),
+    })
+    .meta({
+        title: "首页搜索命中服务人员响应",
+        description: "唯一命中服务人员姓名时返回该人员可预约服务列表",
+    });
+
+export const HomeSearchPersonnelListItemSchema =
+    HomeRecommendedPersonnelSchema.extend({
+        serviceName: z.string().optional().meta({
+            title: "命中服务名称",
+            description: "当前列表项匹配到的服务名称",
+        }),
+    });
+
+export const HomeSearchPersonnelListResponseSchema = z
+    .object({
+        mode: z.literal("personnel_list"),
+        keyword: z.string(),
+        serviceHint: z
+            .object({
+                serviceId: z.string().max(255).optional(),
+                serviceName: z.string().optional(),
+            })
+            .optional(),
+        personnel: z.array(HomeSearchPersonnelListItemSchema),
+        page: z.number().int().min(1),
+        limit: z.number().int().min(1).max(20),
+        hasMore: z.boolean(),
+        nextPage: z.number().int().min(1).nullable(),
+    })
+    .meta({
+        title: "首页搜索服务人员列表响应",
+        description: "按服务关键词命中后的服务人员分页列表",
+    });
+
+export const HomeSearchResponseSchema = z
+    .discriminatedUnion("mode", [
+        HomeSearchPersonnelServicesResponseSchema,
+        HomeSearchPersonnelListResponseSchema,
+    ])
+    .meta({
+        title: "首页搜索结果响应",
+        description: "用户端移动搜索统一结果响应，按 mode 区分渲染分支",
+    });
+
+export type HomeSearchResponse = z.infer<typeof HomeSearchResponseSchema>;

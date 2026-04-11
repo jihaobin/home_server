@@ -3,6 +3,10 @@ import type {
     HomeQuery,
     HomeRecommendationsResponse,
     HomeResponse,
+    HomeSearchQuery,
+    HomeSearchResponse,
+    HomeSearchSuggestionResponse,
+    HomeSearchSuggestionsQuery,
     ServiceCategoryTree,
 } from "@repo/types";
 import {
@@ -183,5 +187,78 @@ export const useHomeRecommendationsInfinite = (
         placeholderData: keepPreviousData,
         meta: {
             errorMessage: "首页推荐数据获取失败",
+        },
+    });
+
+export const useHomeSearchSuggestions = (
+    params: Partial<HomeSearchSuggestionsQuery>,
+    options: { enabled?: boolean } = {},
+) =>
+    useQuery({
+        queryKey: ["home-search-suggestions", params],
+        enabled: options.enabled,
+        queryFn: async () => {
+            const response = await apiClient.get<HomeSearchSuggestionResponse>(
+                "/home/search/suggestions",
+                {
+                    query: {
+                        ...(params.keyword ? { keyword: params.keyword } : {}),
+                        ...(params.lat !== undefined
+                            ? { lat: params.lat.toString() }
+                            : {}),
+                        ...(params.lng !== undefined
+                            ? { lng: params.lng.toString() }
+                            : {}),
+                        ...(params.limit !== undefined
+                            ? { limit: params.limit.toString() }
+                            : {}),
+                    },
+                },
+            );
+            return response.data;
+        },
+        meta: {
+            errorMessage: "搜索候选词获取失败",
+        },
+    });
+
+export const useHomeSearchResult = (
+    params: Partial<HomeSearchQuery>,
+    options: { enabled?: boolean } = {},
+) =>
+    useQuery({
+        queryKey: ["home-search-result", params],
+        enabled: options.enabled,
+        queryFn: async () => {
+            const response = await apiClient.get<HomeSearchResponse>(
+                "/home/search",
+                {
+                    query: {
+                        ...(params.keyword ? { keyword: params.keyword } : {}),
+                        ...(params.personnelId
+                            ? { personnelId: params.personnelId }
+                            : {}),
+                        ...(params.serviceId
+                            ? { serviceId: params.serviceId }
+                            : {}),
+                        ...(params.page !== undefined
+                            ? { page: params.page.toString() }
+                            : {}),
+                        ...(params.limit !== undefined
+                            ? { limit: params.limit.toString() }
+                            : {}),
+                        ...(params.lat !== undefined
+                            ? { lat: params.lat.toString() }
+                            : {}),
+                        ...(params.lng !== undefined
+                            ? { lng: params.lng.toString() }
+                            : {}),
+                    },
+                },
+            );
+            return response.data;
+        },
+        meta: {
+            errorMessage: "搜索结果获取失败",
         },
     });

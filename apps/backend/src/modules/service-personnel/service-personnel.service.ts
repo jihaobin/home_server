@@ -41,6 +41,25 @@ type RawPersonnelSkill = {
     }>;
 };
 
+type SearchPersonnelRow = {
+    personnelId: string;
+    name: string;
+    avatar: string | null;
+    serviceId: string;
+    serviceName: string;
+    pricingId?: string;
+    minPrice: number;
+    distanceKm: number;
+    addressText: string;
+    workDays: string;
+    workStartTime: string;
+    workEndTime: string;
+    tag: string;
+    reviewCount: number;
+    goodRatePercentage: number;
+    ratingValue: number;
+};
+
 @Injectable()
 export class ServicePersonnelService {
     private readonly logger = new Logger(ServicePersonnelService.name);
@@ -52,6 +71,41 @@ export class ServicePersonnelService {
         private readonly payService: PayService,
         private readonly reviewService: ReviewService,
     ) {}
+
+    private dedupeSearchPersonnelRows(rows: SearchPersonnelRow[]) {
+        const dedupedRows = new Map<string, SearchPersonnelRow>();
+
+        for (const row of rows) {
+            const dedupeKey = `${row.personnelId}::${row.serviceId ?? row.pricingId ?? ''}`;
+            const existing = dedupedRows.get(dedupeKey);
+
+            if (!existing) {
+                dedupedRows.set(dedupeKey, row);
+                continue;
+            }
+
+            const currentPrice = Number(
+                row.minPrice ?? Number.POSITIVE_INFINITY,
+            );
+            const existingPrice = Number(
+                existing.minPrice ?? Number.POSITIVE_INFINITY,
+            );
+
+            if (currentPrice < existingPrice) {
+                dedupedRows.set(dedupeKey, row);
+                continue;
+            }
+
+            if (
+                currentPrice === existingPrice &&
+                (row.pricingId ?? '') < (existing.pricingId ?? '')
+            ) {
+                dedupedRows.set(dedupeKey, row);
+            }
+        }
+
+        return Array.from(dedupedRows.values());
+    }
 
     /**
      * 智能匹配服务人员
@@ -106,6 +160,150 @@ export class ServicePersonnelService {
         return {
             ...result,
             items: nextItems,
+        };
+    }
+
+    async findSearchPersonnelSuggestions(keyword: string, limit = 5) {
+        return await this.servicePersonnelRepository.findSearchPersonnelSuggestions(
+            keyword,
+            limit,
+        );
+    }
+
+    async findExactPersonnelByName(keyword: string) {
+        return await this.servicePersonnelRepository.findExactPersonnelByName(
+            keyword,
+        );
+    }
+
+    async searchPersonnelByServiceIds(params: {
+        serviceIds: string[];
+        page: number;
+        limit: number;
+        lat?: number;
+        lng?: number;
+        excludePersonnelUserId?: string;
+    }) {
+        const result =
+            await this.servicePersonnelRepository.searchPersonnelByServiceIds(
+                params,
+            );
+        const dedupedPersonnel = this.dedupeSearchPersonnelRows(
+            result.personnel,
+        );
+
+        const isHttpUrl = (value: string) =>
+            value.startsWith('http://') || value.startsWith('https://');
+
+        const avatarFileIds = Array.from(
+            new Set(
+                dedupedPersonnel
+                    .map((item) => item.avatar?.trim() ?? '')
+                    .filter((item) => Boolean(item) && !isHttpUrl(item)),
+            ),
+        );
+
+        const avatarInfoMap = new Map<
+            string,
+            { url: string; blurhash: string | null }
+        >();
+
+        await Promise.all(
+            avatarFileIds.map(async (fileId) => {
+                const info = await this.getFileAccessInfoSafely(fileId);
+                if (!info?.url) {
+                    return;
+                }
+
+                avatarInfoMap.set(fileId, {
+                    url: info.url,
+                    blurhash: info.blurhash ?? null,
+                });
+            }),
+        );
+
+        return {
+            ...result,
+            personnel: dedupedPersonnel.map((item) => {
+                const rawAvatar = item.avatar?.trim() ?? '';
+                const avatar = !rawAvatar
+                    ? null
+                    : isHttpUrl(rawAvatar)
+                      ? { url: rawAvatar, blurhash: null }
+                      : (avatarInfoMap.get(rawAvatar) ?? null);
+
+                return {
+                    personnelId: item.personnelId,
+                    name: item.name,
+                    avatarUrl: avatar?.url ?? null,
+                    avatarBlurhash: avatar?.blurhash ?? null,
+                    serviceId: item.serviceId,
+                    serviceName: item.serviceName,
+                    pricingId: item.pricingId,
+                    minPrice: item.minPrice,
+                    distanceKm: item.distanceKm,
+                    addressText: item.addressText,
+                    workDays: item.workDays,
+                    workStartTime: item.workStartTime,
+                    workEndTime: item.workEndTime,
+                    tag: item.tag,
+                    reviewCount: item.reviewCount,
+                    goodRatePercentage: item.goodRatePercentage,
+                    ratingValue: item.ratingValue,
+                };
+            }),
+        };
+    }
+
+    async getPersonnelServicesSummary(personnelId: string) {
+        const personnel =
+            await this.workSkillService.getPersonnelInfo(personnelId);
+        if (!personnel) {
+            throw new NotFoundException('服务人员不存在');
+        }
+
+        const avatarHash = personnel.avatar?.trim();
+        const avatar = avatarHash
+            ? await this.getFileAccessInfoSafely(avatarHash)
+            : null;
+
+        const services = ((personnel.skills ?? []) as RawPersonnelSkill[])
+            .filter((skill) => skill.isActive)
+            .map((skill) => {
+                const activeSpecifications = (skill.specifications ?? [])
+                    .filter((spec) => spec.isActive)
+                    .sort(
+                        (left, right) =>
+                            Number(left.price) - Number(right.price),
+                    );
+                const firstSpecification = activeSpecifications[0];
+
+                return {
+                    serviceId: skill.id,
+                    serviceName: skill.name,
+                    pricingId: firstSpecification?.id,
+                    price: firstSpecification
+                        ? Number(firstSpecification.price)
+                        : undefined,
+                    estimatedDurationMinutes:
+                        firstSpecification?.estimatedDurationMinutes ??
+                        undefined,
+                    categoryId:
+                        'categoryId' in skill &&
+                        typeof skill.categoryId === 'string'
+                            ? skill.categoryId
+                            : undefined,
+                };
+            });
+
+        return {
+            matchedPersonnel: {
+                id: personnel.userId,
+                name: personnel.name?.trim() || '服务人员',
+                avatarUrl: avatar?.url ?? null,
+                avatarBlurhash: avatar?.blurhash ?? null,
+            },
+            services,
         };
     }
 

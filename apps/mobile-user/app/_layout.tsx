@@ -25,7 +25,7 @@ export default function RootLayout() {
 
     useIsomorphicLayoutEffect(() => {
         if (hasMounted.current) {
-            return
+            return;
         }
 
         if (Platform.OS === "web") {
@@ -168,6 +168,20 @@ function RootNavigation() {
                         name="category/filter"
                         options={{
                             headerShown: false,
+                        }}
+                    />
+                    <Stack.Screen
+                        name="search/index"
+                        options={{
+                            title: "搜索",
+                            headerShown: true,
+                        }}
+                    />
+                    <Stack.Screen
+                        name="search/result"
+                        options={{
+                            title: "搜索结果",
+                            headerShown: true,
                         }}
                     />
                 </Stack.Protected>
