@@ -575,6 +575,11 @@ function HomeBaseContent({
                                     return;
                                 }
 
+                                if (item.label.includes("按摩")) {
+                                    router.push("../massage");
+                                    return;
+                                }
+
                                 router.push({
                                     pathname: "/category/filter",
                                     params: {

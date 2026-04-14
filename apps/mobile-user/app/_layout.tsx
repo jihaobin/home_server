@@ -171,6 +171,12 @@ function RootNavigation() {
                         }}
                     />
                     <Stack.Screen
+                        name="massage/index"
+                        options={{
+                            headerShown: false,
+                        }}
+                    />
+                    <Stack.Screen
                         name="search/index"
                         options={{
                             title: "搜索",

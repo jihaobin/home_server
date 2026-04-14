@@ -14,11 +14,9 @@ import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
 import {
     ChevronLeft,
-    ChevronRight,
     Clock,
     MapPin,
     MessageCircle,
-    Star,
     User,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -34,6 +32,11 @@ import { useChatUpsertConversation } from "@repo/hooks/api/chat";
 import { executeContactCustomerAction } from "@repo/mobile-ui/lib/contact-customer-action";
 import { toast } from "sonner-native";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
+import { MockServicePersonnelScreen } from "@/components/service-personnel/mock-service-personnel-screen";
+import {
+    ServicePersonnelReviewList,
+    type ServicePersonnelReviewItem,
+} from "@/components/service-personnel/service-personnel-review-list";
 
 const WEEKDAY_BY_DIGIT: Record<string, string> = {
     "1": "周一",
@@ -80,15 +83,12 @@ function formatTimeHHmm(value: string): string {
     return `${hh}:${mm}`;
 }
 
-function formatPublishedAt(value: unknown): string {
-    const date = value instanceof Date ? value : new Date(String(value));
-    if (Number.isNaN(date.getTime())) {
-        return "";
+function getRouteParam(value?: string | string[]): string {
+    if (Array.isArray(value)) {
+        return value[0] ?? "";
     }
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    return `发布于${y}年${m}月${d}日`;
+
+    return value ? String(value) : "";
 }
 
 function ServiceDetailSkeleton({
@@ -419,22 +419,6 @@ function ServiceDetailBottomBar({ bottomInset }: { bottomInset: number }) {
     );
 }
 
-type ReviewImage = {
-    url: string;
-    blurhash?: string;
-};
-
-type TopReview = {
-    id: string;
-    rating: number;
-    comment?: string | null;
-    createdAt: unknown;
-    images: ReviewImage[];
-    reviewerAvatar?: ReviewImage | null;
-    reviewerName?: string | null;
-    reviewerPhoneMasked?: string | null;
-};
-
 function ServiceDetailContent({
     personnelId,
     serviceId,
@@ -470,8 +454,6 @@ function ServiceDetailContent({
                 throwOnError: false,
             }),
     });
-
-
 
     const view = useMemo(() => {
         const headerImages = (details?.gallery ?? []).filter((image) =>
@@ -512,8 +494,13 @@ function ServiceDetailContent({
             : scheduleTime;
 
         const topReviews =
-            (details as unknown as { topReviews?: TopReview[] } | undefined)
-                ?.topReviews ?? [];
+            (
+                details as unknown as
+                    | {
+                          topReviews?: ServicePersonnelReviewItem[];
+                      }
+                    | undefined
+            )?.topReviews ?? [];
 
         return {
             headerImages,
@@ -533,35 +520,11 @@ function ServiceDetailContent({
         };
     }, [details, serviceName]);
 
-
     if (showPageLoading) {
         return (
             <ServiceDetailSkeleton bottomInset={0} includeBottomBar={false} />
         );
     }
-
-    const renderStars = (rating: number) => {
-        return (
-            <View className="flex-row items-center">
-                {Array.from({ length: 5 }).map((_, idx) => {
-                    const active = idx < rating;
-                    return (
-                        <Icon
-                            key={`star-${idx}`}
-                            as={Star}
-                            size={16}
-                            className={
-                                active
-                                    ? "text-primary"
-                                    : "text-muted-foreground"
-                            }
-                            fill={active ? "currentColor" : "none"}
-                        />
-                    );
-                })}
-            </View>
-        );
-    };
 
     return (
         <ScrollView
@@ -720,199 +683,11 @@ function ServiceDetailContent({
 
                 <View className="h-px bg-border" />
 
-                {/* 评价标题 */}
-                <View className="px-4 py-4 flex-row items-center justify-between">
-                    <Text className="text-base font-puhui-medium text-foreground">
-                        评价({view.reviewCount})
-                    </Text>
-                    <Pressable
-                        className="flex-row items-center"
-                        hitSlop={12}
-                        onPress={onGoToAllReviews}
-                    >
-                        <Text className="text-sm font-puhui-regular text-muted-foreground">
-                            查看全部
-                        </Text>
-                        <Icon
-                            as={ChevronRight}
-                            size={16}
-                            className="ml-1 text-muted-foreground"
-                        />
-                    </Pressable>
-                </View>
-
-                <View className="h-px bg-border" />
-
-                {/* 评价列表（Top 5） */}
-                {view.topReviews.length ? (
-                    view.topReviews.map((review: TopReview, index: number) => {
-                        const reviewImages = (review.images ?? []).filter(
-                            (img) => Boolean(img.url),
-                        );
-                        const thumbnails = reviewImages.slice(0, 6);
-                        const publishedAt = formatPublishedAt(review.createdAt);
-
-                        return (
-                            <View key={review.id}>
-                                <View className="px-4 pt-4">
-                                    <View className="flex-row items-start">
-                                        <View className="h-[42px] w-[42px] rounded-full bg-muted overflow-hidden">
-                                            {review.reviewerAvatar?.url ? (
-                                                <Image
-                                                    source={{
-                                                        uri: review
-                                                            .reviewerAvatar.url,
-                                                    }}
-                                                    placeholder={
-                                                        review.reviewerAvatar
-                                                            .blurhash
-                                                            ? {
-                                                                  blurhash:
-                                                                      review
-                                                                          .reviewerAvatar
-                                                                          .blurhash,
-                                                              }
-                                                            : undefined
-                                                    }
-                                                    contentFit="cover"
-                                                    style={{
-                                                        width: "100%",
-                                                        height: "100%",
-                                                    }}
-                                                />
-                                            ) : null}
-                                        </View>
-
-                                        <View className="ml-3 flex-1">
-                                            <View className="flex-row items-start justify-between">
-                                                <View>
-                                                    <Text className="text-sm font-puhui-medium text-foreground">
-                                                        {review.reviewerName ||
-                                                            "用户"}
-                                                    </Text>
-                                                    {review.reviewerPhoneMasked ? (
-                                                        <Text className="mt-1 text-[11px] font-puhui-regular text-muted-foreground">
-                                                            {
-                                                                review.reviewerPhoneMasked
-                                                            }
-                                                        </Text>
-                                                    ) : null}
-                                                </View>
-                                                {renderStars(
-                                                    Number(review.rating) || 0,
-                                                )}
-                                            </View>
-
-                                            {review.comment ? (
-                                                <Text className="mt-3 text-xs font-puhui-regular text-foreground">
-                                                    {review.comment}
-                                                </Text>
-                                            ) : null}
-
-                                            {thumbnails.length ? (
-                                                <Galeria
-                                                    urls={reviewImages.map(
-                                                        (img) => img.url,
-                                                    )}
-                                                >
-                                                    <ScrollView
-                                                        horizontal
-                                                        showsHorizontalScrollIndicator={
-                                                            false
-                                                        }
-                                                        className="mt-3"
-                                                        contentContainerStyle={{
-                                                            gap: 12,
-                                                        }}
-                                                    >
-                                                        {thumbnails.map(
-                                                            (
-                                                                img: ReviewImage,
-                                                                idx: number,
-                                                            ) => (
-                                                                <View
-                                                                    key={`${review.id}-img-${idx}`}
-                                                                    className="h-[77px] w-[77px] rounded-[8px] overflow-hidden bg-muted"
-                                                                >
-                                                                    <Galeria.Image
-                                                                        index={
-                                                                            idx
-                                                                        }
-                                                                        style={{
-                                                                            width: "100%",
-                                                                            height: "100%",
-                                                                        }}
-                                                                    >
-                                                                        <Image
-                                                                            source={{
-                                                                                uri: img.url,
-                                                                            }}
-                                                                            placeholder={
-                                                                                img.blurhash
-                                                                                    ? {
-                                                                                          blurhash:
-                                                                                              img.blurhash,
-                                                                                      }
-                                                                                    : undefined
-                                                                            }
-                                                                            contentFit="cover"
-                                                                            style={{
-                                                                                width: "100%",
-                                                                                height: "100%",
-                                                                            }}
-                                                                        />
-                                                                    </Galeria.Image>
-                                                                </View>
-                                                            ),
-                                                        )}
-                                                    </ScrollView>
-                                                </Galeria>
-                                            ) : null}
-
-                                            {publishedAt ? (
-                                                <View className="pt-3 pb-4 items-start">
-                                                    <Text className="text-xs font-puhui-regular text-muted-foreground">
-                                                        {publishedAt}
-                                                    </Text>
-                                                </View>
-                                            ) : null}
-                                        </View>
-                                    </View>
-                                </View>
-
-                                {index < view.topReviews.length - 1 ? (
-                                    <View className="h-px bg-border" />
-                                ) : null}
-                            </View>
-                        );
-                    })
-                ) : (
-                    <View className="px-4 py-4">
-                        <Text className="text-xs font-puhui-regular text-muted-foreground">
-                            暂无评价
-                        </Text>
-                    </View>
-                )}
-
-                {view.reviewCount ? (
-                    <>
-                        <View className="h-px bg-border" />
-                        <Pressable
-                            className="px-4 py-4 items-center justify-center flex-row"
-                            hitSlop={12}
-                            onPress={onGoToAllReviews}
-                        >
-                            <Text className="text-sm font-puhui-regular text-muted-foreground">
-                                全部{view.reviewCount}条评价
-                            </Text>
-                            <Icon
-                                as={ChevronRight}
-                                size={16}
-                                className="ml-1 text-muted-foreground"
-                            />
-                        </Pressable>
-                    </>
-                ) : null}
+                <ServicePersonnelReviewList
+                    reviewCount={view.reviewCount}
+                    reviews={view.topReviews}
+                    onPressAllReviews={onGoToAllReviews}
+                />
             </View>
         </ScrollView>
     );
@@ -929,23 +704,28 @@ export default function ServiceDetailScreen() {
         serviceId?: string | string[];
         pricingId?: string | string[];
         serviceName?: string | string[];
+        personnelName?: string | string[];
+        mock?: string | string[];
     }>();
 
-    const personnelId = Array.isArray(params.id)
-        ? params.id[0]
-        : params.id
-          ? String(params.id)
-          : "";
-    const serviceId = Array.isArray(params.serviceId)
-        ? params.serviceId[0]
-        : params.serviceId
-          ? String(params.serviceId)
-          : "";
-    const serviceName = Array.isArray(params.serviceName)
-        ? params.serviceName[0]
-        : params.serviceName
-          ? String(params.serviceName)
-          : "";
+    const personnelId = getRouteParam(params.id);
+    const serviceId = getRouteParam(params.serviceId);
+    const pricingId = getRouteParam(params.pricingId);
+    const serviceName = getRouteParam(params.serviceName);
+    const personnelName = getRouteParam(params.personnelName);
+    const mockSource = getRouteParam(params.mock);
+
+    if (mockSource === "massage") {
+        return (
+            <MockServicePersonnelScreen
+                personnelId={personnelId}
+                serviceId={serviceId}
+                pricingId={pricingId}
+                serviceName={serviceName}
+                personnelName={personnelName}
+            />
+        );
+    }
 
     const goToAllReviews = () => {
         router.push({
