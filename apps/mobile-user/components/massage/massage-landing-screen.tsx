@@ -104,7 +104,7 @@ function CouponCard({ item }: { item: MassageCoupon }) {
 function CategoryCard({ item }: { item: MassageCategoryCard }) {
     return (
         <View
-            className="h-[102px] w-[153px] overflow-hidden rounded-[10px] border border-white px-4 pt-4"
+            className="h-[102px] flex-1 overflow-hidden rounded-[10px] border border-white px-[17px] pt-[15px] shadow-sm"
             style={{
                 backgroundColor: item.gradientTo,
             }}
@@ -113,8 +113,16 @@ function CategoryCard({ item }: { item: MassageCategoryCard }) {
                 className="absolute inset-0"
                 style={{
                     backgroundColor: item.gradientFrom,
-                    opacity: 0.78,
+                    opacity: 0.82,
                 }}
+            />
+            <View
+                className="absolute -right-[36px] -top-[38px] h-[122px] w-[130px] rounded-full"
+                style={{ backgroundColor: item.gradientTo, opacity: 0.64 }}
+            />
+            <View
+                className="absolute -right-[8px] top-6 h-[122px] w-[130px] rounded-full"
+                style={{ backgroundColor: item.gradientTo, opacity: 0.72 }}
             />
             <View className="relative z-10 flex-1 flex-row items-start justify-between">
                 <View className="pt-[2px]">
@@ -134,7 +142,7 @@ function CategoryCard({ item }: { item: MassageCategoryCard }) {
                 <Image
                     source={item.imageSource}
                     contentFit="contain"
-                    className={item.imageClassName}
+                    className={`${item.imageClassName} -mr-1 -mt-3`}
                 />
             </View>
         </View>
@@ -310,6 +318,11 @@ function MerchantRow({ item }: { item: MassageMerchant }) {
 export function MassageLandingScreen() {
     const { colorScheme } = useColorScheme();
     const insets = useSafeAreaInsets();
+    const newcomerSectionTitle =
+        MASSAGE_PAGE_MOCK.newcomerColumns[0]?.title ?? "新人上线";
+    const newcomerCards = MASSAGE_PAGE_MOCK.newcomerColumns.flatMap(
+        (column) => column.cards,
+    );
 
     return (
         <View
@@ -399,97 +412,18 @@ export function MassageLandingScreen() {
                         </View>
                     </View>
 
-                    <View className="mt-3 flex-row justify-between gap-2">
-                        <View className="justify-between">
-                            {MASSAGE_PAGE_MOCK.categoryCards.map((item) => (
-                                <View key={item.id} className="mb-3 last:mb-0">
-                                    <CategoryCard item={item} />
-                                </View>
-                            ))}
-                        </View>
-
-                        <View
-                            className="h-[216px] w-[178px] rounded-[10px] border border-white bg-white px-4 pt-3"
-                            style={{ backgroundColor: "#fff8ee" }}
-                        >
-                            <SectionHeader title="推荐项目" />
-                            <ScrollView
-                                horizontal
-                                showsHorizontalScrollIndicator={false}
-                                className="mt-2"
-                            >
-                                <View className="flex-row">
-                                    {MASSAGE_PAGE_MOCK.projects.map((item) => (
-                                        <ProjectCard
-                                            key={item.id}
-                                            item={item}
-                                        />
-                                    ))}
-                                </View>
-                            </ScrollView>
-                            <View className="mt-[2px] flex-row justify-center gap-[5px]">
-                                {MASSAGE_PAGE_MOCK.projects.map(
-                                    (item, index) => (
-                                        <View
-                                            key={item.id}
-                                            className="h-[3px] w-[3px] rounded-full"
-                                            style={{
-                                                backgroundColor:
-                                                    index === 0
-                                                        ? "#f6a320"
-                                                        : "#d9d9d9",
-                                            }}
-                                        />
-                                    ),
-                                )}
-                            </View>
-                        </View>
+                    <View className="mt-3 flex-row gap-[13px]">
+                        {MASSAGE_PAGE_MOCK.categoryCards.map((item) => (
+                            <CategoryCard key={item.id} item={item} />
+                        ))}
                     </View>
 
-                    <View className="mt-3 overflow-hidden rounded-[10px] bg-white px-4 pb-[13px] pt-3 shadow-sm">
-                        <View className="flex-row">
-                            {MASSAGE_PAGE_MOCK.newcomerColumns.map(
-                                (column, index) => (
-                                    <View
-                                        key={column.id}
-                                        className="flex-1"
-                                        style={
-                                            index === 0
-                                                ? { paddingRight: 16 }
-                                                : { paddingLeft: 16 }
-                                        }
-                                    >
-                                        <View
-                                            className="flex-row items-center justify-between"
-                                            style={
-                                                index === 0
-                                                    ? {
-                                                          borderRightWidth: 1,
-                                                          borderRightColor:
-                                                              "#efefef",
-                                                          paddingRight: 16,
-                                                      }
-                                                    : undefined
-                                            }
-                                        >
-                                            <Text className="text-[16px] font-puhui-medium text-[#333333]">
-                                                {column.title}
-                                            </Text>
-                                            <Text className="text-base text-[#c2c2c2]">
-                                                ›
-                                            </Text>
-                                        </View>
-                                        <View className="mt-4 flex-row justify-between">
-                                            {column.cards.map((card) => (
-                                                <AvatarCard
-                                                    key={card.id}
-                                                    item={card}
-                                                />
-                                            ))}
-                                        </View>
-                                    </View>
-                                ),
-                            )}
+                    <View className="mt-3 overflow-hidden rounded-[10px] bg-white px-4 pb-4 pt-3 shadow-sm">
+                        <SectionHeader title={newcomerSectionTitle} />
+                        <View className="mt-3 flex-row items-start justify-between">
+                            {newcomerCards.map((card) => (
+                                <AvatarCard key={card.id} item={card} />
+                            ))}
                         </View>
                     </View>
 
