@@ -38,6 +38,9 @@ export const useHome = (params: HomeQueryParams = {}) =>
                     ...(params.categoryId !== undefined
                         ? { categoryId: params.categoryId }
                         : {}),
+                    ...(params.serviceTagId !== undefined
+                        ? { serviceTagId: params.serviceTagId }
+                        : {}),
                     ...(params.lat !== undefined
                         ? { lat: params.lat.toString() }
                         : {}),
@@ -116,6 +119,9 @@ export const useHomeRecommendations = (params: HomeQueryParams = {}) =>
                         ...(params.categoryId !== undefined
                             ? { categoryId: params.categoryId }
                             : {}),
+                        ...(params.serviceTagId !== undefined
+                            ? { serviceTagId: params.serviceTagId }
+                            : {}),
                         ...(params.lat !== undefined
                             ? { lat: params.lat.toString() }
                             : {}),
@@ -161,6 +167,9 @@ export const useHomeRecommendationsInfinite = (
                         page: pageParam.toString(),
                         ...(params.categoryId !== undefined
                             ? { categoryId: params.categoryId }
+                            : {}),
+                        ...(params.serviceTagId !== undefined
+                            ? { serviceTagId: params.serviceTagId }
                             : {}),
                         ...(params.lat !== undefined
                             ? { lat: params.lat.toString() }

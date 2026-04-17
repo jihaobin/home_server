@@ -7,6 +7,7 @@ import {
     pgTable,
     primaryKey,
     text,
+    uniqueIndex,
     varchar,
 } from 'drizzle-orm/pg-core';
 import { createId } from '.';
@@ -66,6 +67,33 @@ export const serviceCategories = pgTable(
     ],
 );
 
+export const serviceTags = pgTable(
+    'service_tags',
+    {
+        id: varchar('id', { length: 255 })
+            .primaryKey()
+            .$default(() => createId())
+            .unique(),
+        name: varchar('name', { length: 100 }).notNull(),
+        slug: varchar('slug', { length: 100 }).notNull(),
+        domain: varchar('domain', { length: 50 }).notNull(),
+        sortOrder: integer('sort_order').default(0).notNull(),
+        isActive: boolean('is_active').default(true).notNull(),
+        description: text('description'),
+    },
+    (table) => [
+        index('idx_service_tags_domain_order').on(
+            table.domain,
+            table.sortOrder,
+            table.id,
+        ),
+        uniqueIndex('uq_service_tags_domain_slug').on(
+            table.domain,
+            table.slug,
+        ),
+    ],
+);
+
 export const services = pgTable(
     'services',
     {
@@ -76,6 +104,10 @@ export const services = pgTable(
         categoryId: varchar('category_id', { length: 255 })
             .notNull()
             .references(() => serviceCategories.id, { onDelete: 'restrict' }), // 所属分类 ID
+        serviceTagId: varchar('service_tag_id', { length: 255 }).references(
+            () => serviceTags.id,
+            { onDelete: 'set null' },
+        ),
         name: varchar('name', { length: 100 }).notNull(), // 服务名称
         description: text('description'), // 服务详细描述
         imageFileId: varchar('image_file_id', { length: 255 }).references(
@@ -85,6 +117,7 @@ export const services = pgTable(
         isActive: boolean('is_active').default(true).notNull(), // 服务是否上架
     },
     (table) => [
+        index('idx_services_service_tag').on(table.serviceTagId, table.id),
         // 服务名称PGroonga全文搜索索引 - 仅为激活的服务建立索引
         index('idx_services_name_active')
             .using('pgroonga', table.name)
@@ -155,6 +188,10 @@ export const serviceCategoriesRelations = relations(
     }),
 );
 
+export const serviceTagsRelations = relations(serviceTags, ({ many }) => ({
+    services: many(services),
+}));
+
 // 服务关系定义
 export const servicesRelations = relations(services, ({ one, many }) => ({
     category: one(serviceCategories, {
@@ -164,6 +201,10 @@ export const servicesRelations = relations(services, ({ one, many }) => ({
     imageFile: one(files, {
         fields: [services.imageFileId],
         references: [files.id],
+    }),
+    serviceTag: one(serviceTags, {
+        fields: [services.serviceTagId],
+        references: [serviceTags.id],
     }),
     personnelSkills: many(servicePersonnelSkills),
 }));

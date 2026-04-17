@@ -17,3 +17,6 @@ export * from "./app-release";
 export * from "./home";
 export * from "./home-admin";
 export * from "./chat";
+export * from "./service-tag";
+export * from "./massage";
+export * from "./follow";

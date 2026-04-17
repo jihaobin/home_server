@@ -16,6 +16,10 @@ export const HomeQuerySchema = z
             description:
                 "可选；用于按服务分类过滤首页推荐（分类筛选页的‘推荐’Tab）",
         }),
+        serviceTagId: z.string().max(255).optional().meta({
+            title: "服务标签ID",
+            description: "可选；用于按服务标签过滤首页推荐",
+        }),
         lat: z.number().min(-90).max(90).optional().meta({
             title: "纬度",
             description:

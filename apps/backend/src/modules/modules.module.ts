@@ -13,6 +13,8 @@ import { NotificationModule } from './notification/notification.module';
 import { AppReleaseModule } from './app-release/app-release.module';
 import { HomeModule } from './home/home.module';
 import { ChatModule } from './chat/chat.module';
+import { FollowModule } from './follow/follow.module';
+import { MassageModule } from './massage/massage.module';
 
 @Module({
     imports: [
@@ -29,6 +31,8 @@ import { ChatModule } from './chat/chat.module';
         ChatModule,
         AppReleaseModule,
         HomeModule,
+        FollowModule,
+        MassageModule,
         AdminModule,
     ],
 })

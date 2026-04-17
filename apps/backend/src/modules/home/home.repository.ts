@@ -191,7 +191,12 @@ export class HomeRepository {
             this.db
                 .select()
                 .from(homeBanners)
-                .where(eq(homeBanners.isActive, true))
+                .where(
+                    and(
+                        eq(homeBanners.isActive, true),
+                        eq(homeBanners.scene, 'home'),
+                    ),
+                )
                 .orderBy(asc(homeBanners.sortOrder), asc(homeBanners.id)),
             this.db
                 .select()
@@ -319,6 +324,7 @@ export class HomeRepository {
         limit: number;
         offset?: number;
         categoryId?: string;
+        serviceTagId?: string;
         excludePersonnelUserId?: string;
     }): Promise<HomeRecommendedPersonnel[]> {
         const now = new Date();
@@ -365,6 +371,11 @@ export class HomeRepository {
             sql`(${servicePersonnelPricing.effectiveFrom} IS NULL OR ${servicePersonnelPricing.effectiveFrom} <= ${now})`,
             sql`(${servicePersonnelPricing.effectiveTo} IS NULL OR ${servicePersonnelPricing.effectiveTo} >= ${now})`,
         ];
+        if (params.serviceTagId) {
+            optimalPricingConditions.push(
+                eq(services.serviceTagId, params.serviceTagId),
+            );
+        }
 
         const optimalPricingCTE = this.db.$with('optimal_pricing').as(
             this.db
@@ -542,6 +553,7 @@ export class HomeRepository {
         limit: number;
         offset?: number;
         categoryId?: string;
+        serviceTagId?: string;
         excludePersonnelUserId?: string;
     }): Promise<HomeRecommendedPersonnel[]> {
         const now = new Date();
@@ -564,6 +576,11 @@ export class HomeRepository {
             sql`(${servicePersonnelPricing.effectiveFrom} IS NULL OR ${servicePersonnelPricing.effectiveFrom} <= ${now})`,
             sql`(${servicePersonnelPricing.effectiveTo} IS NULL OR ${servicePersonnelPricing.effectiveTo} >= ${now})`,
         ];
+        if (params.serviceTagId) {
+            optimalPricingConditions.push(
+                eq(services.serviceTagId, params.serviceTagId),
+            );
+        }
 
         const personnelBaseConditions = [
             eq(servicePersonnel.isAvailable, true),

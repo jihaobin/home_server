@@ -11,5 +11,6 @@ import { HomeRepository } from './home.repository';
     imports: [FilesModule, ServiceModule, ServicePersonnelModule],
     controllers: [HomeController],
     providers: [HomeService, HomeRepository, GeoLocationService],
+    exports: [HomeRepository],
 })
 export class HomeModule {}

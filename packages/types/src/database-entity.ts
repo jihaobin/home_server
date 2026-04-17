@@ -991,6 +991,16 @@ export const ServicesSchema = z
             description: "服务分类ID",
             title: "服务分类ID",
         }),
+        serviceTagId: z
+            .string()
+            .max(255)
+            .nullable()
+            .optional()
+            .default(null)
+            .meta({
+                description: "服务标签ID",
+                title: "服务标签ID",
+            }),
         name: z.string().max(100).meta({
             description: "服务名称",
             title: "服务名称",
@@ -1021,6 +1031,42 @@ export const ServicesSchema = z
     .meta({
         title: "服务表",
         description: "存储服务信息的表",
+    });
+
+export const ServiceTagsSchema = z
+    .object({
+        id: z.string().max(255).meta({
+            description: "服务标签ID",
+            title: "服务标签ID",
+        }),
+        name: z.string().max(100).meta({
+            description: "服务标签名称",
+            title: "服务标签名称",
+        }),
+        slug: z.string().max(100).meta({
+            description: "服务标签 slug",
+            title: "服务标签 slug",
+        }),
+        domain: z.string().max(50).meta({
+            description: "服务标签所属业务域",
+            title: "服务标签业务域",
+        }),
+        sortOrder: z.number().int().default(0).meta({
+            description: "服务标签排序值",
+            title: "服务标签排序值",
+        }),
+        isActive: z.boolean().default(true).meta({
+            description: "服务标签是否启用",
+            title: "服务标签是否启用",
+        }),
+        description: z.string().nullable().default(null).meta({
+            description: "服务标签描述",
+            title: "服务标签描述",
+        }),
+    })
+    .meta({
+        title: "服务标签表",
+        description: "存储全局服务标签信息的表",
     });
 
 // 服务人员表（关联用户） - MVP纯个人模式

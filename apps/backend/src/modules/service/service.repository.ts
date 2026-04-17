@@ -392,6 +392,7 @@ export class ServiceRepository {
      */
     async getServices({
         categoryId,
+        serviceTagId,
         keyword,
         isActive,
         page = 1,
@@ -413,6 +414,10 @@ export class ServiceRepository {
 
         if (isActive !== undefined) {
             serviceConditions.push(eq(services.isActive, isActive));
+        }
+
+        if (serviceTagId) {
+            serviceConditions.push(eq(services.serviceTagId, serviceTagId));
         }
 
         // categoryId：聚合 category 子树下的全部服务，返回单个分类节点（前端取 items[0].children 做 Tab）

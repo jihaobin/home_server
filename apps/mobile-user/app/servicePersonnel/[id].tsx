@@ -32,7 +32,7 @@ import { useChatUpsertConversation } from "@repo/hooks/api/chat";
 import { executeContactCustomerAction } from "@repo/mobile-ui/lib/contact-customer-action";
 import { toast } from "sonner-native";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
-import { MockServicePersonnelScreen } from "@/components/service-personnel/mock-service-personnel-screen";
+import { MassageServicePersonnelScreen } from "@/components/service-personnel/massage-service-personnel-screen";
 import {
     ServicePersonnelReviewList,
     type ServicePersonnelReviewItem,
@@ -717,13 +717,27 @@ export default function ServiceDetailScreen() {
 
     if (mockSource === "massage") {
         return (
-            <MockServicePersonnelScreen
-                personnelId={personnelId}
-                serviceId={serviceId}
-                pricingId={pricingId}
-                serviceName={serviceName}
-                personnelName={personnelName}
-            />
+            <QueryErrorResetBoundary>
+                {({ reset }) => (
+                    <ErrorBoundary
+                        onReset={reset}
+                        fallbackRender={({ resetErrorBoundary }) => (
+                            <ServiceDetailError
+                                onRetry={resetErrorBoundary}
+                                bottomInset={insets.bottom}
+                            />
+                        )}
+                    >
+                        <MassageServicePersonnelScreen
+                            personnelId={personnelId}
+                            serviceId={serviceId}
+                            pricingId={pricingId}
+                            serviceName={serviceName}
+                            personnelName={personnelName}
+                        />
+                    </ErrorBoundary>
+                )}
+            </QueryErrorResetBoundary>
         );
     }
 

@@ -29,6 +29,7 @@ export const homeBanners = pgTable(
             .default('none')
             .notNull(),
         linkTarget: varchar('link_target', { length: 255 }),
+        scene: varchar('scene', { length: 20 }).default('home').notNull(),
         sortOrder: integer('sort_order').default(0).notNull(),
         isActive: boolean('is_active').default(true).notNull(),
         startsAt: timestamp('starts_at', { withTimezone: true }),
@@ -43,6 +44,7 @@ export const homeBanners = pgTable(
     (table) => [
         index('idx_home_banners_active_sort').on(
             table.isActive,
+            table.scene,
             table.sortOrder,
         ),
     ],

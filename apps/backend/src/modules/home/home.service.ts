@@ -292,6 +292,7 @@ export class HomeService {
             lat,
             lng,
             categoryId,
+            serviceTagId,
         } = query;
         const normalizedPage = Math.max(1, page);
         const offset = (normalizedPage - 1) * limit;
@@ -305,12 +306,14 @@ export class HomeService {
                       limit,
                       offset,
                       categoryId,
+                      serviceTagId,
                       excludePersonnelUserId: userId,
                   })
                 : await this.homeRepository.getRecommendedPersonnelGlobal({
                       limit,
                       offset,
                       categoryId,
+                      serviceTagId,
                       excludePersonnelUserId: userId,
                   });
 

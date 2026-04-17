@@ -480,9 +480,13 @@ export class OrderRepository {
     async countOrdersByStaff({
         servicePersonnelId,
         status,
+        startTime,
+        endTime,
     }: {
         servicePersonnelId: string;
         status?: OrderStatus;
+        startTime?: Date;
+        endTime?: Date;
     }) {
         const conditions: SQL[] = [
             eq(orderAssignments.servicePersonnelId, servicePersonnelId),
@@ -490,6 +494,14 @@ export class OrderRepository {
 
         if (status) {
             conditions.push(eq(orders.status, status));
+        }
+
+        if (startTime && endTime) {
+            conditions.push(between(orders.createdAt, startTime, endTime));
+        } else if (startTime) {
+            conditions.push(gte(orders.createdAt, startTime));
+        } else if (endTime) {
+            conditions.push(lte(orders.createdAt, endTime));
         }
 
         const whereClause = and(...conditions);

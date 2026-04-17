@@ -167,6 +167,9 @@ export const useServiceList = (params: Omit<ServiceListRequest, "page">) =>
                         ...(params.categoryId
                             ? { categoryId: params.categoryId }
                             : {}),
+                        ...(params.serviceTagId
+                            ? { serviceTagId: params.serviceTagId }
+                            : {}),
                         ...(params.keyword ? { keyword: params.keyword } : {}),
                         ...(params.minPrice !== undefined
                             ? { minPrice: params.minPrice.toString() }
@@ -224,6 +227,9 @@ export const useServiceListSinglePage = (
                             : {}),
                         ...(restParams.categoryId
                             ? { categoryId: restParams.categoryId }
+                            : {}),
+                        ...(restParams.serviceTagId
+                            ? { serviceTagId: restParams.serviceTagId }
                             : {}),
                         ...(restParams.keyword
                             ? { keyword: restParams.keyword }

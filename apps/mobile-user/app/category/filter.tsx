@@ -290,6 +290,9 @@ export default function CategoryFilterScreen() {
         categoryName?: string;
         defaultTabName?: string;
         defaultServiceId?: string;
+        serviceTagId?: string;
+        serviceTagName?: string;
+        serviceTagDomain?: string;
     }>();
     const categoryId = params.categoryId
         ? String(params.categoryId)
@@ -304,6 +307,9 @@ export default function CategoryFilterScreen() {
           : undefined;
     const defaultServiceId = params.defaultServiceId
         ? String(params.defaultServiceId)
+        : undefined;
+    const serviceTagId = params.serviceTagId
+        ? String(params.serviceTagId)
         : undefined;
 
     const { colorScheme } = useColorScheme();
@@ -327,6 +333,7 @@ export default function CategoryFilterScreen() {
 
     const serviceListQuery = useServiceListSinglePage({
         categoryId,
+        serviceTagId,
         isActive: true,
         limit: 1,
         page: 1,
@@ -456,6 +463,7 @@ export default function CategoryFilterScreen() {
     const recommendationsQuery = useHomeRecommendationsInfinite(
         {
             categoryId,
+            ...(serviceTagId ? { serviceTagId } : {}),
             ...(resolvedCoords
                 ? { lat: resolvedCoords.lat, lng: resolvedCoords.lng }
                 : {}),

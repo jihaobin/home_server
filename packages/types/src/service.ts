@@ -129,6 +129,10 @@ export const ServiceListRequestSchema = z
             description: "服务分类ID",
             title: "服务分类ID",
         }),
+        serviceTagId: z.string().max(255).optional().meta({
+            description: "服务标签ID",
+            title: "服务标签ID",
+        }),
         keyword: z.string().optional().meta({
             description: "搜索关键字",
             title: "搜索关键字",

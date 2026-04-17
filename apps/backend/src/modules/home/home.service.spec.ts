@@ -372,3 +372,30 @@ describe('HomeService.search', () => {
         );
     });
 });
+
+describe('HomeService.getHomeRecommendations', () => {
+    it('透传 serviceTagId 到 repository', async () => {
+        const homeRepository = {
+            getOpsConfig: jest.fn(),
+            getRecommendedPersonnelGlobal: jest.fn().mockResolvedValue([]),
+            getRecommendedPersonnelWithCenter: jest.fn(),
+        } as any;
+
+        const service = new HomeService(homeRepository, {} as any, {} as any);
+
+        await service.getHomeRecommendations(undefined, {
+            categoryId: 'cat_massage',
+            serviceTagId: 'service_tag_massage_health',
+            page: 1,
+            limit: 20,
+            maxDistanceKm: 10,
+        });
+
+        expect(homeRepository.getRecommendedPersonnelGlobal).toHaveBeenCalledWith(
+            expect.objectContaining({
+                categoryId: 'cat_massage',
+                serviceTagId: 'service_tag_massage_health',
+            }),
+        );
+    });
+});
