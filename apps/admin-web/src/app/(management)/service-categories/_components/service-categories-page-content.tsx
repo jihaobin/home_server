@@ -74,6 +74,7 @@ import { UploadField, type UploadValue } from "@repo/web-ui/upload";
 import { cn } from "@repo/web-ui/lib/utils";
 import {
     useAdminServiceCategories,
+    useAdminServiceTags,
     useCreateAdminServiceCategory,
     useUpdateAdminServiceCategory,
     useDeleteAdminServiceCategory,
@@ -129,9 +130,17 @@ type ServiceFormValues = {
     name: string;
     description: string;
     categoryId: string;
+    serviceTagId: string;
     isActive: boolean;
     image: UploadValue | null;
 };
+
+type ServiceTagOption = {
+    value: string;
+    label: string;
+};
+
+const UNSET_SERVICE_TAG_SELECT_VALUE = "__unset_service_tag__";
 
 type ServiceListItem = CategoryWithServices["children"][number];
 
@@ -349,6 +358,10 @@ export function ServiceCategoriesPageContent() {
         page: 1,
         limit: 500,
     });
+    const { data: serviceTagsResponse } = useAdminServiceTags({
+        domain: "massage",
+        status: "all",
+    });
 
     const serviceCategories: CategoryWithServices[] = useMemo(
         () => serviceListResponse?.items ?? [],
@@ -390,6 +403,39 @@ export function ServiceCategoriesPageContent() {
             ),
         [data.flat],
     );
+
+    const serviceTagOptions = useMemo<ServiceTagOption[]>(() => {
+        const activeOptions = serviceTagsResponse.items
+            .filter((tag) => tag.isActive)
+            .map((tag) => ({
+                value: tag.id,
+                label: tag.name,
+            }));
+
+        if (serviceDialogState?.mode !== "edit") {
+            return activeOptions;
+        }
+
+        const currentServiceTagId = serviceDialogState.service.serviceTagId;
+        if (!currentServiceTagId) {
+            return activeOptions;
+        }
+
+        const currentTag = serviceTagsResponse.items.find(
+            (tag) => tag.id === currentServiceTagId,
+        );
+        if (!currentTag || currentTag.isActive) {
+            return activeOptions;
+        }
+
+        return [
+            ...activeOptions,
+            {
+                value: currentTag.id,
+                label: `${currentTag.name}（已停用）`,
+            },
+        ];
+    }, [serviceDialogState, serviceTagsResponse.items]);
 
     const visibleCategoryIds = useMemo(
         () =>
@@ -613,6 +659,7 @@ export function ServiceCategoriesPageContent() {
                         ? values.description.trim()
                         : null,
                     categoryId: values.categoryId,
+                    serviceTagId: values.serviceTagId || null,
                     imageFileId: values.image?.id ?? null,
                     isActive: values.isActive,
                 });
@@ -637,6 +684,7 @@ export function ServiceCategoriesPageContent() {
                             ? values.description.trim()
                             : null,
                         categoryId: values.categoryId,
+                        serviceTagId: values.serviceTagId || null,
                         imageFileId: values.image?.id ?? null,
                         isActive: values.isActive,
                     },
@@ -894,6 +942,7 @@ export function ServiceCategoriesPageContent() {
                             : serviceDialogState.service.categoryId
                     }
                     categories={categories}
+                    serviceTagOptions={serviceTagOptions}
                     onClose={closeServiceDialog}
                     uploadImage={handleUploadIcon}
                     onSubmit={async (values) => {
@@ -1895,6 +1944,7 @@ function ServiceFormDialog({
     service,
     categoryId,
     categories,
+    serviceTagOptions,
     onClose,
     uploadImage,
     onSubmit,
@@ -1905,6 +1955,7 @@ function ServiceFormDialog({
     service: ServiceListItem | null;
     categoryId: string | null;
     categories: AdminServiceCategory[];
+    serviceTagOptions: ServiceTagOption[];
     onClose: () => void;
     uploadImage: (file: File) => Promise<UploadValue>;
     onSubmit: (values: ServiceFormValues) => Promise<void>;
@@ -1914,6 +1965,7 @@ function ServiceFormDialog({
         name: service?.name ?? "",
         description: service?.description ?? "",
         categoryId: service?.categoryId ?? categoryId ?? "",
+        serviceTagId: service?.serviceTagId ?? "",
         isActive: service?.isActive ?? true,
         image:
             service?.imageFileUrl || service?.imageFileId
@@ -2003,6 +2055,52 @@ function ServiceFormDialog({
                             </p>
                         </div>
                     </div>
+
+                    <form.Field name="serviceTagId">
+                        {(field) => (
+                            <div className="space-y-2">
+                                <Label>服务标签</Label>
+                                <Select
+                                    value={
+                                        field.state.value ||
+                                        UNSET_SERVICE_TAG_SELECT_VALUE
+                                    }
+                                    onValueChange={(value) =>
+                                        field.handleChange(
+                                            value ===
+                                                UNSET_SERVICE_TAG_SELECT_VALUE
+                                                ? ""
+                                                : value,
+                                        )
+                                    }
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="请选择服务标签" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem
+                                            value={
+                                                UNSET_SERVICE_TAG_SELECT_VALUE
+                                            }
+                                        >
+                                            未设置标签
+                                        </SelectItem>
+                                        {serviceTagOptions.map((option) => (
+                                            <SelectItem
+                                                key={option.value}
+                                                value={option.value}
+                                            >
+                                                {option.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">
+                                    仅可新绑启用标签；已停用历史绑定可保留回显
+                                </p>
+                            </div>
+                        )}
+                    </form.Field>
 
                     <form.Field
                         name="description"

@@ -1,7 +1,7 @@
 import type React from "react";
 import { Image as ExpoImage } from "expo-image";
 import { router } from "expo-router";
-import { Heart } from "lucide-react-native";
+import { Heart, MessageCircle } from "lucide-react-native";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
 import { StatusBar } from "expo-status-bar";
 import { useMassageLanding } from "@repo/hooks/api/massage";
@@ -17,7 +17,7 @@ import {
 import { SvgXml } from "react-native-svg";
 import { useHomeLocationStore } from "@/stores/home-location-store";
 import { createMassageTagFilterRouteParams } from "./route";
-import { getMassageTagVisual } from "./tag-entry-visuals";
+import { getAlternatingMassageTagVisual } from "./tag-entry-visuals";
 
 cssInterop(ExpoImage, { className: { target: "style" } });
 
@@ -53,6 +53,7 @@ type MassageCategoryCard = {
     descriptionColor: string;
     gradientFrom: string;
     gradientTo: string;
+    categoryMaskSource: React.ComponentProps<typeof ExpoImage>["source"];
     imageSource: React.ComponentProps<typeof ExpoImage>["source"];
     imageClassName: string;
     onPress: () => void;
@@ -74,9 +75,7 @@ type MassageMerchant = {
     score: string;
     shopName: string;
     orderSummary: string;
-    benefit: string;
     availableTime: string;
-    badge: string;
     favoriteCount: string;
     commentCount: string;
     avatarUrl: string | null;
@@ -85,6 +84,26 @@ type MassageMerchant = {
     pricingId: string | null;
     serviceName: string | null;
 };
+
+const CATEGORY_WAVE_LAYERS = [
+    {
+        top: -31,
+        right: -30,
+    },
+    {
+        top: 28,
+        right: -30,
+    },
+] as const;
+
+const CATEGORY_PERSONNEL_IMAGE_POSITION = {
+    right: 6,
+    bottom: -4,
+} as const;
+
+function createCategoryCardGradientXml(from: string, to: string) {
+    return `<svg preserveAspectRatio="none" width="100%" height="100%" viewBox="0 0 167 102" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="categoryCardGradient" x1="83.5" y1="0" x2="83.5" y2="102" gradientUnits="userSpaceOnUse"><stop stop-color="${from}"/><stop offset="0.62745" stop-color="${to}"/></linearGradient></defs><rect width="167" height="102" rx="10" fill="url(#categoryCardGradient)"/></svg>`;
+}
 
 const LANDING_STATIC = {
     brandTitle: "叮咚上门",
@@ -114,7 +133,6 @@ const LANDING_STATIC = {
         { id: "coupon-3", amount: 40, title: "现金券", actionLabel: "去使用" },
         { id: "coupon-4", amount: 40, title: "现金券", actionLabel: "去使用" },
     ] as readonly MassageCoupon[],
-    merchantStatsIconSource: require("@/assets/images/icon-round.png"),
     merchantCommentIconSource: require("@/assets/images/icon-time.png"),
 } as const;
 
@@ -203,43 +221,66 @@ function CouponCard({ item }: { item: MassageCoupon }) {
 }
 
 function CategoryCard({ item }: { item: MassageCategoryCard }) {
+    const gradientXml = useMemo(
+        () => createCategoryCardGradientXml(item.gradientFrom, item.gradientTo),
+        [item.gradientFrom, item.gradientTo],
+    );
+
     return (
-        <View
-            className="h-[102px] flex-1 overflow-hidden rounded-[10px] border border-white px-[17px] pt-[15px] shadow-sm"
-            style={{ backgroundColor: item.gradientTo }}
-        >
-            <View
-                className="absolute inset-0"
-                style={{ backgroundColor: item.gradientFrom, opacity: 0.82 }}
+        <View className="relative h-[102px] flex-1 overflow-hidden rounded-[10px] border border-white shadow-sm">
+            <SvgXml
+                xml={gradientXml}
+                width="100%"
+                height="100%"
+                style={{ position: "absolute", inset: 0 }}
             />
+
+            {CATEGORY_WAVE_LAYERS.map((layer, index) => (
+                <Image
+                    key={`${item.id}-wave-${index}`}
+                    pointerEvents="none"
+                    source={item.categoryMaskSource}
+                    contentFit="fill"
+                    style={{
+                        position: "absolute",
+                        top: layer.top,
+                        right: layer.right,
+                        width: 118,
+                        height: 108,
+                    }}
+                />
+            ))}
+
             <View
-                className="absolute -right-[36px] -top-[38px] h-[122px] w-[130px] rounded-full"
-                style={{ backgroundColor: item.gradientTo, opacity: 0.64 }}
-            />
-            <View
-                className="absolute -right-[8px] top-6 h-[122px] w-[130px] rounded-full"
-                style={{ backgroundColor: item.gradientTo, opacity: 0.72 }}
-            />
-            <View className="relative z-10 flex-1 flex-row items-start justify-between">
-                <View className="pt-[2px]">
+                pointerEvents="none"
+                style={{
+                    position: "absolute",
+                    zIndex: 2,
+                    ...CATEGORY_PERSONNEL_IMAGE_POSITION,
+                }}
+            >
+                <Image
+                    source={item.imageSource}
+                    contentFit="contain"
+                    className={item.imageClassName}
+                />
+            </View>
+
+            <View className="relative z-10 flex-1 px-[17px] pt-[15px]">
+                <View className="w-[76px]">
                     <Text
-                        className="text-[18px] font-puhui-medium"
+                        className="text-[18px] font-puhui-medium leading-[20px]"
                         style={{ color: item.titleColor }}
                     >
                         {item.title}
                     </Text>
                     <Text
-                        className="mt-1 text-[11px] leading-[15px] font-puhui-regular"
+                        className="mt-[5px] text-[11px] font-puhui-regular leading-[15px]"
                         style={{ color: item.descriptionColor }}
                     >
                         {item.description}
                     </Text>
                 </View>
-                <Image
-                    source={item.imageSource}
-                    contentFit="contain"
-                    className={`${item.imageClassName} -mr-1 -mt-3`}
-                />
             </View>
         </View>
     );
@@ -326,11 +367,6 @@ function MerchantRow({ item }: { item: MassageMerchant }) {
                                 <Text className="text-[15px] font-puhui-regular text-black">
                                     {item.name}
                                 </Text>
-                                <View className="rounded-[4px] border border-[#e80019] px-[4px] py-[1px]">
-                                    <Text className="text-[11px] font-puhui-medium text-[#e85d0d]">
-                                        {item.badge}
-                                    </Text>
-                                </View>
                             </View>
                             <View className="mt-[2px] flex-row items-center">
                                 <Text className="text-[12px] font-puhui-medium text-[#e80019]">
@@ -356,20 +392,21 @@ function MerchantRow({ item }: { item: MassageMerchant }) {
                     </View>
                     <View className="mt-[10px] flex-row items-center justify-between">
                         <View className="flex-row items-center">
-                            <Icon as={Heart} className="h-4 w-4 text-primary" size={16} />
+                            <Icon
+                                as={Heart}
+                                className="h-4 w-4 text-primary"
+                                size={16}
+                            />
                             <Text className="ml-1 text-[12px] font-puhui-regular text-[#777777]">
                                 {item.favoriteCount}
                             </Text>
-                            <Image
-                                source={LANDING_STATIC.merchantCommentIconSource}
-                                contentFit="contain"
-                                className="ml-3 h-4 w-4"
+                            <Icon
+                                as={MessageCircle}
+                                className="ml-3 h-4 w-4 text-[#777777]"
+                                size={16}
                             />
                             <Text className="ml-1 text-[12px] font-puhui-regular text-[#777777]">
                                 {item.commentCount}
-                            </Text>
-                            <Text className="ml-3 text-[12px] font-puhui-regular text-[#da1f33]">
-                                {item.benefit}
                             </Text>
                         </View>
                         <View className="h-7 w-[66px] items-center justify-center rounded-full bg-[#f7951b]">
@@ -413,8 +450,8 @@ function MassageLandingScreenContent() {
 
     const categoryCards = useMemo<MassageCategoryCard[]>(
         () =>
-            landingQuery.data.tagEntries.map((tag) => {
-                const visual = getMassageTagVisual(tag.tagSlug);
+            landingQuery.data.tagEntries.map((tag, index) => {
+                const visual = getAlternatingMassageTagVisual(index);
                 return {
                     id: tag.tagId,
                     title: tag.tagName,
@@ -423,6 +460,7 @@ function MassageLandingScreenContent() {
                     descriptionColor: visual.descriptionColor,
                     gradientFrom: visual.gradientFrom,
                     gradientTo: visual.gradientTo,
+                    categoryMaskSource: visual.categoryMaskSource,
                     imageSource: visual.imageSource,
                     imageClassName: visual.imageClassName,
                     onPress: () => {
@@ -462,9 +500,7 @@ function MassageLandingScreenContent() {
                 score: `${item.ratingValue.toFixed(1)}分`,
                 shopName: item.serviceName ?? "上门按摩",
                 orderSummary: item.orderCountLabel ?? "一年0单",
-                benefit: "免出行费",
                 availableTime: item.availableTimeText ?? "可预约",
-                badge: "极速达",
                 favoriteCount: String(item.favoriteCount),
                 commentCount: String(item.reviewCount),
                 avatarUrl: item.avatarUrl,
@@ -476,10 +512,9 @@ function MassageLandingScreenContent() {
         [landingQuery.data.recommendedPersonnel],
     );
 
-    const bannerSource =
-        landingQuery.data.banner?.imageUrl
-            ? { uri: landingQuery.data.banner.imageUrl }
-            : LANDING_STATIC.bannerImageSource;
+    const bannerSource = landingQuery.data.banner?.imageUrl
+        ? { uri: landingQuery.data.banner.imageUrl }
+        : LANDING_STATIC.bannerImageSource;
     const bannerPlaceholder =
         landingQuery.data.banner?.imageUrl &&
         landingQuery.data.banner.imageBlurhash
@@ -539,19 +574,27 @@ function MassageLandingScreenContent() {
                     >
                         <View className="absolute inset-0 bg-[#fff5ea]" />
                         <Image
-                            source={LANDING_STATIC.entryBar.leftDecorationSource}
+                            source={
+                                LANDING_STATIC.entryBar.leftDecorationSource
+                            }
                             contentFit="contain"
                             className="absolute left-0 top-0 h-full w-[150px]"
                         />
                         <Image
-                            source={LANDING_STATIC.entryBar.rightDecorationSource}
+                            source={
+                                LANDING_STATIC.entryBar.rightDecorationSource
+                            }
                             contentFit="contain"
                             className="absolute right-0 top-0 h-full w-[150px]"
                         />
                         <View className="flex-1 flex-row items-center">
-                            <EntryItem item={LANDING_STATIC.entryBar.entries[0]} />
+                            <EntryItem
+                                item={LANDING_STATIC.entryBar.entries[0]}
+                            />
                             <View className="h-full w-px bg-[#efe2cc]" />
-                            <EntryItem item={LANDING_STATIC.entryBar.entries[1]} />
+                            <EntryItem
+                                item={LANDING_STATIC.entryBar.entries[1]}
+                            />
                         </View>
                     </View>
 

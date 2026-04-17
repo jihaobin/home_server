@@ -13,6 +13,7 @@ import {
     WithdrawalPayeeAccountTypeEnum,
     WithdrawalStatusEnum,
 } from "./database-entity";
+import { ServiceTagDomainEnum } from "./service-tag";
 
 /**
  * 管理员登录请求
@@ -994,4 +995,78 @@ export const AdminReviewWithdrawalBodySchema = z
 
 export type AdminReviewWithdrawalBody = z.infer<
     typeof AdminReviewWithdrawalBodySchema
+>;
+
+// =========================
+// 服务标签管理
+// =========================
+
+export const AdminServiceTagStatusSchema = z
+    .enum(["all", "active", "inactive"])
+    .describe("管理端服务标签状态筛选");
+
+export const AdminServiceTagSchema = z
+    .object({
+        id: z.string().max(255).describe("标签 ID"),
+        name: z.string().max(100).describe("标签名称"),
+        slug: z.string().max(100).describe("标签 slug"),
+        domain: ServiceTagDomainEnum.describe("业务域"),
+        sortOrder: z.number().int().describe("排序值"),
+        isActive: z.boolean().describe("是否启用"),
+        description: z.string().nullable().describe("标签描述"),
+        serviceCount: z.number().int().nonnegative().describe("已绑定服务数"),
+    })
+    .describe("管理端服务标签");
+
+export type AdminServiceTag = z.infer<typeof AdminServiceTagSchema>;
+
+export const AdminServiceTagListQuerySchema = z
+    .object({
+        domain: ServiceTagDomainEnum.optional(),
+        keyword: z.string().trim().optional(),
+        status: AdminServiceTagStatusSchema.default("all"),
+    })
+    .describe("管理端服务标签列表查询参数");
+
+export type AdminServiceTagListQuery = z.infer<
+    typeof AdminServiceTagListQuerySchema
+>;
+
+export const AdminServiceTagListResponseSchema = z
+    .object({
+        items: z.array(AdminServiceTagSchema),
+    })
+    .describe("管理端服务标签列表响应");
+
+export type AdminServiceTagListResponse = z.infer<
+    typeof AdminServiceTagListResponseSchema
+>;
+
+export const CreateAdminServiceTagSchema = z
+    .object({
+        name: z.string().trim().min(1, "标签名称不能为空").max(100),
+        slug: z.string().trim().min(1, "slug 不能为空").max(100),
+        domain: ServiceTagDomainEnum,
+        sortOrder: z.number().int(),
+        description: z.string().trim().nullable().optional(),
+        isActive: z.boolean(),
+    })
+    .describe("创建管理端服务标签请求");
+
+export type CreateAdminServiceTagInput = z.infer<
+    typeof CreateAdminServiceTagSchema
+>;
+
+export const UpdateAdminServiceTagSchema = z
+    .object({
+        name: z.string().trim().min(1).max(100).optional(),
+        slug: z.string().trim().min(1).max(100).optional(),
+        sortOrder: z.number().int().optional(),
+        description: z.string().trim().nullable().optional(),
+        isActive: z.boolean().optional(),
+    })
+    .describe("更新管理端服务标签请求");
+
+export type UpdateAdminServiceTagInput = z.infer<
+    typeof UpdateAdminServiceTagSchema
 >;

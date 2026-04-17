@@ -28,6 +28,9 @@ import { AdminHomeConfigRepository } from './admin-home-config.repository';
 import { AdminServiceCategoryCommissionStrategyController } from './admin-service-category-commission-strategy.controller';
 import { AdminServiceCategoryCommissionStrategyService } from './admin-service-category-commission-strategy.service';
 import { AdminServiceCategoryCommissionStrategyRepository } from './admin-service-category-commission-strategy.repository';
+import { AdminServiceTagsController } from './admin-service-tags.controller';
+import { AdminServiceTagsService } from './admin-service-tags.service';
+import { AdminServiceTagsRepository } from './admin-service-tags.repository';
 
 @Module({
     imports: [OrderModule, FilesModule],
@@ -37,6 +40,7 @@ import { AdminServiceCategoryCommissionStrategyRepository } from './admin-servic
         AdminUsersController,
         AdminOrdersController,
         AdminServiceCategoriesController,
+        AdminServiceTagsController,
         AdminHomeConfigController,
         AdminServiceCategoryCommissionStrategyController,
     ],
@@ -51,6 +55,8 @@ import { AdminServiceCategoryCommissionStrategyRepository } from './admin-servic
         AdminOrdersRepository,
         AdminServiceCategoriesService,
         AdminServiceCategoriesRepository,
+        AdminServiceTagsService,
+        AdminServiceTagsRepository,
         AdminHomeConfigService,
         AdminHomeConfigRepository,
         AdminServiceCategoryCommissionStrategyService,

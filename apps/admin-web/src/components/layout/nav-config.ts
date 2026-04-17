@@ -5,6 +5,7 @@ import {
     Layers3,
     LineChart,
     Smartphone,
+    Tags,
     Users2,
     WalletMinimal,
 } from "lucide-react"
@@ -48,6 +49,12 @@ const managementNav: NavItem[] = [
         href: "/service-categories",
         icon: Layers3,
         description: "分类层级、图标与排序",
+    },
+    {
+        label: "服务标签",
+        href: "/service-tags",
+        icon: Tags,
+        description: "按摩标签维护与启停",
     },
     {
         label: "收益记录",

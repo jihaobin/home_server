@@ -16,6 +16,7 @@ import type { DbType } from 'src/common/database/db';
 import {
     orders,
     serviceCategories,
+    serviceTags,
     services,
 } from 'src/common/database/schema';
 
@@ -566,6 +567,7 @@ export class ServiceRepository {
             .select({
                 id: services.id,
                 categoryId: services.categoryId,
+                serviceTagId: services.serviceTagId,
                 name: services.name,
                 description: services.description,
                 imageFileId: services.imageFileId,
@@ -587,6 +589,20 @@ export class ServiceRepository {
             .where(eq(services.id, id));
 
         return (service as ServiceDetail | null) || null;
+    }
+
+    async findServiceTagById(id: string) {
+        const [tag] = await this.db
+            .select({
+                id: serviceTags.id,
+                isActive: serviceTags.isActive,
+                domain: serviceTags.domain,
+            })
+            .from(serviceTags)
+            .where(eq(serviceTags.id, id))
+            .limit(1);
+
+        return tag ?? null;
     }
 
     /**

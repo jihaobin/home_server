@@ -5,7 +5,7 @@ const MassageLandingPersonnelCardSchema = z
     .object({
         personnelId: z.string().max(255),
         name: z.string(),
-        avatarUrl: z.string().url().nullable().default(null),
+        avatarUrl: z.url().nullable().default(null),
         avatarBlurhash: z.string().nullable().optional(),
         serviceId: z.string().max(255).nullable().default(null),
         pricingId: z.string().max(255).nullable().default(null),
@@ -44,7 +44,7 @@ export const MassageLandingResponseSchema = z
         banner: z
             .object({
                 title: z.string().nullable(),
-                imageUrl: z.string().url().nullable(),
+                imageUrl: z.url().nullable(),
                 imageBlurhash: z.string().nullable().optional(),
                 linkType: z.enum(["route", "url", "none"]),
                 linkTarget: z.string().nullable().optional(),

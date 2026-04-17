@@ -14,8 +14,13 @@ import {
     type AdminWithdrawalsQueryInput,
     adminAppReleasesQueryOptions,
     type AdminAppReleasesQueryInput,
+    adminServiceTagsQueryOptions,
 } from "@repo/hooks/api/ssr";
-import { ErrorCode, type AdminDashboardRange } from "@repo/types";
+import {
+    ErrorCode,
+    type AdminDashboardRange,
+    type AdminServiceTagListQuery,
+} from "@repo/types";
 import { ApiClientError } from "@repo/utils/api-client";
 import { prefetchDehydratedState } from "@/lib/react-query-server";
 import { ensureSsrApiClient } from "@/lib/ssr-api-client";
@@ -186,6 +191,27 @@ export async function preloadAppReleasesPageState(
     try {
         return await prefetchDehydratedState(async (queryClient) => {
             await queryClient.fetchQuery(adminAppReleasesQueryOptions(query));
+        });
+    } catch (error) {
+        if (
+            error instanceof ApiClientError &&
+            (error.code === ErrorCode.UNAUTHORIZED ||
+                error.code === ErrorCode.FORBIDDEN)
+        ) {
+            redirect("/auth/login");
+        }
+        throw error;
+    }
+}
+
+export async function preloadServiceTagsPageState(
+    query: AdminServiceTagListQuery = { domain: "massage", status: "all" },
+) {
+    ensureSsrApiClient();
+
+    try {
+        return await prefetchDehydratedState(async (queryClient) => {
+            await queryClient.fetchQuery(adminServiceTagsQueryOptions(query));
         });
     } catch (error) {
         if (

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { ServiceRepository } from './service.repository';
 import {
     CreateServiceCategory,
@@ -60,6 +60,30 @@ export class ServiceService {
         return { ...service, imageFileUrl } as T & {
             imageFileUrl: string | null;
         };
+    }
+
+    private async validateServiceTagBinding(
+        currentServiceTagId: string | null | undefined,
+        nextServiceTagId: string | null | undefined,
+    ): Promise<void> {
+        if (nextServiceTagId === undefined || nextServiceTagId === null) {
+            return;
+        }
+
+        const tag = await this.serviceRepository.findServiceTagById(
+            nextServiceTagId,
+        );
+
+        if (!tag) {
+            throw new BadRequestException('服务标签不存在');
+        }
+
+        const isKeepingExistingInactiveTag =
+            currentServiceTagId === nextServiceTagId && tag.isActive === false;
+
+        if (!tag.isActive && !isKeepingExistingInactiveTag) {
+            throw new BadRequestException('停用标签不能作为新的绑定目标');
+        }
     }
 
     async getServiceCategories(dep?: number, keyword?: string) {
@@ -190,6 +214,8 @@ export class ServiceService {
      * 创建服务项目
      */
     async createService(data: CreateService): Promise<ServiceDetail> {
+        await this.validateServiceTagBinding(null, data.serviceTagId);
+
         const created = await this.serviceRepository.createService(data);
         const detail = await this.getServiceById(created.id);
         return detail ?? created;
@@ -202,10 +228,23 @@ export class ServiceService {
         id: string,
         data: Partial<UpdateService>,
     ): Promise<ServiceDetail | null> {
+        const existing = await this.serviceRepository.getServiceById(id);
+
+        if (!existing) {
+            throw new BadRequestException('服务项目不存在');
+        }
+
+        await this.validateServiceTagBinding(
+            existing.serviceTagId,
+            data.serviceTagId,
+        );
+
         const updated = await this.serviceRepository.updateService(id, data);
+
         if (!updated) {
             return null;
         }
+
         return await this.getServiceById(id);
     }
 

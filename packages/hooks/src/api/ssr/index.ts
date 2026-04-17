@@ -38,6 +38,14 @@ export {
     useDeleteAdminServiceCategory,
 } from "./admin-service-categories";
 export {
+    adminServiceTagsQueryOptions,
+    adminServiceTagsQueryKey,
+    useAdminServiceTags,
+    useCreateAdminServiceTag,
+    useUpdateAdminServiceTag,
+    useDeleteAdminServiceTag,
+} from "./admin-service-tags";
+export {
     adminServiceCategoryCommissionStrategyDetailQueryOptions,
     adminServiceCategoryCommissionStrategyDetailQueryKey,
     adminServiceCategoryCommissionStrategyQueryKey,
