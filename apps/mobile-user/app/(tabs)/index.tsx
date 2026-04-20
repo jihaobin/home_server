@@ -47,7 +47,7 @@ const Image = ExpoImage as unknown as React.ComponentType<
 type ImageSource = React.ComponentProps<typeof ExpoImage>["source"];
 
 // DEV: 调试开关——设为 true 时，总是显示“更多服务”入口。
-const FORCE_SHOW_MORE_SERVICES_ENTRY = false;
+const FORCE_SHOW_MORE_SERVICES_ENTRY = true;
 
 type GuaranteeItem = {
     id: string;
@@ -503,13 +503,13 @@ function HomeBaseContent({
 
     const categoriesToRender = shouldShowMoreServicesEntry
         ? [
-              ...categoryItems.slice(0, Math.max(0, homeCategoryCapacity - 1)),
-              {
-                  id: "more-services-entry",
-                  label: "更多服务",
-                  icon: CATEGORY_FALLBACK_ICON,
-              },
-          ]
+            ...categoryItems.slice(0, Math.max(0, homeCategoryCapacity - 1)),
+            {
+                id: "more-services-entry",
+                label: "更多服务",
+                icon: CATEGORY_FALLBACK_ICON,
+            },
+        ]
         : categoryItems;
 
     return (
@@ -541,7 +541,7 @@ function HomeBaseContent({
                                     source={{ uri: item.iconUrl }}
                                     placeholder={
                                         "iconBlurhash" in item &&
-                                        item.iconBlurhash
+                                            item.iconBlurhash
                                             ? { blurhash: item.iconBlurhash }
                                             : undefined
                                     }
@@ -625,18 +625,18 @@ function HomeBaseContent({
                         <View className="flex-row gap-3 px-3">
                             {data.promos.length
                                 ? data.promos.map((p) => (
-                                      <RemotePromoCard
-                                          key={p.id}
-                                          item={{
-                                              id: p.id,
-                                              name: p.personnelName,
-                                              tag: p.tag,
-                                              price: p.price,
-                                              imageUrl: p.imageUrl,
-                                              imageBlurhash: p.imageBlurhash,
-                                          }}
-                                      />
-                                  ))
+                                    <RemotePromoCard
+                                        key={p.id}
+                                        item={{
+                                            id: p.id,
+                                            name: p.personnelName,
+                                            tag: p.tag,
+                                            price: p.price,
+                                            imageUrl: p.imageUrl,
+                                            imageBlurhash: p.imageBlurhash,
+                                        }}
+                                    />
+                                ))
                                 : null}
                         </View>
                     </ScrollView>
@@ -683,8 +683,8 @@ function HomeRecommendationsContent({
                     item.pricingId
                         ? `${item.personnelId}-${item.pricingId}`
                         : item.serviceId
-                          ? `${item.personnelId}-${item.serviceId}`
-                          : `${item.personnelId}-${index}`
+                            ? `${item.personnelId}-${item.serviceId}`
+                            : `${item.personnelId}-${index}`
                 }
                 renderItem={({ item }) => (
                     <View className="mb-[9px]">
@@ -752,10 +752,10 @@ function HomeRecommendationsSection({
 
     const params: HomeRecommendationsParams = hasCoords
         ? {
-              lat,
-              lng,
-              ...(addressText ? { addressText } : {}),
-          }
+            lat,
+            lng,
+            ...(addressText ? { addressText } : {}),
+        }
         : {};
 
     const rec = useHomeRecommendationsInfinite(params);

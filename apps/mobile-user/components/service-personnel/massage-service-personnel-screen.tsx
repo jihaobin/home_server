@@ -1,12 +1,17 @@
 import type React from "react";
 import { Image as ExpoImage } from "expo-image";
 import { useMassagePersonnelDetail } from "@repo/hooks/api/massage";
-import { usePersonnelFavoriteSummary } from "@repo/hooks/api/follow";
+import {
+    useFavoritePersonnel,
+    usePersonnelFavoriteSummary,
+    useUnfavoritePersonnel,
+} from "@repo/hooks/api/follow";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
 import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
 import { Text } from "@repo/mobile-ui/components/ui/text";
+import { toast } from "@repo/mobile-ui/lib/toast";
 import { cssInterop } from "nativewind";
-import { Suspense, useMemo } from "react";
+import { Suspense, useMemo, useRef } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgXml } from "react-native-svg";
@@ -247,6 +252,11 @@ function MassageServicePersonnelContent({
     }).data;
 
     const favoriteSummary = usePersonnelFavoriteSummary(personnelId).data;
+    const favoritePersonnel = useFavoritePersonnel(personnelId);
+    const unfavoritePersonnel = useUnfavoritePersonnel(personnelId);
+    const isFavoriteMutating =
+        favoritePersonnel.isPending || unfavoritePersonnel.isPending;
+    const favoriteActionLockRef = useRef(false);
     const displayName = personnelName || detail.personnelName;
 
     const orderedServices = useMemo<DetailService[]>(
@@ -358,6 +368,29 @@ function MassageServicePersonnelContent({
         });
     }
 
+    async function handleToggleFavorite(): Promise<void> {
+        if (isFavoriteMutating || favoriteActionLockRef.current) {
+            return;
+        }
+
+        favoriteActionLockRef.current = true;
+
+        try {
+            if (favoriteSummary.isFavorited) {
+                await unfavoritePersonnel.mutateAsync();
+                toast.success("已取消收藏");
+                return;
+            }
+
+            await favoritePersonnel.mutateAsync();
+            toast.success("收藏成功");
+        } catch (error) {
+            console.error("toggle favorite failed", error);
+        } finally {
+            favoriteActionLockRef.current = false;
+        }
+    }
+
     return (
         <View
             className="flex-1"
@@ -441,11 +474,20 @@ function MassageServicePersonnelContent({
                                 </View>
                             </View>
 
-                            <View className="h-9 min-w-20 items-center justify-center rounded-full bg-[#f7951b] px-4">
+                            <Pressable
+                                className="h-9 min-w-20 items-center justify-center rounded-full bg-[#f7951b] px-4"
+                                disabled={isFavoriteMutating}
+                                onPress={() => {
+                                    void handleToggleFavorite();
+                                }}
+                                style={{
+                                    opacity: isFavoriteMutating ? 0.6 : 1,
+                                }}
+                            >
                                 <Text className="text-sm font-puhui-medium text-white">
                                     {favoriteSummary.isFavorited ? "已收藏" : "收藏"}
                                 </Text>
-                            </View>
+                            </Pressable>
                         </View>
 
                         <View className="mt-4 flex-row items-center justify-between">

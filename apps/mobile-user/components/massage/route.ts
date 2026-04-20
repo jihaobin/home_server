@@ -1,4 +1,5 @@
 import type { ServiceTagDomain } from "@repo/types";
+import { CATEGORY_FILTER_ROUTE_TYPE } from "@/lib/category-filter-route";
 
 export const MASSAGE_CATEGORY_ID = "wgla64hwo7zr9iz";
 
@@ -8,6 +9,7 @@ export function createMassageTagFilterRouteParams(input: {
     tagDomain: ServiceTagDomain;
 }) {
     return {
+        type: CATEGORY_FILTER_ROUTE_TYPE.tag,
         categoryId: MASSAGE_CATEGORY_ID,
         categoryName: "上门按摩",
         serviceTagId: input.tagId,

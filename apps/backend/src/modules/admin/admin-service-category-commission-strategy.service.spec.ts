@@ -322,12 +322,12 @@ describe('AdminServiceCategoryCommissionStrategyRepository.saveDraft', () => {
                         orderBy: jest.fn(() => {
                             const next = popSelectResult();
                             return {
-                                limit: jest.fn(async () => next),
+                                limit: jest.fn(() => next),
                                 then: (resolve: (value: unknown) => unknown) =>
                                     Promise.resolve(resolve(next)),
                             };
                         }),
-                        limit: jest.fn(async () => popSelectResult()),
+                        limit: jest.fn(() => popSelectResult()),
                     })),
                 })),
             })),
@@ -336,9 +336,7 @@ describe('AdminServiceCategoryCommissionStrategyRepository.saveDraft', () => {
                     if (table === categoryCommissionStrategyVersions) {
                         versionInsertValues.push(values);
                         return {
-                            returning: jest.fn(async () => [
-                                { id: 'ver_draft_new' },
-                            ]),
+                            returning: jest.fn(() => [{ id: 'ver_draft_new' }]),
                         };
                     }
 
@@ -348,7 +346,7 @@ describe('AdminServiceCategoryCommissionStrategyRepository.saveDraft', () => {
 
                     if (table === categoryCommissionStrategies) {
                         return {
-                            returning: jest.fn(async () => [
+                            returning: jest.fn(() => [
                                 {
                                     id: 'strategy_new',
                                     status: 'draft',
@@ -363,7 +361,7 @@ describe('AdminServiceCategoryCommissionStrategyRepository.saveDraft', () => {
             })),
             update: jest.fn((table) => ({
                 set: jest.fn((values) => ({
-                    where: jest.fn(async () => {
+                    where: jest.fn(() => {
                         if (table === categoryCommissionStrategyVersions) {
                             versionUpdateValues.push(values);
                         }
@@ -372,12 +370,12 @@ describe('AdminServiceCategoryCommissionStrategyRepository.saveDraft', () => {
                 })),
             })),
             delete: jest.fn(() => ({
-                where: jest.fn(async () => undefined),
+                where: jest.fn(() => undefined),
             })),
         };
 
         const db = {
-            transaction: jest.fn(async (callback) => callback(tx)),
+            transaction: jest.fn((callback) => callback(tx)),
         };
 
         const repository = new AdminServiceCategoryCommissionStrategyRepository(

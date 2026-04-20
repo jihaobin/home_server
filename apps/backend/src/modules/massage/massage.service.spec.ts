@@ -80,6 +80,27 @@ describe('MassageService', () => {
         expect(result).not.toHaveProperty('categories');
     });
 
+    it('getTags 返回按摩标签列表', async () => {
+        repository.getLandingTagEntries.mockResolvedValue([
+            {
+                tagId: 'service_tag_massage_neck',
+                tagName: '肩颈舒缓',
+                tagSlug: 'neck',
+                domain: 'massage',
+                serviceCount: 3,
+            },
+        ]);
+
+        const result = await service.getTags();
+
+        expect(result).toEqual([
+            expect.objectContaining({
+                tagId: 'service_tag_massage_neck',
+                tagName: '肩颈舒缓',
+            }),
+        ]);
+    });
+
     it('detail 在当前服务没有 gallery 时回退到同技师其他服务的 gallery', async () => {
         repository.getPersonnelDetailBase.mockResolvedValue({
             personnelId: 'personnel_1',

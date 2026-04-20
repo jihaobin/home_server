@@ -3,8 +3,9 @@ import type {
     MassageLandingResponse,
     MassagePersonnelDetailQuery,
     MassagePersonnelDetailResponse,
+    ServiceTagEntry,
 } from "@repo/types";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { apiClient } from "@repo/lib/http-client";
 
 export const useMassageLanding = (
@@ -33,6 +34,21 @@ export const useMassageLanding = (
         },
         meta: {
             errorMessage: "按摩落地页数据获取失败",
+        },
+    });
+
+export const useMassageTags = (options: { enabled?: boolean } = {}) =>
+    useQuery({
+        queryKey: ["massage-tags"],
+        enabled: options.enabled,
+        queryFn: async () => {
+            const response = await apiClient.get<ServiceTagEntry[]>(
+                "/massage/tags",
+            );
+            return response.data;
+        },
+        meta: {
+            errorMessage: "按摩标签获取失败",
         },
     });
 

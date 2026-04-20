@@ -13,13 +13,17 @@ import { ArrowLeft } from "@repo/mobile-ui/lib/icons/ArrowLeft";
 import { NAV_THEME } from "@repo/mobile-ui/lib/mobile-user-constants";
 import { useServiceListSinglePage } from "@repo/hooks/api/service";
 import { useHomeRecommendationsInfinite } from "@repo/hooks/api/home";
+import { useMassageTags } from "@repo/hooks/api/massage";
 import {
     type MatchedPersonnelUI,
     useServicePersonnelSearchQuery,
 } from "@repo/hooks/api/service-personnel";
 import useLocation from "@repo/hooks/useLocation";
+import { buildCategoryFilterTabs, resolveCategoryFilterTabKey, resolveCategoryFilterTabServiceTagId } from "@/lib/category-filter-tabs";
 import { useHomeLocationStore } from "@/stores/home-location-store";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
+import { normalizeCategoryFilterRouteParams } from "@/lib/category-filter-route";
+import { createServicePersonnelRouteParams } from "@/lib/service-personnel-route";
 
 // Enable NativeWind `className` on expo-image.
 cssInterop(ExpoImage, { className: { target: "style" } });
@@ -143,7 +147,21 @@ function WorkerCard({ item }: { item: WorkerCardItem }) {
     );
 
     return (
-        <View className="mx-4 mb-3 overflow-hidden rounded-xl bg-card shadow-sm">
+        <Pressable
+            className="mx-4 mb-3 overflow-hidden rounded-xl bg-card shadow-sm active:opacity-90"
+            onPress={() =>
+                router.push({
+                    pathname: "/servicePersonnel/[id]",
+                    params: createServicePersonnelRouteParams({
+                        id: item.id,
+                        serviceId: item.serviceId,
+                        pricingId: item.pricingId,
+                        serviceName: item.serviceName,
+                        personnelName: item.name,
+                    }),
+                })
+            }
+        >
             <View className="flex-row p-3">
                 <View className="h-[100px] w-[100px] overflow-hidden rounded-md bg-muted">
                     <Image
@@ -211,34 +229,15 @@ function WorkerCard({ item }: { item: WorkerCardItem }) {
 
                     <View className="mt-auto flex-row items-end justify-between">
                         <PriceTag price={item.price} />
-                        <Pressable
-                            className="h-5 w-16 items-center justify-center rounded-full bg-primary"
-                            onPress={() =>
-                                router.push({
-                                    pathname: "/servicePersonnel/[id]",
-                                    params: {
-                                        id: item.id,
-                                        ...(item.serviceId
-                                            ? { serviceId: item.serviceId }
-                                            : {}),
-                                        ...(item.pricingId
-                                            ? { pricingId: item.pricingId }
-                                            : {}),
-                                        ...(item.serviceName
-                                            ? { serviceName: item.serviceName }
-                                            : {}),
-                                    },
-                                })
-                            }
-                        >
+                        <View className="h-5 w-16 items-center justify-center rounded-full bg-primary">
                             <Text className="text-xs text-primary-foreground font-puhui-medium">
                                 立即预约
                             </Text>
-                        </Pressable>
+                        </View>
                     </View>
                 </View>
             </View>
-        </View>
+        </Pressable>
     );
 }
 
@@ -285,7 +284,8 @@ function WorkersListSkeleton({ count = 6 }: { count?: number }) {
 }
 
 export default function CategoryFilterScreen() {
-    const params = useLocalSearchParams<{
+    const routeParams = useLocalSearchParams<{
+        type?: string;
         categoryId?: string;
         categoryName?: string;
         defaultTabName?: string;
@@ -294,42 +294,42 @@ export default function CategoryFilterScreen() {
         serviceTagName?: string;
         serviceTagDomain?: string;
     }>();
-    const categoryId = params.categoryId
-        ? String(params.categoryId)
+    const params = normalizeCategoryFilterRouteParams(routeParams);
+    const categoryId = params.categoryId;
+    const explicitDefaultTabName = routeParams.defaultTabName
+        ? String(routeParams.defaultTabName)
         : undefined;
-    const explicitDefaultTabName = params.defaultTabName
-        ? String(params.defaultTabName)
-        : undefined;
-    const defaultTabName = explicitDefaultTabName
-        ? explicitDefaultTabName
-        : params.categoryName
-          ? String(params.categoryName)
-          : undefined;
-    const defaultServiceId = params.defaultServiceId
-        ? String(params.defaultServiceId)
-        : undefined;
-    const serviceTagId = params.serviceTagId
-        ? String(params.serviceTagId)
-        : undefined;
+    const defaultTabName = params.defaultTabName;
+    const defaultServiceId = params.defaultServiceId;
+    const serviceTagId = params.serviceTagId;
+    const isTagMode = params.type === "tag";
 
     const { colorScheme } = useColorScheme();
     const navTheme = NAV_THEME[colorScheme ?? "light"];
 
-    const title = params.categoryName || "家庭保洁";
+    const title = params.title;
 
     const shouldDeferInitialTab = Boolean(
-        defaultServiceId || explicitDefaultTabName,
+        (isTagMode && serviceTagId) || defaultServiceId || explicitDefaultTabName,
     );
     const [activeTabKey, setActiveTabKey] = useState<string>(() => {
-        if (defaultServiceId) {
-            return defaultServiceId;
-        }
-
-        return shouldDeferInitialTab ? PENDING_TAB_KEY : RECOMMEND_TAB_KEY;
+        return resolveCategoryFilterTabKey({
+            type: params.type,
+            defaultServiceId,
+            defaultTabName,
+            serviceTagId,
+            shouldDeferInitialTab,
+            recommendTabKey: RECOMMEND_TAB_KEY,
+            pendingTabKey: PENDING_TAB_KEY,
+        });
     });
 
     const listRef = useRef<FlashListRef<WorkerCardItem> | null>(null);
     const [isTransitionSettled, setIsTransitionSettled] = useState(false);
+
+    const massageTagsQuery = useMassageTags({
+        enabled: Boolean(categoryId) && isTransitionSettled && isTagMode,
+    });
 
     const serviceListQuery = useServiceListSinglePage({
         categoryId,
@@ -337,7 +337,7 @@ export default function CategoryFilterScreen() {
         isActive: true,
         limit: 1,
         page: 1,
-        enabled: Boolean(categoryId) && isTransitionSettled,
+        enabled: Boolean(categoryId) && isTransitionSettled && !isTagMode,
     });
 
     const services = useMemo(
@@ -345,52 +345,101 @@ export default function CategoryFilterScreen() {
         [serviceListQuery.data],
     );
 
+    const tagEntries = useMemo(
+        () => massageTagsQuery.data ?? [],
+        [massageTagsQuery.data],
+    );
+
+    const tabOptions = useMemo(
+        () =>
+            isTagMode
+                ? tagEntries.map((tag) => ({
+                    id: tag.tagId,
+                    name: tag.tagName,
+                }))
+                : services.map((service) => ({
+                    id: service.id,
+                    name: service.name,
+                })),
+        [isTagMode, services, tagEntries],
+    );
+
     const tabs = useMemo(() => {
-        return [
-            { key: RECOMMEND_TAB_KEY, label: "推荐" },
-            ...services.map((s) => ({ key: s.id, label: s.name })),
-        ];
-    }, [services]);
+        return buildCategoryFilterTabs({
+            type: params.type,
+            services: services.map((service) => ({
+                id: service.id,
+                name: service.name,
+            })),
+            tagEntries,
+        });
+    }, [params.type, services, tagEntries]);
 
     const isTabsLoading =
         Boolean(categoryId) &&
         (!isTransitionSettled ||
-            serviceListQuery.isLoading ||
-            (serviceListQuery.isFetching && !serviceListQuery.data));
+            (isTagMode
+                ? massageTagsQuery.isLoading ||
+                (massageTagsQuery.isFetching && !massageTagsQuery.data)
+                : serviceListQuery.isLoading ||
+                (serviceListQuery.isFetching && !serviceListQuery.data)));
 
     useEffect(() => {
+        if (isTagMode && serviceTagId) {
+            setActiveTabKey(serviceTagId);
+            return;
+        }
+
         if (defaultServiceId) {
             setActiveTabKey(defaultServiceId);
             return;
         }
 
         setActiveTabKey(
-            shouldDeferInitialTab ? PENDING_TAB_KEY : RECOMMEND_TAB_KEY,
+            resolveCategoryFilterTabKey({
+                type: params.type,
+                defaultServiceId,
+                defaultTabName,
+                serviceTagId,
+                shouldDeferInitialTab,
+                recommendTabKey: RECOMMEND_TAB_KEY,
+                pendingTabKey: PENDING_TAB_KEY,
+            }),
         );
-    }, [categoryId, defaultServiceId, shouldDeferInitialTab]);
+    }, [
+        categoryId,
+        defaultServiceId,
+        defaultTabName,
+        params.type,
+        serviceTagId,
+        shouldDeferInitialTab,
+        isTagMode,
+    ]);
 
     useEffect(() => {
         if (isTabsLoading) {
             return;
         }
 
-        if (!services.length) {
+        if (!tabOptions.length) {
             if (activeTabKey === PENDING_TAB_KEY) {
                 setActiveTabKey(RECOMMEND_TAB_KEY);
             }
             return;
         }
 
-        const hasActive = services.some((s) => s.id === activeTabKey);
+        const hasActive = tabOptions.some((item) => item.id === activeTabKey);
         if (hasActive || activeTabKey === RECOMMEND_TAB_KEY) {
             return;
         }
 
-        const byId = defaultServiceId
-            ? services.find((s) => s.id === defaultServiceId)
+        const defaultTabId =
+            isTagMode && serviceTagId ? serviceTagId : defaultServiceId;
+        const byId = defaultTabId
+            ? tabOptions.find((item) => item.id === defaultTabId)
             : null;
         const byName = defaultTabName
-            ? services.find((s) => s.name === defaultTabName)
+            ? tabOptions.find((item) => item.name === defaultTabName)
             : null;
         const next = byId ?? byName;
         if (next && next.id !== activeTabKey) {
@@ -400,10 +449,12 @@ export default function CategoryFilterScreen() {
 
         setActiveTabKey(RECOMMEND_TAB_KEY);
     }, [
-        services,
+        tabOptions,
         activeTabKey,
         defaultServiceId,
         defaultTabName,
+        isTagMode,
+        serviceTagId,
         isTabsLoading,
     ]);
 
@@ -460,10 +511,17 @@ export default function CategoryFilterScreen() {
         return null;
     }, [selectedHomeLocation, location]);
 
+    const activeServiceTagId = resolveCategoryFilterTabServiceTagId({
+        type: params.type,
+        activeTabKey,
+        recommendTabKey: RECOMMEND_TAB_KEY,
+    });
+    const shouldUseRecommendations = isTagMode || activeTabKey === RECOMMEND_TAB_KEY;
+
     const recommendationsQuery = useHomeRecommendationsInfinite(
         {
             categoryId,
-            ...(serviceTagId ? { serviceTagId } : {}),
+            ...(activeServiceTagId ? { serviceTagId: activeServiceTagId } : {}),
             ...(resolvedCoords
                 ? { lat: resolvedCoords.lat, lng: resolvedCoords.lng }
                 : {}),
@@ -472,14 +530,17 @@ export default function CategoryFilterScreen() {
         {
             enabled:
                 isTransitionSettled &&
-                activeTabKey === RECOMMEND_TAB_KEY &&
+                shouldUseRecommendations &&
                 Boolean(categoryId),
         },
     );
 
-    const activeService = services.find((s) => s.id === activeTabKey) ?? null;
+    const activeService = isTagMode
+        ? null
+        : services.find((s) => s.id === activeTabKey) ?? null;
 
     const canSearchPersonnel =
+        !isTagMode &&
         Boolean(activeService) &&
         Boolean(resolvedCoords) &&
         Boolean(categoryId);
@@ -497,7 +558,7 @@ export default function CategoryFilterScreen() {
     });
 
     const workers = useMemo<WorkerCardItem[]>(() => {
-        if (activeTabKey === RECOMMEND_TAB_KEY) {
+        if (shouldUseRecommendations) {
             const pages = recommendationsQuery.data?.pages ?? [];
             return pages
                 .flatMap((p) => p.recommendedPersonnel)
@@ -544,7 +605,7 @@ export default function CategoryFilterScreen() {
             };
         });
     }, [
-        activeTabKey,
+        shouldUseRecommendations,
         recommendationsQuery.data,
         personnelQuery.data,
         activeService,
@@ -554,19 +615,18 @@ export default function CategoryFilterScreen() {
         ? true
         : shouldDeferInitialTab &&
             activeTabKey !== RECOMMEND_TAB_KEY &&
-            !activeService
-          ? true
-          : activeTabKey === RECOMMEND_TAB_KEY
-            ? recommendationsQuery.isLoading
-            : Boolean(personnelQuery.isLoading) && canSearchPersonnel;
+            !tabOptions.some((item) => item.id === activeTabKey)
+            ? true
+            : shouldUseRecommendations
+                ? recommendationsQuery.isLoading
+                : Boolean(personnelQuery.isLoading) && canSearchPersonnel;
 
-    const isListError =
-        activeTabKey === RECOMMEND_TAB_KEY
-            ? recommendationsQuery.isError
-            : personnelQuery.isError;
+    const isListError = shouldUseRecommendations
+        ? recommendationsQuery.isError
+        : personnelQuery.isError;
 
     const listEmptyText =
-        activeTabKey === RECOMMEND_TAB_KEY ? "暂无推荐人员" : "暂无服务人员";
+        shouldUseRecommendations ? "暂无推荐人员" : "暂无服务人员";
 
     return (
         <View className="flex-1 bg-background">
@@ -645,14 +705,14 @@ export default function CategoryFilterScreen() {
 
                         {isTabsLoading
                             ? Array.from({ length: 5 }).map((_, idx) => (
-                                  <View
-                                      key={`tab-skeleton-${idx}`}
-                                      className="mr-6 items-center justify-center"
-                                  >
-                                      <Skeleton className="h-4 w-12" />
-                                      <View className="mt-1 h-[3px] w-5 rounded-full bg-transparent" />
-                                  </View>
-                              ))
+                                <View
+                                    key={`tab-skeleton-${idx}`}
+                                    className="mr-6 items-center justify-center"
+                                >
+                                    <Skeleton className="h-4 w-12" />
+                                    <View className="mt-1 h-[3px] w-5 rounded-full bg-transparent" />
+                                </View>
+                            ))
                             : null}
                     </View>
                 </ScrollView>
@@ -667,8 +727,8 @@ export default function CategoryFilterScreen() {
                     item.pricingId
                         ? `${item.id}-${item.pricingId}`
                         : item.serviceId
-                          ? `${item.id}-${item.serviceId}`
-                          : `${item.id}-${index}`
+                            ? `${item.id}-${item.serviceId}`
+                            : `${item.id}-${index}`
                 }
                 renderItem={({ item }) => <WorkerCard item={item} />}
                 contentContainerStyle={{ paddingTop: 12, paddingBottom: 24 }}
@@ -691,8 +751,8 @@ export default function CategoryFilterScreen() {
                     )
                 }
                 ListFooterComponent={
-                    activeTabKey === RECOMMEND_TAB_KEY &&
-                    recommendationsQuery.isFetchingNextPage ? (
+                    shouldUseRecommendations &&
+                        recommendationsQuery.isFetchingNextPage ? (
                         <View className="pb-6">
                             <WorkerCardSkeleton />
                         </View>
@@ -700,7 +760,7 @@ export default function CategoryFilterScreen() {
                 }
                 onEndReachedThreshold={0.2}
                 onEndReached={() => {
-                    if (activeTabKey !== RECOMMEND_TAB_KEY) {
+                    if (!shouldUseRecommendations) {
                         return;
                     }
                     if (

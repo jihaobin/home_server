@@ -13,6 +13,7 @@ import {
     MassageLandingResponseSchema,
     MassagePersonnelDetailQuerySchema,
     MassagePersonnelDetailResponseSchema,
+    ServiceTagEntrySchema,
     type MassageLandingQuery,
     type MassagePersonnelDetailQuery,
 } from '@repo/types';
@@ -46,6 +47,21 @@ export class MassageController {
     @ApiErrorResponses()
     async getLanding(@Query() query: MassageLandingQuery, @Req() req: Request) {
         return await this.massageService.getLanding(req.user?.id, query);
+    }
+
+    @UseGuards(AuthGuard)
+    @Get('tags')
+    @AuthOptional()
+    @ApiOperation({
+        summary: '获取按摩标签列表',
+        description: '返回按摩频道可用的全部服务标签',
+    })
+    @ApiSuccessResponse(z.array(ServiceTagEntrySchema), {
+        description: '按摩标签列表',
+    })
+    @ApiErrorResponses()
+    async getTags() {
+        return await this.massageService.getTags();
     }
 
     @UseGuards(AuthGuard)

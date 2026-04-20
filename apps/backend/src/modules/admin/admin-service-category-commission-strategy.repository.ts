@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { createId } from '@paralleldrive/cuid2';
 import type {
     AdminCommissionStrategyDetail,
     AdminCommissionStrategyRule,
@@ -213,11 +214,13 @@ export class AdminServiceCategoryCommissionStrategyRepository {
                         input.payload.beginnerProtection.fixedCommissionRate,
                 };
                 let initialRules: Array<{
+                    id: string;
                     threshold: number;
                     commissionRate: number;
                     isEnabled: boolean;
                     sortOrder: number;
                 }> = input.payload.rules.map((rule, index) => ({
+                    id: rule.id,
                     threshold: rule.threshold,
                     commissionRate: rule.commissionRate,
                     isEnabled: rule.isEnabled,
@@ -305,6 +308,7 @@ export class AdminServiceCategoryCommissionStrategyRepository {
                         );
 
                     initialRules = publishedRules.map((rule, index) => ({
+                        id: createId(),
                         threshold: rule.threshold,
                         commissionRate: rule.commissionRate,
                         isEnabled: rule.isEnabled,
@@ -391,6 +395,7 @@ export class AdminServiceCategoryCommissionStrategyRepository {
             if (input.payload.rules.length > 0) {
                 await tx.insert(categoryCommissionStrategyRules).values(
                     input.payload.rules.map((rule, index) => ({
+                        id: rule.id,
                         strategyVersionId: draftVersion.id,
                         threshold: rule.threshold,
                         commissionRate: rule.commissionRate,

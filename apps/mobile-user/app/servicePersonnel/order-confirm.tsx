@@ -442,8 +442,8 @@ export default function OrderConfirmScreen() {
                             <View className="flex-row items-center">
                                 <Text
                                     className={`mr-1 text-xs font-puhui-regular ${remark.trim()
-                                            ? "text-foreground"
-                                            : "text-muted-foreground"
+                                        ? "text-foreground"
+                                        : "text-muted-foreground"
                                         }`}
                                     numberOfLines={1}
                                 >

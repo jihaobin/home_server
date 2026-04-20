@@ -116,6 +116,10 @@ export class MassageService {
         };
     }
 
+    async getTags() {
+        return await this.repository.getLandingTagEntries();
+    }
+
     async getPersonnelDetail(
         userId: string | undefined,
         personnelId: string,
