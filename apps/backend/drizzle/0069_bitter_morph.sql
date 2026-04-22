@@ -1,0 +1,2 @@
+ALTER TABLE "service_personnel" ADD COLUMN "merchant_qualification_file_id" varchar(255);--> statement-breakpoint
+ALTER TABLE "service_personnel" ADD COLUMN "vocational_qualification_file_id" varchar(255);

@@ -1084,6 +1084,14 @@ export const ServicePersonnelSchema = z
             description: "服务人员头像（文件 hash）",
             title: "服务人员头像",
         }),
+        merchantQualificationFileId: z.string().max(255).optional().nullable().meta({
+            description: "商家资质文件 ID",
+            title: "商家资质文件 ID",
+        }),
+        vocationalQualificationFileId: z.string().max(255).optional().nullable().meta({
+            description: "从业资格证书文件 ID",
+            title: "从业资格证书文件 ID",
+        }),
         // MVP阶段注释店铺关联字段
         // shopId: z.string().max(255).optional().meta({
         //     description: "服务人员所属店铺ID",

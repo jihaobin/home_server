@@ -1,7 +1,6 @@
 import type { ServiceTagDomain } from "@repo/types";
+import { MASSAGE_CATEGORY_ID } from "@repo/types";
 import { CATEGORY_FILTER_ROUTE_TYPE } from "@/lib/category-filter-route";
-
-export const MASSAGE_CATEGORY_ID = "wgla64hwo7zr9iz";
 
 export function createMassageTagFilterRouteParams(input: {
     tagId: string;

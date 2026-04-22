@@ -2,6 +2,8 @@ import { z } from "zod/v4";
 import { ServiceTagEntrySchema } from "./service-tag";
 import { PaginatedDataSchema, PaginationQuerySchema } from "./common";
 
+export const MASSAGE_CATEGORY_ID = "wgla64hwo7zr9iz";
+
 const MerchantJoinRequestGenderSchema = z.enum(["male", "female"]).meta({
     title: "商户加盟申请性别",
     description: "商户加盟申请中的性别枚举",

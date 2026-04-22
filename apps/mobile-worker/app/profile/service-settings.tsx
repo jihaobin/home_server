@@ -19,7 +19,10 @@ import { useUpdateServiceOfferings } from "@repo/hooks/api/work-skill";
 import { useUploadFile } from "@repo/hooks/api/files";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import { useQuery } from "@tanstack/react-query";
-import type { FileDownloadUrlResponse, ServiceListResponse } from "@repo/types";
+import {
+    type FileDownloadUrlResponse,
+    type ServiceListResponse,
+} from "@repo/types";
 import { apiClient } from "@repo/lib/http-client";
 import * as ImagePicker from "expo-image-picker";
 
@@ -37,14 +40,35 @@ type EditableImage = {
     url: string;
 };
 
+type QualificationUploadKey = "merchant" | "vocational";
+
 type EditableService = {
     serviceId: string;
     name: string;
+    categoryId?: string;
     categoryName?: string;
     description: string;
     specs: EditableSpecification[];
     gallery: EditableImage[];
 };
+
+function mapEditableImage(
+    file?: {
+        fileId?: string | null;
+        id?: string | null;
+        url?: string | null;
+        fileUrl?: string | null;
+    } | null,
+): EditableImage | null {
+    const id = file?.fileId ?? file?.id;
+    const url = file?.url ?? file?.fileUrl;
+
+    if (!id || !url) {
+        return null;
+    }
+
+    return { id, url };
+}
 
 export default function ServiceSettingsScreen() {
     const router = useRouter();
@@ -68,6 +92,12 @@ export default function ServiceSettingsScreen() {
     const [uploadingServiceId, setUploadingServiceId] = useState<string | null>(
         null,
     );
+    const [uploadingQualificationKey, setUploadingQualificationKey] =
+        useState<QualificationUploadKey | null>(null);
+    const [merchantQualification, setMerchantQualification] =
+        useState<EditableImage | null>(null);
+    const [vocationalQualification, setVocationalQualification] =
+        useState<EditableImage | null>(null);
     const specIdRef = useRef(0);
     const fetchFileUrl = useCallback(async (fileIdentifier: string) => {
         const response = await apiClient.get<FileDownloadUrlResponse>(
@@ -104,6 +134,7 @@ export default function ServiceSettingsScreen() {
             return {
                 serviceId: service.serviceId,
                 name: service.serviceName,
+                categoryId: (service as any)?.categoryId ?? undefined,
                 categoryName: (service as any)?.categoryName ?? undefined,
                 description: (service as any)?.personnelDescription ?? "",
                 gallery: galleryItems,
@@ -124,6 +155,12 @@ export default function ServiceSettingsScreen() {
             };
         });
         setSelectedServices(mapped);
+        setMerchantQualification(
+            mapEditableImage(profile.merchantQualificationImage),
+        );
+        setVocationalQualification(
+            mapEditableImage(profile.vocationalQualificationImage),
+        );
     }, [buildSpec, profile]);
 
     const {
@@ -327,8 +364,75 @@ export default function ServiceSettingsScreen() {
         [],
     );
 
+    const handleUploadQualification = useCallback(
+        async (key: QualificationUploadKey) => {
+            const permission =
+                await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (!permission.granted) {
+                Alert.alert("提示", "需要相册权限才能上传图片");
+                return;
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: false,
+                quality: 0.8,
+            });
+
+            if (result.canceled || !result.assets?.length) return;
+
+            const asset = result.assets[0];
+            setUploadingQualificationKey(key);
+
+            try {
+                const response = await uploadFile.mutateAsync({
+                    file: {
+                        uri: asset.uri,
+                        name:
+                            asset.fileName ??
+                            `${key}_qualification_${Date.now()}.jpg`,
+                        type: asset.mimeType ?? "image/jpeg",
+                    },
+                });
+
+                let accessibleUrl = asset.uri;
+                try {
+                    accessibleUrl = await fetchFileUrl(response.id);
+                } catch (err) {
+                    accessibleUrl = asset.uri;
+                }
+
+                const nextImage = { id: response.id, url: accessibleUrl };
+                if (key === "merchant") {
+                    setMerchantQualification(nextImage);
+                } else {
+                    setVocationalQualification(nextImage);
+                }
+            } catch (error) {
+                console.error("[ServiceSettings] 资质图片上传失败", error);
+                Alert.alert("上传失败", "请稍后重试");
+            } finally {
+                setUploadingQualificationKey(null);
+            }
+        },
+        [fetchFileUrl, uploadFile],
+    );
+
+    const handleRemoveQualification = useCallback(
+        (key: QualificationUploadKey) => {
+            if (key === "merchant") {
+                setMerchantQualification(null);
+                return;
+            }
+
+            setVocationalQualification(null);
+        },
+        [],
+    );
+
     const handleAddService = (
         service: ServiceListResponse["items"][number]["children"][number],
+        categoryId?: string,
         categoryName?: string,
     ) => {
         if (selectedServices.some((item) => item.serviceId === service.id)) {
@@ -340,6 +444,7 @@ export default function ServiceSettingsScreen() {
             {
                 serviceId: service.id,
                 name: service.name,
+                categoryId,
                 categoryName,
                 description: "",
                 gallery: [],
@@ -348,10 +453,45 @@ export default function ServiceSettingsScreen() {
         ]);
     };
 
+    const hasMassageServiceSelected = useMemo(
+        () =>
+            selectedServices.some((service) =>
+                service.categoryName?.includes("按摩"),
+            ),
+        [selectedServices],
+    );
+
+    const qualificationCards = useMemo(
+        () => [
+            {
+                key: "merchant" as const,
+                title: "商家资质",
+                description: "上传所属商家的营业执照、登记证明等资质图片",
+                image: merchantQualification,
+            },
+            {
+                key: "vocational" as const,
+                title: "从业资格证书",
+                description: "上传按摩相关从业资格、技能等级等证书图片",
+                image: vocationalQualification,
+            },
+        ],
+        [merchantQualification, vocationalQualification],
+    );
+
     const handleSave = async () => {
         if (!userId) return;
         if (selectedServices.length === 0) {
             Alert.alert("提示", "请至少选择一个可提供的服务分类");
+            return;
+        }
+
+        if (
+            hasMassageServiceSelected &&
+            !merchantQualification &&
+            !vocationalQualification
+        ) {
+            Alert.alert("提示", "上门按摩服务需至少上传一种资质证书");
             return;
         }
 
@@ -407,6 +547,8 @@ export default function ServiceSettingsScreen() {
                     ),
                 })),
             })),
+            merchantQualificationFileId: merchantQualification?.id ?? null,
+            vocationalQualificationFileId: vocationalQualification?.id ?? null,
         };
 
         setSaving(true);
@@ -818,6 +960,7 @@ export default function ServiceSettingsScreen() {
                                                             onPress={() =>
                                                                 handleAddService(
                                                                     service,
+                                                                    category.id,
                                                                     category.name,
                                                                 )
                                                             }
@@ -842,6 +985,149 @@ export default function ServiceSettingsScreen() {
                                 ))
                             )}
                         </View>
+
+                        {hasMassageServiceSelected ? (
+                            <View style={styles.card}>
+                                <Text style={styles.sectionTitle}>
+                                    资质证书
+                                </Text>
+                                <Text style={styles.helperText}>
+                                    上门按摩服务需至少上传一种资质证书
+                                </Text>
+
+                                {qualificationCards.map((item) => {
+                                    const isUploading =
+                                        uploadingQualificationKey === item.key;
+
+                                    return (
+                                        <View
+                                            key={item.key}
+                                            style={styles.qualificationItem}
+                                        >
+                                            <Text style={styles.subSectionTitle}>
+                                                {item.title}
+                                            </Text>
+                                            <Text
+                                                style={styles.qualificationDescription}
+                                            >
+                                                {item.description}
+                                            </Text>
+
+                                            {item.image ? (
+                                                <>
+                                                    <Image
+                                                        source={{
+                                                            uri: item.image.url,
+                                                        }}
+                                                        style={
+                                                            styles.qualificationPreview
+                                                        }
+                                                        resizeMode="cover"
+                                                    />
+                                                    <View
+                                                        style={
+                                                            styles.qualificationActions
+                                                        }
+                                                    >
+                                                        <TouchableOpacity
+                                                            style={[
+                                                                styles.qualificationActionButton,
+                                                                styles.qualificationReplaceButton,
+                                                                isUploading &&
+                                                                    styles.qualificationActionButtonDisabled,
+                                                            ]}
+                                                            onPress={() =>
+                                                                handleUploadQualification(
+                                                                    item.key,
+                                                                )
+                                                            }
+                                                            disabled={isUploading}
+                                                        >
+                                                            {isUploading ? (
+                                                                <ActivityIndicator
+                                                                    size="small"
+                                                                    color="#fff"
+                                                                />
+                                                            ) : (
+                                                                <Text
+                                                                    style={
+                                                                        styles.qualificationReplaceText
+                                                                    }
+                                                                >
+                                                                    更换图片
+                                                                </Text>
+                                                            )}
+                                                        </TouchableOpacity>
+                                                        <TouchableOpacity
+                                                            style={[
+                                                                styles.qualificationActionButton,
+                                                                styles.qualificationRemoveButton,
+                                                            ]}
+                                                            onPress={() =>
+                                                                handleRemoveQualification(
+                                                                    item.key,
+                                                                )
+                                                            }
+                                                        >
+                                                            <Text
+                                                                style={
+                                                                    styles.qualificationRemoveText
+                                                                }
+                                                            >
+                                                                删除
+                                                            </Text>
+                                                        </TouchableOpacity>
+                                                    </View>
+                                                </>
+                                            ) : (
+                                                <TouchableOpacity
+                                                    style={[
+                                                        styles.qualificationUploadButton,
+                                                        isUploading &&
+                                                            styles.qualificationUploadButtonDisabled,
+                                                    ]}
+                                                    onPress={() =>
+                                                        handleUploadQualification(
+                                                            item.key,
+                                                        )
+                                                    }
+                                                    disabled={isUploading}
+                                                >
+                                                    {isUploading ? (
+                                                        <ActivityIndicator
+                                                            size="small"
+                                                            color="#2563eb"
+                                                        />
+                                                    ) : (
+                                                        <>
+                                                            <Ionicons
+                                                                name="cloud-upload-outline"
+                                                                size={20}
+                                                                color="#2563eb"
+                                                            />
+                                                            <Text
+                                                                style={
+                                                                    styles.qualificationUploadTitle
+                                                                }
+                                                            >
+                                                                上传图片
+                                                            </Text>
+                                                            <Text
+                                                                style={
+                                                                    styles.qualificationUploadSubtitle
+                                                                }
+                                                            >
+                                                                支持从相册选择清晰证书图片
+                                                            </Text>
+                                                        </>
+                                                    )}
+                                                </TouchableOpacity>
+                                            )}
+                                        </View>
+                                    );
+                                })}
+                            </View>
+                        ) : null}
                     </>
                 )}
             </ScrollView>
@@ -989,6 +1275,83 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: "#2563eb",
         marginTop: 4,
+    },
+    qualificationItem: {
+        borderWidth: 1,
+        borderColor: "#e5e7eb",
+        borderRadius: 12,
+        padding: 12,
+        marginTop: 12,
+    },
+    qualificationDescription: {
+        fontSize: 12,
+        color: "#6b7280",
+        marginTop: 4,
+        marginBottom: 10,
+        lineHeight: 18,
+    },
+    qualificationUploadButton: {
+        minHeight: 148,
+        borderWidth: 1,
+        borderColor: "#bfdbfe",
+        borderStyle: "dashed",
+        borderRadius: 12,
+        backgroundColor: "#eff6ff",
+        alignItems: "center",
+        justifyContent: "center",
+        paddingHorizontal: 16,
+        paddingVertical: 20,
+    },
+    qualificationUploadButtonDisabled: {
+        opacity: 0.6,
+    },
+    qualificationUploadTitle: {
+        fontSize: 14,
+        fontWeight: "600",
+        color: "#2563eb",
+        marginTop: 8,
+    },
+    qualificationUploadSubtitle: {
+        fontSize: 12,
+        color: "#6b7280",
+        marginTop: 4,
+    },
+    qualificationPreview: {
+        width: "100%",
+        height: 180,
+        borderRadius: 12,
+        backgroundColor: "#f3f4f6",
+    },
+    qualificationActions: {
+        flexDirection: "row",
+        marginTop: 12,
+    },
+    qualificationActionButton: {
+        flex: 1,
+        borderRadius: 10,
+        paddingVertical: 10,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    qualificationActionButtonDisabled: {
+        opacity: 0.6,
+    },
+    qualificationReplaceButton: {
+        backgroundColor: "#2563eb",
+        marginRight: 8,
+    },
+    qualificationRemoveButton: {
+        backgroundColor: "#f3f4f6",
+    },
+    qualificationReplaceText: {
+        fontSize: 14,
+        fontWeight: "600",
+        color: "#fff",
+    },
+    qualificationRemoveText: {
+        fontSize: 14,
+        fontWeight: "600",
+        color: "#ef4444",
     },
     subSectionTitle: {
         fontSize: 14,

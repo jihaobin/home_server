@@ -94,3 +94,128 @@ describe('ServicePersonnelService.searchPersonnelByServiceIds', () => {
         });
     });
 });
+
+type ProfileRepository = jest.Mocked<
+    Pick<ServicePersonnelRepository, 'getPersonnelContactInfo'>
+>;
+
+type ProfileWorkSkillService = jest.Mocked<
+    Pick<WorkSkillService, 'getPersonnelInfo'>
+>;
+
+type ProfileFilesService = jest.Mocked<Pick<FilesService, 'getFileAccessInfo'>>;
+
+describe('ServicePersonnelService.getPersonnelProfile', () => {
+    let service: ServicePersonnelService;
+    let repository: ProfileRepository;
+    let workSkillService: ProfileWorkSkillService;
+    let filesService: ProfileFilesService;
+
+    beforeEach(() => {
+        repository = {
+            getPersonnelContactInfo: jest.fn(),
+        };
+        workSkillService = {
+            getPersonnelInfo: jest.fn(),
+        };
+        filesService = {
+            getFileAccessInfo: jest.fn(),
+        };
+
+        service = new ServicePersonnelService(
+            repository as unknown as ServicePersonnelRepository,
+            workSkillService as unknown as WorkSkillService,
+            filesService as unknown as FilesService,
+            {} as OrderRepository,
+            {} as PayService,
+            {} as ReviewService,
+        );
+    });
+
+    it('返回脱敏身份证号和结构化证书字段，并回填 qualificationImages', async () => {
+        workSkillService.getPersonnelInfo.mockResolvedValue({
+            userId: 'worker_1',
+            name: '李师傅',
+            avatar: null,
+            bio: null,
+            province: '湖北省',
+            district: '黄冈市',
+            county: null,
+            detailedAddress: '测试路 1 号',
+            geom: [114.87, 30.45],
+            yearsOfExperience: 5,
+            workStartTime: '09:00:00',
+            workEndTime: '18:00:00',
+            workDays: '1234567',
+            isAvailable: true,
+            currentStatus: 'available',
+            lastActiveAt: new Date('2026-04-22T08:00:00.000Z'),
+            merchantQualificationFileId: 'file_merchant',
+            vocationalQualificationFileId: 'file_vocational',
+            skills: [
+                {
+                    id: 'svc_massage_1',
+                    name: '上门按摩',
+                    categoryId: 'wgla64hwo7zr9iz',
+                    categoryName: '上门按摩',
+                    serviceTagId: null,
+                    imageFileId: null,
+                    category: {
+                        id: 'wgla64hwo7zr9iz',
+                        parentId: null,
+                        name: '上门按摩',
+                        dep: 1,
+                        description: null,
+                        sortOrder: 0,
+                        isActive: true,
+                        commissionRate: 30,
+                        iconFileId: null,
+                    },
+                    description: '服务描述',
+                    personnelDescription: '个人描述',
+                    isActive: true,
+                    galleryFileIds: [],
+                    specifications: [],
+                },
+            ],
+        });
+
+        repository.getPersonnelContactInfo.mockResolvedValue({
+            phoneNumber: '13812345678',
+            idCardNumber: '420106199901011234',
+        });
+
+        filesService.getFileAccessInfo
+            .mockResolvedValueOnce({
+                fileUrl: 'https://example.com/merchant.jpg',
+                fileName: 'merchant.jpg',
+                mimeType: 'image/jpeg',
+                fileSize: 1,
+                expiresIn: 3600,
+                blurhash: 'merchant',
+            })
+            .mockResolvedValueOnce({
+                fileUrl: 'https://example.com/vocational.jpg',
+                fileName: 'vocational.jpg',
+                mimeType: 'image/jpeg',
+                fileSize: 1,
+                expiresIn: 3600,
+                blurhash: 'vocational',
+            });
+
+        const result = await service.getPersonnelProfile('worker_1');
+
+        expect(result.maskedIdCardNumber).toBe('420***********1234');
+        expect(result.merchantQualificationImage?.url).toBe(
+            'https://example.com/merchant.jpg',
+        );
+        expect(result.vocationalQualificationImage?.url).toBe(
+            'https://example.com/vocational.jpg',
+        );
+        expect(result.qualificationImages).toHaveLength(2);
+        expect(result.services[0]).toMatchObject({
+            categoryId: 'wgla64hwo7zr9iz',
+            categoryName: '上门按摩',
+        });
+    });
+});

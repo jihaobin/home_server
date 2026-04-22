@@ -99,12 +99,12 @@ function isWeChatRegistered(module: ExpoWeChatLike) {
 }
 
 export async function aliPay(payInfo: string) {
-    setAlipaySandbox(true);
+    setAlipaySandbox(false);
     return await alipay(payInfo);
 }
 
 export async function aliAuth(authInfo: string) {
-    setAlipaySandbox(true);
+    setAlipaySandbox(false);
     return await auth(authInfo);
 }
 

@@ -18,10 +18,13 @@ import { OrderRepository } from '../order/order.reposityro';
 import { PayService } from '../pay/pay.service';
 import { ReviewService } from '../review/review.service';
 import { ReviewTargetTypeEnum } from '@repo/types';
+import { maskIdCardNumber } from '../user-auth-real-name/mask-id-card-number';
 
 type RawPersonnelSkill = {
     id: string;
     name: string;
+    categoryId?: string | null;
+    categoryName?: string | null;
     description?: string | null;
     currency?: string | null;
     isActive: boolean;
@@ -39,6 +42,11 @@ type RawPersonnelSkill = {
         effectiveTo?: Date | null;
         estimatedDurationMinutes?: number | null;
     }>;
+};
+
+type PersonnelContactInfo = {
+    phoneNumber: string | null;
+    idCardNumber: string | null;
 };
 
 type SearchPersonnelRow = {
@@ -360,10 +368,9 @@ export class ServicePersonnelService {
         if (!personnel) {
             throw new NotFoundException('服务人员不存在');
         }
-        const userInfo =
-            await this.servicePersonnelRepository.getPersonnelContactInfo(
-                personnelId,
-            );
+        const userInfo = (await this.servicePersonnelRepository.getPersonnelContactInfo(
+            personnelId,
+        )) as PersonnelContactInfo | null;
         if (!userInfo) {
             throw new NotFoundException('服务人员不存在');
         }
@@ -372,6 +379,17 @@ export class ServicePersonnelService {
         const avatar = avatarHash
             ? await this.getFileAccessInfoSafely(avatarHash)
             : null;
+        const merchantQualificationImage = personnel.merchantQualificationFileId
+            ? await this.getFileAccessInfoSafely(
+                  personnel.merchantQualificationFileId,
+              )
+            : null;
+        const vocationalQualificationImage =
+            personnel.vocationalQualificationFileId
+                ? await this.getFileAccessInfoSafely(
+                      personnel.vocationalQualificationFileId,
+                  )
+                : null;
         const services = await Promise.all(
             (personnel.skills ?? []).map(async (skill: RawPersonnelSkill) => {
                 const specs = (skill.specifications ?? []).map((spec) => ({
@@ -394,6 +412,8 @@ export class ServicePersonnelService {
                 return {
                     serviceId: skill.id,
                     serviceName: skill.name,
+                    categoryId: skill.categoryId ?? null,
+                    categoryName: skill.categoryName ?? null,
                     serviceDescription: skill.description ?? null,
                     personnelDescription: skill.personnelDescription ?? null,
                     currency,
@@ -418,13 +438,10 @@ export class ServicePersonnelService {
             };
         }
 
-        const qualificationImageIds =
-            (personnel as { qualificationImageIds?: string[] })
-                .qualificationImageIds ?? [];
-
-        const qualificationImages = await this.buildFileAccessList(
-            qualificationImageIds,
-        );
+        const qualificationImages = [
+            merchantQualificationImage,
+            vocationalQualificationImage,
+        ].filter((item): item is FileAccessInfo => Boolean(item));
 
         return {
             userId: personnel.userId,
@@ -442,8 +459,12 @@ export class ServicePersonnelService {
             currentStatus: personnel.currentStatus,
             lastActiveAt: personnel.lastActiveAt,
             maskedPhoneNumber: this.maskPhoneNumber(userInfo.phoneNumber),
+            maskedIdCardNumber:
+                maskIdCardNumber(userInfo.idCardNumber ?? null) ?? null,
             avatar,
             services,
+            merchantQualificationImage,
+            vocationalQualificationImage,
             qualificationImages,
             location,
         };

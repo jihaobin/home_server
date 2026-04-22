@@ -23,6 +23,7 @@ import {
     servicePersonnelPricing,
     servicePersonnelSkills,
     services,
+    userProfiles,
     users,
 } from 'src/common/database/schema';
 import { GeoLocationService } from 'src/common/services/geo-location.service';
@@ -342,13 +343,20 @@ export class ServicePersonnelRepository {
     /**
      * 获取服务人员的用户信息（名称、手机号、头像）
      */
-    async getPersonnelContactInfo(personnelId: string) {
-        return await this.db.query.users.findFirst({
-            where: eq(users.id, personnelId),
-            columns: {
-                phoneNumber: true,
-            },
-        });
+    async getPersonnelContactInfo(
+        personnelId: string,
+    ): Promise<{ phoneNumber: string | null; idCardNumber: string | null } | null> {
+        const rows = await this.db
+            .select({
+                phoneNumber: users.phoneNumber,
+                idCardNumber: userProfiles.idCardNumber,
+            })
+            .from(users)
+            .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
+            .where(eq(users.id, personnelId))
+            .limit(1);
+
+        return rows[0] ?? null;
     }
 
     async findSearchPersonnelSuggestions(keyword: string, limit = 5) {
@@ -729,4 +737,5 @@ export class ServicePersonnelRepository {
             occupiedTimeSlots,
         };
     }
+
 }

@@ -24,7 +24,7 @@ const SECONDARY_TEXT = "#6B7280";
 const TERTIARY_TEXT = "#9CA3AF";
 const SHADOW = "0 6px 18px rgba(247, 149, 27, 0.07)";
 
-type QualificationImage = ServicePersonnelProfile["qualificationImages"][number];
+type QualificationImage = ServicePersonnelProfile["merchantQualificationImage"];
 
 type InfoCardItem = {
     badge: string;
@@ -37,24 +37,30 @@ type InfoCardItem = {
 type CertificateCardItem = {
     title: string;
     height: number;
-    image?: QualificationImage;
+    image: QualificationImage;
 };
 
-const INFO_CARD_ITEMS: readonly InfoCardItem[] = [
-    {
-        badge: "已通过认证",
-        title: "商家实名认证通过",
-        subtitle: "身份证 5***************",
-        description: "所有理疗师签约入驻平台时，身份信息均已通过核验",
-        icon: ShieldCheck,
-    },
-    {
-        badge: "已通过认证",
-        title: "该店铺已在平台完成市场主体登记认证",
-        description: "根据相关法律法规要求，经营者相关资质信息公示如下",
-        icon: Building2,
-    },
-] as const;
+function buildInfoCardItems(
+    maskedIdCardNumber?: string | null,
+): readonly InfoCardItem[] {
+    return [
+        {
+            badge: "已通过认证",
+            title: "商家实名认证通过",
+            subtitle: maskedIdCardNumber
+                ? `身份证 ${maskedIdCardNumber}`
+                : "身份证信息暂未完善",
+            description: "所有理疗师签约入驻平台时，身份信息均已通过核验",
+            icon: ShieldCheck,
+        },
+        {
+            badge: "已通过认证",
+            title: "该店铺已在平台完成市场主体登记认证",
+            description: "根据相关法律法规要求，经营者相关资质信息公示如下",
+            icon: Building2,
+        },
+    ] as const;
+}
 
 function getRouteParam(value?: string | string[]): string {
     if (Array.isArray(value)) {
@@ -62,36 +68,6 @@ function getRouteParam(value?: string | string[]): string {
     }
 
     return value ? String(value) : "";
-}
-
-function matchesKeywords(image: QualificationImage, keywords: readonly string[]) {
-    const fileName = image.fileName?.toLowerCase() ?? "";
-    const url = image.url.toLowerCase();
-    const target = `${fileName} ${url}`;
-
-    return keywords.some((keyword) => target.includes(keyword));
-}
-
-function selectCertificateImages(images: readonly QualificationImage[]): CertificateCardItem[] {
-    const merchantImage = images.find((image) =>
-        matchesKeywords(image, ["merchant", "business", "store", "shop", "商家", "营业", "主体", "登记"]),
-    );
-    const vocationalImage = images.find((image) =>
-        matchesKeywords(image, ["qualification", "vocational", "certificate", "cert", "资质", "从业", "职业", "技能"]),
-    );
-
-    return [
-        {
-            title: "所属商家资质",
-            height: 224,
-            image: merchantImage,
-        },
-        {
-            title: "从业资格证书",
-            height: 212,
-            image: vocationalImage,
-        },
-    ];
 }
 
 function ScreenHeader() {
@@ -247,7 +223,7 @@ function CertificatesSkeleton() {
             contentContainerStyle={{ padding: 16, paddingBottom: 28, gap: 14 }}
             style={{ backgroundColor: PAGE_BACKGROUND }}
         >
-            {INFO_CARD_ITEMS.map((item) => (
+            {buildInfoCardItems().map((item) => (
                 <View
                     key={item.title}
                     className="rounded-[22px] border p-4"
@@ -268,7 +244,7 @@ function CertificatesSkeleton() {
                 </View>
             ))}
 
-            {[224, 212].map((height, index) => (
+            {[224, 212].map((height) => (
                 <View
                     key={`cert-skeleton-${height}`}
                     className="rounded-[22px] border p-4"
@@ -336,9 +312,27 @@ function CertificatesEmpty({ message }: { message: string }) {
 
 function CertificatesContent({ personnelId }: { personnelId: string }) {
     const profileQuery = useServicePersonnelProfile(personnelId);
+    const infoCardItems = useMemo(
+        () => buildInfoCardItems(profileQuery.data?.maskedIdCardNumber),
+        [profileQuery.data?.maskedIdCardNumber],
+    );
     const certificateCards = useMemo(
-        () => selectCertificateImages(profileQuery.data?.qualificationImages ?? []),
-        [profileQuery.data?.qualificationImages],
+        () => [
+            {
+                title: "所属商家资质",
+                height: 224,
+                image: profileQuery.data?.merchantQualificationImage ?? null,
+            },
+            {
+                title: "从业资格证书",
+                height: 212,
+                image: profileQuery.data?.vocationalQualificationImage ?? null,
+            },
+        ],
+        [
+            profileQuery.data?.merchantQualificationImage,
+            profileQuery.data?.vocationalQualificationImage,
+        ],
     );
 
     if (profileQuery.isLoading) {
@@ -369,7 +363,7 @@ function CertificatesContent({ personnelId }: { personnelId: string }) {
                 />
             }
         >
-            {INFO_CARD_ITEMS.map((item) => (
+            {infoCardItems.map((item) => (
                 <InfoCard key={item.title} {...item} />
             ))}
 

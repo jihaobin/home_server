@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { WorkSkillRepository } from './work-skill.repository';
 import {
     ServicePersonnel,
@@ -128,11 +128,27 @@ export class WorkSkillService {
 
     async updateServiceOfferings(
         personnelId: string,
-        services: UpdateServiceOfferingsRequest['services'],
+        payload: UpdateServiceOfferingsRequest,
     ) {
+        const serviceIds = payload.services.map((service) => service.serviceId);
+        const boundServices = await this.workSkillRepository.findServicesByIds(
+            serviceIds,
+        );
+        const requiresCertificates = boundServices.some(
+            (service) => service.categoryName?.includes('按摩'),
+        );
+
+        if (
+            requiresCertificates &&
+            !payload.merchantQualificationFileId &&
+            !payload.vocationalQualificationFileId
+        ) {
+            throw new BadRequestException('上门按摩服务需至少上传一种资质证书');
+        }
+
         await this.workSkillRepository.updateServiceOfferings(
             personnelId,
-            services,
+            payload,
         );
     }
 }

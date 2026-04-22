@@ -28,6 +28,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { Request } from 'express';
 import { Roles } from '../auth/decorators';
 import type { UserProfiles } from '@repo/types';
+import { maskIdCardNumber } from './mask-id-card-number';
 
 const createRealNameAuthNoUserIdSchema = createUserAuthRealNameSchema.omit({
     userId: true,
@@ -40,26 +41,6 @@ const UpdateRealNameAuthNoUserIdSchema = updateUserAuthRealNameSchema.omit({
 });
 
 type UpdateRealNameAuthNoUserId = Omit<UpdateUserAuthRealName, 'userId'>;
-
-function maskIdCardNumber(idCard?: string | null) {
-    if (!idCard) {
-        return idCard;
-    }
-    const normalized = idCard.trim();
-    if (normalized.length <= 8) {
-        if (normalized.length <= 2) {
-            return `${normalized[0] ?? ''}${'*'.repeat(
-                Math.max(normalized.length - 1, 0),
-            )}`;
-        }
-        return `${normalized.slice(0, 1)}${'*'.repeat(
-            normalized.length - 2,
-        )}${normalized.slice(-1)}`;
-    }
-    const prefix = normalized.slice(0, 3);
-    const suffix = normalized.slice(-4);
-    return `${prefix}${'*'.repeat(normalized.length - 7)}${suffix}`;
-}
 
 type NullableUserProfile = {
     [K in keyof UserProfiles]?: UserProfiles[K] | null;

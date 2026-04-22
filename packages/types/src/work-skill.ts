@@ -13,6 +13,8 @@ import { ReviewImageSchema } from "./review";
 const WorkInfoBaseShape = ServicePersonnelSchema.omit({
     userId: true,
     geom: true,
+    merchantQualificationFileId: true,
+    vocationalQualificationFileId: true,
 }).shape;
 
 const { lastActiveAt, ...workInfoWithoutLastActive } = WorkInfoBaseShape;
@@ -492,16 +494,20 @@ export const UpdateServiceOfferingsRequestSchema = z
                 }),
             )
             .min(1, "请至少选择一个服务分类"),
+        merchantQualificationFileId: z.string().trim().max(255).nullable().optional(),
+        vocationalQualificationFileId: z.string().trim().max(255).nullable().optional(),
     })
     .meta({
         title: "更新服务人员提供的服务",
-        description: "批量配置服务分类、描述以及规格信息",
+        description: "批量配置服务分类、描述、规格与按摩资质证书",
     });
 
 export const ServicePersonnelOfferingSchema = z
     .object({
         serviceId: z.string().min(1, "服务ID不能为空"),
         serviceName: z.string().min(1, "服务名称不能为空"),
+        categoryId: z.string().nullable().optional(),
+        categoryName: z.string().nullable().optional(),
         serviceDescription: z.string().nullable(),
         personnelDescription: z.string().nullable(),
         currency: z.string().min(1, "币种不能为空"),
@@ -533,8 +539,11 @@ export const ServicePersonnelProfileSchema = z
         currentStatus: z.string().min(1, "当前状态不能为空"),
         lastActiveAt: z.date(),
         maskedPhoneNumber: z.string().nullable(),
+        maskedIdCardNumber: z.string().nullable(),
         avatar: FileAccessInfoSchema.nullable(),
         services: z.array(ServicePersonnelOfferingSchema),
+        merchantQualificationImage: FileAccessInfoSchema.nullable(),
+        vocationalQualificationImage: FileAccessInfoSchema.nullable(),
         qualificationImages: z.array(FileAccessInfoSchema).default([]),
         location: z
             .object({

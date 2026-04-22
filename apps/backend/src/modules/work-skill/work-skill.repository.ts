@@ -7,6 +7,8 @@ import {
     servicePersonnel,
     servicePersonnelSkills,
     servicePersonnelPricing,
+    serviceCategories,
+    services,
     users,
 } from 'src/common/database/schema';
 
@@ -177,7 +179,11 @@ export class WorkSkillRepository {
             with: {
                 skills: {
                     with: {
-                        service: true, // 包含服务详细信息
+                        service: {
+                            with: {
+                                category: true,
+                            },
+                        },
                     },
                     where: (servicePersonnelSkills, { eq, and }) => {
                         if (serviceId) {
@@ -217,6 +223,8 @@ export class WorkSkillRepository {
             const specifications = pricingMap.get(skill.serviceId) ?? [];
             return {
                 ...skill.service,
+                categoryId: skill.service.categoryId,
+                categoryName: skill.service.category?.name ?? null,
                 specifications,
                 galleryFileIds: skill.galleryFileIds ?? [],
                 personnelDescription: skill.description ?? null,
@@ -365,11 +373,36 @@ export class WorkSkillRepository {
         return result.length > 0;
     }
 
+    async findServicesByIds(serviceIds: string[]) {
+        if (serviceIds.length === 0) {
+            return [];
+        }
+
+        return await this.db
+            .select({
+                id: services.id,
+                categoryId: services.categoryId,
+                categoryName: serviceCategories.name,
+            })
+            .from(services)
+            .leftJoin(
+                serviceCategories,
+                eq(serviceCategories.id, services.categoryId),
+            )
+            .where(inArray(services.id, serviceIds));
+    }
+
     async updateServiceOfferings(
         personnelId: string,
-        services: UpdateServiceOfferingsRequest['services'],
+        payload: UpdateServiceOfferingsRequest,
     ) {
-        if (services.length === 0) {
+        const {
+            services: inputServices,
+            merchantQualificationFileId,
+            vocationalQualificationFileId,
+        } = payload;
+
+        if (inputServices.length === 0) {
             throw new BadRequestException('请至少配置一个服务分类');
         }
 
@@ -377,7 +410,7 @@ export class WorkSkillRepository {
             throw new BadRequestException('该服务人员不存在');
         }
 
-        const normalizedServices = services.map((service) => {
+        const normalizedServices = inputServices.map((service) => {
             const galleryFileIds = Array.from(
                 new Set(service.galleryFileIds ?? []),
             );
@@ -391,6 +424,16 @@ export class WorkSkillRepository {
             const targetServiceIds = Array.from(
                 new Set(normalizedServices.map((service) => service.serviceId)),
             );
+
+            await tx
+                .update(servicePersonnel)
+                .set({
+                    merchantQualificationFileId:
+                        merchantQualificationFileId?.trim() || null,
+                    vocationalQualificationFileId:
+                        vocationalQualificationFileId?.trim() || null,
+                })
+                .where(eq(servicePersonnel.userId, personnelId));
 
             const existingSkills = await tx
                 .select({ serviceId: servicePersonnelSkills.serviceId })

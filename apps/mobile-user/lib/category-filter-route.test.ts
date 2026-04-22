@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { MASSAGE_CATEGORY_ID } from "@repo/types";
 import { createMassageTagFilterRouteParams } from "../components/massage/route";
 import { normalizeCategoryFilterRouteParams } from "./category-filter-route";
 
@@ -34,7 +35,7 @@ const tagMode = normalizeCategoryFilterRouteParams(massageTagRouteParams);
 
 assert.deepStrictEqual(tagMode, {
     type: "tag",
-    categoryId: "wgla64hwo7zr9iz",
+    categoryId: MASSAGE_CATEGORY_ID,
     categoryName: "上门按摩",
     defaultTabName: "上门按摩",
     defaultServiceId: undefined,

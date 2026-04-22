@@ -79,7 +79,7 @@ export class WorkSkillController {
     ) {
         await this.workSkillService.updateServiceOfferings(
             req.user.id,
-            payload.services,
+            payload,
         );
         return { success: true };
     }
