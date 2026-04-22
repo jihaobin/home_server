@@ -19,6 +19,7 @@ export * from './app-releases';
 export * from './home';
 export * from './chat';
 export * from './category-commission-strategies';
+export * from './merchant-join-requests';
 
 export const createId = init({
     length: 15,

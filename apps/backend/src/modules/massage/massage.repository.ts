@@ -12,6 +12,7 @@ import type { DbType } from 'src/common/database/db';
 import {
     follows,
     homeBanners,
+    merchantJoinRequests,
     serviceCategories,
     serviceTags,
     services,
@@ -41,7 +42,6 @@ type PersonnelDetailBase = {
     distanceText: string | null;
     availableTimeText: string | null;
     description: string | null;
-    guaranteeItems: string[];
     stats: {
         yearsOfExperience: number;
         averageServiceQuality: number | null;
@@ -109,6 +109,35 @@ export class MassageRepository {
 
     private isMassageCategoryName(categoryName?: string | null): boolean {
         return (categoryName ?? '').includes(MASSAGE_CATEGORY_NAME_KEYWORD);
+    }
+
+    async createMerchantJoinRequest(input: {
+        merchantName: string;
+        gender: 'male' | 'female';
+        phone: string;
+        age: number;
+        intentCity: string;
+        photoFileId?: string | null;
+    }): Promise<{
+        id: string;
+        createdAt: Date;
+    }> {
+        const [created] = await this.db
+            .insert(merchantJoinRequests)
+            .values({
+                merchantName: input.merchantName,
+                gender: input.gender,
+                phone: input.phone,
+                age: input.age,
+                intentCity: input.intentCity,
+                photoFileId: input.photoFileId ?? null,
+            })
+            .returning({
+                id: merchantJoinRequests.id,
+                createdAt: merchantJoinRequests.createdAt,
+            });
+
+        return created;
     }
 
     async getLandingBanner(): Promise<LandingBannerRow | null> {
@@ -477,7 +506,6 @@ export class MassageRepository {
                 ? `最早可约${this.formatTimeHHmm(profile.workStartTime)}`
                 : null,
             description: profile.bio ?? null,
-            guaranteeItems: ['契约包退', '实名认证', '资质证书'],
             stats: {
                 yearsOfExperience: profile.yearsOfExperience ?? 0,
                 averageServiceQuality: null,

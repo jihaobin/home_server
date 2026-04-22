@@ -1,5 +1,63 @@
 import { z } from "zod/v4";
 import { ServiceTagEntrySchema } from "./service-tag";
+import { PaginatedDataSchema, PaginationQuerySchema } from "./common";
+
+const MerchantJoinRequestGenderSchema = z.enum(["male", "female"]).meta({
+    title: "商户加盟申请性别",
+    description: "商户加盟申请中的性别枚举",
+});
+
+export const CreateMerchantJoinRequestSchema = z
+    .object({
+        merchantName: z
+            .string()
+            .trim()
+            .min(2, "姓名至少 2 个字符")
+            .max(20, "姓名最多 20 个字符")
+            .describe("申请人姓名"),
+        gender: MerchantJoinRequestGenderSchema.describe("性别"),
+        phone: z
+            .string()
+            .trim()
+            .regex(/^1\d{10}$/, "请输入有效的大陆手机号")
+            .describe("手机号"),
+        age: z.number().int().min(18, "年龄不能小于 18 岁").max(65, "年龄不能大于 65 岁").describe("年龄"),
+        intentCity: z
+            .string()
+            .trim()
+            .min(1, "意向合作城市不能为空")
+            .max(255, "意向合作城市最多 255 个字符")
+            .describe("意向合作城市"),
+        photoFileId: z
+            .string()
+            .trim()
+            .max(255)
+            .nullable()
+            .optional()
+            .describe("照片文件标识"),
+    })
+    .meta({
+        title: "创建商户加盟申请请求",
+        description: "用户端提交商户加盟申请的请求体",
+    });
+
+export type CreateMerchantJoinRequest = z.infer<
+    typeof CreateMerchantJoinRequestSchema
+>;
+
+export const CreateMerchantJoinRequestResponseSchema = z
+    .object({
+        id: z.string().max(255).describe("商户加盟申请 ID"),
+        createdAt: z.string().datetime({ offset: true }).describe("创建时间"),
+    })
+    .meta({
+        title: "创建商户加盟申请响应",
+        description: "用户端提交商户加盟申请后的最小响应",
+    });
+
+export type CreateMerchantJoinRequestResponse = z.infer<
+    typeof CreateMerchantJoinRequestResponseSchema
+>;
 
 const MassageLandingPersonnelCardSchema = z
     .object({
@@ -98,7 +156,6 @@ export const MassagePersonnelDetailResponseSchema = z
         favoriteCount: z.number().int().min(0),
         isFavorited: z.boolean(),
         description: z.string().nullable().default(null),
-        guaranteeItems: z.array(z.string()),
         stats: z.object({
             yearsOfExperience: z.number().int().min(0),
             averageServiceQuality: z.number().nullable().default(null),

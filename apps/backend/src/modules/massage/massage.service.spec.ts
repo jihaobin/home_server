@@ -1,3 +1,7 @@
+jest.mock('../files/files.service', () => ({
+    FilesService: class FilesService {},
+}));
+
 import { MassageService } from './massage.service';
 import type { MassageRepository } from './massage.repository';
 import type { FilesService } from '../files/files.service';
@@ -13,12 +17,31 @@ type MockMassageRepository = jest.Mocked<
         | 'getPersonnelDetailBase'
         | 'getPersonnelYearlyOrderCount'
     >
->;
+> & {
+    createMerchantJoinRequest: jest.Mock<
+        Promise<{
+            id: string;
+            createdAt: Date;
+        }>,
+        [
+            {
+                merchantName: string;
+                gender: 'male' | 'female';
+                phone: string;
+                age: number;
+                intentCity: string;
+                photoFileId?: string | null;
+            },
+        ]
+    >;
+};
 
 describe('MassageService', () => {
     let service: MassageService;
     let repository: MockMassageRepository;
-    let filesService: jest.Mocked<Pick<FilesService, 'getFileAccessInfo'>>;
+    let filesService: jest.Mocked<
+        Pick<FilesService, 'getFileAccessInfo' | 'getFileById'>
+    >;
     let followService: jest.Mocked<
         Pick<FollowService, 'getPersonnelFavoriteSummary'>
     >;
@@ -33,9 +56,11 @@ describe('MassageService', () => {
             getLandingPersonnelBuckets: jest.fn(),
             getPersonnelDetailBase: jest.fn(),
             getPersonnelYearlyOrderCount: jest.fn(),
+            createMerchantJoinRequest: jest.fn(),
         };
         filesService = {
             getFileAccessInfo: jest.fn(),
+            getFileById: jest.fn(),
         };
         followService = {
             getPersonnelFavoriteSummary: jest.fn(),
@@ -114,7 +139,6 @@ describe('MassageService', () => {
             distanceText: null,
             availableTimeText: null,
             description: '擅长中式推拿',
-            guaranteeItems: [],
             stats: {
                 yearsOfExperience: 1,
                 averageServiceQuality: null,
@@ -183,5 +207,145 @@ describe('MassageService', () => {
             }),
         ]);
         expect(result.favoriteCount).toBe(9);
+    });
+
+    it('createMerchantJoinRequest 会规范化字段并写入 repository', async () => {
+        repository.createMerchantJoinRequest.mockResolvedValue({
+            id: 'join_123',
+            createdAt: new Date('2026-04-21T08:00:00.000Z'),
+        });
+
+        const createMerchantJoinRequest = Reflect.get(
+            service,
+            'createMerchantJoinRequest',
+        ) as
+            | ((input: {
+                  merchantName: string;
+                  gender: 'male' | 'female';
+                  phone: string;
+                  age: number;
+                  intentCity: string;
+                  photoFileId?: string | null;
+              }) => Promise<{ id: string; createdAt: string }>)
+            | undefined;
+
+        expect(createMerchantJoinRequest).toBeDefined();
+
+        const result = await createMerchantJoinRequest?.call(service, {
+            merchantName: '  王小美  ',
+            gender: 'female',
+            phone: ' 138 0013 8000 ',
+            age: 29,
+            intentCity: '  武汉  ',
+            photoFileId: '   ',
+        }, 'user_1');
+
+        expect(repository.createMerchantJoinRequest).toHaveBeenCalledWith({
+            merchantName: '王小美',
+            gender: 'female',
+            phone: '13800138000',
+            age: 29,
+            intentCity: '武汉',
+            photoFileId: null,
+        });
+        expect(result).toEqual({
+            id: 'join_123',
+            createdAt: '2026-04-21T08:00:00.000Z',
+        });
+    });
+
+    it('createMerchantJoinRequest 保留有效 photoFileId', async () => {
+        filesService.getFileAccessInfo.mockResolvedValue({
+            fileUrl: 'file_merchant_photo_1',
+            fileName: 'photo.jpg',
+            mimeType: 'image/jpeg',
+            fileSize: 1024,
+            expiresIn: 600,
+        } as any);
+        filesService.getFileById.mockResolvedValue({
+            id: 'file_merchant_photo_1',
+            uploadedBy: 'user_1',
+            fileType: 'image',
+        } as any);
+        repository.createMerchantJoinRequest.mockResolvedValue({
+            id: 'join_456',
+            createdAt: new Date('2026-04-21T09:00:00.000Z'),
+        });
+
+        const createMerchantJoinRequest = Reflect.get(
+            service,
+            'createMerchantJoinRequest',
+        ) as
+            | ((input: {
+                  merchantName: string;
+                  gender: 'male' | 'female';
+                  phone: string;
+                  age: number;
+                  intentCity: string;
+                  photoFileId?: string | null;
+              }) => Promise<{ id: string; createdAt: string }>)
+            | undefined;
+
+        expect(createMerchantJoinRequest).toBeDefined();
+
+        await createMerchantJoinRequest?.call(service, {
+            merchantName: '李先生',
+            gender: 'male',
+            phone: '13800138001',
+            age: 35,
+            intentCity: '杭州',
+            photoFileId: ' file_merchant_photo_1 ',
+        }, 'user_1');
+
+        expect(repository.createMerchantJoinRequest).toHaveBeenCalledWith({
+            merchantName: '李先生',
+            gender: 'male',
+            phone: '13800138001',
+            age: 35,
+            intentCity: '杭州',
+            photoFileId: 'file_merchant_photo_1',
+        });
+    });
+
+    it('createMerchantJoinRequest 遇到非图片 photoFileId 会拒绝写库', async () => {
+        filesService.getFileById.mockResolvedValue({
+            id: 'file_document_1',
+            uploadedBy: 'user_1',
+            fileType: 'document',
+        } as any);
+
+        await expect(
+            service.createMerchantJoinRequest({
+                merchantName: '赵女士',
+                gender: 'female',
+                phone: '13800138002',
+                age: 30,
+                intentCity: '南京',
+                photoFileId: 'file_document_1',
+            }, 'user_1'),
+        ).rejects.toThrow('近期照需为图片文件');
+
+        expect(repository.createMerchantJoinRequest).not.toHaveBeenCalled();
+    });
+
+    it('createMerchantJoinRequest 遇到非本人图片会拒绝写库', async () => {
+        filesService.getFileById.mockResolvedValue({
+            id: 'file_photo_other',
+            uploadedBy: 'user_other',
+            fileType: 'image',
+        } as any);
+
+        await expect(
+            service.createMerchantJoinRequest({
+                merchantName: '孙女士',
+                gender: 'female',
+                phone: '13800138003',
+                age: 28,
+                intentCity: '苏州',
+                photoFileId: 'file_photo_other',
+            }, 'user_1'),
+        ).rejects.toThrow('近期照文件无效，请重新上传');
+
+        expect(repository.createMerchantJoinRequest).not.toHaveBeenCalled();
     });
 });

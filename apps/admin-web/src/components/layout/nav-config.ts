@@ -4,6 +4,7 @@ import {
     LayoutDashboard,
     Layers3,
     LineChart,
+    Store,
     Smartphone,
     Tags,
     Users2,
@@ -73,6 +74,12 @@ const managementNav: NavItem[] = [
         href: "/withdrawals",
         icon: WalletMinimal,
         description: "服务人员提现、审批流转",
+    },
+    {
+        label: "商户加盟申请",
+        href: "/merchant-join-requests",
+        icon: Store,
+        description: "加盟线索查看、备注与联系跟进",
     },
 ]
 

@@ -177,6 +177,13 @@ function RootNavigation() {
                         }}
                     />
                     <Stack.Screen
+                        name="massage/merchant-settlement"
+                        options={{
+                            title: "商户入驻",
+                            headerShown: false,
+                        }}
+                    />
+                    <Stack.Screen
                         name="search/index"
                         options={{
                             title: "搜索",

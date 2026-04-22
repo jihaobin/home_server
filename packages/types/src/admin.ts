@@ -998,6 +998,79 @@ export type AdminReviewWithdrawalBody = z.infer<
 >;
 
 // =========================
+// 商户加盟申请管理
+// =========================
+
+export const AdminMerchantJoinRequestContactStatusSchema = z
+    .enum(['all', 'contacted', 'uncontacted'])
+    .describe('商户加盟申请联系状态筛选');
+
+export type AdminMerchantJoinRequestContactStatus = z.infer<
+    typeof AdminMerchantJoinRequestContactStatusSchema
+>;
+
+export const AdminMerchantJoinRequestSchema = z
+    .object({
+        id: z.string().max(255).describe('申请 ID'),
+        merchantName: z.string().max(50).describe('姓名'),
+        gender: z.enum(['male', 'female']).describe('性别'),
+        phone: z.string().max(20).describe('手机号'),
+        age: z.number().int().describe('年龄'),
+        intentCity: z.string().max(255).describe('意向合作城市'),
+        photoFileId: z.string().max(255).nullable().describe('照片文件 ID'),
+        photoFileUrl: z.string().url().nullable().describe('照片访问地址'),
+        isContacted: z.boolean().describe('是否已联系'),
+        adminRemark: z.string().nullable().describe('管理员备注'),
+        contactedAt: IsoDateTimeStringSchema.nullable().describe('联系时间'),
+        createdAt: IsoDateTimeStringSchema.describe('创建时间'),
+        updatedAt: IsoDateTimeStringSchema.describe('更新时间'),
+    })
+    .describe('管理员商户加盟申请记录');
+
+export type AdminMerchantJoinRequest = z.infer<
+    typeof AdminMerchantJoinRequestSchema
+>;
+
+export const AdminMerchantJoinRequestListQuerySchema = z
+    .object({
+        page: PaginationQuerySchema.shape.page.default(1),
+        limit: PaginationQuerySchema.shape.limit.default(20),
+        keyword: z.string().trim().max(255).optional().describe('姓名/手机号/城市关键词'),
+        contactStatus: AdminMerchantJoinRequestContactStatusSchema.default('all').describe(
+            '联系状态筛选',
+        ),
+    })
+    .describe('商户加盟申请列表查询参数');
+
+export type AdminMerchantJoinRequestListQuery = z.infer<
+    typeof AdminMerchantJoinRequestListQuerySchema
+>;
+
+export const AdminMerchantJoinRequestListResponseSchema = PaginatedDataSchema(
+    AdminMerchantJoinRequestSchema,
+).describe('商户加盟申请分页响应');
+
+export type AdminMerchantJoinRequestListResponse = z.infer<
+    typeof AdminMerchantJoinRequestListResponseSchema
+>;
+
+export const AdminUpdateMerchantJoinRequestSchema = z
+    .object({
+        isContacted: z.boolean().describe('是否已联系'),
+        adminRemark: z
+            .string()
+            .max(2000, '管理员备注不能超过 2000 个字符')
+            .nullable()
+            .optional()
+            .describe('管理员备注'),
+    })
+    .describe('更新商户加盟申请请求');
+
+export type AdminUpdateMerchantJoinRequest = z.infer<
+    typeof AdminUpdateMerchantJoinRequestSchema
+>;
+
+// =========================
 // 服务标签管理
 // =========================
 

@@ -1,11 +1,13 @@
 import type {
+    CreateMerchantJoinRequest,
+    CreateMerchantJoinRequestResponse,
     MassageLandingQuery,
     MassageLandingResponse,
     MassagePersonnelDetailQuery,
     MassagePersonnelDetailResponse,
     ServiceTagEntry,
 } from "@repo/types";
-import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { apiClient } from "@repo/lib/http-client";
 
 export const useMassageLanding = (
@@ -82,5 +84,19 @@ export const useMassagePersonnelDetail = (
         },
         meta: {
             errorMessage: "按摩详情数据获取失败",
+        },
+    });
+
+export const useCreateMerchantJoinRequest = () =>
+    useMutation({
+        mutationFn: async (payload: CreateMerchantJoinRequest) => {
+            const response = await apiClient.post<CreateMerchantJoinRequestResponse>(
+                "/massage/merchant-join-requests",
+                payload,
+            );
+            return response.data;
+        },
+        meta: {
+            errorMessage: "商户加盟申请提交失败",
         },
     });

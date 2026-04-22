@@ -1,7 +1,9 @@
 import {
+    Body,
     Controller,
     Get,
     Param,
+    Post,
     Query,
     Req,
     UseGuards,
@@ -9,11 +11,14 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import {
+    CreateMerchantJoinRequestSchema,
+    CreateMerchantJoinRequestResponseSchema,
     MassageLandingQuerySchema,
     MassageLandingResponseSchema,
     MassagePersonnelDetailQuerySchema,
     MassagePersonnelDetailResponseSchema,
     ServiceTagEntrySchema,
+    type CreateMerchantJoinRequest,
     type MassageLandingQuery,
     type MassagePersonnelDetailQuery,
 } from '@repo/types';
@@ -22,6 +27,7 @@ import {
     ApiQueries,
     ApiSuccessResponse,
 } from 'src/common/decorator';
+import { ApiBodies } from 'src/common/decorator/swagger-api-bodies';
 import { createMultiZodPipe, ZodValidationPipe } from 'src/common/pipes';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
@@ -33,6 +39,27 @@ import { z } from 'zod/v4';
 @Controller('massage')
 export class MassageController {
     constructor(private readonly massageService: MassageService) {}
+
+    @UseGuards(AuthGuard)
+    @Post('merchant-join-requests')
+    @AuthOptional()
+    @UsePipes(new ZodValidationPipe(CreateMerchantJoinRequestSchema))
+    @ApiOperation({
+        summary: '提交商户加盟申请',
+        description: '提交按摩频道商户加盟申请并写入数据库',
+    })
+    @ApiBodies(CreateMerchantJoinRequestSchema)
+    @ApiSuccessResponse(CreateMerchantJoinRequestResponseSchema)
+    @ApiErrorResponses()
+    async createMerchantJoinRequest(
+        @Body() body: CreateMerchantJoinRequest,
+        @Req() req: Request,
+    ) {
+        return await this.massageService.createMerchantJoinRequest(
+            body,
+            req.user?.id,
+        );
+    }
 
     @UseGuards(AuthGuard)
     @Get('landing')

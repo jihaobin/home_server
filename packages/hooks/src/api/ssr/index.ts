@@ -76,6 +76,19 @@ export type {
     NormalizedAdminWithdrawalsQuery,
 } from "./admin-withdrawals";
 export {
+    adminMerchantJoinRequestsQueryOptions,
+    adminMerchantJoinRequestsQueryKey,
+    normalizeAdminMerchantJoinRequestsQuery,
+    useAdminMerchantJoinRequests,
+    invalidateAdminMerchantJoinRequestsQuery,
+    useUpdateAdminMerchantJoinRequest,
+    getAdminMerchantJoinRequestsExportUrl,
+} from "./admin-merchant-join-requests";
+export type {
+    AdminMerchantJoinRequestsQueryInput,
+    NormalizedAdminMerchantJoinRequestsQuery,
+} from "./admin-merchant-join-requests";
+export {
     adminAppReleasesQueryOptions,
     adminAppReleaseDetailQueryOptions,
     useAdminAppReleases,

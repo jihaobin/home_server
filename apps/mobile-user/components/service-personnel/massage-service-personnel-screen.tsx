@@ -40,6 +40,8 @@ const CONTENT_GRADIENT_XML = `<svg preserveAspectRatio="none" width="100%" heigh
 const SERVICE_GUARANTEE_DIVIDER_XML = `<svg preserveAspectRatio="none" width="100%" height="100%" viewBox="0 0 1 19" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M0.5 0V19" stroke="#F2F2F2"/></svg>`;
 const SERVICE_GUARANTEE_ITEM_ICON_XML = `<svg preserveAspectRatio="none" width="100%" height="100%" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 11C8.76142 11 11 8.76142 11 6C11 3.23858 8.76142 1 6 1C3.23858 1 1 3.23858 1 6C1 8.76142 3.23858 11 6 11Z" stroke="#FF6900" stroke-width="1.33333" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 6L5.5 7L7.5 5" stroke="#FF6900" stroke-width="1.33333" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
+const SERVICE_GUARANTEE_ITEMS = ['契约包退', '实名认证', '资质证书'] as const;
+
 type DetailMetric = {
     label: string;
     value: string;
@@ -115,9 +117,15 @@ function DetailMetricItem({ item }: { item: DetailMetric }) {
     );
 }
 
-function GuaranteeItem({ label }: { label: string }) {
-    return (
-        <View className="h-5 w-[76px] flex-row items-center">
+function GuaranteeItem({
+    label,
+    onPress,
+}: {
+    label: string;
+    onPress?: () => void;
+}) {
+    const content = (
+        <>
             <SvgXml
                 xml={SERVICE_GUARANTEE_ITEM_ICON_XML}
                 width={12}
@@ -126,8 +134,22 @@ function GuaranteeItem({ label }: { label: string }) {
             <Text className="ml-1 text-xs font-puhui-regular text-[#364153]">
                 {label}
             </Text>
-        </View>
+        </>
     );
+
+    if (onPress) {
+        return (
+            <Pressable
+                className="h-5 w-[76px] flex-row items-center"
+                hitSlop={8}
+                onPress={onPress}
+            >
+                {content}
+            </Pressable>
+        );
+    }
+
+    return <View className="h-5 w-[76px] flex-row items-center">{content}</View>;
 }
 
 function ServiceCard({
@@ -352,6 +374,15 @@ function MassageServicePersonnelContent({
         });
     }
 
+    function handlePressQualificationCertificates(): void {
+        router.push({
+            pathname: "./qualification-certificates",
+            params: {
+                personnelId,
+            },
+        });
+    }
+
     function handlePressService(item: DetailService): void {
         router.push({
             pathname: "/servicePersonnel/order-confirm",
@@ -553,8 +584,16 @@ function MassageServicePersonnelContent({
                             className="ml-[14px] flex-row items-center justify-end"
                             style={{ gap: 9 }}
                         >
-                            {detail.guaranteeItems.map((item) => (
-                                <GuaranteeItem key={item} label={item} />
+                            {SERVICE_GUARANTEE_ITEMS.map((item) => (
+                                <GuaranteeItem
+                                    key={item}
+                                    label={item}
+                                    onPress={
+                                        item === "资质证书"
+                                            ? handlePressQualificationCertificates
+                                            : undefined
+                                    }
+                                />
                             ))}
                         </View>
                     </View>

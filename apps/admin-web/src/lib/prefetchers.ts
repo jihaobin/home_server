@@ -12,6 +12,8 @@ import {
     type AdminRevenueLogsQueryInput,
     adminWithdrawalsQueryOptions,
     type AdminWithdrawalsQueryInput,
+    adminMerchantJoinRequestsQueryOptions,
+    type AdminMerchantJoinRequestsQueryInput,
     adminAppReleasesQueryOptions,
     type AdminAppReleasesQueryInput,
     adminServiceTagsQueryOptions,
@@ -170,6 +172,27 @@ export async function preloadWithdrawalsPageState(
     try {
         return await prefetchDehydratedState(async (queryClient) => {
             await queryClient.fetchQuery(adminWithdrawalsQueryOptions(query));
+        });
+    } catch (error) {
+        if (
+            error instanceof ApiClientError &&
+            (error.code === ErrorCode.UNAUTHORIZED ||
+                error.code === ErrorCode.FORBIDDEN)
+        ) {
+            redirect("/auth/login");
+        }
+        throw error;
+    }
+}
+
+export async function preloadMerchantJoinRequestsPageState(
+    query: AdminMerchantJoinRequestsQueryInput = {},
+) {
+    ensureSsrApiClient();
+
+    try {
+        return await prefetchDehydratedState(async (queryClient) => {
+            await queryClient.fetchQuery(adminMerchantJoinRequestsQueryOptions(query));
         });
     } catch (error) {
         if (

@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type {
+    CreateMerchantJoinRequest,
+    CreateMerchantJoinRequestResponse,
     MassageLandingQuery,
     MassageLandingResponse,
     MassagePersonnelDetailQuery,
@@ -79,6 +81,39 @@ export class MassageService {
             url: string;
             blurhash: string | null;
         }>;
+    }
+
+    async createMerchantJoinRequest(
+        input: CreateMerchantJoinRequest,
+        userId?: string,
+    ): Promise<CreateMerchantJoinRequestResponse> {
+        const normalizedPhotoFileId = input.photoFileId?.trim() || null;
+
+        if (normalizedPhotoFileId) {
+            const photoFile = await this.filesService.getFileById(normalizedPhotoFileId);
+
+            if (photoFile.fileType !== 'image') {
+                throw new BadRequestException('近期照需为图片文件');
+            }
+
+            if (!userId || photoFile.uploadedBy !== userId) {
+                throw new BadRequestException('近期照文件无效，请重新上传');
+            }
+        }
+
+        const created = await this.repository.createMerchantJoinRequest({
+            merchantName: input.merchantName.trim(),
+            gender: input.gender,
+            phone: input.phone.replace(/\s+/g, ''),
+            age: input.age,
+            intentCity: input.intentCity.trim(),
+            photoFileId: normalizedPhotoFileId,
+        });
+
+        return {
+            id: created.id,
+            createdAt: created.createdAt.toISOString(),
+        };
     }
 
     async getLanding(
@@ -216,7 +251,6 @@ export class MassageService {
             favoriteCount: favoriteSummary.favoriteCount,
             isFavorited: favoriteSummary.isFavorited,
             description: base.description,
-            guaranteeItems: base.guaranteeItems,
             stats: {
                 yearsOfExperience: base.stats.yearsOfExperience,
                 averageServiceQuality:

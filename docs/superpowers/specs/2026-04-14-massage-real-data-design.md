@@ -318,7 +318,6 @@ type MassagePersonnelDetailResponse = {
     favoriteCount: number;
     isFavorited: boolean;
     description: string | null;
-    guaranteeItems: string[];
     stats: {
         yearsOfExperience: number;
         averageServiceQuality: number | null;

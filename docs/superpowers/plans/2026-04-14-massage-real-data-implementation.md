@@ -566,7 +566,6 @@ it('detail 在当前服务没有 gallery 时回退到同技师其他服务的 ga
         distanceText: null,
         availableTimeText: null,
         description: '擅长中式推拿',
-        guaranteeItems: [],
         stats: {
             yearsOfExperience: 1,
             averageServiceQuality: null,
@@ -677,7 +676,6 @@ async getPersonnelDetail(
         favoriteCount: favoriteSummary.favoriteCount,
         isFavorited: favoriteSummary.isFavorited,
         description: base.description,
-        guaranteeItems: base.guaranteeItems,
         stats: base.stats,
         reviewSummary: base.reviewSummary,
         services: base.services,
@@ -1212,7 +1210,6 @@ function MassageServicePersonnelScreenContent() {
     // 1. 保留 hero 区、头像区、收藏按钮、统计区、保障区、项目区、评价区的 JSX 顺序
     // 2. 把 getMassageServicePersonnelDetail(personnelId) 替换成 detailQuery.data
     // 3. 把 heroImageSource/avatarImageSource 替换成 galleryImages[0] / avatarUrl
-    // 4. 把 reviews / services / guaranteeItems / stats / reviewSummary 都映射到现有 UI 字段
     const detail = detailQuery.data;
     const galleryImages = detail.galleryImages;
     const primaryGalleryImage = galleryImages[0] ?? null;

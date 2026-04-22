@@ -31,6 +31,9 @@ import { AdminServiceCategoryCommissionStrategyRepository } from './admin-servic
 import { AdminServiceTagsController } from './admin-service-tags.controller';
 import { AdminServiceTagsService } from './admin-service-tags.service';
 import { AdminServiceTagsRepository } from './admin-service-tags.repository';
+import { AdminMerchantJoinRequestsController } from './admin-merchant-join-requests.controller';
+import { AdminMerchantJoinRequestsService } from './admin-merchant-join-requests.service';
+import { AdminMerchantJoinRequestsRepository } from './admin-merchant-join-requests.repository';
 
 @Module({
     imports: [OrderModule, FilesModule],
@@ -41,6 +44,7 @@ import { AdminServiceTagsRepository } from './admin-service-tags.repository';
         AdminOrdersController,
         AdminServiceCategoriesController,
         AdminServiceTagsController,
+        AdminMerchantJoinRequestsController,
         AdminHomeConfigController,
         AdminServiceCategoryCommissionStrategyController,
     ],
@@ -57,6 +61,8 @@ import { AdminServiceTagsRepository } from './admin-service-tags.repository';
         AdminServiceCategoriesRepository,
         AdminServiceTagsService,
         AdminServiceTagsRepository,
+        AdminMerchantJoinRequestsService,
+        AdminMerchantJoinRequestsRepository,
         AdminHomeConfigService,
         AdminHomeConfigRepository,
         AdminServiceCategoryCommissionStrategyService,
