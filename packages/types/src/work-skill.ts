@@ -544,7 +544,6 @@ export const ServicePersonnelProfileSchema = z
         services: z.array(ServicePersonnelOfferingSchema),
         merchantQualificationImage: FileAccessInfoSchema.nullable(),
         vocationalQualificationImage: FileAccessInfoSchema.nullable(),
-        qualificationImages: z.array(FileAccessInfoSchema).default([]),
         location: z
             .object({
                 lng: z.number(),
