@@ -217,7 +217,7 @@ function HomeContent() {
                             label="服务设置"
                             onPress={() =>
                                 router.push(
-                                    "/profile/service-settings" as never,
+                                    "/profile/service-settings-redesign" as never,
                                 )
                             }
                             color="#FF9800"

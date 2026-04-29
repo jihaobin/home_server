@@ -11,6 +11,9 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { Image as ExpoImage } from "@repo/mobile-ui/components/ui/image";
+import { FlashList } from "@shopify/flash-list";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
@@ -33,12 +36,7 @@ const MENU_ITEMS: MenuItem[] = [
     {
         icon: "construct-outline",
         title: "服务设置",
-        route: "/profile/service-settings",
-    },
-    {
-        icon: "location-outline",
-        title: "服务区域",
-        route: "/profile/service-area",
+        route: "/profile/service-settings-redesign",
     },
     { icon: "card-outline", title: "实名认证", route: "/verification/id-card" },
     {
@@ -148,8 +146,8 @@ function ProfileContent() {
             typeof workerMeta.stats?.rating === "number"
                 ? workerMeta.stats.rating
                 : typeof workerMeta.rating === "number"
-                  ? workerMeta.rating
-                  : undefined;
+                    ? workerMeta.rating
+                    : undefined;
         const rawServiceCount =
             workerMeta.stats?.serviceCount ?? workerMeta.serviceCount ?? 0;
         const fallbackServiceCount =
@@ -169,16 +167,42 @@ function ProfileContent() {
                 typeof fallbackRating === "number"
                     ? fallbackRating.toFixed(1)
                     : typeof workerMeta.stats?.rating === "string"
-                      ? workerMeta.stats.rating
-                      : typeof workerMeta.rating === "string"
-                        ? workerMeta.rating
-                        : "5.0",
+                        ? workerMeta.stats.rating
+                        : typeof workerMeta.rating === "string"
+                            ? workerMeta.rating
+                            : "5.0",
             totalEarnings: fallbackTotalEarnings,
         };
     }, [dashboardStats, workerMeta]);
 
     const services = personnelProfile?.services ?? [];
-    const qualificationImages = personnelProfile?.qualificationImages ?? [];
+
+    const aggregatedServices = useMemo(() => {
+        return services.map((service) => {
+            const specs = (service as any)?.specifications ?? [];
+            const prices = specs
+                .map((s: any) => Number(s.price))
+                .filter((p: number) => !isNaN(p) && p > 0);
+            const durations = specs
+                .map((s: any) => s.estimatedDurationMinutes)
+                .filter(
+                    (d: any) =>
+                        typeof d === "number" && !isNaN(d) && d > 0,
+                );
+            return {
+                ...service,
+                minPrice:
+                    prices.length > 0
+                        ? Math.min(...prices)
+                        : null,
+                minDuration:
+                    durations.length > 0
+                        ? Math.min(...durations)
+                        : null,
+                specCount: specs.length,
+            };
+        });
+    }, [services]);
 
     const serviceRegionLabel = useMemo(() => {
         if (!personnelProfile) {
@@ -277,6 +301,14 @@ function ProfileContent() {
         isPersonnelProfileFetching ||
         isDashboardStatsFetching;
 
+    const openServiceDetail = (serviceId: string) => {
+        router.push({
+            pathname:
+                "/profile/service-settings-detail-redesign" as never,
+            params: { serviceId },
+        } as never);
+    };
+
     return (
         <View style={styles.container}>
             <View style={styles.header}>
@@ -374,7 +406,13 @@ function ProfileContent() {
 
                 {personnelProfile && (
                     <View style={styles.infoCard}>
-                        <Text style={styles.sectionTitle}>服务资料</Text>
+                        <TouchableOpacity
+                            onPress={() => router.push("/profile/service-area")}
+                            style={styles.sectionTitleContainer}
+                        >
+                            <Text style={styles.sectionTitle}>服务资料</Text>
+                            <Ionicons name="chevron-forward" size={16} color="#666" />
+                        </TouchableOpacity>
                         <View style={styles.infoRow}>
                             <Text style={styles.infoLabel}>服务区域</Text>
                             <Text style={styles.infoValue}>
@@ -397,135 +435,144 @@ function ProfileContent() {
                 )}
 
                 {services.length > 0 && (
-                    <View style={styles.infoCard}>
-                        <Text style={styles.sectionTitle}>提供的服务</Text>
-                        {services.map((service) => {
-                            const pricePrefix = "¥";
-                            const specs =
-                                (service as any)?.specifications ?? [];
-                            return (
-                                <View
-                                    key={service.serviceId}
-                                    style={styles.serviceItem}
-                                >
-                                    <View style={styles.serviceHeader}>
-                                        <View style={styles.serviceIcon}>
-                                            <Ionicons
-                                                name="sparkles-outline"
-                                                size={16}
-                                                color="#FF9F43"
-                                            />
-                                        </View>
-                                        <View style={styles.serviceInfo}>
-                                            <Text style={styles.serviceName}>
-                                                {service.serviceName}
-                                            </Text>
-                                            {service.personnelDescription ? (
-                                                <Text
-                                                    style={
-                                                        styles.serviceDescription
+                    <View className="mb-4">
+                        <Text className="text-xl text-foreground mb-3 px-4">
+                            可提供的服务
+                        </Text>
+                        <View style={{ position: "relative" }}>
+                            <FlashList
+                                data={aggregatedServices}
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={{ paddingHorizontal: 16 }}
+                                ItemSeparatorComponent={() => <View className="w-3" />}
+                                renderItem={({ item: service }) => (
+                                    <TouchableOpacity
+                                        className="bg-card border border-border rounded-2xl p-4 mb-2"
+                                        style={{
+                                            shadowColor: "#000",
+                                            shadowOffset: {
+                                                width: 0,
+                                                height: 1,
+                                            },
+                                            shadowOpacity: 0.1,
+                                            shadowRadius: 3,
+                                            elevation: 2,
+                                            width: 160,
+                                        }}
+                                        onPress={() =>
+                                            openServiceDetail(service.serviceId)
+                                        }
+                                        activeOpacity={0.7}
+                                    >
+                                        <View
+                                            className="size-8 rounded-[10px] items-center justify-center mb-2 overflow-hidden"
+                                            style={{
+                                                backgroundColor: "#FFF7ED",
+                                            }}
+                                        >
+                                            {service.gallery?.[0]?.url ? (
+                                                <ExpoImage
+                                                    source={{
+                                                        uri: service.gallery[0]
+                                                            .url,
+                                                    }}
+                                                    className="size-full"
+                                                    contentFit="cover"
+                                                    placeholder={
+                                                        service.gallery[0]
+                                                            .blurhash
+                                                            ? {
+                                                                  blurhash:
+                                                                      service
+                                                                          .gallery[0]
+                                                                          .blurhash,
+                                                              }
+                                                            : undefined
                                                     }
-                                                >
-                                                    {
-                                                        service.personnelDescription
-                                                    }
-                                                </Text>
-                                            ) : service.serviceDescription ? (
-                                                <Text
-                                                    style={
-                                                        styles.serviceDescription
-                                                    }
-                                                >
-                                                    {service.serviceDescription}
-                                                </Text>
-                                            ) : null}
+                                                />
+                                            ) : (
+                                                <Ionicons
+                                                    name="sparkles-outline"
+                                                    size={18}
+                                                    color="#FF6900"
+                                                />
+                                            )}
                                         </View>
-                                    </View>
-                                    {specs.length === 0 ? (
-                                        <View style={styles.specEmpty}>
-                                            <Ionicons
-                                                name="alert-circle-outline"
-                                                size={16}
-                                                color="#94a3b8"
-                                            />
-                                            <Text style={styles.specEmptyText}>
-                                                尚未配置具体规格
-                                            </Text>
-                                        </View>
-                                    ) : (
-                                        <View style={styles.specList}>
-                                            {specs.map((spec: any) => (
-                                                <View
-                                                    key={spec.id}
-                                                    style={styles.specCard}
-                                                >
-                                                    <View
-                                                        style={
-                                                            styles.specHeader
-                                                        }
-                                                    >
-                                                        <Text
-                                                            style={
-                                                                styles.specPrice
-                                                            }
-                                                        >{`${pricePrefix} ${spec.price}`}</Text>
-                                                        {spec.name ? (
-                                                            <Text
-                                                                style={
-                                                                    styles.specTag
-                                                                }
-                                                            >
-                                                                {spec.name}
-                                                            </Text>
-                                                        ) : null}
-                                                    </View>
-                                                    {spec.estimatedDurationMinutes ? (
-                                                        <View
-                                                            style={
-                                                                styles.specMeta
-                                                            }
-                                                        >
-                                                            <Ionicons
-                                                                name="time-outline"
-                                                                size={14}
-                                                                color="#94a3b8"
-                                                            />
-                                                            <Text
-                                                                style={
-                                                                    styles.specMetaText
-                                                                }
-                                                            >
-                                                                {`约 ${spec.estimatedDurationMinutes} 分钟`}
-                                                            </Text>
-                                                        </View>
-                                                    ) : null}
-                                                </View>
-                                            ))}
-                                        </View>
-                                    )}
-                                </View>
-                            );
-                        })}
-                    </View>
-                )}
 
-                {qualificationImages.length > 0 && (
-                    <View style={styles.infoCard}>
-                        <Text style={styles.sectionTitle}>资质证明</Text>
-                        <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            style={styles.certificateList}
-                            contentContainerStyle={{ gap: 12 }}
-                        >
-                            {qualificationImages.map((image) => (
-                                <Image
-                                    key={image.fileId}
-                                    source={{ uri: image.url }}
-                                    style={styles.certificateImage}
-                                />
-                            ))}
-                        </ScrollView>
+                                        <Text
+                                            className="text-base text-foreground font-medium mb-1"
+                                            numberOfLines={1}
+                                        >
+                                            {service.serviceName}
+                                        </Text>
+
+                                        {service.personnelDescription ||
+                                        service.serviceDescription ? (
+                                            <Text
+                                                className="text-sm text-muted-foreground mb-2"
+                                                numberOfLines={2}
+                                            >
+                                                {service.personnelDescription ||
+                                                    service.serviceDescription}
+                                            </Text>
+                                        ) : null}
+
+                                        {service.minPrice !== null ? (
+                                            <View className="flex-row items-baseline mb-2">
+                                                <Text
+                                                    className="text-lg font-bold"
+                                                    style={{ color: "#FF6900" }}
+                                                >
+                                                    ¥{service.minPrice}
+                                                </Text>
+                                                <Text className="text-xs text-muted-foreground ml-0.5">
+                                                    起
+                                                </Text>
+                                            </View>
+                                        ) : (
+                                            <View className="mb-2">
+                                                <Text className="text-sm text-muted-foreground">
+                                                    暂无报价
+                                                </Text>
+                                            </View>
+                                        )}
+
+                                        <View className="flex-row gap-2">
+                                            {service.minDuration !== null && (
+                                                <View className="bg-muted rounded px-2 py-0.5">
+                                                    <Text className="text-xs text-muted-foreground">
+                                                        {service.minDuration}
+                                                        分钟起
+                                                    </Text>
+                                                </View>
+                                            )}
+                                            {service.specCount > 0 && (
+                                                <View className="bg-muted rounded px-2 py-0.5">
+                                                    <Text className="text-xs text-muted-foreground">
+                                                        {service.specCount}
+                                                        种规格
+                                                    </Text>
+                                                </View>
+                                            )}
+                                        </View>
+                                    </TouchableOpacity>
+                                )}
+                            />
+                            <LinearGradient
+                                colors={["rgba(255,255,255,0)", "rgba(255,255,255,1)"]}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 0 }}
+                                style={{
+                                    position: "absolute",
+                                    right: 0,
+                                    top: 0,
+                                    bottom: 0,
+                                    width: 50,
+                                }}
+                                pointerEvents="none"
+                            />
+                        </View>
                     </View>
                 )}
 
@@ -536,7 +583,7 @@ function ProfileContent() {
                             style={[
                                 styles.menuItem,
                                 index === MENU_ITEMS.length - 1 &&
-                                    styles.menuItemLast,
+                                styles.menuItemLast,
                             ]}
                             onPress={() => router.push(item.route as never)}
                         >
@@ -760,6 +807,11 @@ const styles = StyleSheet.create({
         shadowRadius: 5,
         elevation: 2,
     },
+    sectionTitleContainer: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+    },
     sectionTitle: {
         fontSize: 16,
         fontWeight: "600",
@@ -780,92 +832,6 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: "#333",
         textAlign: "right",
-    },
-    serviceItem: {
-        paddingVertical: 16,
-        borderTopWidth: 1,
-        borderTopColor: "#f2f2f2",
-        gap: 12,
-    },
-    serviceHeader: {
-        flexDirection: "row",
-        gap: 12,
-        alignItems: "flex-start",
-    },
-    serviceIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: "#FFF4E5",
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    serviceInfo: {
-        flex: 1,
-        paddingRight: 12,
-    },
-    serviceName: {
-        fontSize: 15,
-        fontWeight: "500",
-        color: "#111",
-        marginBottom: 4,
-    },
-    serviceDescription: {
-        fontSize: 13,
-        color: "#666",
-        lineHeight: 18,
-    },
-    specList: {
-        gap: 12,
-    },
-    specCard: {
-        borderRadius: 12,
-        padding: 12,
-        backgroundColor: "#F9FAFB",
-        borderWidth: 1,
-        borderColor: "#E0E7FF",
-    },
-    specHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-    },
-    specPrice: {
-        fontSize: 18,
-        fontWeight: "700",
-        color: "#FF6B00",
-    },
-    specTag: {
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 10,
-        backgroundColor: "#E0F2FE",
-        fontSize: 12,
-        color: "#0284C7",
-    },
-    specMeta: {
-        marginTop: 8,
-        flexDirection: "row",
-        alignItems: "center",
-    },
-    specMetaText: {
-        marginLeft: 6,
-        fontSize: 12,
-        color: "#6b7280",
-    },
-    specEmpty: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 6,
-        padding: 12,
-        borderRadius: 10,
-        backgroundColor: "#F8FAFC",
-        borderWidth: 1,
-        borderColor: "#E2E8F0",
-    },
-    specEmptyText: {
-        fontSize: 13,
-        color: "#6b7280",
     },
     certificateList: {
         marginTop: 8,

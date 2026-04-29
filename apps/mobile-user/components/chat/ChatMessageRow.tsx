@@ -1,5 +1,5 @@
 import { Pressable, View } from "react-native";
-import { Image } from "expo-image";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 import { Play } from "lucide-react-native";
 import { useMemo } from "react";
 

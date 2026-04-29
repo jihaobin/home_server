@@ -1,6 +1,5 @@
-import type React from "react";
-import { Image as ExpoImage } from "expo-image";
-import { cssInterop, useColorScheme } from "nativewind";
+import { Image, type ImageProps } from "@repo/mobile-ui/components/ui/image";
+import { useColorScheme } from "nativewind";
 import { router, useFocusEffect } from "expo-router";
 import {
     Suspense,
@@ -38,13 +37,7 @@ import type { HomeRecommendedPersonnel } from "@repo/types";
 import { MoreServicesBottomSheet } from "@/components/more-services/MoreServicesBottomSheet";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 
-// Enable NativeWind `className` on expo-image.
-cssInterop(ExpoImage, { className: { target: "style" } });
-const Image = ExpoImage as unknown as React.ComponentType<
-    React.ComponentProps<typeof ExpoImage> & { className?: string }
->;
-
-type ImageSource = React.ComponentProps<typeof ExpoImage>["source"];
+type ImageSource = ImageProps["source"];
 
 // DEV: 调试开关——设为 true 时，总是显示“更多服务”入口。
 const FORCE_SHOW_MORE_SERVICES_ENTRY = true;

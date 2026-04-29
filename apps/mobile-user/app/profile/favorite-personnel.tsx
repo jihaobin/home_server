@@ -1,24 +1,16 @@
-import type React from "react";
-import { Image as ExpoImage } from "expo-image";
 import { type Href, Stack, router } from "expo-router";
 import { Heart, MapPin, Star } from "lucide-react-native";
-import { cssInterop } from "nativewind";
 import { Suspense, useMemo } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
+import { Image, type ImageProps } from "@repo/mobile-ui/components/ui/image";
 import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { useFavoritePersonnelList } from "@repo/hooks/api/follow";
 import type { FavoritePersonnelListItem } from "@repo/types";
 
-cssInterop(ExpoImage, { className: { target: "style" } });
-
-const Image = ExpoImage as React.ComponentType<
-    React.ComponentProps<typeof ExpoImage> & { className?: string }
->;
-
-type ImageSource = React.ComponentProps<typeof ExpoImage>["source"];
+type ImageSource = ImageProps["source"];
 
 const TABS_ROUTE = "/(tabs)" as Href;
 

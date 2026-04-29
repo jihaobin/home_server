@@ -14,11 +14,11 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "@repo/mobile-ui/components/ui/button";
 import { Checkbox } from "@repo/mobile-ui/components/ui/checkbox";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { toast } from "@repo/mobile-ui/lib/toast";
 import { authClient } from "@repo/lib/auth-client";
 import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
-import { Image } from "expo-image";
 import { LoginLegalGuideDialog } from "@/components/login-legal-guide-dialog";
 import type { LegalDocKey } from "@/lib/legal-documents";
 import {

@@ -1,16 +1,14 @@
-import type React from "react";
-import { Image as ExpoImage } from "expo-image";
 import { useMassagePersonnelDetail } from "@repo/hooks/api/massage";
 import {
     useFavoritePersonnel,
     usePersonnelFavoriteSummary,
     useUnfavoritePersonnel,
 } from "@repo/hooks/api/follow";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
 import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { toast } from "@repo/mobile-ui/lib/toast";
-import { cssInterop } from "nativewind";
 import { Suspense, useMemo, useRef } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -23,12 +21,6 @@ import {
 import { useHomeLocationStore } from "@/stores/home-location-store";
 import { ChevronLeft } from "lucide-react-native";
 import { useRouter } from "expo-router";
-
-cssInterop(ExpoImage, { className: { target: "style" } });
-
-const Image = ExpoImage as React.ComponentType<
-    React.ComponentProps<typeof ExpoImage> & { className?: string }
->;
 
 const MASSAGE_DETAIL_THEME = {
     pageBackground: "#f4f5f7",

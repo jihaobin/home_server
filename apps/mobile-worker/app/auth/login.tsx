@@ -12,11 +12,11 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "@repo/mobile-ui/components/ui/button";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { toast } from "sonner-native";
 import { authClient } from "../../lib/auth";
 import { translateAuthErrorMessage } from "@repo/lib/auth-errors";
-import { Image } from "expo-image";
 
 const phoneRegex = /^1[3-9]\d{9}$/;
 

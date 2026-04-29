@@ -1,18 +1,11 @@
-import type React from "react";
-import { Image as ExpoImage } from "expo-image";
+import { Image, type ImageProps } from "@repo/mobile-ui/components/ui/image";
 import { router } from "expo-router";
-import { cssInterop } from "nativewind";
 import { useMemo } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import type { HomeSearchResponse } from "@repo/types";
 
-cssInterop(ExpoImage, { className: { target: "style" } });
-const Image = ExpoImage as unknown as React.ComponentType<
-    React.ComponentProps<typeof ExpoImage> & { className?: string }
->;
-
-type ImageSource = React.ComponentProps<typeof ExpoImage>["source"];
+type ImageSource = ImageProps["source"];
 
 type SearchPersonnelServicesData = Extract<
     HomeSearchResponse,

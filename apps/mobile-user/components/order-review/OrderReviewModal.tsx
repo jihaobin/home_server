@@ -8,7 +8,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { Image } from "expo-image";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 import { Camera, X } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { toast } from "sonner-native";

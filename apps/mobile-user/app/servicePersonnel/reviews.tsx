@@ -1,8 +1,8 @@
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { ChevronLeft, Star } from "lucide-react-native";
-import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Suspense, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, View } from "react-native";

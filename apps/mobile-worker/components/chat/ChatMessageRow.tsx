@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Linking, Pressable, View } from "react-native";
-import { Image } from "expo-image";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 
 import type { ChatMessage } from "@repo/types";
 import { useFile } from "@repo/hooks/api/files";

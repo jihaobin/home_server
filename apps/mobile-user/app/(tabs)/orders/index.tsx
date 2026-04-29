@@ -1,12 +1,12 @@
 import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type React from "react";
 import { Pressable, RefreshControl, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { OrderCardsTab, OrderStatus } from "@repo/types";
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import { useOrderCardsListInfinite } from "@repo/hooks/api/order";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 import { useOrderActions } from "@/components/orders_screen/hooks/useOrderActions";
 import {
     resolveCancelOrderDescription,
@@ -16,17 +16,9 @@ import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { usePaymentCountdown } from "@/hooks/usePaymentCountdown";
 import { ExistingOrderPaySheet } from "@/components/pay/ExistingOrderPaySheet";
-import { Image as ExpoImage } from "expo-image";
-import { cssInterop } from "nativewind";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import { hasPendingWechatPaymentSession } from "@/lib/wechat-payment-session";
-
-// Enable NativeWind `className` on expo-image.
-cssInterop(ExpoImage, { className: { target: "style" } });
-const Image = ExpoImage as unknown as React.ComponentType<
-    React.ComponentProps<typeof ExpoImage> & { className?: string }
->;
 
 type OrdersTabId = OrderCardsTab;
 

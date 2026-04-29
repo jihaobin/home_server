@@ -1,7 +1,5 @@
-import type React from "react";
-import { Image as ExpoImage } from "expo-image";
+import { Image, type ImageProps } from "@repo/mobile-ui/components/ui/image";
 import { router } from "expo-router";
-import { cssInterop } from "nativewind";
 import { useMemo } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { Text } from "@repo/mobile-ui/components/ui/text";
@@ -10,18 +8,12 @@ import { BottomSheetModal } from "@repo/mobile-ui/components/ui/modal/BottomShee
 import type { ServiceCategoryTree, Services } from "@repo/types";
 import { useHomeMoreServices } from "@repo/hooks/api/home";
 
-// Enable NativeWind `className` on expo-image.
-cssInterop(ExpoImage, { className: { target: "style" } });
-const Image = ExpoImage as unknown as React.ComponentType<
-    React.ComponentProps<typeof ExpoImage> & { className?: string }
->;
-
 export type MoreServicesBottomSheetProps = {
     visible: boolean;
     onClose: () => void;
 };
 
-type ImageSource = React.ComponentProps<typeof ExpoImage>["source"];
+type ImageSource = ImageProps["source"];
 
 const PLACEHOLDER_ICON = require("@/assets/images/icon-round.png");
 

@@ -3,7 +3,7 @@ import { Modal, Pressable, useWindowDimensions, View } from "react-native";
 import Carousel, {
     type ICarouselInstance,
 } from "react-native-reanimated-carousel";
-import { Image } from "expo-image";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 import { useVideoPlayer, VideoView } from "expo-video";
 
 import { useFile } from "@repo/hooks/api/files";

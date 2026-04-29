@@ -1,9 +1,9 @@
 import type { ServicePersonnelProfile } from "@repo/types";
 import { useServicePersonnelProfile } from "@repo/hooks/api/service-personnel";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
 import { Text } from "@repo/mobile-ui/components/ui/text";
-import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
     Building2,

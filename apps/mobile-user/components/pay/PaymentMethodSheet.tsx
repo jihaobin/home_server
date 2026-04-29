@@ -1,9 +1,9 @@
 import { Button } from "@repo/mobile-ui/components/ui/button";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 import { BottomSheetModal } from "@repo/mobile-ui/components/ui/modal/BottomSheetModal";
 import { Text } from "@repo/mobile-ui/components/ui/text";
 import type { PaymentMethod } from "@repo/types";
-import { Image } from "expo-image";
 import { icons as lucideIconRegistry } from "lucide-react-native";
 import { Pressable, ScrollView, View } from "react-native";
 

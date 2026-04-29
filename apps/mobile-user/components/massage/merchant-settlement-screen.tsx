@@ -1,7 +1,6 @@
 import type React from "react";
-import { Image as ExpoImage } from "expo-image";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 import { Text } from "@repo/mobile-ui/components/ui/text";
-import { cssInterop } from "nativewind";
 import { useRef } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
@@ -42,12 +41,6 @@ type TextFieldProps = {
     keyboardType?: "default" | "number-pad";
     maxLength?: number;
 };
-
-cssInterop(ExpoImage, { className: { target: "style" } });
-
-const Image = ExpoImage as React.ComponentType<
-    React.ComponentProps<typeof ExpoImage> & { className?: string }
->;
 
 const HERO_IMAGE_SOURCE = require("@/assets/images/merchant-settlement-hero.jpg");
 const DEFAULT_FORM_VALUES: MerchantSettlementFormValues = {

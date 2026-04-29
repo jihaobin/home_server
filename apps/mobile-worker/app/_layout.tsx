@@ -280,9 +280,23 @@ function RootNavigation() {
                         }}
                     />
                     <Stack.Screen
-                        name="profile/service-settings"
+                        name="profile/service-settings-redesign"
                         options={{
                             title: "服务设置",
+                            headerShown: false,
+                        }}
+                    />
+                    <Stack.Screen
+                        name="profile/service-settings-manage-redesign"
+                        options={{
+                            title: "添加服务",
+                            headerShown: false,
+                        }}
+                    />
+                    <Stack.Screen
+                        name="profile/service-settings-detail-redesign"
+                        options={{
+                            title: "编辑服务",
                             headerShown: false,
                         }}
                     />

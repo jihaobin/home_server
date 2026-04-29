@@ -1,5 +1,4 @@
-import type React from "react";
-import { Image as ExpoImage } from "expo-image";
+import { Image, type ImageProps } from "@repo/mobile-ui/components/ui/image";
 import { type Href, router } from "expo-router";
 import { Heart, MessageCircle } from "lucide-react-native";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
@@ -7,7 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { useMassageLanding } from "@repo/hooks/api/massage";
 import { Skeleton } from "@repo/mobile-ui/components/ui/skeleton";
 import { Text } from "@repo/mobile-ui/components/ui/text";
-import { cssInterop, useColorScheme } from "nativewind";
+import { useColorScheme } from "nativewind";
 import { Suspense, useMemo } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import {
@@ -19,12 +18,6 @@ import { useHomeLocationStore } from "@/stores/home-location-store";
 import { createMassageTagFilterRouteParams } from "./route";
 import { createServicePersonnelRouteParams } from "@/lib/service-personnel-route";
 import { getAlternatingMassageTagVisual } from "./tag-entry-visuals";
-
-cssInterop(ExpoImage, { className: { target: "style" } });
-
-const Image = ExpoImage as React.ComponentType<
-    React.ComponentProps<typeof ExpoImage> & { className?: string }
->;
 
 const BACKGROUND_COLOR = "#f4f5f7";
 const FAVORITE_PERSONNEL_ROUTE =
@@ -59,8 +52,8 @@ type MassageCategoryCard = {
     descriptionColor: string;
     gradientFrom: string;
     gradientTo: string;
-    categoryMaskSource: React.ComponentProps<typeof ExpoImage>["source"];
-    imageSource: React.ComponentProps<typeof ExpoImage>["source"];
+    categoryMaskSource: ImageProps["source"];
+    imageSource: ImageProps["source"];
     imageClassName: string;
     onPress: () => void;
 };

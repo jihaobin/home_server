@@ -20,7 +20,7 @@
 - **路由跳转**：
   - `/scan` - 扫码页面
   - `/profile/edit` - 个人信息编辑
-  - `/profile/service-settings` - 服务设置
+  - `/profile/service-settings-redesign` - 服务设置
   - `/earnings/withdraw` - 提现页面
   - `/orders/[id]` - 订单详情
 
@@ -87,7 +87,7 @@
   - 手机号
   - 工作年限
 
-##### `/profile/service-settings.tsx` ✅
+##### `/profile/service-settings-redesign.tsx` ✅
 
 - **功能**：服务设置和管理
 - **核心功能**：
@@ -202,7 +202,7 @@ app/
 │
 ├── profile/                    # 个人信息模块
 │   ├── edit.tsx               # 编辑资料
-│   ├── service-settings.tsx   # 服务设置
+│   ├── service-settings-redesign.tsx # 服务设置
 │   ├── service-area.tsx       # 服务区域
 │   ├── account-binding.tsx    # 账号绑定
 │   └── settings.tsx           # 应用设置

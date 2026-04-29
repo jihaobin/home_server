@@ -1,8 +1,7 @@
-import type React from "react";
-import { Image as ExpoImage } from "expo-image";
+import { Image, type ImageProps } from "@repo/mobile-ui/components/ui/image";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { cssInterop, useColorScheme } from "nativewind";
+import { useColorScheme } from "nativewind";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InteractionManager, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -25,13 +24,7 @@ import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { normalizeCategoryFilterRouteParams } from "@/lib/category-filter-route";
 import { createServicePersonnelRouteParams } from "@/lib/service-personnel-route";
 
-// Enable NativeWind `className` on expo-image.
-cssInterop(ExpoImage, { className: { target: "style" } });
-const Image = ExpoImage as unknown as React.ComponentType<
-    React.ComponentProps<typeof ExpoImage> & { className?: string }
->;
-
-type ImageSource = React.ComponentProps<typeof ExpoImage>["source"];
+type ImageSource = ImageProps["source"];
 
 type WorkerCardItem = {
     id: string;

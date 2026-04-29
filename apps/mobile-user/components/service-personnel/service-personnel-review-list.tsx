@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Galeria } from "@nandorojo/galeria";
-import { Image } from "expo-image";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 import { Pressable, View, type ImageSourcePropType } from "react-native";
 import { ChevronRight, Star } from "lucide-react-native";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";

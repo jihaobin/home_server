@@ -1,4 +1,4 @@
-import { Image } from "expo-image";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 import { useMemo } from "react";
 import { View } from "react-native";
 
