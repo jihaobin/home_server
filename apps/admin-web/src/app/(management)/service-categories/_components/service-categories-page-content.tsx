@@ -108,6 +108,7 @@ import {
 import { PageHeader, PageHeaderToolbar } from "@/components/common";
 import { ApiClientError } from "@repo/utils/api-client";
 import { resolveFileUrl } from "@/lib/files";
+import Image from "next/image"
 
 type DialogState =
     | { mode: "create"; open: boolean }
@@ -251,9 +252,12 @@ function CategoryIconThumbnail({
             )}
         >
             {shouldShowImage ? (
-                <img
+                <Image
                     src={iconUrl!}
                     alt={alt}
+                    content="fill"
+                    width={40}
+                    height={40}
                     className="size-full object-cover"
                     onError={() => setHasImageError(true)}
                 />
@@ -774,15 +778,15 @@ export function ServiceCategoriesPageContent() {
     const editingCategory =
         dialogState?.mode === "edit"
             ? (data.flat.find(
-                  (category) => category.id === dialogState.categoryId,
-              ) ?? null)
+                (category) => category.id === dialogState.categoryId,
+            ) ?? null)
             : null;
 
     const suggestedSortOrder =
         (dialogState
             ? (dialogState.mode === "create"
-                  ? categories.length
-                  : (editingCategory?.sortOrder ?? categories.length)) + 1
+                ? categories.length
+                : (editingCategory?.sortOrder ?? categories.length)) + 1
             : 0) || 0;
 
     return (
@@ -833,7 +837,7 @@ export function ServiceCategoriesPageContent() {
                                 setStatusFilter(value as CategoryStatusFilter)
                             }
                         >
-                            <SelectTrigger className="h-8 w-[140px]">
+                            <SelectTrigger className="h-8 w-35">
                                 <SelectValue placeholder="全部状态" />
                             </SelectTrigger>
                             <SelectContent>
@@ -1231,8 +1235,8 @@ function CategoryServiceTablePanel({
                                 {isCategoryToggling
                                     ? "处理中..."
                                     : row.original.category.isActive
-                                      ? "停用"
-                                      : "启用"}
+                                        ? "停用"
+                                        : "启用"}
                             </Button>
                             <Button
                                 variant="ghost"
@@ -1352,10 +1356,10 @@ function CategoryServiceTablePanel({
                                         {header.isPlaceholder
                                             ? null
                                             : flexRender(
-                                                  header.column.columnDef
-                                                      .header,
-                                                  header.getContext(),
-                                              )}
+                                                header.column.columnDef
+                                                    .header,
+                                                header.getContext(),
+                                            )}
                                     </TableHead>
                                 ))}
                             </TableRow>
@@ -1364,67 +1368,67 @@ function CategoryServiceTablePanel({
                     <TableBody>
                         {isLoading
                             ? Array.from({ length: 3 }).map((_, index) => (
-                                  <TableRow key={`loading-${index}`}>
-                                      <TableCell
-                                          colSpan={columns.length}
-                                          className="py-6 text-sm text-muted-foreground"
-                                      >
-                                          服务数据加载中...
-                                      </TableCell>
-                                  </TableRow>
-                              ))
+                                <TableRow key={`loading-${index}`}>
+                                    <TableCell
+                                        colSpan={columns.length}
+                                        className="py-6 text-sm text-muted-foreground"
+                                    >
+                                        服务数据加载中...
+                                    </TableCell>
+                                </TableRow>
+                            ))
                             : table.getRowModel().rows.map((row) => (
-                                  <Fragment key={row.id}>
-                                      <DroppableCategoryRow
-                                          categoryId={row.original.category.id}
-                                      >
-                                          {row.getVisibleCells().map((cell) => (
-                                              <TableCell key={cell.id}>
-                                                  {flexRender(
-                                                      cell.column.columnDef
-                                                          .cell,
-                                                      cell.getContext(),
-                                                  )}
-                                              </TableCell>
-                                          ))}
-                                      </DroppableCategoryRow>
-                                      {row.getIsExpanded() ? (
-                                          <TableRow className="bg-muted/25 hover:bg-muted/25">
-                                              <TableCell
-                                                  colSpan={
-                                                      row.getVisibleCells()
-                                                          .length
-                                                  }
-                                              >
-                                                  <ParentCategoryExpandedPanel
-                                                      row={row.original}
-                                                      statusFilter={
-                                                          statusFilter
-                                                      }
-                                                      onAddService={
-                                                          onAddService
-                                                      }
-                                                      onEditService={
-                                                          onEditService
-                                                      }
-                                                      onToggleServiceStatus={
-                                                          onToggleServiceStatus
-                                                      }
-                                                      onDeleteService={
-                                                          onDeleteService
-                                                      }
-                                                      togglingServiceId={
-                                                          togglingServiceId
-                                                      }
-                                                      isUpdatingService={
-                                                          isUpdatingService
-                                                      }
-                                                  />
-                                              </TableCell>
-                                          </TableRow>
-                                      ) : null}
-                                  </Fragment>
-                              ))}
+                                <Fragment key={row.id}>
+                                    <DroppableCategoryRow
+                                        categoryId={row.original.category.id}
+                                    >
+                                        {row.getVisibleCells().map((cell) => (
+                                            <TableCell key={cell.id}>
+                                                {flexRender(
+                                                    cell.column.columnDef
+                                                        .cell,
+                                                    cell.getContext(),
+                                                )}
+                                            </TableCell>
+                                        ))}
+                                    </DroppableCategoryRow>
+                                    {row.getIsExpanded() ? (
+                                        <TableRow className="bg-muted/25 hover:bg-muted/25">
+                                            <TableCell
+                                                colSpan={
+                                                    row.getVisibleCells()
+                                                        .length
+                                                }
+                                            >
+                                                <ParentCategoryExpandedPanel
+                                                    row={row.original}
+                                                    statusFilter={
+                                                        statusFilter
+                                                    }
+                                                    onAddService={
+                                                        onAddService
+                                                    }
+                                                    onEditService={
+                                                        onEditService
+                                                    }
+                                                    onToggleServiceStatus={
+                                                        onToggleServiceStatus
+                                                    }
+                                                    onDeleteService={
+                                                        onDeleteService
+                                                    }
+                                                    togglingServiceId={
+                                                        togglingServiceId
+                                                    }
+                                                    isUpdatingService={
+                                                        isUpdatingService
+                                                    }
+                                                />
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : null}
+                                </Fragment>
+                            ))}
                     </TableBody>
                 </Table>
             </div>
@@ -1674,7 +1678,7 @@ function ServiceCategoryFormDialog({
     uploadIcon: (file: File) => Promise<UploadValue>;
     suggestedSortOrder: number;
 }) {
-    const defaultValues: ServiceCategoryFormValues = {
+    const defaultValues = useMemo<ServiceCategoryFormValues>(() => ({
         name: category?.name ?? "",
         description: category?.description ?? "",
         isActive: category?.isActive ?? true,
@@ -1685,11 +1689,11 @@ function ServiceCategoryFormDialog({
         commissionRate: String(readCategoryCommissionRate(category)),
         icon: category?.iconFileId
             ? {
-                  id: category.iconFileId,
-                  url: normalizeIconUrl(category.iconFileUrl) ?? "",
-              }
+                id: category.iconFileId,
+                url: normalizeIconUrl(category.iconFileUrl) ?? "",
+            }
             : null,
-    };
+    }), [category, suggestedSortOrder]);
 
     const form = useForm({
         defaultValues,
@@ -1961,7 +1965,7 @@ function ServiceFormDialog({
     onSubmit: (values: ServiceFormValues) => Promise<void>;
     isSubmitting: boolean;
 }) {
-    const defaultValues: ServiceFormValues = {
+    const defaultValues = useMemo<ServiceFormValues>(() => ({
         name: service?.name ?? "",
         description: service?.description ?? "",
         categoryId: service?.categoryId ?? categoryId ?? "",
@@ -1970,14 +1974,14 @@ function ServiceFormDialog({
         image:
             service?.imageFileUrl || service?.imageFileId
                 ? {
-                      id: service.imageFileId ?? "",
-                      url:
-                          normalizeIconUrl(
-                              service.imageFileUrl ?? service.imageFileId,
-                          ) ?? "",
-                  }
+                    id: service.imageFileId ?? "",
+                    url:
+                        normalizeIconUrl(
+                            service.imageFileUrl ?? service.imageFileId,
+                        ) ?? "",
+                }
                 : null,
-    };
+    }), [service, categoryId]);
 
     const form = useForm({
         defaultValues,

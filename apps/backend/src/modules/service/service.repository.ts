@@ -406,7 +406,39 @@ export class ServiceRepository {
 
         if (keyword) {
             // 使用PGroonga全文搜索
-            const searchCondition = sql`${services.name} &@~ ${keyword} OR ${services.description} &@~ ${keyword}`;
+            // 1. 先找出匹配搜索词的分类（包括父分类）
+            const matchedCategoryIds = await this.db
+                .execute<{ id: string }>(
+                    sql`
+        WITH RECURSIVE category_matches AS (
+            -- 直接匹配关键词的分类
+            SELECT id, parent_id
+            FROM service_categories
+            WHERE name &@~ ${keyword} AND is_active = true
+
+            UNION
+
+            -- 匹配分类的子分类（递归）
+            SELECT sc.id, sc.parent_id
+            FROM service_categories sc
+            INNER JOIN category_matches cm ON sc.parent_id = cm.id
+            WHERE sc.is_active = true
+        )
+        SELECT id FROM category_matches
+    `,
+                )
+                .then((r) => r.rows.map((r) => r.id));
+
+            // 2. 构建OR条件：服务名称/描述 匹配，或 分类ID在匹配集合中
+            const searchCondition = sql`
+        ${services.name} &@~ ${keyword}
+        OR ${services.description} &@~ ${keyword}
+        ${
+            matchedCategoryIds.length > 0
+                ? sql`OR ${services.categoryId} IN (${sql.join(matchedCategoryIds)})`
+                : sql``
+        }
+    `;
             serviceConditions.push(searchCondition);
         }
 

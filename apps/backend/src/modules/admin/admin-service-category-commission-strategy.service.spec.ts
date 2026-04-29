@@ -273,7 +273,7 @@ describe('AdminServiceCategoryCommissionStrategyService', () => {
 });
 
 describe('AdminServiceCategoryCommissionStrategyRepository.saveDraft', () => {
-    it('copies published version as initial draft when only published exists', async () => {
+    it('creates fresh rule ids when saving a new draft from published rules', async () => {
         const selectResultsQueue: unknown[] = [
             [
                 {
@@ -464,13 +464,16 @@ describe('AdminServiceCategoryCommissionStrategyRepository.saveDraft', () => {
         expect(rulesInsertValues[1]).toEqual([
             expect.objectContaining({
                 strategyVersionId: 'ver_draft_new',
-                id: 'rule_from_payload',
+                id: expect.any(String),
                 threshold: 1000,
                 commissionRate: 22,
                 isEnabled: true,
                 sortOrder: 0,
             }),
         ]);
+        expect((rulesInsertValues[1] as Array<{ id: string }>)[0].id).not.toBe(
+            'rule_from_payload',
+        );
     });
 });
 

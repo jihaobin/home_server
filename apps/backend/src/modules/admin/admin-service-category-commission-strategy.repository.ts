@@ -395,7 +395,7 @@ export class AdminServiceCategoryCommissionStrategyRepository {
             if (input.payload.rules.length > 0) {
                 await tx.insert(categoryCommissionStrategyRules).values(
                     input.payload.rules.map((rule, index) => ({
-                        id: rule.id,
+                        id: createId(),
                         strategyVersionId: draftVersion.id,
                         threshold: rule.threshold,
                         commissionRate: rule.commissionRate,

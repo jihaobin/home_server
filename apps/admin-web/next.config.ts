@@ -11,18 +11,18 @@ const nextConfig: NextConfig = {
         "192.168.0.111",
     ],
     images: {
+        dangerouslyAllowLocalIP: process.env.NODE_ENV === "development",
         remotePatterns: [
             {
-                protocol: "http",
-                hostname: "192.168.0.111",
-                port: "5050",
-                pathname: "/**",
+                protocol: "https",
+                hostname: "files.dingsm.com",
+                pathname: "/files-live/**",
             },
             {
                 protocol: "http",
                 hostname: "192.168.0.111",
                 port: "9000",
-                pathname: "/**",
+                pathname: "/files-live/**",
             },
         ],
     },

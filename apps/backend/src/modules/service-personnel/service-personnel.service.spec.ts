@@ -132,7 +132,7 @@ describe('ServicePersonnelService.getPersonnelProfile', () => {
         );
     });
 
-    it('返回脱敏身份证号和结构化证书字段，并回填 qualificationImages', async () => {
+    it('返回脱敏身份证号和结构化证书字段', async () => {
         workSkillService.getPersonnelInfo.mockResolvedValue({
             userId: 'worker_1',
             name: '李师傅',
@@ -212,7 +212,6 @@ describe('ServicePersonnelService.getPersonnelProfile', () => {
         expect(result.vocationalQualificationImage?.url).toBe(
             'https://example.com/vocational.jpg',
         );
-        expect(result.qualificationImages).toHaveLength(2);
         expect(result.services[0]).toMatchObject({
             categoryId: 'wgla64hwo7zr9iz',
             categoryName: '上门按摩',

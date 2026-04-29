@@ -438,11 +438,6 @@ export class ServicePersonnelService {
             };
         }
 
-        const qualificationImages = [
-            merchantQualificationImage,
-            vocationalQualificationImage,
-        ].filter((item): item is FileAccessInfo => Boolean(item));
-
         return {
             userId: personnel.userId,
             name: personnel.name?.trim() || null,
@@ -465,7 +460,6 @@ export class ServicePersonnelService {
             services,
             merchantQualificationImage,
             vocationalQualificationImage,
-            qualificationImages,
             location,
         };
     }
