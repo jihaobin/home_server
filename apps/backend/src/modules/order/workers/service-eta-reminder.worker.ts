@@ -30,7 +30,6 @@ interface ReminderQueueEntry {
 
 const SERVICE_STATUS_ALLOWLIST: ReadonlySet<OrderStatus> = new Set([
     'paid',
-    'in_progress',
 ]);
 
 @Injectable()

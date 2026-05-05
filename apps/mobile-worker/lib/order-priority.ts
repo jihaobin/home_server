@@ -4,7 +4,6 @@ type StaffOrder = StaffOrderListResponse["items"][number];
 
 type WorkerOrderGroupKey =
     | "pending_acceptance"
-    | "in_progress"
     | "paid"
     | "completed"
     | "archived";
@@ -19,7 +18,6 @@ const HALF_HOUR_MS = 30 * 60 * 1000;
 
 const GROUP_ORDER: WorkerOrderGroupKey[] = [
     "pending_acceptance",
-    "in_progress",
     "paid",
     "completed",
     "archived",
@@ -27,8 +25,7 @@ const GROUP_ORDER: WorkerOrderGroupKey[] = [
 
 const GROUP_TITLE: Record<WorkerOrderGroupKey, string> = {
     pending_acceptance: "待接单",
-    in_progress: "服务中",
-    paid: "待服务",
+    paid: "待服务/待完成确认",
     completed: "已完成",
     archived: "其他",
 };
@@ -94,9 +91,6 @@ function resolveAllGroup(order: StaffOrder): WorkerOrderGroupKey {
     ) {
         return "pending_acceptance";
     }
-    if (order.status === "in_progress") {
-        return "in_progress";
-    }
     if (
         order.status === "paid" ||
         (order.status === "pending_acceptance" &&
@@ -134,24 +128,6 @@ function comparePendingAcceptanceOrders(
     );
     if (createdDiff !== 0) {
         return createdDiff;
-    }
-    return compareIdAsc(a, b);
-}
-
-function compareInProgressOrders(a: StaffOrder, b: StaffOrder) {
-    const startedDiff = compareTimeAsc(
-        normalizeDateToMs(a.serviceStartedAt),
-        normalizeDateToMs(b.serviceStartedAt),
-    );
-    if (startedDiff !== 0) {
-        return startedDiff;
-    }
-    const appointmentDiff = compareTimeAsc(
-        normalizeDateToMs(a.appointmentTime),
-        normalizeDateToMs(b.appointmentTime),
-    );
-    if (appointmentDiff !== 0) {
-        return appointmentDiff;
     }
     return compareIdAsc(a, b);
 }
@@ -226,8 +202,6 @@ function compareWithinGroup(
     switch (group) {
         case "pending_acceptance":
             return comparePendingAcceptanceOrders(a, b, nowMs);
-        case "in_progress":
-            return compareInProgressOrders(a, b);
         case "paid":
             return comparePaidOrders(a, b);
         case "completed":
@@ -298,11 +272,6 @@ export function sortWorkerOrdersForTab(
         return sorted;
     }
 
-    if (statusFilter === "in_progress") {
-        sorted.sort(compareInProgressOrders);
-        return sorted;
-    }
-
     if (statusFilter === "paid") {
         sorted.sort(comparePaidOrders);
         return sorted;
@@ -326,28 +295,24 @@ export function selectTopPendingWorkOrders(
         const group = resolveAllGroup(order);
         return (
             group === "pending_acceptance" ||
-            group === "in_progress" ||
             group === "paid"
         );
     });
 
     const processingGroupRank: Record<
-        "pending_acceptance" | "in_progress" | "paid",
+        "pending_acceptance" | "paid",
         number
     > = {
         pending_acceptance: 0,
-        in_progress: 1,
-        paid: 2,
+        paid: 1,
     };
 
     processingOrders.sort((a, b) => {
         const groupA = resolveAllGroup(a) as
             | "pending_acceptance"
-            | "in_progress"
             | "paid";
         const groupB = resolveAllGroup(b) as
             | "pending_acceptance"
-            | "in_progress"
             | "paid";
 
         const rankDiff = processingGroupRank[groupA] - processingGroupRank[groupB];

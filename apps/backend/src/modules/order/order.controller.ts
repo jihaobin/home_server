@@ -155,10 +155,30 @@ export class OrderController {
 
     @UseGuards(AuthGuard)
     @Roles(['customer'])
+    @Get(':id/completion-confirmation')
+    @ApiOperation({
+        summary: '生成订单完成确认二维码',
+        description:
+            '用户在服务完成并认可后生成二维码，供服务人员扫码确认完成。',
+    })
+    async getOrderCompletionConfirmation(
+        @Param('id') id: string,
+        @Req() req: Request,
+    ) {
+        return await this.orderCheckinService.generateQrCode({
+            orderId: id,
+            requesterId: req.user.id,
+        });
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['customer'])
     @Get(':id/check-in')
     @ApiOperation({
-        summary: '生成订单核验二维码',
-        description: '当前用户拉取订单详情时生成新的核验二维码',
+        summary: '生成订单完成确认二维码（兼容旧接口）',
+        description:
+            '兼容旧 check-in 路径，实际语义为完成确认二维码。',
+        deprecated: true,
     })
     async getOrderCheckin(@Param('id') id: string, @Req() req: Request) {
         return await this.orderCheckinService.generateQrCode({
@@ -169,11 +189,36 @@ export class OrderController {
 
     @UseGuards(AuthGuard)
     @Roles(['service_personnel'])
+    @Post('completion-confirmation/verify')
+    @UsePipes(new ZodValidationPipe(VerifyOrderCheckinSchema))
+    @ApiOperation({
+        summary: '扫码确认订单完成',
+        description: '服务人员扫码后提交校验，校验通过即确认订单完成。',
+    })
+    @ApiBodies(VerifyOrderCheckinSchema)
+    async verifyCompletionConfirmation(
+        @Body() dto: VerifyOrderCheckinDto,
+        @Req() req: Request,
+    ) {
+        const staffId = req.user.id;
+        if (!staffId) {
+            throw new BadRequestException('缺少服务人员身份信息');
+        }
+
+        return await this.orderCheckinService.verifyCompletionConfirmation({
+            ...dto,
+            staffId,
+        });
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
     @Post('check-in/verify')
     @UsePipes(new ZodValidationPipe(VerifyOrderCheckinSchema))
     @ApiOperation({
-        summary: '核验服务人员到场',
-        description: '服务人员扫码后提交校验，校验通过即视为到场',
+        summary: '扫码确认订单完成（兼容旧接口）',
+        description: '兼容旧 check-in 路径，实际语义为确认订单完成。',
+        deprecated: true,
     })
     @ApiBodies(VerifyOrderCheckinSchema)
     async verifyCheckIn(
@@ -305,6 +350,34 @@ export class OrderController {
 
     @UseGuards(AuthGuard)
     @Roles(['customer'])
+    @Post(':id/hide-for-customer')
+    @ApiOperation({
+        summary: '客户隐藏订单',
+        description: '仅从当前客户的订单列表隐藏订单，不删除订单数据',
+    })
+    async hideOrderForCustomer(@Param('id') id: string, @Req() req: Request) {
+        return await this.orderService.hideOrderForCustomer({
+            orderId: id,
+            customerId: req.user.id,
+        });
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @Post(':id/hide-for-staff')
+    @ApiOperation({
+        summary: '服务人员隐藏订单',
+        description: '仅从当前服务人员的订单列表隐藏订单，不删除订单数据',
+    })
+    async hideOrderForStaff(@Param('id') id: string, @Req() req: Request) {
+        return await this.orderService.hideOrderForStaff({
+            orderId: id,
+            staffId: req.user.id,
+        });
+    }
+
+    @UseGuards(AuthGuard)
+    @Roles(['customer'])
     @Post(':id/complete')
     @UseGuards(AuthGuard)
     @ApiOperation({
@@ -334,22 +407,6 @@ export class OrderController {
     async acceptAssignment(@Param('id') id: string, @Req() req: Request) {
         const staffId = req.user.id;
         return await this.orderService.acceptAssignment(id, staffId);
-    }
-
-    @UseGuards(AuthGuard)
-    @Roles(['service_personnel'])
-    @Post(':id/reject')
-    @ApiOperation({
-        summary: '服务人员拒绝接单',
-        description: '当前登录的服务人员拒绝接单并填写原因',
-    })
-    async rejectAssignment(
-        @Param('id') id: string,
-        @Body('reason') reason: string,
-        @Req() req: Request,
-    ) {
-        const staffId = req.user.id;
-        return await this.orderService.rejectAssignment(id, staffId, reason);
     }
 
     private resolveUserRole(rawRole: string | string[] | undefined): UserRole {

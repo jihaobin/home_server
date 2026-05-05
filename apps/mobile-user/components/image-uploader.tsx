@@ -5,7 +5,7 @@ import { View, Pressable, ActivityIndicator, Image } from "react-native";
 import { Text } from "../../../packages/mobile-ui/src/components/ui/text";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
-import { useImageManipulator, SaveFormat } from "expo-image-manipulator";
+import { ImageManipulator, manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import { toast } from "@repo/mobile-ui/lib/toast";
 
 export interface ImageUploaderProps {
@@ -31,8 +31,8 @@ export interface ImageUploaderProps {
     }) => Promise<{ fileIdentifier: string; fileUrl: string }>;
     /** 多图上传函数,由使用方提供(调用 useUploadFiles 的 mutateAsync) */
     onUploadMultiple?: (
-        files: Array<{ uri: string; name: string; type: string }>,
-    ) => Promise<Array<{ fileIdentifier: string; fileUrl: string }>>;
+        files: { uri: string; name: string; type: string }[],
+    ) => Promise<{ fileIdentifier: string; fileUrl: string }[]>;
     /** 多图上传状态变化 */
     onItemsChange?: (items: ImageUploaderItem[]) => void;
     /** 容器自定义样式 */
@@ -148,16 +148,6 @@ export function ImageUploader({
         onChangeMultiple?.(items.map((item) => item.uri));
     }, [items, multiple, onItemsChange, onChangeMultiple]);
 
-    // 请求相机权限
-    const requestCameraPermission = async () => {
-        const { status } = await ImagePicker.requestCameraPermissionsAsync();
-        if (status !== "granted") {
-            toast.error("需要相机权限才能拍照");
-            return false;
-        }
-        return true;
-    };
-
     // 请求相册权限
     const requestMediaLibraryPermission = async () => {
         const { status } =
@@ -186,14 +176,14 @@ export function ImageUploader({
                     return uri;
                 }
 
-                // 使用新的 useImageManipulator API 进行压缩
-                const context = useImageManipulator(uri);
-                context.resize({ width: maxWidth, height: maxHeight });
-                const image = await context.renderAsync();
-                const result = await image.saveAsync({
-                    compress: compressQuality,
-                    format: SaveFormat.JPEG,
-                });
+                const result = await ImageManipulator.manipulateAsync(
+                    uri,
+                    [{ resize: { width: maxWidth, height: maxHeight } }],
+                    {
+                        compress: compressQuality,
+                        format: SaveFormat.JPEG,
+                    },
+                );
 
                 return result.uri;
             } catch (error) {
@@ -296,10 +286,10 @@ export function ImageUploader({
                     type: item.type,
                 }));
 
-                let responses: Array<{
+                let responses: {
                     fileIdentifier: string;
                     fileUrl: string;
-                }> = [];
+                }[] = [];
                 if (onUploadMultiple) {
                     responses = await onUploadMultiple(files);
                 } else if (onUpload) {
@@ -377,20 +367,6 @@ export function ImageUploader({
             onUploadSuccess,
         ],
     );
-
-    // 拍照
-    const handleTakePhoto = async () => {
-        const hasPermission = await requestCameraPermission();
-        if (!hasPermission) return;
-
-        const result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ["images"],
-            aspect,
-            quality: 1,
-        });
-
-        await handleImagePicked(result);
-    };
 
     // 从相册选择
     const handlePickImage = async () => {

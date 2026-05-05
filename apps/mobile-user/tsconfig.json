@@ -18,6 +18,17 @@
         ".expo/types/**/*.ts",
         "expo-env.d.ts",
         "nativewind-env.d.ts",
-        "postcss.config.mjs"
-, "app.config.js"    ]
+        "postcss.config.mjs",
+        "app.config.js"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist",
+        "build",
+        ".next",
+        ".turbo",
+        ".cache",
+        "coverage",
+        ".git"
+    ]
 }

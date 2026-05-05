@@ -11,7 +11,12 @@
         "ios": {
             "supportsTablet": true,
             "infoPlist": {
-                "NSLocationWhenInUseUsageDescription": "允许 $(PRODUCT_NAME) 在核验服务时使用您的位置信息"
+                "NSLocationWhenInUseUsageDescription": "允许 $(PRODUCT_NAME) 在确认订单完成时使用您的位置信息",
+                "LSApplicationQueriesSchemes": [
+                    "qqmap",
+                    "baidumap",
+                    "iosamap"
+                ]
             }
         },
         "android": {
@@ -33,6 +38,7 @@
         },
         "plugins": [
             "./plugins/withAndroidSignature",
+            "./plugins/withMapAppQueries",
             [
                 "./plugins/withPushVendors",
                 {

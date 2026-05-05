@@ -52,8 +52,6 @@ type OrderDetailDrawerProps = {
 
 const DETAIL_STATUS_OPTIONS: OrderStatus[] = [
     "paid",
-    "in_progress",
-    "completed",
     "cancelled",
     "refunded",
 ]

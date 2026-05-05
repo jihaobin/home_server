@@ -12,7 +12,10 @@ import { Controller, useForm } from "react-hook-form";
 import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { toast } from "sonner-native";
 import { useShallow } from "zustand/react/shallow";
-import { UseCreateAddress } from "@repo/hooks/api/address";
+import {
+    UseCreateAddress,
+    UseUpdateAddress,
+} from "@repo/hooks/api/address";
 import {
     getSingleLocationErrorMessage,
     requestSingleLocation,
@@ -96,8 +99,11 @@ export default function EditAddressScreen() {
 
     const { mutate: createAddress, isPending: createAddressLoading } =
         UseCreateAddress();
+    const { mutate: updateAddress, isPending: updateAddressLoading } =
+        UseUpdateAddress();
 
     const isEditMode = useRef<boolean>(!!selectedAddress);
+    const isSavingAddress = createAddressLoading || updateAddressLoading;
 
     const navigation = useNavigation();
     const [location, setLocation] = useState<LocationChangedEvent | null>(null);
@@ -240,10 +246,19 @@ export default function EditAddressScreen() {
     });
 
     const onSubmit = async (data: any) => {
-        console.log("创建地址:", data);
-        console.log(isEditMode);
         try {
             if (isEditMode.current) {
+                updateAddress(data, {
+                    onError: (error) => {
+                        console.error(error);
+                        toast.error(error.message);
+                    },
+                    onSuccess: () => {
+                        toast.success("修改地址成功");
+                        reset();
+                        router.back();
+                    },
+                });
             } else {
                 createAddress(data, {
                     onError: (error) => {
@@ -506,11 +521,11 @@ export default function EditAddressScreen() {
             <View className="p-4 bg-background/95 backdrop-blur-sm border-t border-border/50">
                 <Button
                     onPress={handleSubmit(onSubmit)}
-                    disabled={createAddressLoading}
+                    disabled={isSavingAddress}
                     className="h-12 rounded-xl shadow-sm"
                 >
                     <Text className="text-primary-foreground text-base font-semibold">
-                        {createAddressLoading ? "保存中..." : "保存"}
+                        {isSavingAddress ? "保存中..." : "保存"}
                     </Text>
                 </Button>
             </View>

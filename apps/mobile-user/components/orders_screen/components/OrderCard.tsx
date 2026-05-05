@@ -75,8 +75,6 @@ export function OrderCard({ order, section }: OrderCardProps) {
         isPaying,
         cancelOrder,
         isCancelling,
-        completeOrder,
-        isCompleting,
         reorder,
     } = useOrderActions();
     const appointmentDisplay = formatDateTime(order.appointmentTime);
@@ -141,10 +139,6 @@ export function OrderCard({ order, section }: OrderCardProps) {
         })();
     }, [cancelOrder, order.id, order.status]);
 
-    const handleCompleteOrder = useCallback(() => {
-        void completeOrder({ orderId: order.id });
-    }, [completeOrder, order.id]);
-
     const handleReorder = useCallback(() => {
         reorder();
     }, [reorder]);
@@ -177,19 +171,6 @@ export function OrderCard({ order, section }: OrderCardProps) {
                 buttons.push({
                     label: "查看详情",
                     variant: "primary",
-                    onPress: handleNavigateDetail,
-                });
-                break;
-            case "in_progress":
-                buttons.push({
-                    label: "确认完成",
-                    variant: "primary",
-                    onPress: handleCompleteOrder,
-                    loading: isCompleting,
-                });
-                buttons.push({
-                    label: "查看详情",
-                    variant: "secondary",
                     onPress: handleNavigateDetail,
                 });
                 break;
@@ -245,12 +226,10 @@ export function OrderCard({ order, section }: OrderCardProps) {
         return buttons;
     }, [
         handleCancelOrder,
-        handleCompleteOrder,
         handleNavigateDetail,
         handlePayOrder,
         handleReorder,
         isCancelling,
-        isCompleting,
         isPaying,
         order.status,
     ]);

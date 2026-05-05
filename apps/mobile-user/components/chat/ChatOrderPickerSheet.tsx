@@ -18,7 +18,6 @@ const ORDER_TABS: readonly PickerTab[] = [
     { id: "all", label: "全部" },
     { id: "pending_payment", label: "待付款" },
     { id: "paid", label: "待服务" },
-    { id: "in_progress", label: "待验收" },
     { id: "needs_review", label: "待评价" },
 ];
 
@@ -291,8 +290,6 @@ function resolveStatusLabel(status: string) {
         case "pending_acceptance":
         case "paid":
             return "待服务";
-        case "in_progress":
-            return "待验收";
         case "completed":
             return "已完成";
         case "cancelled":

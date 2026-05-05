@@ -351,8 +351,6 @@ function resolveOrderStatus(status: string | undefined) {
         case "pending_acceptance":
         case "paid":
             return "待服务";
-        case "in_progress":
-            return "待验收";
         case "completed":
             return "已完成";
         case "cancelled":

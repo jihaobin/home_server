@@ -25,6 +25,7 @@ import {
     payments,
 } from 'src/common/database/schema/orders';
 import {
+    serviceCategories,
     services,
     servicePersonnelSkills,
 } from 'src/common/database/schema/server';
@@ -58,10 +59,9 @@ export class OrderRepository {
             'cancelled',
             'payment_timeout',
         ],
-        pending_acceptance: ['paid', 'cancelled', 'staff_rejected'],
-        staff_rejected: ['pending_acceptance', 'cancelled'],
-        paid: ['in_progress', 'cancelled', 'staff_rejected'],
-        in_progress: ['completed'], // 服务中状态不能再取消，只能完成
+        pending_acceptance: ['paid', 'cancelled'],
+        staff_rejected: [],
+        paid: ['completed', 'cancelled'],
         completed: ['refunded'], // 假设完成的订单可以退款
         cancelled: [], // 取消的订单不能再改变状态
         payment_timeout: [], // 支付超时视为终态
@@ -72,7 +72,6 @@ export class OrderRepository {
         'pending_payment',
         'pending_acceptance',
         'paid',
-        'staff_rejected',
     ];
 
     private buildPaginationMeta(total: number, page: number, limit: number) {
@@ -128,7 +127,10 @@ export class OrderRepository {
         }
 
         // 构建查询条件
-        const conditions: SQL[] = [eq(orders.customerId, customerId)];
+        const conditions: SQL[] = [
+            eq(orders.customerId, customerId),
+            isNull(orders.customerHiddenAt),
+        ];
 
         if (status) {
             conditions.push(eq(orders.status, status));
@@ -246,7 +248,10 @@ export class OrderRepository {
               and ${reviews.reviewerId} = ${orders.customerId}
         )`;
 
-        const conditions: SQL[] = [eq(orders.customerId, customerId)];
+        const conditions: SQL[] = [
+            eq(orders.customerId, customerId),
+            isNull(orders.customerHiddenAt),
+        ];
 
         if (statuses?.length) {
             conditions.push(inArray(orders.status, statuses));
@@ -371,8 +376,17 @@ export class OrderRepository {
         endTime?: Date;
         onlyAccepted?: boolean;
     }) {
+        const staffOrderServiceImageFile = alias(
+            files,
+            'staff_order_service_image',
+        );
+        const staffOrderCategoryIconFile = alias(
+            files,
+            'staff_order_category_icon',
+        );
         const conditions: SQL[] = [
             eq(orderAssignments.servicePersonnelId, servicePersonnelId),
+            isNull(orderAssignments.staffHiddenAt),
         ];
 
         if (status) {
@@ -405,6 +419,16 @@ export class OrderRepository {
                     totalAmount: orders.totalAmount,
                     serviceName: services.name,
                     serviceSpecification: servicePersonnelPricing.name,
+                    serviceImageBucketName:
+                        staffOrderServiceImageFile.bucketName,
+                    serviceImageObjectPath:
+                        staffOrderServiceImageFile.objectPath,
+                    serviceImageBlurhash: staffOrderServiceImageFile.blurhash,
+                    categoryIconBucketName:
+                        staffOrderCategoryIconFile.bucketName,
+                    categoryIconObjectPath:
+                        staffOrderCategoryIconFile.objectPath,
+                    categoryIconBlurhash: staffOrderCategoryIconFile.blurhash,
                     customerName: users.name,
                     customerPhone: users.phoneNumber,
                     customerAvatar: users.image,
@@ -423,6 +447,21 @@ export class OrderRepository {
                     eq(orderAssignments.orderId, orders.id),
                 )
                 .leftJoin(services, eq(orders.serviceId, services.id))
+                .leftJoin(
+                    staffOrderServiceImageFile,
+                    eq(staffOrderServiceImageFile.id, services.imageFileId),
+                )
+                .leftJoin(
+                    serviceCategories,
+                    eq(services.categoryId, serviceCategories.id),
+                )
+                .leftJoin(
+                    staffOrderCategoryIconFile,
+                    eq(
+                        staffOrderCategoryIconFile.id,
+                        serviceCategories.iconFileId,
+                    ),
+                )
                 .leftJoin(
                     servicePersonnelPricing,
                     eq(orders.specificationId, servicePersonnelPricing.id),
@@ -458,6 +497,12 @@ export class OrderRepository {
             totalAmount: Number(row.totalAmount ?? 0),
             serviceName: row.serviceName ?? '',
             serviceSpecification: row.serviceSpecification ?? null,
+            serviceIconBucketName:
+                row.serviceImageBucketName ?? row.categoryIconBucketName ?? null,
+            serviceIconObjectPath:
+                row.serviceImageObjectPath ?? row.categoryIconObjectPath ?? null,
+            serviceIconBlurhash:
+                row.serviceImageBlurhash ?? row.categoryIconBlurhash ?? null,
             customerName: row.customerName ?? null,
             customerPhone: row.customerPhone ?? null,
             customerAvatar: row.customerAvatar ?? null,
@@ -874,36 +919,6 @@ export class OrderRepository {
     }
 
     /**
-     * 扫码核验后将订单从 paid 原子切换到 in_progress，并写入 serviceStartedAt。
-     *
-     * 幂等：仅当 status='paid' 且 service_started_at 为空时才会写入。
-     */
-    async startService(
-        orderId: string,
-        startedAt: Date,
-        executor?: DbType,
-    ): Promise<boolean> {
-        const db = executor ?? this.db;
-        const [updated] = await db
-            .update(orders)
-            .set({
-                status: 'in_progress',
-                serviceStartedAt: startedAt,
-                updatedAt: startedAt,
-            })
-            .where(
-                and(
-                    eq(orders.id, orderId),
-                    eq(orders.status, 'paid'),
-                    isNull(orders.serviceStartedAt),
-                ),
-            )
-            .returning({ id: orders.id });
-
-        return Boolean(updated?.id);
-    }
-
-    /**
      * 服务人员改期：仅更新 orders.appointment_time。
      */
     async updateAppointmentTime(
@@ -933,10 +948,13 @@ export class OrderRepository {
     /**
      * 完成订单并递增 serviced_count（原子 + 幂等）
      *
-     * 幂等保证：仅允许从 in_progress -> completed，重复调用不会重复计数。
+     * 幂等保证：仅允许从 paid -> completed，重复调用不会重复计数。
      */
-    async completeOrderAndIncrementServicedCount(orderId: string) {
-        return await this.db.transaction(async (tx) => {
+    async completeOrderAndIncrementServicedCount(
+        orderId: string,
+        executor?: DbType,
+    ) {
+        const run = async (tx: DbType) => {
             const now = new Date();
 
             const [updated] = await tx
@@ -949,13 +967,15 @@ export class OrderRepository {
                 .where(
                     and(
                         eq(orders.id, orderId),
-                        eq(orders.status, 'in_progress'),
+                        eq(orders.status, 'paid'),
                     ),
                 )
                 .returning();
 
             if (!updated) {
-                throw new BadRequestException('订单必须处于服务中状态才能完成');
+                throw new BadRequestException(
+                    '订单必须处于待服务状态才能完成确认',
+                );
             }
 
             const assignment = await tx.query.orderAssignments.findFirst({
@@ -985,7 +1005,13 @@ export class OrderRepository {
                 );
 
             return updated;
-        });
+        };
+
+        if (executor) {
+            return await run(executor);
+        }
+
+        return await this.db.transaction(run);
     }
 
     /**
@@ -1088,6 +1114,50 @@ export class OrderRepository {
         return updatedOrders[0];
     }
 
+    async hideOrderForCustomer({
+        orderId,
+        customerId,
+    }: {
+        orderId: string;
+        customerId: string;
+    }): Promise<boolean> {
+        const [row] = await this.db
+            .update(orders)
+            .set({
+                customerHiddenAt: new Date(),
+                updatedAt: new Date(),
+            })
+            .where(
+                and(eq(orders.id, orderId), eq(orders.customerId, customerId)),
+            )
+            .returning({ id: orders.id });
+
+        return Boolean(row);
+    }
+
+    async hideOrderForStaff({
+        orderId,
+        staffId,
+    }: {
+        orderId: string;
+        staffId: string;
+    }): Promise<boolean> {
+        const [row] = await this.db
+            .update(orderAssignments)
+            .set({
+                staffHiddenAt: new Date(),
+            })
+            .where(
+                and(
+                    eq(orderAssignments.orderId, orderId),
+                    eq(orderAssignments.servicePersonnelId, staffId),
+                ),
+            )
+            .returning({ id: orderAssignments.id });
+
+        return Boolean(row);
+    }
+
     async acceptAssignment(orderId: string, staffId: string) {
         await this.db.transaction(async (tx) => {
             const assignment = await tx.query.orderAssignments.findFirst({
@@ -1132,8 +1202,6 @@ export class OrderRepository {
                 .set({
                     decisionStatus: 'accepted',
                     acceptedAt: now,
-                    rejectReason: null,
-                    rejectedAt: null,
                 })
                 .where(eq(orderAssignments.orderId, orderId));
 
@@ -1144,70 +1212,6 @@ export class OrderRepository {
                 await tx
                     .update(orders)
                     .set({ status: 'paid', updatedAt: now })
-                    .where(eq(orders.id, orderId));
-            }
-        });
-    }
-
-    async rejectAssignment(orderId: string, staffId: string, reason: string) {
-        await this.db.transaction(async (tx) => {
-            const assignment = await tx.query.orderAssignments.findFirst({
-                where: eq(orderAssignments.orderId, orderId),
-                columns: {
-                    servicePersonnelId: true,
-                    decisionStatus: true,
-                },
-            });
-
-            if (!assignment) {
-                throw new BadRequestException('订单未找到分配记录');
-            }
-
-            if (assignment.servicePersonnelId !== staffId) {
-                throw new BadRequestException('您不是该订单的服务人员');
-            }
-
-            if (assignment.decisionStatus !== 'pending') {
-                throw new BadRequestException('订单接单状态已更新');
-            }
-
-            const order = await tx.query.orders.findFirst({
-                where: eq(orders.id, orderId),
-                columns: { status: true },
-            });
-
-            if (!order) {
-                throw new BadRequestException('订单不存在');
-            }
-
-            if (
-                order.status !== 'pending_acceptance' &&
-                order.status !== 'paid'
-            ) {
-                throw new BadRequestException('当前订单状态不可拒绝');
-            }
-
-            const now = new Date();
-            await tx
-                .update(orderAssignments)
-                .set({
-                    decisionStatus: 'rejected',
-                    rejectedAt: now,
-                    rejectReason: reason,
-                    acceptedAt: null,
-                })
-                .where(eq(orderAssignments.orderId, orderId));
-
-            if (this.isValidStatusTransition(order.status, 'staff_rejected')) {
-                await tx
-                    .update(orders)
-                    .set({
-                        status: 'staff_rejected',
-                        cancelReason: reason,
-                        cancelledBy: staffId,
-                        cancelledAt: now,
-                        updatedAt: now,
-                    })
                     .where(eq(orders.id, orderId));
             }
         });

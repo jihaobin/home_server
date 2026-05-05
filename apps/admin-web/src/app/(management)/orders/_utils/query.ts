@@ -6,8 +6,9 @@ type RawSearchParams = Record<string, string | string[] | undefined>
 const ORDER_STATUS_VALUES: OrderStatus[] = [
     "pending_payment",
     "payment_timeout",
+    "pending_acceptance",
     "paid",
-    "in_progress",
+    "staff_rejected",
     "completed",
     "cancelled",
     "refunded",

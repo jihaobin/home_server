@@ -3,7 +3,6 @@ import {
     useAcceptOrder,
     useCancelOrder,
     useOrderDetail,
-    useRejectOrder,
     useRescheduleOrder,
 } from "@repo/hooks/api/order";
 import { useChatUpsertConversation } from "@repo/hooks/api/chat";
@@ -21,6 +20,7 @@ import {
     RefreshControl,
     ScrollView,
     StyleSheet,
+    Linking,
     Text,
     TextInput,
     TouchableOpacity,
@@ -28,7 +28,6 @@ import {
 } from "react-native";
 import { ErrorBoundary } from "react-error-boundary";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { executeContactCustomerAction } from "@repo/mobile-ui/lib/contact-customer-action";
 
 const SERVICE_TIME_WINDOW_STEP_MINUTES = 120;
 const SERVICE_TIME_WINDOW_MS = 2 * 60 * 60 * 1000;
@@ -287,22 +286,12 @@ const ORDER_STATUS_DISPLAY: Record<
     pending_acceptance: {
         label: "待接单",
         color: "#FFB300",
-        description: "等待您确认是否接单",
-    },
-    staff_rejected: {
-        label: "已拒绝",
-        color: "#9E9E9E",
-        description: "您已拒绝该订单，客服将继续协助客户",
+        description: "等待您确认接单",
     },
     paid: {
         label: "待服务",
         color: "#FF9800",
-        description: "客户已支付，等待上门服务",
-    },
-    in_progress: {
-        label: "服务中",
-        color: "#4CAF50",
-        description: "服务进行中，请关注现场情况",
+        description: "客户已支付，服务完成并认可后请扫码确认完成",
     },
     completed: {
         label: "已完成",
@@ -321,24 +310,21 @@ const ORDER_STATUS_DISPLAY: Record<
     },
 };
 
-const DECISION_STATUS_DISPLAY: Record<
-    AssignmentDecisionStatus,
-    { label: string; color: string; description: string }
+const DECISION_STATUS_DISPLAY: Partial<
+    Record<
+        AssignmentDecisionStatus,
+        { label: string; color: string; description: string }
+    >
 > = {
     pending: {
         label: "待接单确认",
         color: "#FFB300",
-        description: "请尽快确认是否接单，系统会在倒计时后重新派单",
+        description: "请尽快确认接单",
     },
     accepted: {
         label: "已确认接单",
         color: "#4CAF50",
         description: "您已确认接单，记得按时到达服务地点",
-    },
-    rejected: {
-        label: "已拒绝",
-        color: "#9E9E9E",
-        description: "拒绝原因已同步给客服",
     },
 };
 
@@ -452,19 +438,12 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
     const upsertChatConversation = useChatUpsertConversation();
     const cancelOrder = useCancelOrder();
     const acceptOrder = useAcceptOrder();
-    const rejectOrder = useRejectOrder();
     const rescheduleOrder = useRescheduleOrder();
     const [cancelModalVisible, setCancelModalVisible] = useState(false);
     const [cancelReason, setCancelReason] = useState(DEFAULT_CANCEL_REASON);
     const [cancelReasonError, setCancelReasonError] = useState<string | null>(
         null,
     );
-    const [rejectModalVisible, setRejectModalVisible] = useState(false);
-    const [rejectReason, setRejectReason] = useState("无法提供服务：行程冲突");
-    const [rejectReasonError, setRejectReasonError] = useState<string | null>(
-        null,
-    );
-
     const [rescheduleModalVisible, setRescheduleModalVisible] = useState(false);
     const [rescheduleDraft, setRescheduleDraft] = useState<Date>(() => {
         const base = order.appointmentTime
@@ -584,19 +563,16 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
     const decisionMeta = assignmentDecision
         ? DECISION_STATUS_DISPLAY[assignmentDecision]
         : null;
-    const canDecideAssignment =
+    const canAcceptAssignment =
         order.status === "pending_acceptance" &&
         assignmentDecision === "pending";
     // 订单是否可取消由后端统一裁决（避免端上复制状态机）。
     const canCancel =
         typeof order.canCancel === "boolean"
             ? order.canCancel
-            : [
-                  "pending_payment",
-                  "pending_acceptance",
-                  "paid",
-                  "staff_rejected",
-              ].includes(order.status as string);
+            : ["pending_payment", "pending_acceptance", "paid"].includes(
+                  order.status as string,
+              );
     const canReschedule = ["pending_acceptance", "paid"].includes(
         order.status as string,
     );
@@ -624,6 +600,10 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
         : "未使用优惠券";
     const contactName = order.address?.recipientName ?? "未提供";
     const contactPhone = order.address?.recipientPhone ?? "未提供";
+    const dialPhoneNumber =
+        typeof order.address?.recipientPhone === "string"
+            ? order.address.recipientPhone.replace(/[^\d+#*]/g, "")
+            : "";
     const addressText = order.address?.detailedAddress ?? "暂未填写";
     const serviceDescription = order.service?.description ?? "暂无服务说明";
     const amountOriginalText = formatCurrency(order.originalAmount);
@@ -639,7 +619,6 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
         "系统正在同步派单状态，稍后刷新即可查看最新结果。";
     const assignedAtText = formatDateTime(assignment?.assignedAt);
     const acceptedAtText = formatDateTime(assignment?.acceptedAt);
-    const rejectedAtText = formatDateTime(assignment?.rejectedAt);
     const timelineItems: TimelineItem[] = [];
     const appointmentText = formatDateTime(order.appointmentTime);
     if (appointmentText) {
@@ -726,17 +705,6 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
         }
     };
 
-    const openRejectModal = () => {
-        setRejectReason("无法提供服务：行程冲突");
-        setRejectReasonError(null);
-        setRejectModalVisible(true);
-    };
-
-    const closeRejectModal = () => {
-        setRejectModalVisible(false);
-        setRejectReasonError(null);
-    };
-
     const openRescheduleModal = () => {
         const fallback = currentAppointment ?? new Date();
         const initialSlot = staffSchedule.isConfigured
@@ -797,42 +765,25 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
         }
     };
 
-    const handleRejectConfirm = async () => {
-        const trimmed = rejectReason.trim();
-        if (!trimmed) {
-            setRejectReasonError("请输入拒绝原因");
+    const handleCallCustomer = async () => {
+        if (!dialPhoneNumber) {
+            Alert.alert("无法拨号", "未找到客户联系电话");
             return;
         }
-        try {
-            await rejectOrder.mutateAsync({ orderId, reason: trimmed });
-            Alert.alert("已拒绝", "系统会尽快通知客服与客户");
-            closeRejectModal();
-            router.back();
-        } catch (error) {
-            Alert.alert("拒绝失败", (error as Error)?.message ?? "请稍后再试");
-        }
-    };
 
-    const handleChatWithCustomer = () => {
-        executeContactCustomerAction();
-    };
-
-    const handleSendOrderCardToCustomer = async () => {
+        const dialUrl = `tel:${dialPhoneNumber}`;
         try {
-            const peerUserId = (order as { customerId?: string }).customerId;
-            if (!peerUserId) {
-                Alert.alert("无法发送", "未找到客户账号信息");
+            const canOpenDialer = await Linking.canOpenURL(dialUrl);
+            if (!canOpenDialer) {
+                Alert.alert("无法拨号", "当前设备无法打开拨号页面");
                 return;
             }
-            const conversation = await upsertChatConversation.mutateAsync({
-                dto: { peerUserId },
-                clientRole: "service_personnel",
-            });
-            router.push(
-                `/chat/${conversation.id}?draftOrderId=${encodeURIComponent(order.id)}` as never,
-            );
+            await Linking.openURL(dialUrl);
         } catch (error) {
-            Alert.alert("发送失败", (error as Error)?.message ?? "请稍后再试");
+            Alert.alert(
+                "无法拨号",
+                (error as Error)?.message ?? "请手动进行拨打",
+            );
         }
     };
     return (
@@ -965,7 +916,9 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                     />
                     <TouchableOpacity
                         style={styles.chatButton}
-                        onPress={handleChatWithCustomer}
+                        onPress={() => {
+                            void handleCallCustomer();
+                        }}
                     >
                         <Text style={styles.chatButtonText}>联系客户</Text>
                     </TouchableOpacity>
@@ -1058,23 +1011,6 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                                     value={acceptedAtText}
                                 />
                             ) : null}
-                            {rejectedAtText ? (
-                                <InfoRow
-                                    icon="close-circle-outline"
-                                    label="拒绝时间"
-                                    value={rejectedAtText}
-                                />
-                            ) : null}
-                            {assignment.rejectReason ? (
-                                <View style={styles.noticeBox}>
-                                    <Text style={styles.noticeLabel}>
-                                        拒绝原因
-                                    </Text>
-                                    <Text style={styles.noticeText}>
-                                        {assignment.rejectReason}
-                                    </Text>
-                                </View>
-                            ) : null}
                         </>
                     ) : (
                         <Text style={styles.descText}>
@@ -1084,9 +1020,9 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                 </View>
 
                 <View style={styles.card}>
-                    <Text style={styles.cardTitle}>核验二维码</Text>
+                    <Text style={styles.cardTitle}>完成确认二维码</Text>
                     <Text style={styles.descText}>
-                        客户端会展示核验二维码，您只需在上门服务时点击下方按钮前往扫码页面完成校验。
+                        用户端会展示完成确认二维码，服务完成并获得用户认可后，点击下方按钮扫码确认完成。
                     </Text>
                     <TouchableOpacity
                         style={styles.scanButton}
@@ -1094,50 +1030,25 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                             router.push(`/scan?source=order` as never);
                         }}
                     >
-                        <Text style={styles.scanButtonText}>前往扫码核验</Text>
+                        <Text style={styles.scanButtonText}>扫码确认完成</Text>
                     </TouchableOpacity>
                 </View>
             </ScrollView>
 
-            {(canDecideAssignment || canCancel || canReschedule) && (
+            {(canAcceptAssignment || canCancel || canReschedule) && (
                 <View style={styles.footer}>
-                    {canDecideAssignment ? (
-                        <>
-                            <TouchableOpacity
-                                style={[
-                                    styles.actionButton,
-                                    styles.rejectButton,
-                                ]}
-                                onPress={openRejectModal}
-                                disabled={
-                                    rejectOrder.isPending ||
-                                    acceptOrder.isPending
-                                }
-                            >
-                                <Text style={styles.rejectText}>
-                                    {rejectOrder.isPending
-                                        ? "拒绝中..."
-                                        : "拒绝接单"}
-                                </Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[
-                                    styles.actionButton,
-                                    styles.acceptButton,
-                                ]}
-                                onPress={handleAccept}
-                                disabled={
-                                    acceptOrder.isPending ||
-                                    rejectOrder.isPending
-                                }
-                            >
-                                <Text style={styles.acceptText}>
-                                    {acceptOrder.isPending
-                                        ? "确认中..."
-                                        : "确认接单"}
-                                </Text>
-                            </TouchableOpacity>
-                        </>
+                    {canAcceptAssignment ? (
+                        <TouchableOpacity
+                            style={[styles.actionButton, styles.acceptButton]}
+                            onPress={handleAccept}
+                            disabled={acceptOrder.isPending}
+                        >
+                            <Text style={styles.acceptText}>
+                                {acceptOrder.isPending
+                                    ? "确认中..."
+                                    : "确认接单"}
+                            </Text>
+                        </TouchableOpacity>
                     ) : null}
                     {canCancel ? (
                         <TouchableOpacity
@@ -1163,7 +1074,6 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                             disabled={
                                 rescheduleOrder.isPending ||
                                 acceptOrder.isPending ||
-                                rejectOrder.isPending ||
                                 cancelOrder.isPending
                             }
                         >
@@ -1296,87 +1206,6 @@ function OrderDetailContent({ orderId }: { orderId: string }) {
                 }}
                 onSelectSlot={(slot) => setRescheduleDraft(slot)}
             />
-
-            <Modal
-                visible={rejectModalVisible}
-                animationType="slide"
-                transparent
-                onRequestClose={closeRejectModal}
-            >
-                <View style={styles.modalBackdrop}>
-                    <KeyboardAvoidingView
-                        style={styles.modalWrapper}
-                        behavior={Platform.select({
-                            ios: "padding",
-                            android: undefined,
-                        })}
-                    >
-                        <View style={styles.modalCard}>
-                            <Text style={styles.modalTitle}>填写拒绝原因</Text>
-                            <Text style={styles.modalSubtitle}>
-                                请说明无法接单的原因，客服会同步给客户。
-                            </Text>
-                            <TextInput
-                                style={[
-                                    styles.reasonInput,
-                                    rejectReasonError
-                                        ? styles.inputError
-                                        : null,
-                                ]}
-                                value={rejectReason}
-                                onChangeText={(value) => {
-                                    setRejectReason(value);
-                                    if (rejectReasonError && value.trim()) {
-                                        setRejectReasonError(null);
-                                    }
-                                }}
-                                placeholder="例如：行程冲突，无法在预约时间内到达"
-                                multiline
-                                numberOfLines={4}
-                                textAlignVertical="top"
-                                editable={!rejectOrder.isPending}
-                            />
-                            {rejectReasonError ? (
-                                <Text style={styles.inputErrorText}>
-                                    {rejectReasonError}
-                                </Text>
-                            ) : null}
-                            <View style={styles.modalActions}>
-                                <TouchableOpacity
-                                    style={[
-                                        styles.modalButton,
-                                        styles.modalCancelButton,
-                                    ]}
-                                    onPress={closeRejectModal}
-                                    disabled={rejectOrder.isPending}
-                                >
-                                    <Text style={styles.modalCancelText}>
-                                        返回
-                                    </Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[
-                                        styles.modalButton,
-                                        styles.modalConfirmButton,
-                                        rejectOrder.isPending &&
-                                            styles.modalButtonDisabled,
-                                    ]}
-                                    onPress={handleRejectConfirm}
-                                    disabled={rejectOrder.isPending}
-                                >
-                                    {rejectOrder.isPending ? (
-                                        <ActivityIndicator color="#fff" />
-                                    ) : (
-                                        <Text style={styles.modalConfirmText}>
-                                            确认拒绝
-                                        </Text>
-                                    )}
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    </KeyboardAvoidingView>
-                </View>
-            </Modal>
         </SafeAreaView>
     );
 }
@@ -1723,11 +1552,6 @@ const styles = StyleSheet.create({
     rescheduleButton: {
         backgroundColor: "#0F766E",
     },
-    rejectButton: {
-        borderWidth: 1,
-        borderColor: "#F57C00",
-        backgroundColor: "white",
-    },
     cancelButton: {
         borderWidth: 1,
         borderColor: "#FF7043",
@@ -1742,10 +1566,6 @@ const styles = StyleSheet.create({
     },
     acceptText: {
         color: "white",
-        fontWeight: "bold",
-    },
-    rejectText: {
-        color: "#F57C00",
         fontWeight: "bold",
     },
     completeText: {

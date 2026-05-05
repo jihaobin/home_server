@@ -324,7 +324,7 @@ function RootNavigation() {
                     <Stack.Screen
                         name="scan/index"
                         options={{
-                            title: "扫码核验",
+                            title: "扫码确认完成",
                             headerShown: false,
                         }}
                     />

@@ -8,10 +8,9 @@ import { pgEnum } from 'drizzle-orm/pg-core';
 export const orderStatusEnum = pgEnum('order_status', [
     'pending_payment', // 待支付
     'payment_timeout', // 支付超时
-    'paid', // 已支付（等待服务人员上门进行服务）
+    'paid', // 已接单待服务/待完成确认
     'pending_acceptance', // 待接单（等待服务人员确认）
     'staff_rejected', // 服务人员拒绝接单
-    'in_progress', // 服务中
     'completed', // 已完成（包含已评价和未评价）
     'cancelled', // 已取消（各种原因的取消统一处理）
     'refunded', // 已退款
@@ -163,11 +162,11 @@ export const reviewTargetTypeEnum = pgEnum('review_target_type', [
     'shop', // 店铺
 ]);
 /**
- * 订单到场核验状态枚举
+ * 订单完成确认二维码状态枚举
  */
 export const orderCheckinStatusEnum = pgEnum('order_checkin_status', [
-    'pending', // 待核验
-    'verified', // 已核验
+    'pending', // 待确认
+    'verified', // 已确认
     'revoked', // 主动作废
     'expired', // 已过期
 ]);

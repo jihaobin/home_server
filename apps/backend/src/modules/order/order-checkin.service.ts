@@ -11,6 +11,7 @@ import * as QRCode from 'qrcode';
 import { GeoLocationService } from 'src/common/services/geo-location.service';
 import { OrderRepository } from './order.reposityro';
 import { OrderCheckinRepository } from './order-checkin.repository';
+import { OrderService } from './order.service';
 
 export interface GenerateQrResult {
     orderId: string;
@@ -36,6 +37,7 @@ export class OrderCheckinService {
     constructor(
         private readonly orderCheckinRepository: OrderCheckinRepository,
         private readonly orderRepository: OrderRepository,
+        private readonly orderService: OrderService,
         private readonly geoLocationService: GeoLocationService,
         private readonly configService: ConfigService,
     ) {
@@ -57,12 +59,13 @@ export class OrderCheckinService {
         }
 
         if (order.customerId !== request.requesterId) {
-            throw new ForbiddenException('无权为该订单生成核验码');
+            throw new ForbiddenException('无权为该订单生成完成确认码');
         }
 
-        // 仅允许对已支付（或服务中）订单生成核验二维码。
-        if (order.status !== 'paid' && order.status !== 'in_progress') {
-            throw new BadRequestException('当前订单状态不允许生成核验码');
+        if (order.status !== 'paid') {
+            throw new BadRequestException(
+                '当前订单状态不允许生成完成确认码',
+            );
         }
 
         await this.orderCheckinRepository.revokePending(request.orderId);
@@ -94,7 +97,7 @@ export class OrderCheckinService {
         };
     }
 
-    async verifyCheckIn(
+    async verifyCompletionConfirmation(
         dto: VerifyOrderCheckinDto & { staffId: string },
     ): Promise<VerifyResult> {
         const tokenHash = createHash('sha256').update(dto.token).digest('hex');
@@ -137,7 +140,13 @@ export class OrderCheckinService {
         }
 
         if (assignedStaffId !== dto.staffId) {
-            throw new ForbiddenException('当前服务人员无权核验该订单');
+            throw new ForbiddenException('当前服务人员无权确认该订单完成');
+        }
+
+        if (order.status !== 'paid') {
+            throw new BadRequestException(
+                '订单必须处于待服务状态才能完成确认',
+            );
         }
 
         const userPoint = this.geoLocationService.createUserPoint(
@@ -147,7 +156,7 @@ export class OrderCheckinService {
         const distanceDegrees = this.geoLocationService.metersToDegrees(
             this.distanceMeters,
         );
-        const withinRange = await this.orderCheckinRepository.isWithinRange(
+        await this.orderCheckinRepository.isWithinRange(
             record.orderId,
             userPoint,
             distanceDegrees,
@@ -159,9 +168,8 @@ export class OrderCheckinService {
 
         const verifiedAt = new Date();
         await this.orderRepository.transaction(async (tx) => {
-            await this.orderCheckinRepository.updateStatus(
+            const verified = await this.orderCheckinRepository.markPendingVerified(
                 record.id,
-                'verified',
                 {
                     verifiedAt,
                     verifiedBy: dto.staffId,
@@ -170,15 +178,20 @@ export class OrderCheckinService {
                 tx,
             );
 
-            // paid -> in_progress + serviceStartedAt(=verifiedAt)，原子 + 幂等。
-            if (order.status === 'paid') {
-                await this.orderRepository.startService(
-                    record.orderId,
-                    verifiedAt,
-                    tx,
-                );
+            if (!verified) {
+                throw new BadRequestException('二维码已被使用或撤销');
             }
+
+            await this.orderRepository.completeOrderAndIncrementServicedCount(
+                record.orderId,
+                tx,
+            );
         });
+
+        await this.orderService.handleOrderCompletionSideEffects(
+            record.orderId,
+            order,
+        );
 
         return {
             orderId: record.orderId,
@@ -189,6 +202,12 @@ export class OrderCheckinService {
 
     private buildPayload(orderId: string, token: string): OrderCheckinPayload {
         return { orderId, token };
+    }
+
+    async verifyCheckIn(
+        dto: VerifyOrderCheckinDto & { staffId: string },
+    ): Promise<VerifyResult> {
+        return await this.verifyCompletionConfirmation(dto);
     }
 
     private resolveNumber(key: string, fallback: number): number {

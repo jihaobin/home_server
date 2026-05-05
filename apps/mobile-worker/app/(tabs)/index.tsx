@@ -34,7 +34,6 @@ const ORDER_STATUS_DISPLAY: Record<
     pending_acceptance: { label: "待接单", color: "#FFB300" },
     staff_rejected: { label: "已拒绝", color: "#9E9E9E" },
     paid: { label: "待服务", color: "#FF9800" },
-    in_progress: { label: "服务中", color: "#4CAF50" },
     completed: { label: "已完成", color: "#2196F3" },
     cancelled: { label: "已取消", color: "#9E9E9E" },
     refunded: { label: "已退款", color: "#9E9E9E" },
@@ -198,7 +197,7 @@ function HomeContent() {
                     <View style={styles.quickActions}>
                         <QuickActionButton
                             icon="qr-code-outline"
-                            label="扫码接单"
+                            label="确认完成"
                             onPress={() =>
                                 router.push(`/scan?source=home` as never)
                             }

@@ -13,7 +13,7 @@ import { orders } from './orders';
 import { servicePersonnel } from './shops-service';
 
 /**
- * 订单到场核验记录表
+ * 订单完成确认记录表（短期沿用 order_checkins 表名）
  */
 export const orderCheckins = pgTable(
     'order_checkins',

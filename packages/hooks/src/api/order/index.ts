@@ -131,24 +131,27 @@ export const useOrderDetailQuery = (
     });
 
 /**
- * 获取订单核验二维码
+ * 获取订单完成确认二维码
  */
-export const useOrderCheckin = (orderId: string, orderStatus?: OrderStatus) =>
+export const useOrderCompletionConfirmation = (
+    orderId: string,
+    orderStatus?: OrderStatus,
+) =>
     useQuery({
-        queryKey: ["order-checkin", orderId],
+        queryKey: ["order-completion-confirmation", orderId],
         queryFn: async () => {
             const response = await apiClient.get<GenerateOrderCheckinDto>(
-                `/order/${orderId}/check-in`,
+                `/order/${orderId}/completion-confirmation`,
             );
             return response.data;
         },
-        enabled:
-            Boolean(orderId) &&
-            (orderStatus === "paid" || orderStatus === "in_progress"),
+        enabled: Boolean(orderId) && orderStatus === "paid",
         meta: {
-            errorMessage: "订单核验码获取失败",
+            errorMessage: "完成确认二维码获取失败",
         },
     });
+
+export const useOrderCheckin = useOrderCompletionConfirmation;
 
 /**
  * 创建指定服务人员的订单
@@ -222,24 +225,32 @@ export const useOrderConfirmDesignatedPreviewSuspense = (
     });
 
 /**
- * 核验订单（扫码）
+ * 扫码确认订单完成
  */
-export const useVerifyCheckIn = () => {
+export const useVerifyCompletionConfirmation = () => {
     const queryClient = useQueryClient();
 
     return useMutation({
         mutationFn: (verifyData: VerifyOrderCheckinDto) => {
-            return apiClient.post("/order/check-in/verify", verifyData);
+            return apiClient.post(
+                "/order/completion-confirmation/verify",
+                verifyData,
+            );
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["order-detail"] });
             queryClient.invalidateQueries({ queryKey: ["staff-orders-list"] });
+            queryClient.invalidateQueries({
+                queryKey: ["order-cards-list-infinite"],
+            });
         },
         scope: {
-            id: "verifyCheckIn",
+            id: "verifyCompletionConfirmation",
         },
     });
 };
+
+export const useVerifyCheckIn = useVerifyCompletionConfirmation;
 
 /**
  * 取消订单
@@ -276,6 +287,50 @@ export const useCancelOrder = () => {
         },
         scope: {
             id: "cancelOrder",
+        },
+    });
+};
+
+/**
+ * 客户隐藏订单：只影响当前客户订单列表，不删除订单数据。
+ */
+export const useHideOrderForCustomer = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({ orderId }: { orderId: string }) => {
+            return apiClient.post(`/order/${orderId}/hide-for-customer`);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["orders-list"] });
+            queryClient.invalidateQueries({
+                queryKey: ["orders-list-infinite"],
+            });
+            queryClient.invalidateQueries({
+                queryKey: ["order-cards-list-infinite"],
+            });
+        },
+        scope: {
+            id: "hideOrderForCustomer",
+        },
+    });
+};
+
+/**
+ * 服务人员隐藏订单：只影响当前服务人员订单列表，不删除订单数据。
+ */
+export const useHideOrderForStaff = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({ orderId }: { orderId: string }) => {
+            return apiClient.post(`/order/${orderId}/hide-for-staff`);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["staff-orders-list"] });
+        },
+        scope: {
+            id: "hideOrderForStaff",
         },
     });
 };
@@ -336,40 +391,6 @@ export const useAcceptOrder = () => {
         },
         scope: {
             id: "acceptOrder",
-        },
-    });
-};
-
-export const useRejectOrder = () => {
-    const queryClient = useQueryClient();
-
-    return useMutation({
-        mutationFn: ({
-            orderId,
-            reason,
-        }: {
-            orderId: string;
-            reason: string;
-        }) => {
-            return apiClient.post(`/order/${orderId}/reject`, { reason });
-        },
-        onSuccess: (_data, variables) => {
-            queryClient.invalidateQueries({ queryKey: ["orders-list"] });
-            queryClient.invalidateQueries({
-                queryKey: ["orders-list-infinite"],
-            });
-            queryClient.invalidateQueries({ queryKey: ["staff-orders-list"] });
-            queryClient.invalidateQueries({
-                queryKey: ["order-cards-list-infinite"],
-            });
-            if (variables?.orderId) {
-                queryClient.invalidateQueries({
-                    queryKey: ["order-detail", variables.orderId],
-                });
-            }
-        },
-        scope: {
-            id: "rejectOrder",
         },
     });
 };

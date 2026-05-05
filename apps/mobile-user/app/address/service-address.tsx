@@ -200,8 +200,8 @@ export default function ServiceAddressScreen() {
         // 导航到编辑地址页面，传递地址ID
         setSelectedAddress({
             ...address,
-            lat: address.geom![0],
-            lng: address.geom![1],
+            lng: address.geom![0],
+            lat: address.geom![1],
         });
         router.push({
             pathname: "./edit-address",
@@ -216,8 +216,8 @@ export default function ServiceAddressScreen() {
         // 选择地址模式：保存选中的地址并返回
         setSelectedAddress({
             ...address,
-            lat: address.geom![0],
-            lng: address.geom![1],
+            lng: address.geom![0],
+            lat: address.geom![1],
         });
         router.back();
     };

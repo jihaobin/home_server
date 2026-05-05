@@ -121,7 +121,7 @@ export default function ScanQRScreen() {
     const showSuccessAlert = useCallback(
         (message: string) => {
             Alert.alert(
-                "核验成功",
+                "订单已完成",
                 message,
                 [
                     {
@@ -173,7 +173,7 @@ export default function ScanQRScreen() {
 
             try {
                 setStatusType("info");
-                setStatusMessage("正在核验到场信息...");
+                setStatusMessage("确认完成中...");
                 const response = await verifyMutation.mutateAsync({
                     orderId: payload.orderId,
                     token: payload.token,
@@ -182,17 +182,19 @@ export default function ScanQRScreen() {
                 });
                 const successMessage =
                     (response as { message?: string } | undefined)?.message ||
-                    "核验成功";
+                    "订单已完成";
                 await refreshOrderState(payload.orderId);
                 setStatusType("success");
                 setStatusMessage(successMessage);
                 showSuccessAlert(successMessage);
             } catch (error) {
                 const message =
-                    error instanceof Error ? error.message : "核验失败，请重试";
+                    error instanceof Error
+                        ? error.message
+                        : "确认完成失败，请重试";
                 setStatusType("error");
                 setStatusMessage(message);
-                showBlockingAlert("核验失败", message);
+                showBlockingAlert("确认完成失败", message);
             } finally {
                 // 保持扫码锁定，直至用户关闭弹窗
             }
@@ -221,7 +223,7 @@ export default function ScanQRScreen() {
             <View style={styles.container}>
                 <Text style={styles.title}>需要摄像头权限</Text>
                 <Text style={styles.message}>
-                    应用需要摄像头权限用于扫码核验
+                    应用需要摄像头权限用于扫码确认完成
                 </Text>
                 <Button title="授予权限" onPress={requestPermission} />
             </View>
@@ -264,7 +266,7 @@ export default function ScanQRScreen() {
                         <View style={styles.processing}>
                             <ActivityIndicator color="#fff" size="small" />
                             <Text style={styles.processingText}>
-                                核验到场中...
+                                确认完成中...
                             </Text>
                         </View>
                     ) : null}
@@ -272,7 +274,7 @@ export default function ScanQRScreen() {
 
                 <View style={styles.controls}>
                     <Text style={styles.instruction}>
-                        将二维码置于框内，系统会自动核验
+                        将完成确认二维码置于框内，系统会自动确认
                     </Text>
                     {statusMessage ? (
                         <Text

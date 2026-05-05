@@ -4,7 +4,10 @@ import { Text } from "@repo/mobile-ui/components/ui/text";
 import { Button } from "@repo/mobile-ui/components/ui/button";
 import { Textarea } from "@repo/mobile-ui/components/ui/textarea";
 import { BottomSheetModal } from "@repo/mobile-ui/components/ui/modal/BottomSheetModal";
-import { useOrderCheckin, useOrderDetail } from "@repo/hooks/api/order";
+import {
+    useOrderCompletionConfirmation,
+    useOrderDetail,
+} from "@repo/hooks/api/order";
 import { useChatUpsertConversation } from "@repo/hooks/api/chat";
 import { useOrderReview } from "@repo/hooks/api/review";
 import { useCreateReview } from "@repo/hooks/api/review";
@@ -150,19 +153,6 @@ function OrderStatusCard({
         );
     }
 
-    if (status === "in_progress") {
-        return (
-            <View className="mx-4 mt-3 rounded-lg bg-card px-4 py-4 shadow-xs">
-                <Text className="text-lg font-puhui-bold text-primary">
-                    服务中
-                </Text>
-                <Text className="mt-1 text-xs font-puhui-regular text-muted-foreground">
-                    服务正在进行中
-                </Text>
-            </View>
-        );
-    }
-
     if (status === "staff_rejected") {
         return (
             <View className="mx-4 mt-3 rounded-lg bg-card px-4 py-4 shadow-xs">
@@ -282,8 +272,7 @@ function OrderDetailContent({
     const order = orderDetailQuery.data;
     const queryClient = useQueryClient();
     const upsertConversation = useChatUpsertConversation();
-    const { cancelOrder, isCancelling, completeOrder, isCompleting, reorder } =
-        useOrderActions();
+    const { cancelOrder, isCancelling, reorder } = useOrderActions();
     const { confirm, confirmDialog } = useConfirmDialog();
 
     const createReview = useCreateReview();
@@ -302,8 +291,11 @@ function OrderDetailContent({
     const showQrCode =
         typeof order.showCheckinQr === "boolean"
             ? Boolean(order.showCheckinQr)
-            : order.status === "paid" || order.status === "in_progress";
-    const checkinQuery = useOrderCheckin(order.id, order.status);
+            : order.status === "paid";
+    const checkinQuery = useOrderCompletionConfirmation(
+        order.id,
+        order.status,
+    );
     const checkin = showQrCode ? (checkinQuery.data ?? null) : null;
 
     const needsReview = Boolean(order.needsReview);
@@ -442,10 +434,6 @@ function OrderDetailContent({
             setIsPaySheetVisible(true);
             return;
         }
-        if (order.status === "in_progress") {
-            void completeOrder({ orderId: order.id });
-            return;
-        }
         if (order.status === "completed" && needsReview) {
             setDraftRating(5);
             setDraftComment("");
@@ -455,7 +443,7 @@ function OrderDetailContent({
             return;
         }
         reorder();
-    }, [canPay, completeOrder, needsReview, order.id, order.status, reorder]);
+    }, [canPay, needsReview, order.status, reorder]);
 
     const handleSecondaryAction = useCallback(() => {
         if (order.status === "completed" && needsReview) {
@@ -486,15 +474,10 @@ function OrderDetailContent({
     }, [canCancel, cancelOrder, needsReview, order.id, order.status, reorder]);
 
     const shouldShowSecondaryButton =
-        order.status !== "in_progress" &&
-        (canCancel || (order.status === "completed" && needsReview));
+        canCancel || (order.status === "completed" && needsReview);
 
     const primaryButtonText = canPay
         ? "立即支付"
-        : order.status === "in_progress"
-          ? isCompleting
-              ? "确认中..."
-              : "确认验收"
         : order.status === "completed" && needsReview
           ? "评价"
           : "再次预约";
@@ -650,7 +633,7 @@ function OrderDetailContent({
                         <View className="flex-row items-center px-4 py-3">
                             <QrCode size={16} className="text-foreground" />
                             <Text className="ml-2 text-sm font-puhui-medium text-foreground">
-                                服务核验二维码
+                                完成确认二维码
                             </Text>
                         </View>
                         <View className="h-px bg-border/60" />
@@ -671,12 +654,12 @@ function OrderDetailContent({
                                 </View>
                             )}
                             <Text className="mt-3 text-xs font-puhui-regular text-muted-foreground">
-                                请出示此二维码供服务人员扫码核验
-                            </Text>
-                            <Text className="mt-1 text-xs font-puhui-regular text-muted-foreground">
                                 {checkin?.expiresAt
                                     ? `有效期至${formatDateTimeCn(checkin.expiresAt)}`
                                     : ""}
+                            </Text>
+                            <Text className="mt-2 text-center text-xs font-puhui-regular text-muted-foreground">
+                                服务完成并认可后，请出示此二维码供服务人员扫码确认完成
                             </Text>
                         </View>
                     </View>
@@ -888,12 +871,6 @@ function OrderDetailContent({
                         <TouchableOpacity
                             activeOpacity={0.7}
                             onPress={handlePrimaryAction}
-                            disabled={order.status === "in_progress" && isCompleting}
-                            style={
-                                order.status === "in_progress" && isCompleting
-                                    ? { opacity: 0.6 }
-                                    : undefined
-                            }
                             className="h-11 min-w-0 flex-1 items-center justify-center rounded-full bg-primary px-2"
                         >
                             <Text

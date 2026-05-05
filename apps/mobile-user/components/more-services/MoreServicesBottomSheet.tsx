@@ -41,20 +41,18 @@ function MoreServicesSkeleton({ sectionCount = 3 }: { sectionCount?: number }) {
         <View className="px-4 pb-10">
             {Array.from({ length: sectionCount }).map((_, sectionIdx) => (
                 <View
-                    // eslint-disable-next-line react/no-array-index-key
                     key={`more-services-skeleton-${sectionIdx}`}
                     className={sectionIdx === 0 ? "pt-2" : "pt-6"}
                 >
                     <Skeleton className="h-4 w-28 rounded" />
-                    <View className="mt-3 flex-row flex-wrap gap-x-[31px] gap-y-8">
+                    <View className="mt-3 flex-row flex-wrap gap-x-[10px] gap-y-8">
                         {Array.from({ length: 12 }).map((__, itemIdx) => (
                             <View
-                                // eslint-disable-next-line react/no-array-index-key
                                 key={`more-services-skeleton-item-${sectionIdx}-${itemIdx}`}
-                                className="w-11 items-center"
+                                className="w-16 items-center"
                             >
                                 <Skeleton className="h-[38px] w-[38px] rounded-full" />
-                                <Skeleton className="mt-2 h-3 w-10 rounded" />
+                                <Skeleton className="mt-2 h-3 w-14 rounded" />
                             </View>
                         ))}
                     </View>
@@ -102,7 +100,7 @@ function ServiceGridItem({
     const imageSource = useMemo(() => resolveImageSource(imageUrl), [imageUrl]);
 
     return (
-        <Pressable className="w-11 items-center" onPress={onPress}>
+        <Pressable className="w-16 items-center" onPress={onPress}>
             <View className="h-11 w-11 items-center justify-center">
                 <View className="h-[38px] w-[38px] overflow-hidden rounded-full border border-primary">
                     <Image
@@ -112,10 +110,7 @@ function ServiceGridItem({
                     />
                 </View>
             </View>
-            <Text
-                className="mt-1 text-xs text-foreground font-puhui-regular"
-                numberOfLines={1}
-            >
+            <Text className="mt-1 w-full text-center text-xs leading-4 text-foreground font-puhui-regular">
                 {label}
             </Text>
         </Pressable>
@@ -233,7 +228,7 @@ export function MoreServicesBottomSheet({
                                     <Text className="text-sm text-foreground font-puhui-medium">
                                         {section.title}
                                     </Text>
-                                    <View className="mt-3 flex-row flex-wrap gap-x-[31px] gap-y-8">
+                                    <View className="mt-3 flex-row flex-wrap gap-x-[10px] gap-y-8">
                                         {section.items.map((item) => (
                                             <ServiceGridItem
                                                 key={item.id}

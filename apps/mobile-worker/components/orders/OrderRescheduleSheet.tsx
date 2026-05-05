@@ -90,6 +90,7 @@ export function OrderRescheduleSheet(props: OrderRescheduleSheetProps) {
                     contentContainerStyle={styles.sheetScrollContent}
                     showsVerticalScrollIndicator={false}
                     bounces={false}
+                    keyboardShouldPersistTaps="handled"
                     nestedScrollEnabled
                 >
                     <View style={styles.summaryCard}>

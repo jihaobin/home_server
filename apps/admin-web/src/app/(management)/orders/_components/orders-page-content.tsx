@@ -48,8 +48,6 @@ import { adminApiBaseUrl } from "@/lib/api-client"
 
 const BULK_STATUS_OPTIONS: OrderStatus[] = [
     "paid",
-    "in_progress",
-    "completed",
     "cancelled",
     "refunded",
 ]

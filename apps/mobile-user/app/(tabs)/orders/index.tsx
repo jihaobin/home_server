@@ -5,7 +5,10 @@ import { Pressable, RefreshControl, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { OrderCardsTab, OrderStatus } from "@repo/types";
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
-import { useOrderCardsListInfinite } from "@repo/hooks/api/order";
+import {
+    useHideOrderForCustomer,
+    useOrderCardsListInfinite,
+} from "@repo/hooks/api/order";
 import { Image } from "@repo/mobile-ui/components/ui/image";
 import { useOrderActions } from "@/components/orders_screen/hooks/useOrderActions";
 import {
@@ -19,6 +22,7 @@ import { ExistingOrderPaySheet } from "@/components/pay/ExistingOrderPaySheet";
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import { hasPendingWechatPaymentSession } from "@/lib/wechat-payment-session";
+import { toast } from "sonner-native";
 
 type OrdersTabId = OrderCardsTab;
 
@@ -31,7 +35,6 @@ const TABS: readonly OrdersTab[] = [
     { id: "all", label: "全部" },
     { id: "pending_payment", label: "待付款" },
     { id: "paid", label: "待服务" },
-    { id: "in_progress", label: "待验收" },
     { id: "needs_review", label: "待评价" },
 ];
 
@@ -43,9 +46,9 @@ type OrderCardActionVariant =
 
 type OrderCardActionKey =
     | "cancel"
+    | "hide"
     | "pay"
     | "progress"
-    | "confirm"
     | "review"
     | "reorder";
 
@@ -118,8 +121,6 @@ const resolveStatusText = (status: OrderStatus, needsReview: boolean) => {
             return "等待接单";
         case "paid":
             return "待服务";
-        case "in_progress":
-            return "待验收";
         case "completed":
             return "已完成";
         case "cancelled":
@@ -134,6 +135,13 @@ const resolveStatusText = (status: OrderStatus, needsReview: boolean) => {
             return "--";
     }
 };
+
+const isHideableOrderStatus = (status: OrderStatus) =>
+    status === "completed" ||
+    status === "cancelled" ||
+    status === "payment_timeout" ||
+    status === "refunded" ||
+    status === "staff_rejected";
 
 const resolveActions = (
     status: OrderStatus,
@@ -156,17 +164,14 @@ const resolveActions = (
     if (status === "paid") {
         return [
             { key: "progress", label: "查看进度", variant: "outlinePrimary" },
-            // paid 状态下的“确认收货”业务含义可能会变，这里先跳详情由详情页承接。
-            { key: "confirm", label: "确认收货", variant: "primary" },
         ];
     }
 
-    if (status === "in_progress") {
-        return [{ key: "confirm", label: "确认验收", variant: "primary" }];
-    }
-
     if (status === "completed" && needsReview) {
-        return [{ key: "review", label: "评价", variant: "primary" }];
+        return [
+            { key: "hide", label: "删除", variant: "outlineMuted" },
+            { key: "review", label: "评价", variant: "primary" },
+        ];
     }
 
     if (
@@ -175,7 +180,14 @@ const resolveActions = (
         status === "refunded" ||
         status === "staff_rejected"
     ) {
-        return [{ key: "reorder", label: "再来一单", variant: "outline" }];
+        return [
+            { key: "hide", label: "删除", variant: "outlineMuted" },
+            { key: "reorder", label: "再来一单", variant: "outline" },
+        ];
+    }
+
+    if (isHideableOrderStatus(status)) {
+        return [{ key: "hide", label: "删除", variant: "outlineMuted" }];
     }
 
     return [];
@@ -336,8 +348,13 @@ function OrderCard({
             <View className="h-px bg-border" />
 
             <View className="px-3 pt-3 pb-3">
-                <View className="flex-row items-center justify-between">
-                    <Text className="text-xs font-puhui-regular">
+                <View className="gap-2">
+                    <Text
+                        className="text-xs font-puhui-regular"
+                        numberOfLines={1}
+                        ellipsizeMode="clip"
+                        selectable
+                    >
                         <Text className="text-xs text-foreground">
                             预约时间：
                         </Text>
@@ -346,11 +363,18 @@ function OrderCard({
                         </Text>
                     </Text>
 
-                    <View className="flex-row items-end">
-                        <Text className="font-puhui-regular text-foreground">
+                    <View className="flex-row items-baseline justify-end gap-1">
+                        <Text className="text-sm font-puhui-regular text-foreground">
                             应付总额：
                         </Text>
-                        <Text className="ml-1 font-din-alt-bold text-foreground">
+                        <Text
+                            className="shrink text-base text-primary font-bold"
+                            numberOfLines={1}
+                            ellipsizeMode="clip"
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.5}
+                            selectable
+                        >
                             {order.totalAmountText}
                         </Text>
                     </View>
@@ -522,11 +546,12 @@ export default function OrdersIndex() {
     }, [rawItems]);
 
     const router = useRouter();
-    const { cancelOrder, isCancelling, completeOrder, isCompleting, reorder } =
-        useOrderActions();
+    const { cancelOrder, isCancelling, reorder } = useOrderActions();
+    const hideOrderForCustomer = useHideOrderForCustomer();
     const { confirm, confirmDialog } = useConfirmDialog();
 
-    const actionsDisabled = isCancelling || isCompleting;
+    const actionsDisabled =
+        isCancelling || hideOrderForCustomer.isPending;
 
     const onActionPress = useMemo(() => {
         return async ({
@@ -537,6 +562,31 @@ export default function OrdersIndex() {
             action: OrderCardAction;
         }) => {
             switch (action.key) {
+                case "hide":
+                    if (
+                        !(await confirm({
+                            title: "删除订单",
+                            description:
+                                "删除后该订单将不再显示在你的订单列表中，订单数据不会被删除。",
+                            confirmText: "删除",
+                            cancelText: "取消",
+                            confirmVariant: "destructive",
+                        }))
+                    ) {
+                        return;
+                    }
+                    hideOrderForCustomer.mutate(
+                        { orderId: order.id },
+                        {
+                            onSuccess: () => {
+                                toast.success("订单已从列表移除");
+                            },
+                            onError: () => {
+                                toast.error("删除失败，请稍后重试");
+                            },
+                        },
+                    );
+                    return;
                 case "cancel":
                     if (
                         !(await confirm({
@@ -567,14 +617,6 @@ export default function OrdersIndex() {
                 case "progress":
                     router.push(`/order/${order.id}`);
                     return;
-                case "confirm":
-                    // paid 状态下的 confirm 先走详情；in_progress 直接确认完成。
-                    if (order.status === "in_progress") {
-                        await completeOrder({ orderId: order.id });
-                        return;
-                    }
-                    router.push(`/order/${order.id}`);
-                    return;
                 case "review":
                     router.push(`/order/${order.id}`);
                     return;
@@ -596,7 +638,13 @@ export default function OrdersIndex() {
                     return;
             }
         };
-    }, [cancelOrder, completeOrder, reorder, router]);
+    }, [
+        cancelOrder,
+        confirm,
+        hideOrderForCustomer,
+        reorder,
+        router,
+    ]);
 
     return (
         <RequireAuth>

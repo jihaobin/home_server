@@ -23,18 +23,6 @@ export class AddressRespository {
         return !!result;
     }
 
-    private async isAddressExistsByUserIdAndPhone(
-        userId: string,
-        phone: string,
-    ): Promise<boolean> {
-        const result = await this.db.query.userAddresses.findFirst({
-            where: (table, { and, eq }) =>
-                and(eq(table.userId, userId), eq(table.recipientPhone, phone)),
-            columns: { id: true },
-        });
-        return !!result;
-    }
-
     find(query: AddressQuery) {
         switch (query.filter) {
             case 'all':
@@ -63,15 +51,6 @@ export class AddressRespository {
 
         if (!data.recipientPhone) {
             throw new BadRequestException('创建地址必须传入手机号');
-        }
-
-        if (
-            await this.isAddressExistsByUserIdAndPhone(
-                data.userId,
-                data.recipientPhone,
-            )
-        ) {
-            throw new BadRequestException('当前用户下已存在该手机号地址');
         }
 
         return this.db.insert(userAddresses).values({

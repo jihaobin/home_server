@@ -51,8 +51,6 @@ type OrdersTableProps = {
 
 const ROW_STATUS_OPTIONS: OrderStatus[] = [
     "paid",
-    "in_progress",
-    "completed",
     "cancelled",
     "refunded",
 ]

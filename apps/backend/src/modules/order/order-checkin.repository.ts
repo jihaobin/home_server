@@ -113,6 +113,36 @@ export class OrderCheckinRepository {
         return record ?? null;
     }
 
+    async markPendingVerified(
+        id: string,
+        patch: {
+            verifiedAt: Date;
+            verifiedBy: string;
+            verifiedGeom: SQL;
+        },
+        executor?: DbType,
+    ): Promise<OrderCheckinRecord | null> {
+        const db = this.resolveDb(executor);
+        const [record] = await db
+            .update(orderCheckins)
+            .set({
+                status: 'verified',
+                verifiedAt: patch.verifiedAt,
+                verifiedBy: patch.verifiedBy,
+                verifiedGeom: patch.verifiedGeom,
+                updatedAt: new Date(),
+            })
+            .where(
+                and(
+                    eq(orderCheckins.id, id),
+                    eq(orderCheckins.status, STATUS_PENDING),
+                ),
+            )
+            .returning();
+
+        return record ?? null;
+    }
+
     async isWithinRange(
         orderId: string,
         userPoint: SQL,

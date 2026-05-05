@@ -16,10 +16,9 @@ export type UserRole = z.infer<typeof UserRoleEnum>;
 export const OrderStatusEnum = z.enum([
     "pending_payment", // 待支付
     "payment_timeout", // 支付超时
-    "paid", // 已支付（等待服务人员上门进行服务）
+    "paid", // 已接单待服务/待完成确认
     "pending_acceptance", // 待接单（等待服务人员确认）
     "staff_rejected", // 服务人员拒绝接单
-    "in_progress", // 服务中
     "completed", // 已完成（包含已评价和未评价）
     "cancelled", // 已取消（各种原因的取消统一处理）
     "refunded", // 已退款
@@ -196,10 +195,10 @@ export type NotificationDeviceInfo = z.infer<
     typeof NotificationDeviceInfoSchema
 >;
 
-// 订单到场核验状态枚举
+// 订单完成确认二维码状态枚举
 export const OrderCheckinStatusEnum = z.enum([
-    "pending", // 待核验
-    "verified", // 已核验
+    "pending", // 待确认
+    "verified", // 已确认
     "revoked", // 主动作废
     "expired", // 已过期
 ]);
@@ -530,32 +529,32 @@ export const ChinaCitySchema = z
         description: "存储中国省市区数据的表",
     });
 
-// 订单到场核验记录表
+// 订单完成确认记录表
 export const OrderCheckinsSchema = z
     .object({
         id: z.string().max(255).meta({
-            description: "订单到场核验记录唯一标识",
-            title: "核验记录ID",
+            description: "订单完成确认记录唯一标识",
+            title: "完成确认记录ID",
         }),
         orderId: z.string().max(255).meta({
             description: "关联的订单ID",
             title: "订单ID",
         }),
         tokenHash: z.string().max(128).meta({
-            description: "核验令牌哈希值",
+            description: "完成确认令牌哈希值",
             title: "令牌哈希",
         }),
         status: OrderCheckinStatusEnum.default("pending").meta({
-            description: "核验状态",
-            title: "核验状态",
+            description: "完成确认状态",
+            title: "完成确认状态",
         }),
         expiresAt: z.date().meta({
             description: "令牌过期时间",
             title: "过期时间",
         }),
         verifiedAt: z.date().optional().nullable().meta({
-            description: "核验完成时间",
-            title: "核验时间",
+            description: "完成确认时间",
+            title: "完成确认时间",
         }),
         verifiedBy: z.string().max(255).optional().nullable().meta({
             description: "验证者（服务人员）用户ID，可以为空",
@@ -575,8 +574,8 @@ export const OrderCheckinsSchema = z
         }),
     })
     .meta({
-        title: "订单到场核验记录表",
-        description: "记录订单到场核验信息的表",
+        title: "订单完成确认记录表",
+        description: "记录订单完成确认信息的表",
     });
 
 // 应用发布表
@@ -1623,10 +1622,12 @@ export const OrdersSchema = z
             title: "订单状态",
             examples: [
                 "pending_payment (待支付)",
-                "paid (已支付)",
-                "in_progress (服务中)",
+                "pending_acceptance (待接单)",
+                "paid (待服务/待完成确认)",
+                "staff_rejected (服务人员拒单)",
                 "completed (已完成)",
                 "cancelled (已取消)",
+                "payment_timeout (支付超时)",
                 "refunded (已退款)",
             ],
         }),
@@ -1690,6 +1691,10 @@ export const OrdersSchema = z
         cancelledAt: z.date().nullable().optional().meta({
             description: "取消时间",
             title: "取消时间",
+        }),
+        customerHiddenAt: z.date().nullable().optional().meta({
+            description: "客户在自己订单列表隐藏订单的时间",
+            title: "客户隐藏时间",
         }),
         createdAt: z
             .date()
@@ -1770,6 +1775,10 @@ export const OrderAssignmentsSchema = z
         rejectedAt: z.date().nullable().optional().meta({
             description: "拒绝时间",
             title: "拒绝时间",
+        }),
+        staffHiddenAt: z.date().nullable().optional().meta({
+            description: "服务人员在自己订单列表隐藏订单的时间",
+            title: "服务人员隐藏时间",
         }),
     })
     .meta({

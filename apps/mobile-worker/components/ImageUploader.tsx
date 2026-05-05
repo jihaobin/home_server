@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
 import { ActivityIndicator, Image, Pressable, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system";
-import { useImageManipulator, SaveFormat } from "expo-image-manipulator";
+import * as FileSystem from "expo-file-system/legacy";
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { Image as ImageIcon } from "lucide-react-native";
 import { toast } from "sonner-native";
 import { cn } from "@repo/mobile-ui/lib/utils";
@@ -86,13 +86,14 @@ export function ImageUploader({
                 if (size <= maxFileSize) {
                     return uri;
                 }
-                const context = useImageManipulator(uri);
-                context.resize({ width: maxWidth, height: maxHeight });
-                const image = await context.renderAsync();
-                const result = await image.saveAsync({
-                    compress: compressQuality,
-                    format: SaveFormat.JPEG,
-                });
+                const result = await ImageManipulator.manipulateAsync(
+                    uri,
+                    [{ resize: { width: maxWidth, height: maxHeight } }],
+                    {
+                        compress: compressQuality,
+                        format: SaveFormat.JPEG,
+                    },
+                );
                 return result.uri;
             } catch {
                 return uri;

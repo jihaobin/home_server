@@ -1,11 +1,27 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useStaffOrdersList } from "@repo/hooks/api/order";
+import {
+    useHideOrderForStaff,
+    useStaffOrdersList,
+} from "@repo/hooks/api/order";
+import { cn } from "@repo/mobile-ui/lib/utils";
+import {
+    HoverCard,
+    HoverCardContent,
+    HoverCardTrigger,
+} from "@repo/mobile-ui/components/ui/hover-card";
+import { Image } from "@repo/mobile-ui/components/ui/image";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import type { StaffOrderListResponse } from "@repo/types";
+import * as Clipboard from "expo-clipboard";
+import * as IntentLauncher from "expo-intent-launcher";
 import { useRouter } from "expo-router";
 import React, { Suspense, useMemo, useState } from "react";
 import {
+    Alert,
+    ActionSheetIOS,
     FlatList,
+    Linking,
+    Platform,
     RefreshControl,
     StyleSheet,
     Text,
@@ -13,12 +29,14 @@ import {
     View,
 } from "react-native";
 import { ErrorBoundary } from "react-error-boundary";
+import { toast } from "sonner-native";
 import {
     buildWorkerOrderGroups,
     sortWorkerOrdersForTab,
 } from "../../lib/order-priority";
 
 type StaffOrder = StaffOrderListResponse["items"][number];
+
 
 const STATUS_TABS = [
     { key: "all", label: "全部" },
@@ -27,7 +45,6 @@ const STATUS_TABS = [
         label: "待接单",
     },
     { key: "paid", label: "待服务" },
-    { key: "in_progress", label: "服务中" },
     { key: "completed", label: "已完成" },
     { key: "cancelled", label: "已取消" },
 ] as const;
@@ -38,26 +55,112 @@ type GroupedOrderRow =
     | { type: "group"; key: string; title: string; count: number }
     | { type: "order"; key: string; order: StaffOrder };
 
-const ORDER_STATUS_DISPLAY: Record<string, { label: string; color: string }> = {
-    pending_payment: { label: "待支付", color: "#FF9800" },
-    payment_timeout: { label: "支付超时", color: "#9E9E9E" },
-    pending_acceptance: { label: "待接单", color: "#FFB300" },
-    paid: { label: "待服务", color: "#FF9800" },
-    in_progress: { label: "服务中", color: "#4CAF50" },
-    completed: { label: "已完成", color: "#2196F3" },
-    cancelled: { label: "已取消", color: "#9E9E9E" },
-    refunded: { label: "已退款", color: "#9E9E9E" },
-    staff_rejected: { label: "已拒绝", color: "#9E9E9E" },
+type MapApp = {
+    name: string;
+    url: (encodedAddress: string) => string;
 };
 
-const DECISION_STATUS_DISPLAY: Record<
-    StaffOrder["decisionStatus"],
-    { label: string; color: string }
+const MAP_REFERER = "dingdong-worker";
+const MAP_APPS: MapApp[] = [
+    {
+        name: "腾讯地图",
+        url: (encodedAddress) =>
+            `qqmap://map/search?keyword=${encodedAddress}&referer=${MAP_REFERER}`,
+    },
+    {
+        name: "百度地图",
+        url: (encodedAddress) =>
+            `baidumap://map/geocoder?address=${encodedAddress}&src=${MAP_REFERER}`,
+    },
+    {
+        name: "高德地图",
+        url: (encodedAddress) => {
+            const scheme = Platform.OS === "ios" ? "iosamap" : "androidamap";
+            return `${scheme}://poi?sourceApplication=${MAP_REFERER}&keywords=${encodedAddress}`;
+        },
+    },
+];
+
+const ORDER_STATUS_DISPLAY: Record<
+    string,
+    {
+        label: string;
+        badgeClassName: string;
+        textClassName: string;
+    }
 > = {
-    pending: { label: "待接单确认", color: "#FFB300" },
-    accepted: { label: "已确认接单", color: "#4CAF50" },
-    rejected: { label: "已拒绝", color: "#9E9E9E" },
+    pending_payment: {
+        label: "待支付",
+        badgeClassName: "border-chart-4 bg-chart-4/10",
+        textClassName: "text-chart-4",
+    },
+    payment_timeout: {
+        label: "支付超时",
+        badgeClassName: "border-muted-foreground/30 bg-muted",
+        textClassName: "text-muted-foreground",
+    },
+    pending_acceptance: {
+        label: "待接单",
+        badgeClassName: "border-chart-4 bg-chart-4/10",
+        textClassName: "text-chart-4",
+    },
+    paid: {
+        label: "待服务",
+        badgeClassName: "border-chart-4 bg-chart-4/10",
+        textClassName: "text-chart-4",
+    },
+    completed: {
+        label: "已完成",
+        badgeClassName: "border-primary bg-primary/10",
+        textClassName: "text-primary",
+    },
+    cancelled: {
+        label: "已取消",
+        badgeClassName: "border-muted-foreground/30 bg-muted",
+        textClassName: "text-muted-foreground",
+    },
+    refunded: {
+        label: "已退款",
+        badgeClassName: "border-muted-foreground/30 bg-muted",
+        textClassName: "text-muted-foreground",
+    },
+    staff_rejected: {
+        label: "已拒绝",
+        badgeClassName: "border-destructive bg-destructive/10",
+        textClassName: "text-destructive",
+    },
 };
+
+type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
+
+function OrderInfoRow({
+    icon,
+    label,
+    children,
+}: {
+    icon: IoniconName;
+    label: string;
+    children: React.ReactNode;
+}) {
+    return (
+        <View className="flex-row items-start">
+            <Ionicons name={icon} size={18} color="#6A7282" />
+            <Text className="ml-2.5 w-[62px] text-sm leading-5 text-muted-foreground">
+                {label}
+            </Text>
+            <View className="min-w-0 flex-1 flex-row items-start">
+                {children}
+            </View>
+        </View>
+    );
+}
+
+const isHideableOrderStatus = (status: StaffOrder["status"]) =>
+    status === "completed" ||
+    status === "cancelled" ||
+    status === "payment_timeout" ||
+    status === "refunded" ||
+    status === "staff_rejected";
 
 function OrdersErrorFallback({
     error,
@@ -70,7 +173,7 @@ function OrdersErrorFallback({
         <View style={styles.errorContainer}>
             <Text style={styles.errorTitle}>订单加载失败</Text>
             <Text style={styles.errorMessage}>
-                {error.message || "请稍后重试"}
+                {"请稍后重试"}
             </Text>
             <TouchableOpacity
                 style={styles.retryButton}
@@ -95,7 +198,7 @@ function OrdersContent() {
         <View style={styles.container}>
             <View style={styles.header}>
                 <Text style={styles.title}>我的订单</Text>
-                <Text style={styles.subtitle}>优先显示待接单和服务中订单</Text>
+                <Text style={styles.subtitle}>优先显示待接单和待服务订单</Text>
             </View>
 
             <View style={styles.tabsContainer}>
@@ -164,6 +267,7 @@ function OrdersList({
         status,
         sortOrder: "asc",
     });
+    const hideOrderForStaff = useHideOrderForStaff();
     const { refreshing, onRefresh } = useGlobalPageRefresh({
         refetchActiveQueries: false,
         extraRefresh: () =>
@@ -206,101 +310,312 @@ function OrdersList({
         });
     }, [isAllTabView, orders]);
 
-    const renderOrderCard = ({ item }: { item: StaffOrder }) => {
+    const copyOrderNumber = async (orderNumber: string) => {
+        try {
+            await Clipboard.setStringAsync(orderNumber);
+            toast.success("订单号已复制");
+        } catch {
+            toast.error("复制失败，请稍后重试");
+        }
+    };
+
+    const openTencentMapWeb = async (encodedAddress: string) => {
+        await Linking.openURL(
+            `https://apis.map.qq.com/uri/v1/search?keyword=${encodedAddress}&referer=${MAP_REFERER}`,
+        );
+    };
+
+    const openAddressNavigation = async (address: string) => {
+        const encodedAddress = encodeURIComponent(address);
+        const installedMapApps = (
+            await Promise.all(
+                MAP_APPS.map(async (app) => ({
+                    app,
+                    supported: await Linking.canOpenURL(
+                        app.url(encodedAddress),
+                    ).catch(() => false),
+                })),
+            )
+        )
+            .filter((item) => item.supported)
+            .map((item) => item.app);
+
+        try {
+            if (Platform.OS === "android") {
+                if (installedMapApps.length === 1) {
+                    await Linking.openURL(
+                        installedMapApps[0].url(encodedAddress),
+                    );
+                    return;
+                }
+
+                await IntentLauncher.startActivityAsync(
+                    "android.intent.action.VIEW",
+                    {
+                        data: `geo:0,0?q=${encodedAddress}`,
+                    },
+                );
+                return;
+            }
+
+            if (installedMapApps.length === 1) {
+                await Linking.openURL(installedMapApps[0].url(encodedAddress));
+                return;
+            }
+
+            if (installedMapApps.length === 0) {
+                await Linking.openURL(MAP_APPS[0].url(encodedAddress));
+                return;
+            }
+
+            ActionSheetIOS.showActionSheetWithOptions(
+                {
+                    title: "选择地图应用",
+                    options: [
+                        ...installedMapApps.map((app) => app.name),
+                        "取消",
+                    ],
+                    cancelButtonIndex: installedMapApps.length,
+                },
+                (selectedIndex) => {
+                    const selectedApp = installedMapApps[selectedIndex];
+                    if (!selectedApp) {
+                        return;
+                    }
+                    void Linking.openURL(
+                        selectedApp.url(encodedAddress),
+                    ).catch(() => openTencentMapWeb(encodedAddress));
+                },
+            );
+        } catch {
+            try {
+                await openTencentMapWeb(encodedAddress);
+            } catch {
+                toast.error("无法打开地图");
+            }
+        }
+    };
+
+    const confirmHideOrder = (orderId: string) => {
+        Alert.alert(
+            "删除订单",
+            "删除后该订单将不再显示在你的订单列表中。",
+            [
+                { text: "取消", style: "cancel" },
+                {
+                    text: "删除",
+                    style: "destructive",
+                    onPress: () => {
+                        hideOrderForStaff.mutate(
+                            { orderId },
+                            {
+                                onSuccess: () => {
+                                    toast.success("订单已删除");
+                                },
+                                onError: () => {
+                                    toast.error("删除失败，请稍后重试");
+                                },
+                            },
+                        );
+                    },
+                },
+            ],
+        );
+    };
+
+    const renderOrderCard = ({ item }: { item: StaffOrder }) =>{
         const meta =
             ORDER_STATUS_DISPLAY[item.status] ?? ORDER_STATUS_DISPLAY.cancelled;
         const orderTime = formatFriendlyTime(item.createdAt);
         const appointment = formatFriendlyAppointmentTime(item.appointmentTime);
         const price = formatCurrency(item.totalAmount);
-        const decisionMeta =
-            DECISION_STATUS_DISPLAY[item.decisionStatus ?? "pending"];
         const remark = item.remark?.trim();
+        const address = item.address?.trim();
+        const serviceIconUrl = item.serviceIconUrl?.trim();
+        const serviceIconBlurhash = item.serviceIconBlurhash?.trim();
+        const canHideOrder = isHideableOrderStatus(item.status);
 
         return (
             <TouchableOpacity
-                style={styles.orderCard}
+                className="mb-3 rounded-[14px] border border-border/60 bg-card px-4 py-3 shadow-lg shadow-black/5"
                 onPress={() => router.push(`/orders/${item.id}` as never)}
+                activeOpacity={0.88}
             >
-                <View style={styles.orderHeader}>
-                    <View style={{ flex: 1 }}>
-                        <Text style={styles.orderService}>
+                <View className="flex-row items-start gap-3">
+                    {serviceIconUrl ? (
+                        <Image
+                            className="h-[42px] w-[42px] rounded-xl bg-muted"
+                            source={{ uri: serviceIconUrl }}
+                            placeholder={
+                                serviceIconBlurhash
+                                    ? { blurhash: serviceIconBlurhash }
+                                    : undefined
+                            }
+                            contentFit="cover"
+                        />
+                    ) : (
+                        <View className="h-[42px] w-[42px] items-center justify-center rounded-xl bg-muted">
+                            <Text className="text-base font-semibold text-muted-foreground">
+                                {item.serviceName.trim().charAt(0) || "服"}
+                            </Text>
+                        </View>
+                    )}
+                    <View className="min-w-0 flex-1">
+                        <Text
+                            className="text-lg font-bold leading-6 text-foreground"
+                            numberOfLines={1}
+                        >
                             {item.serviceName}
                         </Text>
                         {item.serviceSpecification ? (
-                            <Text style={styles.specText}>
-                                {item.serviceSpecification}
-                            </Text>
-                        ) : null}
-                    </View>
-                    <View style={styles.badgesColumn}>
-                        <View
-                            style={[
-                                styles.statusBadge,
-                                { backgroundColor: meta.color },
-                            ]}
-                        >
-                            <Text style={styles.statusText}>{meta.label}</Text>
-                        </View>
-                        {decisionMeta ? (
-                            <View
-                                style={[
-                                    styles.decisionBadge,
-                                    { borderColor: decisionMeta.color },
-                                ]}
-                            >
+                            <View className="mt-1 self-start rounded-md bg-primary/10 px-2 py-0.5">
                                 <Text
-                                    style={[
-                                        styles.decisionText,
-                                        { color: decisionMeta.color },
-                                    ]}
+                                    className="text-xs font-semibold leading-4 text-primary"
+                                    numberOfLines={1}
                                 >
-                                    {decisionMeta.label}
+                                    {item.serviceSpecification}
                                 </Text>
                             </View>
                         ) : null}
                     </View>
-                </View>
-
-                <View style={styles.orderInfo}>
-                    <Ionicons name="time-outline" size={16} color="#666" />
-                    <Text style={styles.infoText}>下单时间：{orderTime}</Text>
-                </View>
-                <View style={styles.orderInfo}>
-                    <Ionicons name="calendar-outline" size={16} color="#666" />
-                    <Text style={styles.infoText}>预约时间：{appointment}</Text>
-                </View>
-                <View style={styles.orderInfo}>
-                    <Ionicons name="location-outline" size={16} color="#666" />
-                    <Text style={styles.infoText}>
-                        {item.address || "未提供服务地址"}
-                    </Text>
-                </View>
-                {remark ? (
-                    <View style={styles.orderInfo}>
-                        <Ionicons
-                            name="document-text-outline"
-                            size={16}
-                            color="#666"
-                        />
+                    <View
+                        className={cn(
+                            "min-w-[66px] items-center rounded-full border px-2.5 py-1",
+                            meta.badgeClassName,
+                        )}
+                    >
                         <Text
-                            style={styles.remarkText}
-                            numberOfLines={2}
-                            ellipsizeMode="tail"
+                            className={cn(
+                                "text-sm font-semibold leading-5",
+                                meta.textClassName,
+                            )}
                         >
-                            {remark}
+                            {meta.label}
                         </Text>
                     </View>
-                ) : null}
-                <View style={styles.orderFooter}>
-                    <Text style={styles.orderPrice}>{price}</Text>
-                    <TouchableOpacity
-                        style={styles.detailButton}
-                        onPress={() =>
-                            router.push(`/orders/${item.id}` as never)
-                        }
-                    >
-                        <Text style={styles.detailButtonText}>查看详情</Text>
-                    </TouchableOpacity>
+                </View>
+
+                <View className="my-3 h-px bg-border" />
+
+                <View className="gap-2">
+                    <OrderInfoRow icon="receipt-outline" label="订单号">
+                        <Text
+                            className="min-w-0 max-w-[150px] text-sm leading-5 text-foreground"
+                            numberOfLines={1}
+                            ellipsizeMode="middle"
+                            selectable
+                        >
+                            {item.id}
+                        </Text>
+                        <TouchableOpacity
+                            className="ml-1 flex-row items-center rounded-full bg-primary/10 px-2 py-0.5"
+                            accessibilityLabel="复制订单号"
+                            hitSlop={8}
+                            onPress={(event) => {
+                                event.stopPropagation();
+                                void copyOrderNumber(item.id);
+                            }}
+                        >
+                            <Ionicons
+                                name="copy-outline"
+                                size={14}
+                                color="#2196F3"
+                            />
+                            <Text className="ml-1 text-xs font-semibold leading-4 text-primary">
+                                复制
+                            </Text>
+                        </TouchableOpacity>
+                    </OrderInfoRow>
+
+                    <OrderInfoRow icon="time-outline" label="下单时间">
+                        <Text className="flex-1 text-sm leading-5 text-foreground">
+                            {orderTime}
+                        </Text>
+                    </OrderInfoRow>
+
+                    <OrderInfoRow icon="calendar-outline" label="预约时间">
+                        <Text className="flex-1 text-sm leading-5 text-foreground">
+                            {appointment}
+                        </Text>
+                    </OrderInfoRow>
+
+                    <OrderInfoRow icon="location-outline" label="服务地址">
+                        <Text
+                            className="min-w-0 flex-1 text-sm leading-5 text-foreground"
+                            numberOfLines={2}
+                            selectable
+                        >
+                            {address || "未提供服务地址"}
+                        </Text>
+                        {address ? (
+                            <TouchableOpacity
+                                className="ml-2 flex-row items-center rounded-full px-1.5 py-0.5"
+                                accessibilityLabel="打开地址导航"
+                                hitSlop={8}
+                                onPress={(event) => {
+                                    event.stopPropagation();
+                                    void openAddressNavigation(address);
+                                }}
+                            >
+                                <Ionicons
+                                    name="navigate-circle-outline"
+                                    size={18}
+                                    color="#2196F3"
+                                />
+                                <Text className="ml-1 text-xs font-semibold leading-4 text-primary">
+                                    导航
+                                </Text>
+                            </TouchableOpacity>
+                        ) : null}
+                    </OrderInfoRow>
+
+                    {remark ? (
+                        <OrderInfoRow
+                            icon="document-text-outline"
+                            label="备注"
+                        >
+                            <Text
+                                className="flex-1 text-sm leading-5 text-foreground"
+                                numberOfLines={2}
+                                ellipsizeMode="tail"
+                                selectable
+                            >
+                                {remark}
+                            </Text>
+                        </OrderInfoRow>
+                    ) : null}
+                </View>
+
+                <View className="my-3 border-t border-dashed border-border" />
+
+                <View className="flex-row items-center justify-between gap-3">
+                    {canHideOrder ? (
+                        <HoverCard>
+                            <HoverCardTrigger>
+                                <Text>更多...</Text>
+                            </HoverCardTrigger>
+                            <HoverCardContent align="start" className="w-1/4">
+                                <TouchableOpacity
+                                    disabled={hideOrderForStaff.isPending}
+                                    onPress={(event) => {
+                                        event.stopPropagation();
+                                        confirmHideOrder(item.id);
+                                    }}
+                                >
+                                    <Text>
+                                        {hideOrderForStaff.isPending
+                                            ? "删除中..."
+                                            : "删除"}
+                                    </Text>
+                                </TouchableOpacity>
+                            </HoverCardContent>
+                        </HoverCard>
+                    ) : (
+                        <View />
+                    )}
+                    <Text className="text-2xl font-bold leading-8 text-destructive">
+                        {price}
+                    </Text>
                 </View>
             </TouchableOpacity>
         );
@@ -563,6 +878,26 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "center",
         marginTop: 8,
+    },
+    orderNumberRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginTop: 4,
+    },
+    orderNumberText: {
+        flexShrink: 1,
+        marginLeft: 8,
+        marginRight: 4,
+        fontSize: 13,
+        color: "#666",
+    },
+    copyButton: {
+        width: 32,
+        height: 32,
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: 16,
+        backgroundColor: "#E3F2FD",
     },
     infoText: {
         fontSize: 14,

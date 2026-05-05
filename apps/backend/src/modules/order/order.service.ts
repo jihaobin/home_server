@@ -117,6 +117,13 @@ export class OrderService {
 
     private readonly defaultPaymentExpireMinutes = 15;
     private readonly defaultPendingAcceptanceTimeoutMinutes = 120;
+    private readonly hideableOrderStatuses: readonly OrderStatus[] = [
+        'completed',
+        'cancelled',
+        'payment_timeout',
+        'refunded',
+        'staff_rejected',
+    ];
 
     // 新增：安全地从 unknown 错误中提取消息，避免直接访问 any.message
     private extractErrorMessage(error: unknown): string {
@@ -424,16 +431,12 @@ export class OrderService {
         status,
     }: {
         orderId: string;
-        decisionStatus: 'accepted' | 'rejected';
+        decisionStatus: 'accepted';
         operatorId: string;
         status: OrderStatus;
     }) {
-        const templateKey =
-            decisionStatus === 'accepted'
-                ? 'order_assignment_decision_accepted'
-                : 'order_assignment_decision_rejected';
         const message = this.notificationTemplateService.getTemplate(
-            templateKey,
+            'order_assignment_decision_accepted',
             {
                 decisionStatus,
                 orderId,
@@ -514,8 +517,6 @@ export class OrderService {
             case 'paid':
                 // paid tab 语义：pending_acceptance + paid
                 return { statuses: ['pending_acceptance', 'paid'] };
-            case 'in_progress':
-                return { statuses: ['in_progress'] };
             case 'needs_review':
                 // needs_review tab：completed 且 needsReview=true
                 return { needsReviewOnly: true };
@@ -608,7 +609,7 @@ export class OrderService {
         }
 
         try {
-            return await this.orderRepository.getOrdersByStaffId({
+            const result = await this.orderRepository.getOrdersByStaffId({
                 servicePersonnelId: params.servicePersonnelId,
                 page: params.page || 1,
                 limit: params.limit || 10,
@@ -618,6 +619,35 @@ export class OrderService {
                 endTime: params.endTime,
                 onlyAccepted: params.onlyAccepted,
             });
+
+            return {
+                items: await Promise.all(
+                    result.items.map(async (item) => {
+                        const {
+                            serviceIconBucketName,
+                            serviceIconObjectPath,
+                            serviceIconBlurhash,
+                            ...safeItem
+                        } = item;
+                        const serviceIconUrl =
+                            serviceIconBucketName && serviceIconObjectPath
+                                ? await this.s3StoreServer.getPresignedDownloadUrl(
+                                      serviceIconBucketName,
+                                      serviceIconObjectPath,
+                                      600,
+                                  )
+                                : null;
+
+                        return {
+                            ...safeItem,
+                            serviceIconUrl,
+                            serviceIconBlurhash:
+                                serviceIconBlurhash ?? null,
+                        };
+                    }),
+                ),
+                meta: result.meta,
+            };
         } catch (error) {
             throw new BadRequestException(
                 `获取服务人员订单失败: ${this.extractErrorMessage(error)}`,
@@ -675,7 +705,6 @@ export class OrderService {
                 'pending_payment',
                 'pending_acceptance',
                 'paid',
-                'staff_rejected',
             ].includes(order.status);
 
             const canPay =
@@ -684,7 +713,7 @@ export class OrderService {
                 paymentExpiresAt.getTime() > now.getTime();
 
             const showCheckinQr =
-                order.status === 'paid' || order.status === 'in_progress';
+                order.status === 'paid';
 
             const {
                 serviceImageBucketName,
@@ -1333,7 +1362,6 @@ export class OrderService {
             const refundableStatuses: OrderStatus[] = [
                 'pending_acceptance',
                 'paid',
-                'staff_rejected',
             ];
             if (refundableStatuses.includes(order.status)) {
                 const refundResult = await this.payService.requestRefund(
@@ -1404,6 +1432,78 @@ export class OrderService {
         return updated;
     }
 
+    async hideOrderForCustomer({
+        orderId,
+        customerId,
+    }: {
+        orderId: string;
+        customerId: string;
+    }) {
+        if (!orderId) {
+            throw new BadRequestException('订单ID不能为空');
+        }
+        if (!customerId) {
+            throw new BadRequestException('客户身份信息缺失');
+        }
+
+        const order = await this.orderRepository.getOrderById(orderId);
+        if (!order) {
+            throw new BadRequestException('订单不存在');
+        }
+        if (order.customerId !== customerId) {
+            throw new BadRequestException('无权限隐藏此订单');
+        }
+        if (!this.hideableOrderStatuses.includes(order.status)) {
+            throw new BadRequestException('只有已结束的订单才能删除');
+        }
+
+        const hidden = await this.orderRepository.hideOrderForCustomer({
+            orderId,
+            customerId,
+        });
+        if (!hidden) {
+            throw new BadRequestException('无权限隐藏此订单');
+        }
+
+        return { success: true };
+    }
+
+    async hideOrderForStaff({
+        orderId,
+        staffId,
+    }: {
+        orderId: string;
+        staffId: string;
+    }) {
+        if (!orderId) {
+            throw new BadRequestException('订单ID不能为空');
+        }
+        if (!staffId) {
+            throw new BadRequestException('服务人员信息缺失');
+        }
+
+        const order = await this.orderRepository.getOrderById(orderId);
+        if (!order) {
+            throw new BadRequestException('订单不存在');
+        }
+        if (order.assignment?.servicePersonnel?.userId !== staffId) {
+            throw new BadRequestException('无权限隐藏此订单');
+        }
+        if (!this.hideableOrderStatuses.includes(order.status)) {
+            throw new BadRequestException('只有已结束的订单才能删除');
+        }
+
+        const hidden = await this.orderRepository.hideOrderForStaff({
+            orderId,
+            staffId,
+        });
+        if (!hidden) {
+            throw new BadRequestException('无权限隐藏此订单');
+        }
+
+        return { success: true };
+    }
+
     async acceptAssignment(orderId: string, staffId: string) {
         if (!orderId) {
             throw new BadRequestException('订单ID不能为空');
@@ -1441,60 +1541,6 @@ export class OrderService {
         }
     }
 
-    async rejectAssignment(orderId: string, staffId: string, reason: string) {
-        if (!orderId) {
-            throw new BadRequestException('订单ID不能为空');
-        }
-        if (!staffId) {
-            throw new BadRequestException('服务人员信息缺失');
-        }
-        const trimmedReason = reason?.trim();
-        if (!trimmedReason) {
-            throw new BadRequestException('拒绝原因不能为空');
-        }
-
-        try {
-            await this.orderRepository.rejectAssignment(
-                orderId,
-                staffId,
-                trimmedReason,
-            );
-            const updatedOrder =
-                await this.orderRepository.getOrderById(orderId);
-
-            if (!updatedOrder) {
-                throw new BadRequestException('订单不存在');
-            }
-            await this.clearPendingAcceptanceReminderSchedules(updatedOrder);
-
-            if (updatedOrder.status === 'staff_rejected') {
-                const finalReason = `[service_personnel] ${trimmedReason}`;
-                await this.payService.requestRefund(
-                    orderId,
-                    finalReason,
-                    staffId,
-                );
-            }
-            if (updatedOrder.assignment?.decisionStatus === 'rejected') {
-                await this.emitAssignmentDecisionEvent({
-                    orderId,
-                    decisionStatus: 'rejected',
-                    operatorId: staffId,
-                    status: updatedOrder.status,
-                });
-            }
-
-            return updatedOrder;
-        } catch (error) {
-            if (error instanceof BadRequestException) {
-                throw error;
-            }
-            throw new BadRequestException(
-                `拒绝接单失败: ${this.extractErrorMessage(error)}`,
-            );
-        }
-    }
-
     /**
      * 完成订单
      * @param id 订单ID
@@ -1516,8 +1562,10 @@ export class OrderService {
                 throw new BadRequestException('只有订单创建者可以完成此订单');
             }
             // 验证订单状态是否可以完成
-            if (order.status !== 'in_progress') {
-                throw new BadRequestException('订单必须处于服务中状态才能完成');
+            if (order.status !== 'paid') {
+                throw new BadRequestException(
+                    '订单必须处于待服务状态才能完成确认',
+                );
             }
 
             // 更新订单状态为 completed，并递增服务完成次数（原子 + 幂等）
@@ -1526,9 +1574,7 @@ export class OrderService {
                     id,
                 );
 
-            // 订单完成后处理收益分配
-            await this.payService.handleOrderCompletion(id);
-            await this.clearServiceEtaReminderSchedules(order);
+            await this.handleOrderCompletionSideEffects(id, order);
 
             return updatedOrder;
         } catch (error) {
@@ -1537,6 +1583,20 @@ export class OrderService {
             }
             throw new BadRequestException(
                 `完成订单失败: ${this.extractErrorMessage(error)}`,
+            );
+        }
+    }
+
+    async handleOrderCompletionSideEffects(
+        orderId: string,
+        orderBeforeCompletion?: DetailedOrder | null,
+    ) {
+        await this.payService.handleOrderCompletion(orderId);
+        if (orderBeforeCompletion) {
+            await this.clearServiceEtaReminderSchedules(orderBeforeCompletion);
+        } else {
+            await this.clearServiceEtaReminderSchedules(
+                await this.orderRepository.getOrderById(orderId),
             );
         }
     }
@@ -1692,7 +1752,7 @@ export class OrderService {
         }
         if (
             order.assignment.decisionStatus !== 'accepted' ||
-            (order.status !== 'paid' && order.status !== 'in_progress')
+            order.status !== 'paid'
         ) {
             return;
         }

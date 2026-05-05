@@ -34,7 +34,7 @@ import { LegalWebModal } from "@/components/legal-web-modal";
 import { LEGAL_DOCUMENT_CONFIG } from "@/lib/legal-documents";
 
 type OrderQuickAction = {
-    id: "unpaid" | "pending" | "verifying" | "review";
+    id: "unpaid" | "pending" | "review";
     label: string;
     icon: keyof typeof lucideIconRegistry;
 };
@@ -55,7 +55,6 @@ type MenuItem = {
 const ORDER_TAB_MAP: Record<OrderQuickAction["id"], OrderCardsTab> = {
     unpaid: "pending_payment",
     pending: "paid",
-    verifying: "in_progress",
     review: "needs_review",
 };
 
@@ -152,7 +151,6 @@ export default function Profile() {
         () => [
             { id: "unpaid", label: "待付款", icon: "Wallet" },
             { id: "pending", label: "待服务", icon: "Clock" },
-            { id: "verifying", label: "待验收", icon: "ClipboardCheck" },
             { id: "review", label: "待评价", icon: "MessageSquare" },
         ],
         [],

@@ -83,6 +83,9 @@ export const orders = pgTable(
             { onDelete: 'set null' },
         ), // 取消订单的用户 ID
         cancelledAt: timestamp('cancelled_at', { withTimezone: true }), // 订单取消时间
+        customerHiddenAt: timestamp('customer_hidden_at', {
+            withTimezone: true,
+        }),
         createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
     },
@@ -99,11 +102,11 @@ export const orders = pgTable(
         index('idx_orders_coupon_search')
             .using('pgroonga', table.couponCode)
             .where(sql`coupon_code IS NOT NULL`),
-        // 待分配和进行中订单的预约时间索引
+        // 待接单和待服务订单的预约时间索引
         index('idx_orders_status_appointment')
             .on(table.status, table.appointmentTime)
             .where(
-                sql`status IN ('pending_assignment', 'service_in_progress')`,
+                sql`status IN ('pending_acceptance', 'paid')`,
             ),
         // 待支付订单过期扫描索引
         index('idx_orders_status_payment_expires').on(
@@ -147,6 +150,9 @@ export const orderAssignments = pgTable(
         rejectedAt: timestamp('rejected_at', {
             withTimezone: true,
         }), // 拒绝时间
+        staffHiddenAt: timestamp('staff_hidden_at', {
+            withTimezone: true,
+        }),
         // MVP阶段注释店铺分配字段
         // shopId: varchar('shop_id', { length: 255 }).references(() => shops.id, {
         //     onDelete: 'cascade',

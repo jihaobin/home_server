@@ -47,11 +47,11 @@ export type OrderListRequest = z.infer<typeof OrderListRequestSchema>;
  * 不与现有 OrderListResponse 强绑定，避免影响其它端。
  */
 export const OrderCardsTabSchema = z
-    .enum(["all", "pending_payment", "paid", "in_progress", "needs_review"])
+    .enum(["all", "pending_payment", "paid", "needs_review"])
     .meta({
         title: "订单列表 Tab",
         description:
-            "用户端订单列表页 tab 过滤条件。paid tab 语义：pending_acceptance + paid；in_progress tab 语义：仅 in_progress。",
+            "用户端订单列表页 tab 过滤条件。paid tab 语义：pending_acceptance + paid。",
     });
 
 export type OrderCardsTab = z.infer<typeof OrderCardsTabSchema>;
@@ -403,6 +403,8 @@ export const StaffOrderListItemSchema = z.object({
     totalAmount: z.number(),
     serviceName: z.string(),
     serviceSpecification: z.string().nullable(),
+    serviceIconUrl: z.string().url().nullable().optional(),
+    serviceIconBlurhash: z.string().min(1).nullable().optional(),
     customerName: z.string().nullable(),
     customerPhone: z.string().nullable(),
     customerAvatar: z.string().nullable(),
@@ -447,9 +449,9 @@ export const StaffOrderStatsSchema = z
             description: "已完成订单数",
             title: "已完成订单数",
         }),
-        inProgress: z.number().int().nonnegative().meta({
-            description: "进行中订单数",
-            title: "进行中订单数",
+        pendingService: z.number().int().nonnegative().meta({
+            description: "待服务/待完成确认订单数",
+            title: "待服务订单数",
         }),
     })
     .meta({
@@ -826,8 +828,8 @@ export const GenerateOrderCheckinSchema = z
         payload: orderCheckinPayloadSchema.shape,
     })
     .meta({
-        title: "生成订单核验二维码",
-        description: "生成订单核验二维码请求参数",
+        title: "生成订单完成确认二维码",
+        description: "生成订单完成确认二维码响应",
     });
 
 export type GenerateOrderCheckinDto = z.infer<
@@ -843,8 +845,8 @@ export const VerifyOrderCheckinSchema = z
         remark: z.string().max(200).optional(),
     })
     .meta({
-        title: "核验订单二维码",
-        description: "核验订单二维码请求参数",
+        title: "确认订单完成二维码",
+        description: "确认订单完成二维码请求参数",
     });
 
 export type VerifyOrderCheckinDto = z.infer<typeof VerifyOrderCheckinSchema>;

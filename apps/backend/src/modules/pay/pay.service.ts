@@ -2517,7 +2517,6 @@ export class PayService {
         const refundableStatuses: OrderStatus[] = [
             'pending_acceptance',
             'paid',
-            'staff_rejected',
             'completed',
         ];
         if (!refundableStatuses.includes(order.status)) {
