@@ -4,7 +4,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
     pending_payment: "待支付",
     payment_timeout: "支付超时",
     pending_acceptance: "待接单",
-    paid: "待服务/待完成确认",
+    paid: "待服务",
     staff_rejected: "服务人员拒单",
     completed: "已完成",
     cancelled: "已取消",

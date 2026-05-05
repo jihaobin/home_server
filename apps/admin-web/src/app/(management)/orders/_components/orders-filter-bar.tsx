@@ -35,7 +35,7 @@ const STATUS_OPTIONS = [
     { label: "待支付", value: "pending_payment" },
     { label: "支付超时", value: "payment_timeout" },
     { label: "待接单", value: "pending_acceptance" },
-    { label: "待服务/待完成确认", value: "paid" },
+    { label: "待服务", value: "paid" },
     { label: "服务人员拒单", value: "staff_rejected" },
     { label: "已完成", value: "completed" },
     { label: "已取消", value: "cancelled" },

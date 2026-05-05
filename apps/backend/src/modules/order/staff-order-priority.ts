@@ -1,40 +1,43 @@
-import type { StaffOrderListResponse } from "@repo/types";
+import type {
+    AssignmentDecisionStatus,
+    OrderStatus,
+    StaffOrderListItem,
+} from '@repo/types';
 
-type StaffOrder = StaffOrderListResponse["items"][number];
+export type StaffOrderPriorityGroupKey =
+    | 'pending_acceptance'
+    | 'paid'
+    | 'completed'
+    | 'archived';
 
-type WorkerOrderGroupKey =
-    | "pending_acceptance"
-    | "paid"
-    | "completed"
-    | "archived";
-
-export type WorkerOrderGroup = {
-    key: WorkerOrderGroupKey;
+export type StaffOrderPriorityGroup = {
+    key: StaffOrderPriorityGroupKey;
     title: string;
-    items: StaffOrder[];
+    count: number;
+    items: StaffOrderListItem[];
 };
 
 const HALF_HOUR_MS = 30 * 60 * 1000;
 
-const GROUP_ORDER: WorkerOrderGroupKey[] = [
-    "pending_acceptance",
-    "paid",
-    "completed",
-    "archived",
+const GROUP_ORDER: StaffOrderPriorityGroupKey[] = [
+    'pending_acceptance',
+    'paid',
+    'completed',
+    'archived',
 ];
 
-const GROUP_TITLE: Record<WorkerOrderGroupKey, string> = {
-    pending_acceptance: "待接单",
-    paid: "待服务",
-    completed: "已完成",
-    archived: "其他",
+const GROUP_TITLE: Record<StaffOrderPriorityGroupKey, string> = {
+    pending_acceptance: '待接单',
+    paid: '待服务',
+    completed: '已完成',
+    archived: '其他',
 };
 
 function normalizeDateToMs(value?: string | Date | null) {
     if (!value) {
         return null;
     }
-    const date = typeof value === "string" ? new Date(value) : value;
+    const date = typeof value === 'string' ? new Date(value) : value;
     const ms = date.getTime();
     return Number.isNaN(ms) ? null : ms;
 }
@@ -65,11 +68,14 @@ function compareTimeDesc(a: number | null, b: number | null) {
     return b - a;
 }
 
-function compareIdAsc(a: StaffOrder, b: StaffOrder) {
+function compareIdAsc(a: StaffOrderListItem, b: StaffOrderListItem) {
     return String(a.id).localeCompare(String(b.id));
 }
 
-function resolvePendingUrgencyBucket(order: StaffOrder, nowMs: number) {
+function resolvePendingUrgencyBucket(
+    order: StaffOrderListItem,
+    nowMs: number,
+) {
     const appointmentMs = normalizeDateToMs(order.appointmentTime);
     if (appointmentMs === null) {
         return 2;
@@ -84,29 +90,29 @@ function resolvePendingUrgencyBucket(order: StaffOrder, nowMs: number) {
     return 2;
 }
 
-function resolveAllGroup(order: StaffOrder): WorkerOrderGroupKey {
+function resolveGroup(order: StaffOrderListItem): StaffOrderPriorityGroupKey {
     if (
-        order.status === "pending_acceptance" &&
-        order.decisionStatus === "pending"
+        order.status === 'pending_acceptance' &&
+        order.decisionStatus === 'pending'
     ) {
-        return "pending_acceptance";
+        return 'pending_acceptance';
     }
     if (
-        order.status === "paid" ||
-        (order.status === "pending_acceptance" &&
-            order.decisionStatus === "accepted")
+        order.status === 'paid' ||
+        (order.status === 'pending_acceptance' &&
+            order.decisionStatus === 'accepted')
     ) {
-        return "paid";
+        return 'paid';
     }
-    if (order.status === "completed") {
-        return "completed";
+    if (order.status === 'completed') {
+        return 'completed';
     }
-    return "archived";
+    return 'archived';
 }
 
 function comparePendingAcceptanceOrders(
-    a: StaffOrder,
-    b: StaffOrder,
+    a: StaffOrderListItem,
+    b: StaffOrderListItem,
     nowMs: number,
 ) {
     const bucketDiff =
@@ -132,7 +138,7 @@ function comparePendingAcceptanceOrders(
     return compareIdAsc(a, b);
 }
 
-function comparePaidOrders(a: StaffOrder, b: StaffOrder) {
+function comparePaidOrders(a: StaffOrderListItem, b: StaffOrderListItem) {
     const appointmentDiff = compareTimeAsc(
         normalizeDateToMs(a.appointmentTime),
         normalizeDateToMs(b.appointmentTime),
@@ -150,7 +156,10 @@ function comparePaidOrders(a: StaffOrder, b: StaffOrder) {
     return compareIdAsc(a, b);
 }
 
-function compareCompletedOrders(a: StaffOrder, b: StaffOrder) {
+function compareCompletedOrders(
+    a: StaffOrderListItem,
+    b: StaffOrderListItem,
+) {
     const completedDiff = compareTimeDesc(
         normalizeDateToMs(a.serviceCompletedAt),
         normalizeDateToMs(b.serviceCompletedAt),
@@ -168,7 +177,7 @@ function compareCompletedOrders(a: StaffOrder, b: StaffOrder) {
     return compareIdAsc(a, b);
 }
 
-function compareArchivedOrders(a: StaffOrder, b: StaffOrder) {
+function compareArchivedOrders(a: StaffOrderListItem, b: StaffOrderListItem) {
     const rejectedDiff = compareTimeDesc(
         normalizeDateToMs(a.rejectedAt),
         normalizeDateToMs(b.rejectedAt),
@@ -194,37 +203,40 @@ function compareArchivedOrders(a: StaffOrder, b: StaffOrder) {
 }
 
 function compareWithinGroup(
-    group: WorkerOrderGroupKey,
-    a: StaffOrder,
-    b: StaffOrder,
+    group: StaffOrderPriorityGroupKey,
+    a: StaffOrderListItem,
+    b: StaffOrderListItem,
     nowMs: number,
 ) {
     switch (group) {
-        case "pending_acceptance":
+        case 'pending_acceptance':
             return comparePendingAcceptanceOrders(a, b, nowMs);
-        case "paid":
+        case 'paid':
             return comparePaidOrders(a, b);
-        case "completed":
+        case 'completed':
             return compareCompletedOrders(a, b);
-        case "archived":
+        case 'archived':
         default:
             return compareArchivedOrders(a, b);
     }
 }
 
-export function buildWorkerOrderGroups(orders: StaffOrder[]) {
-    const nowMs = Date.now();
-    const grouped = new Map<WorkerOrderGroupKey, StaffOrder[]>();
+export function buildStaffOrderPriorityGroups(
+    orders: StaffOrderListItem[],
+    now: Date = new Date(),
+): StaffOrderPriorityGroup[] {
+    const nowMs = now.getTime();
+    const grouped = new Map<StaffOrderPriorityGroupKey, StaffOrderListItem[]>();
     for (const key of GROUP_ORDER) {
         grouped.set(key, []);
     }
 
     for (const order of orders) {
-        const group = resolveAllGroup(order);
+        const group = resolveGroup(order);
         grouped.get(group)?.push(order);
     }
 
-    const result: WorkerOrderGroup[] = [];
+    const result: StaffOrderPriorityGroup[] = [];
     for (const key of GROUP_ORDER) {
         const items = grouped.get(key) ?? [];
         if (!items.length) {
@@ -234,94 +246,60 @@ export function buildWorkerOrderGroups(orders: StaffOrder[]) {
         result.push({
             key,
             title: GROUP_TITLE[key],
+            count: items.length,
             items,
         });
     }
     return result;
 }
 
-export function sortWorkerOrdersForTab(
-    orders: StaffOrder[],
+export function sortStaffOrdersByPriority(
+    orders: StaffOrderListItem[],
     options: {
-        statusFilter?: string;
-        decisionStatusFilter?: StaffOrder["decisionStatus"];
-    },
+        statusFilter?: OrderStatus;
+        decisionStatusFilter?: AssignmentDecisionStatus;
+        now?: Date;
+    } = {},
 ) {
-    const nowMs = Date.now();
-    const { statusFilter, decisionStatusFilter } = options;
-
+    const { statusFilter, decisionStatusFilter, now = new Date() } = options;
+    const nowMs = now.getTime();
     const filtered = orders.filter((order) => {
         if (statusFilter && order.status !== statusFilter) {
             return false;
         }
-        if (decisionStatusFilter && order.decisionStatus !== decisionStatusFilter) {
+        if (
+            decisionStatusFilter &&
+            order.decisionStatus !== decisionStatusFilter
+        ) {
             return false;
         }
         return true;
     });
 
     if (!statusFilter) {
-        return buildWorkerOrderGroups(filtered).flatMap((group) => group.items);
+        return buildStaffOrderPriorityGroups(filtered, now).flatMap(
+            (group) => group.items,
+        );
     }
 
     const sorted = [...filtered];
-    if (statusFilter === "pending_acceptance") {
+    if (statusFilter === 'pending_acceptance') {
         sorted.sort((a, b) =>
             comparePendingAcceptanceOrders(a, b, nowMs),
         );
         return sorted;
     }
 
-    if (statusFilter === "paid") {
+    if (statusFilter === 'paid') {
         sorted.sort(comparePaidOrders);
         return sorted;
     }
 
-    if (statusFilter === "completed") {
+    if (statusFilter === 'completed') {
         sorted.sort(compareCompletedOrders);
         return sorted;
     }
 
     sorted.sort(compareArchivedOrders);
     return sorted;
-}
-
-export function selectTopPendingWorkOrders(
-    orders: StaffOrder[],
-    limit = 5,
-) {
-    const nowMs = Date.now();
-    const processingOrders = orders.filter((order) => {
-        const group = resolveAllGroup(order);
-        return (
-            group === "pending_acceptance" ||
-            group === "paid"
-        );
-    });
-
-    const processingGroupRank: Record<
-        "pending_acceptance" | "paid",
-        number
-    > = {
-        pending_acceptance: 0,
-        paid: 1,
-    };
-
-    processingOrders.sort((a, b) => {
-        const groupA = resolveAllGroup(a) as
-            | "pending_acceptance"
-            | "paid";
-        const groupB = resolveAllGroup(b) as
-            | "pending_acceptance"
-            | "paid";
-
-        const rankDiff = processingGroupRank[groupA] - processingGroupRank[groupB];
-        if (rankDiff !== 0) {
-            return rankDiff;
-        }
-
-        return compareWithinGroup(groupA, a, b, nowMs);
-    });
-
-    return processingOrders.slice(0, limit);
 }

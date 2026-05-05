@@ -16,7 +16,7 @@ export type UserRole = z.infer<typeof UserRoleEnum>;
 export const OrderStatusEnum = z.enum([
     "pending_payment", // 待支付
     "payment_timeout", // 支付超时
-    "paid", // 已接单待服务/待完成确认
+    "paid", // 已接单待服务
     "pending_acceptance", // 待接单（等待服务人员确认）
     "staff_rejected", // 服务人员拒绝接单
     "completed", // 已完成（包含已评价和未评价）
@@ -1623,7 +1623,7 @@ export const OrdersSchema = z
             examples: [
                 "pending_payment (待支付)",
                 "pending_acceptance (待接单)",
-                "paid (待服务/待完成确认)",
+                "paid (待服务)",
                 "staff_rejected (服务人员拒单)",
                 "completed (已完成)",
                 "cancelled (已取消)",

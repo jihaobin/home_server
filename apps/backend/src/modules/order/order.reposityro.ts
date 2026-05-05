@@ -35,8 +35,17 @@ import {
 } from 'src/common/database/schema/shops-service';
 import { reviews } from 'src/common/database/schema/reviews-social';
 import { files } from 'src/common/database/schema/file';
+import type { StaffOrderListItem } from '@repo/types';
 
 export type OrderStatus = (typeof orders.status.enumValues)[number];
+type StaffOrderListRow = Omit<
+    StaffOrderListItem,
+    'serviceIconUrl' | 'serviceIconBlurhash'
+> & {
+    serviceIconBucketName: string | null;
+    serviceIconObjectPath: string | null;
+    serviceIconBlurhash: string | null;
+};
 
 @Injectable()
 export class OrderRepository {
@@ -366,6 +375,7 @@ export class OrderRepository {
         startTime,
         endTime,
         onlyAccepted,
+        unpaged = false,
     }: {
         page?: number;
         limit?: number;
@@ -375,6 +385,7 @@ export class OrderRepository {
         startTime?: Date;
         endTime?: Date;
         onlyAccepted?: boolean;
+        unpaged?: boolean;
     }) {
         const staffOrderServiceImageFile = alias(
             files,
@@ -409,73 +420,68 @@ export class OrderRepository {
 
         const whereClause = and(...conditions);
 
+        const staffOrdersQuery = this.db
+            .select({
+                orderId: orders.id,
+                status: orders.status,
+                createdAt: orders.createdAt,
+                appointmentTime: orders.appointmentTime,
+                totalAmount: orders.totalAmount,
+                serviceName: services.name,
+                serviceSpecification: servicePersonnelPricing.name,
+                serviceImageBucketName: staffOrderServiceImageFile.bucketName,
+                serviceImageObjectPath: staffOrderServiceImageFile.objectPath,
+                serviceImageBlurhash: staffOrderServiceImageFile.blurhash,
+                categoryIconBucketName: staffOrderCategoryIconFile.bucketName,
+                categoryIconObjectPath: staffOrderCategoryIconFile.objectPath,
+                categoryIconBlurhash: staffOrderCategoryIconFile.blurhash,
+                customerName: users.name,
+                customerPhone: users.phoneNumber,
+                customerAvatar: users.image,
+                address: userAddresses.detailedAddress,
+                remark: orders.remark,
+                acceptedAt: orderAssignments.acceptedAt,
+                decisionStatus: orderAssignments.decisionStatus,
+                rejectReason: orderAssignments.rejectReason,
+                rejectedAt: orderAssignments.rejectedAt,
+                serviceStartedAt: orders.serviceStartedAt,
+                serviceCompletedAt: orders.serviceCompletedAt,
+            })
+            .from(orders)
+            .innerJoin(
+                orderAssignments,
+                eq(orderAssignments.orderId, orders.id),
+            )
+            .leftJoin(services, eq(orders.serviceId, services.id))
+            .leftJoin(
+                staffOrderServiceImageFile,
+                eq(staffOrderServiceImageFile.id, services.imageFileId),
+            )
+            .leftJoin(
+                serviceCategories,
+                eq(services.categoryId, serviceCategories.id),
+            )
+            .leftJoin(
+                staffOrderCategoryIconFile,
+                eq(staffOrderCategoryIconFile.id, serviceCategories.iconFileId),
+            )
+            .leftJoin(
+                servicePersonnelPricing,
+                eq(orders.specificationId, servicePersonnelPricing.id),
+            )
+            .leftJoin(users, eq(orders.customerId, users.id))
+            .leftJoin(userAddresses, eq(orders.addressId, userAddresses.id))
+            .where(whereClause)
+            .orderBy(
+                sortOrder === 'asc'
+                    ? asc(orders.appointmentTime)
+                    : desc(orders.appointmentTime),
+            );
+
         const [rows, totalResult] = await Promise.all([
-            this.db
-                .select({
-                    orderId: orders.id,
-                    status: orders.status,
-                    createdAt: orders.createdAt,
-                    appointmentTime: orders.appointmentTime,
-                    totalAmount: orders.totalAmount,
-                    serviceName: services.name,
-                    serviceSpecification: servicePersonnelPricing.name,
-                    serviceImageBucketName:
-                        staffOrderServiceImageFile.bucketName,
-                    serviceImageObjectPath:
-                        staffOrderServiceImageFile.objectPath,
-                    serviceImageBlurhash: staffOrderServiceImageFile.blurhash,
-                    categoryIconBucketName:
-                        staffOrderCategoryIconFile.bucketName,
-                    categoryIconObjectPath:
-                        staffOrderCategoryIconFile.objectPath,
-                    categoryIconBlurhash: staffOrderCategoryIconFile.blurhash,
-                    customerName: users.name,
-                    customerPhone: users.phoneNumber,
-                    customerAvatar: users.image,
-                    address: userAddresses.detailedAddress,
-                    remark: orders.remark,
-                    acceptedAt: orderAssignments.acceptedAt,
-                    decisionStatus: orderAssignments.decisionStatus,
-                    rejectReason: orderAssignments.rejectReason,
-                    rejectedAt: orderAssignments.rejectedAt,
-                    serviceStartedAt: orders.serviceStartedAt,
-                    serviceCompletedAt: orders.serviceCompletedAt,
-                })
-                .from(orders)
-                .innerJoin(
-                    orderAssignments,
-                    eq(orderAssignments.orderId, orders.id),
-                )
-                .leftJoin(services, eq(orders.serviceId, services.id))
-                .leftJoin(
-                    staffOrderServiceImageFile,
-                    eq(staffOrderServiceImageFile.id, services.imageFileId),
-                )
-                .leftJoin(
-                    serviceCategories,
-                    eq(services.categoryId, serviceCategories.id),
-                )
-                .leftJoin(
-                    staffOrderCategoryIconFile,
-                    eq(
-                        staffOrderCategoryIconFile.id,
-                        serviceCategories.iconFileId,
-                    ),
-                )
-                .leftJoin(
-                    servicePersonnelPricing,
-                    eq(orders.specificationId, servicePersonnelPricing.id),
-                )
-                .leftJoin(users, eq(orders.customerId, users.id))
-                .leftJoin(userAddresses, eq(orders.addressId, userAddresses.id))
-                .where(whereClause)
-                .orderBy(
-                    sortOrder === 'asc'
-                        ? asc(orders.appointmentTime)
-                        : desc(orders.appointmentTime),
-                )
-                .limit(limit)
-                .offset((page - 1) * limit),
+            unpaged
+                ? staffOrdersQuery
+                : staffOrdersQuery.limit(limit).offset((page - 1) * limit),
             this.db
                 .select({ count: sql<number>`count(*)` })
                 .from(orders)
@@ -489,11 +495,11 @@ export class OrderRepository {
         const totalCount = totalResult[0]?.count ?? 0;
         const meta = this.buildPaginationMeta(totalCount, page, limit);
 
-        const items = rows.map((row) => ({
+        const items: StaffOrderListRow[] = rows.map((row) => ({
             id: row.orderId,
             status: row.status,
-            createdAt: row.createdAt,
-            appointmentTime: row.appointmentTime,
+            createdAt: row.createdAt ?? new Date(0),
+            appointmentTime: row.appointmentTime ?? new Date(0),
             totalAmount: Number(row.totalAmount ?? 0),
             serviceName: row.serviceName ?? '',
             serviceSpecification: row.serviceSpecification ?? null,

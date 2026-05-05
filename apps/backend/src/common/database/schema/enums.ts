@@ -8,7 +8,7 @@ import { pgEnum } from 'drizzle-orm/pg-core';
 export const orderStatusEnum = pgEnum('order_status', [
     'pending_payment', // 待支付
     'payment_timeout', // 支付超时
-    'paid', // 已接单待服务/待完成确认
+    'paid', // 已接单待服务
     'pending_acceptance', // 待接单（等待服务人员确认）
     'staff_rejected', // 服务人员拒绝接单
     'completed', // 已完成（包含已评价和未评价）

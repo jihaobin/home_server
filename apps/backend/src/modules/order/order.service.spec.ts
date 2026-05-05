@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import type { OrderStatus, StaffOrderListItem } from '@repo/types';
 import type { OrderRepository } from './order.reposityro';
 import { OrderService } from './order.service';
 
@@ -8,6 +9,7 @@ type MockOrderRepository = jest.Mocked<
     Pick<
         OrderRepository,
         | 'getOrderById'
+        | 'getOrdersByStaffId'
         | 'hideOrderForCustomer'
         | 'hideOrderForStaff'
         | 'completeOrderAndIncrementServicedCount'
@@ -21,6 +23,7 @@ describe('OrderService order visibility', () => {
     beforeEach(() => {
         orderRepository = {
             getOrderById: jest.fn(),
+            getOrdersByStaffId: jest.fn(),
             hideOrderForCustomer: jest.fn(),
             hideOrderForStaff: jest.fn(),
             completeOrderAndIncrementServicedCount: jest.fn(),
@@ -35,6 +38,9 @@ describe('OrderService order visibility', () => {
         });
         Reflect.set(service, 'cacheService', {
             zRem: jest.fn().mockResolvedValue(0),
+        });
+        Reflect.set(service, 's3StoreServer', {
+            getPresignedDownloadUrl: jest.fn(),
         });
     });
 
@@ -219,5 +225,110 @@ describe('OrderService order visibility', () => {
             orderRepository.completeOrderAndIncrementServicedCount,
         ).not.toHaveBeenCalled();
         expect(payService.handleOrderCompletion).not.toHaveBeenCalled();
+    });
+
+    it('服务人员订单列表按后端全量数据进行优先级排序和分组', async () => {
+        const makeOrder = (
+            id: string,
+            overrides: Partial<
+                StaffOrderListItem & {
+                    serviceIconBucketName: string | null;
+                    serviceIconObjectPath: string | null;
+                }
+            >,
+        ): Awaited<
+            ReturnType<OrderRepository['getOrdersByStaffId']>
+        >['items'][number] => ({
+            id,
+            status: 'completed' as OrderStatus,
+            createdAt: new Date('2026-05-01T08:00:00.000Z'),
+            appointmentTime: new Date('2026-05-01T10:00:00.000Z'),
+            totalAmount: 100,
+            serviceName: '上门按摩',
+            serviceSpecification: null,
+            serviceIconBucketName: null,
+            serviceIconObjectPath: null,
+            serviceIconBlurhash: null,
+            customerName: null,
+            customerPhone: null,
+            customerAvatar: null,
+            address: null,
+            remark: null,
+            acceptedAt: null,
+            decisionStatus: 'accepted',
+            rejectReason: null,
+            rejectedAt: null,
+            serviceStartedAt: null,
+            serviceCompletedAt: null,
+            ...overrides,
+        });
+
+        orderRepository.getOrdersByStaffId.mockResolvedValue({
+            items: [
+                makeOrder('completed_old', {
+                    serviceCompletedAt: new Date('2026-05-03T10:00:00.000Z'),
+                }),
+                makeOrder('paid_late', {
+                    status: 'paid',
+                    appointmentTime: new Date('2099-05-05T16:00:00.000Z'),
+                }),
+                makeOrder('pending_later', {
+                    status: 'pending_acceptance',
+                    decisionStatus: 'pending',
+                    appointmentTime: new Date('2020-05-05T10:20:00.000Z'),
+                }),
+                makeOrder('completed_new', {
+                    serviceCompletedAt: new Date('2026-05-04T10:00:00.000Z'),
+                }),
+                makeOrder('paid_early', {
+                    status: 'paid',
+                    appointmentTime: new Date('2099-05-05T12:00:00.000Z'),
+                }),
+                makeOrder('pending_due', {
+                    status: 'pending_acceptance',
+                    decisionStatus: 'pending',
+                    appointmentTime: new Date('2020-05-05T09:50:00.000Z'),
+                }),
+            ],
+            meta: {
+                page: 1,
+                limit: 20,
+                total: 6,
+                totalPages: 1,
+                hasNext: false,
+                hasPrev: false,
+            },
+        });
+
+        const result = await service.getOrdersByStaff({
+            servicePersonnelId: 'staff_1',
+            page: 1,
+            limit: 20,
+            prioritySort: true,
+            includeGroups: true,
+        } as any);
+
+        expect(orderRepository.getOrdersByStaffId).toHaveBeenCalledWith(
+            expect.objectContaining({
+                servicePersonnelId: 'staff_1',
+                page: 1,
+                limit: 20,
+                unpaged: true,
+            }),
+        );
+        expect(result.items.map((order) => order.id)).toEqual([
+            'pending_due',
+            'pending_later',
+            'paid_early',
+            'paid_late',
+            'completed_new',
+            'completed_old',
+        ]);
+        expect(result.groups?.map((group) => group.key)).toEqual([
+            'pending_acceptance',
+            'paid',
+            'completed',
+        ]);
+        expect(result.groups?.map((group) => group.count)).toEqual([2, 2, 2]);
     });
 });

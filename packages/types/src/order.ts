@@ -172,6 +172,8 @@ export type OrderCardsListResponse = z.infer<
 export const StaffOrderListRequestSchema = z
     .object({
         ...PaginationQuerySchema.shape,
+        page: PaginationQuerySchema.shape.page.optional().default(1),
+        limit: PaginationQuerySchema.shape.limit.optional().default(20),
         status: OrderStatusEnum.optional().meta({
             description: "订单状态",
             title: "订单状态",
@@ -191,6 +193,14 @@ export const StaffOrderListRequestSchema = z
         onlyAccepted: z.boolean().optional().meta({
             description: "仅显示已接单订单",
             title: "仅显示已接单订单",
+        }),
+        prioritySort: z.boolean().optional().meta({
+            description: "按服务人员订单列表业务优先级排序",
+            title: "服务人员订单优先级排序",
+        }),
+        includeGroups: z.boolean().optional().meta({
+            description: "返回服务人员订单列表分组",
+            title: "返回订单分组",
         }),
     })
     .meta({
@@ -418,11 +428,29 @@ export const StaffOrderListItemSchema = z.object({
     serviceCompletedAt: z.date().nullable(),
 });
 
+export const StaffOrderListGroupKeySchema = z.enum([
+    "pending_acceptance",
+    "paid",
+    "completed",
+    "archived",
+]);
+
+export const StaffOrderListGroupSchema = z.object({
+    key: StaffOrderListGroupKeySchema,
+    title: z.string(),
+    count: z.number().int().nonnegative(),
+    items: z.array(StaffOrderListItemSchema),
+});
+
 export const StaffOrderListResponseSchema = z
     .object({
         items: z.array(StaffOrderListItemSchema).meta({
             description: "订单列表",
             title: "订单列表",
+        }),
+        groups: z.array(StaffOrderListGroupSchema).optional().meta({
+            description: "服务人员订单列表分组，仅列表页需要",
+            title: "订单分组",
         }),
         meta: PaginationMetaSchema.meta({
             description: "分页信息",
@@ -435,6 +463,7 @@ export const StaffOrderListResponseSchema = z
     });
 
 export type StaffOrderListItem = z.infer<typeof StaffOrderListItemSchema>;
+export type StaffOrderListGroup = z.infer<typeof StaffOrderListGroupSchema>;
 export type StaffOrderListResponse = z.infer<
     typeof StaffOrderListResponseSchema
 >;
@@ -450,7 +479,7 @@ export const StaffOrderStatsSchema = z
             title: "已完成订单数",
         }),
         pendingService: z.number().int().nonnegative().meta({
-            description: "待服务/待完成确认订单数",
+            description: "待服务",
             title: "待服务订单数",
         }),
     })

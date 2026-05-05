@@ -43,6 +43,10 @@ import {
     OrderRepository,
     type OrderStatus as DbOrderStatus,
 } from './order.reposityro';
+import {
+    buildStaffOrderPriorityGroups,
+    sortStaffOrdersByPriority,
+} from './staff-order-priority';
 import { S3StoreServer } from 'src/common/s3_store/s3_store.service';
 import {
     PendingAcceptanceReminderRedisKeys,
@@ -618,34 +622,49 @@ export class OrderService {
                 startTime: params.startTime,
                 endTime: params.endTime,
                 onlyAccepted: params.onlyAccepted,
+                unpaged: params.prioritySort || params.includeGroups,
             });
 
-            return {
-                items: await Promise.all(
-                    result.items.map(async (item) => {
-                        const {
-                            serviceIconBucketName,
-                            serviceIconObjectPath,
-                            serviceIconBlurhash,
-                            ...safeItem
-                        } = item;
-                        const serviceIconUrl =
-                            serviceIconBucketName && serviceIconObjectPath
-                                ? await this.s3StoreServer.getPresignedDownloadUrl(
-                                      serviceIconBucketName,
-                                      serviceIconObjectPath,
-                                      600,
-                                  )
-                                : null;
+            const rawItems = params.prioritySort
+                ? sortStaffOrdersByPriority(result.items, {
+                      statusFilter: params.status,
+                      decisionStatusFilter:
+                          params.status === 'pending_acceptance'
+                              ? 'pending'
+                              : undefined,
+                  })
+                : result.items;
 
-                        return {
-                            ...safeItem,
-                            serviceIconUrl,
-                            serviceIconBlurhash:
-                                serviceIconBlurhash ?? null,
-                        };
-                    }),
-                ),
+            const items = await Promise.all(
+                rawItems.map(async (item) => {
+                    const {
+                        serviceIconBucketName,
+                        serviceIconObjectPath,
+                        serviceIconBlurhash,
+                        ...safeItem
+                    } = item;
+                    const serviceIconUrl =
+                        serviceIconBucketName && serviceIconObjectPath
+                            ? await this.s3StoreServer.getPresignedDownloadUrl(
+                                  serviceIconBucketName,
+                                  serviceIconObjectPath,
+                                  600,
+                              )
+                            : null;
+
+                    return {
+                        ...safeItem,
+                        serviceIconUrl,
+                        serviceIconBlurhash: serviceIconBlurhash ?? null,
+                    };
+                }),
+            );
+
+            return {
+                items,
+                groups: params.includeGroups
+                    ? buildStaffOrderPriorityGroups(items)
+                    : undefined,
                 meta: result.meta,
             };
         } catch (error) {

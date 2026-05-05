@@ -21,32 +21,12 @@ import {
     View,
 } from "react-native";
 import { ErrorBoundary } from "react-error-boundary";
-import { selectTopPendingWorkOrders } from "../../lib/order-priority";
+import { Icon } from "@repo/mobile-ui/components/ui/icon";
+import type { LucideIcon } from "lucide-react-native";
+import { ScanLine, Settings } from "lucide-react-native";
+import { WorkerOrderCard } from "@/components/orders/worker-order-card";
 
 type StaffOrder = StaffOrderListResponse["items"][number];
-
-const ORDER_STATUS_DISPLAY: Record<
-    StaffOrder["status"],
-    { label: string; color: string }
-> = {
-    pending_payment: { label: "待支付", color: "#FF9800" },
-    payment_timeout: { label: "支付超时", color: "#9E9E9E" },
-    pending_acceptance: { label: "待接单", color: "#FFB300" },
-    staff_rejected: { label: "已拒绝", color: "#9E9E9E" },
-    paid: { label: "待服务", color: "#FF9800" },
-    completed: { label: "已完成", color: "#2196F3" },
-    cancelled: { label: "已取消", color: "#9E9E9E" },
-    refunded: { label: "已退款", color: "#9E9E9E" },
-};
-
-const DECISION_STATUS_DISPLAY: Record<
-    StaffOrder["decisionStatus"],
-    { label: string; color: string }
-> = {
-    pending: { label: "待接单确认", color: "#FFB300" },
-    accepted: { label: "已确认接单", color: "#4CAF50" },
-    rejected: { label: "已拒绝", color: "#9E9E9E" },
-};
 
 export default function HomeScreen() {
     return (
@@ -88,6 +68,8 @@ function HomeContent() {
         page: 1,
         limit: 20,
         sortOrder: "asc",
+        prioritySort: true,
+        includeGroups: true,
     });
     const { refreshing, onRefresh } = useGlobalPageRefresh({
         refetchActiveQueries: false,
@@ -142,11 +124,6 @@ function HomeContent() {
                         欢迎回来，祝您服务顺利
                     </Text>
                 </View>
-                <TouchableOpacity
-                    onPress={() => router.push(`/scan?source=home` as never)}
-                >
-                    <Ionicons name="qr-code-outline" size={28} color="#333" />
-                </TouchableOpacity>
             </View>
 
             <ScrollView
@@ -196,24 +173,8 @@ function HomeContent() {
                     <Text style={styles.sectionTitle}>快捷操作</Text>
                     <View style={styles.quickActions}>
                         <QuickActionButton
-                            icon="qr-code-outline"
-                            label="确认完成"
-                            onPress={() =>
-                                router.push(`/scan?source=home` as never)
-                            }
-                            color="#4CAF50"
-                        />
-                        <QuickActionButton
-                            icon="person-outline"
-                            label="个人信息"
-                            onPress={() =>
-                                router.push("/profile/edit" as never)
-                            }
-                            color="#2196F3"
-                        />
-                        <QuickActionButton
-                            icon="settings-outline"
-                            label="服务设置"
+                            icon={Settings}
+                            label="服务发布"
                             onPress={() =>
                                 router.push(
                                     "/profile/service-settings-redesign" as never,
@@ -222,12 +183,12 @@ function HomeContent() {
                             color="#FF9800"
                         />
                         <QuickActionButton
-                            icon="cash-outline"
-                            label="立即提现"
+                            icon={ScanLine}
+                            label="核销订单"
                             onPress={() =>
-                                router.push("/earnings/withdraw" as never)
+                                router.push(`/scan?source=home` as never)
                             }
-                            color="#9C27B0"
+                            color="#4CAF50"
                         />
                     </View>
                 </View>
@@ -253,109 +214,9 @@ function HomeContent() {
                             </Text>
                         </View>
                     ) : (
-                        upcomingOrders.map((order) => {
-                            const statusMeta =
-                                ORDER_STATUS_DISPLAY[order.status] ??
-                                ORDER_STATUS_DISPLAY.cancelled;
-                            const decisionMeta =
-                                DECISION_STATUS_DISPLAY[
-                                    order.decisionStatus ?? "pending"
-                                ];
-                            return (
-                                <TouchableOpacity
-                                    key={order.id}
-                                    style={styles.orderCard}
-                                    onPress={() =>
-                                        router.push(
-                                            `/orders/${order.id}` as never,
-                                        )
-                                    }
-                                >
-                                    <View style={styles.orderHeader}>
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={styles.orderService}>
-                                                {order.serviceName}
-                                            </Text>
-                                            {order.serviceSpecification ? (
-                                                <Text style={styles.orderSpec}>
-                                                    {order.serviceSpecification}
-                                                </Text>
-                                            ) : null}
-                                        </View>
-                                        <View style={styles.homeBadgeColumn}>
-                                            <View
-                                                style={[
-                                                    styles.homeStatusBadge,
-                                                    {
-                                                        backgroundColor:
-                                                            statusMeta.color,
-                                                    },
-                                                ]}
-                                            >
-                                                <Text
-                                                    style={
-                                                        styles.homeStatusText
-                                                    }
-                                                >
-                                                    {statusMeta.label}
-                                                </Text>
-                                            </View>
-                                            {decisionMeta ? (
-                                                <View
-                                                    style={[
-                                                        styles.homeDecisionBadge,
-                                                        {
-                                                            borderColor:
-                                                                decisionMeta.color,
-                                                        },
-                                                    ]}
-                                                >
-                                                    <Text
-                                                        style={[
-                                                            styles.homeDecisionText,
-                                                            {
-                                                                color: decisionMeta.color,
-                                                            },
-                                                        ]}
-                                                    >
-                                                        {decisionMeta.label}
-                                                    </Text>
-                                                </View>
-                                            ) : null}
-                                            <Text style={styles.orderPrice}>
-                                                ¥
-                                                {formatCurrency(
-                                                    order.totalAmount,
-                                                )}
-                                            </Text>
-                                        </View>
-                                    </View>
-                                    <View style={styles.orderInfo}>
-                                        <Ionicons
-                                            name="location-outline"
-                                            size={16}
-                                            color="#666"
-                                        />
-                                        <Text style={styles.orderAddress}>
-                                            {order.address ||
-                                                "客户未提供详细地址"}
-                                        </Text>
-                                    </View>
-                                    <View style={styles.orderInfo}>
-                                        <Ionicons
-                                            name="time-outline"
-                                            size={16}
-                                            color="#666"
-                                        />
-                                        <Text style={styles.orderTime}>
-                                            {formatDateTime(
-                                                order.appointmentTime,
-                                            )}
-                                        </Text>
-                                    </View>
-                                </TouchableOpacity>
-                            );
-                        })
+                        upcomingOrders.map((order) => (
+                            <WorkerOrderCard key={order.id} order={order} />
+                        ))
                     )}
                 </View>
             </ScrollView>
@@ -424,15 +285,23 @@ function QuickActionButton({
     onPress,
     color,
 }: {
-    icon: keyof typeof Ionicons.glyphMap;
+    icon: LucideIcon;
     label: string;
     onPress: () => void;
     color: string;
 }) {
     return (
-        <TouchableOpacity style={styles.actionButton} onPress={onPress}>
-            <View style={[styles.actionIcon, { backgroundColor: color }]}>
-                <Ionicons name={icon} size={24} color="white" />
+        <TouchableOpacity
+            activeOpacity={0.82}
+            style={styles.actionButton}
+            onPress={onPress}
+        >
+            <View style={styles.actionIconWrap}>
+                <View style={[styles.actionIcon, { backgroundColor: color }]}>
+                    <View style={styles.actionIconGlyph}>
+                        <Icon as={icon} size={24} color="white" />
+                    </View>
+                </View>
             </View>
             <Text style={styles.actionLabel}>{label}</Text>
         </TouchableOpacity>
@@ -457,7 +326,16 @@ function countTodayOrders(orders: StaffOrder[]) {
 }
 
 function selectUpcomingOrders(orders: StaffOrder[]) {
-    return selectTopPendingWorkOrders(orders, 5);
+    return orders
+        .filter(
+            (order) =>
+                (order.status === "pending_acceptance" &&
+                    order.decisionStatus === "pending") ||
+                order.status === "paid" ||
+                (order.status === "pending_acceptance" &&
+                    order.decisionStatus === "accepted"),
+        )
+        .slice(0, 5);
 }
 
 function normalizeDate(value?: string | Date | null) {
@@ -477,22 +355,6 @@ function formatCurrency(value?: number | string | null) {
         return "0.00";
     }
     return amount.toFixed(2);
-}
-
-function formatDateTime(value?: string | Date | null) {
-    const date = normalizeDate(value);
-    if (!date) {
-        return "--";
-    }
-    const end = new Date(date.getTime() + 2 * 60 * 60 * 1000);
-    const yyyy = date.getFullYear();
-    const mm = `${date.getMonth() + 1}`.padStart(2, "0");
-    const dd = `${date.getDate()}`.padStart(2, "0");
-    const hh = `${date.getHours()}`.padStart(2, "0");
-    const mi = `${date.getMinutes()}`.padStart(2, "0");
-    const endHh = `${end.getHours()}`.padStart(2, "0");
-    const endMi = `${end.getMinutes()}`.padStart(2, "0");
-    return `${yyyy}-${mm}-${dd} ${hh}:${mi}-${endHh}:${endMi}`;
 }
 
 const styles = StyleSheet.create({
@@ -566,6 +428,7 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: "bold",
         color: "#333",
+        marginBottom: 16,
     },
     moreText: {
         fontSize: 14,
@@ -573,105 +436,49 @@ const styles = StyleSheet.create({
     },
     quickActions: {
         flexDirection: "row",
-        flexWrap: "wrap",
+        gap: 12,
         backgroundColor: "white",
-        borderRadius: 12,
-        padding: 16,
+        borderRadius: 14,
+        padding: 12,
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
         elevation: 3,
     },
     actionButton: {
-        width: "25%",
+        flex: 1,
+        minHeight: 65,
+        paddingVertical: 10,
         alignItems: "center",
-        marginBottom: 16,
+        justifyContent: "center",
+        gap: 6,
+        backgroundColor: "#FFFFFF",
+    },
+    actionIconWrap: {
+        width: 48,
+        height: 48,
+        alignItems: "center",
+        justifyContent: "center",
     },
     actionIcon: {
-        width: 50,
-        height: 50,
-        borderRadius: 25,
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        position: "relative",
         justifyContent: "center",
         alignItems: "center",
-        marginBottom: 8,
+    },
+    actionIconGlyph: {
+        ...StyleSheet.absoluteFillObject,
+        alignItems: "center",
+        justifyContent: "center",
     },
     actionLabel: {
         fontSize: 12,
-        color: "#333",
+        fontWeight: "700",
+        color: "#2B2B2B",
         textAlign: "center",
-    },
-    orderCard: {
-        backgroundColor: "white",
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 12,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
-    },
-    orderHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        marginBottom: 12,
-    },
-    orderService: {
-        fontSize: 16,
-        fontWeight: "bold",
-        color: "#333",
-    },
-    orderSpec: {
-        marginTop: 4,
-        fontSize: 12,
-        color: "#888",
-    },
-    homeBadgeColumn: {
-        alignItems: "flex-end",
-    },
-    homeStatusBadge: {
-        paddingHorizontal: 10,
-        paddingVertical: 3,
-        borderRadius: 12,
-        marginBottom: 6,
-    },
-    homeStatusText: {
-        color: "white",
-        fontSize: 11,
-        fontWeight: "bold",
-    },
-    homeDecisionBadge: {
-        borderWidth: 1,
-        borderRadius: 10,
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        marginBottom: 6,
-    },
-    homeDecisionText: {
-        fontSize: 10,
-        fontWeight: "bold",
-    },
-    orderPrice: {
-        fontSize: 16,
-        fontWeight: "bold",
-        color: "#FF5722",
-    },
-    orderInfo: {
-        flexDirection: "row",
-        alignItems: "center",
-        marginTop: 8,
-    },
-    orderAddress: {
-        fontSize: 14,
-        color: "#666",
-        marginLeft: 8,
-        flex: 1,
-    },
-    orderTime: {
-        fontSize: 14,
-        color: "#666",
-        marginLeft: 8,
     },
     emptyOrders: {
         alignItems: "center",

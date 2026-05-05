@@ -35,7 +35,7 @@ const MENU_ITEMS: MenuItem[] = [
     { icon: "person-outline", title: "个人信息", route: "/profile/edit" },
     {
         icon: "construct-outline",
-        title: "服务设置",
+        title: "服务发布",
         route: "/profile/service-settings-redesign",
     },
     { icon: "card-outline", title: "实名认证", route: "/verification/id-card" },
