@@ -1,11 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
+import { KeyboardAwareScreen } from "@repo/mobile-ui/components/app/KeyboardAwareScreen";
+import { KeyboardAwareScrollView } from "@repo/mobile-ui/components/app/KeyboardAwareScrollView";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
+import * as FileSystem from "expo-file-system/legacy";
+import * as ImagePicker from "expo-image-picker";
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import {
+    ActivityIndicator,
     Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
+    Image,
+    Pressable,
     StyleSheet,
     Text,
     TextInput,
@@ -14,7 +19,10 @@ import {
 } from "react-native";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { isApiClientError } from "@repo/utils/api-client";
+import { useUploadFile } from "@repo/hooks/api/files";
 import { useUserRealNameProfile, useVerifyAndSaveRealName } from "@repo/hooks/api/user";
+
+const faceExampleImage = require("../../assets/images/face-example.png");
 
 function maskIdCardNumber(value: string) {
     const normalized = value.trim();
@@ -36,8 +44,11 @@ export default function IdCardVerificationScreen() {
     const { data: profile } = useUserRealNameProfile(userId);
     const [realName, setRealName] = useState("");
     const [idCard, setIdCard] = useState("");
+    const [faceImageUri, setFaceImageUri] = useState<string | null>(null);
+    const [faceImageFileId, setFaceImageFileId] = useState<string | null>(null);
     const verifyRealNameMutation = useVerifyAndSaveRealName();
-    const loading = verifyRealNameMutation.isPending;
+    const uploadFileMutation = useUploadFile();
+    const loading = verifyRealNameMutation.isPending || uploadFileMutation.isPending;
     const maskedIdCard = profile?.idCardNumber ? maskIdCardNumber(profile.idCardNumber) : "";
 
     // 验证身份证号格式
@@ -69,6 +80,11 @@ export default function IdCardVerificationScreen() {
             return;
         }
 
+        if (!faceImageFileId) {
+            Alert.alert("提示", "请先拍摄或上传本人清晰正面照片，并确认授权用于实名核验");
+            return;
+        }
+
         try {
             const normalizedName = realName.trim();
             const normalizedIdCard = idCard.trim().toUpperCase();
@@ -76,6 +92,7 @@ export default function IdCardVerificationScreen() {
                 name: normalizedName,
                 idCard: normalizedIdCard,
                 userId,
+                faceImageFileId,
             });
 
             Alert.alert("认证成功", verificationResult.description ?? "您的实名认证已通过", [
@@ -85,6 +102,8 @@ export default function IdCardVerificationScreen() {
                 },
             ]);
             setIdCard("");
+            setFaceImageUri(null);
+            setFaceImageFileId(null);
 
         } catch (error: unknown) {
             let message = "实名认证请求失败，请稍后重试";
@@ -95,11 +114,87 @@ export default function IdCardVerificationScreen() {
         }
     };
 
+    const handleUploadFaceImage = async (file: { uri: string; name: string; type: string }) => {
+        const response = await uploadFileMutation.mutateAsync({
+            file,
+            fileName: file.name,
+            fileType: "image",
+        });
+        return {
+            fileIdentifier: response.id,
+            fileUrl: response.fileUrl,
+        };
+    };
+
+    const compressFaceImage = async (uri: string) => {
+        try {
+            const fileInfo = await FileSystem.getInfoAsync(uri);
+            if (!fileInfo.exists) {
+                throw new Error("文件不存在");
+            }
+
+            const size = "size" in fileInfo ? fileInfo.size : 0;
+            if (size <= 1024 * 1024 * 2) {
+                return uri;
+            }
+
+            const result = await ImageManipulator.manipulateAsync(
+                uri,
+                [{ resize: { width: 1280, height: 1280 } }],
+                {
+                    compress: 0.7,
+                    format: SaveFormat.JPEG,
+                },
+            );
+            return result.uri;
+        } catch {
+            return uri;
+        }
+    };
+
+    const handleTakeFacePhoto = async () => {
+        if (loading) {
+            return;
+        }
+
+        const permission = await ImagePicker.requestCameraPermissionsAsync();
+        if (permission.status !== "granted") {
+            Alert.alert("提示", "需要相机权限才能拍照");
+            return;
+        }
+
+        const result = await ImagePicker.launchCameraAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            aspect: [1, 1],
+            quality: 1,
+        });
+
+        if (result.canceled || !result.assets?.length) {
+            return;
+        }
+
+        const asset = result.assets[0];
+
+        try {
+            const compressedUri = await compressFaceImage(asset.uri);
+            setFaceImageUri(compressedUri);
+            setFaceImageFileId(null);
+
+            const response = await handleUploadFaceImage({
+                uri: compressedUri,
+                name: asset.fileName || `face_${Date.now()}.jpg`,
+                type: asset.mimeType || "image/jpeg",
+            });
+
+            setFaceImageFileId(response.fileIdentifier);
+        } catch (error) {
+            setFaceImageFileId(null);
+            Alert.alert("上传失败", (error as Error).message || "人脸照片上传失败，请重试");
+        }
+    };
+
     return (
-        <KeyboardAvoidingView
-            style={styles.container}
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-        >
+        <KeyboardAwareScreen style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity
                     style={styles.backButton}
@@ -110,89 +205,99 @@ export default function IdCardVerificationScreen() {
                 <Text style={styles.title}>实名认证</Text>
                 <View style={styles.placeholder} />
             </View>
-
-            <ScrollView
+            <KeyboardAwareScrollView
                 style={styles.content}
+                contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
             >
-                {profile && (
-                    <View style={styles.currentInfoCard}>
-                        <Text style={styles.infoTitle}>当前认证信息</Text>
-                        <View style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>真实姓名</Text>
-                            <Text style={styles.infoValue}>{profile.realName ?? "未填写"}</Text>
-                        </View>
-                        <View style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>身份证号</Text>
-                            <Text style={styles.infoValue}>{maskedIdCard || "已保护"}</Text>
-                        </View>
+                <View style={styles.formCard}>
+                    <View style={styles.inputRow}>
+                        <Text style={styles.inputLabel}>姓名</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="请填写您的姓名"
+                            placeholderTextColor="#c9c9c9"
+                            value={realName}
+                            onChangeText={setRealName}
+                            autoCapitalize="none"
+                        />
                     </View>
+
+                    <View style={styles.inputRow}>
+                        <Text style={styles.inputLabel}>身份证号</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="请填写您的身份证号"
+                            placeholderTextColor="#c9c9c9"
+                            value={idCard}
+                            onChangeText={setIdCard}
+                            maxLength={18}
+                            autoCapitalize="none"
+                        />
+                    </View>
+                </View>
+
+                {profile && (
+                    <Text style={styles.verifiedHint}>
+                        当前已认证：{profile.realName ?? "未填写"} {maskedIdCard || "已保护"}
+                    </Text>
                 )}
 
-                {/* 提示信息 */}
-                <View style={styles.tipCard}>
-                    <Ionicons name="information-circle" size={24} color="#2196F3" />
-                    <View style={styles.tipContent}>
-                        <Text style={styles.tipTitle}>为什么要实名认证？</Text>
-                        <Text style={styles.tipText}>
-                            根据国家相关规定，从事服务行业需要进行实名认证。您的信息将被严格保密。
-                        </Text>
-                    </View>
-                </View>
+                <View style={styles.photoSection}>
+                    <Text style={styles.photoTitle}>
+                        <Text style={styles.requiredMark}>* </Text>
+                        请拍摄本人实拍照片
+                    </Text>
 
-                {/* 认证表单 */}
-                <View style={styles.formCard}>
-                    <View style={styles.formGroup}>
-                        <Text style={styles.label}>真实姓名</Text>
-                        <View style={styles.inputWrapper}>
-                            <Ionicons name="person-outline" size={20} color="#999" />
-                            <TextInput
-                                style={styles.input}
-                                placeholder="请输入您的真实姓名"
-                                value={realName}
-                                onChangeText={setRealName}
-                                autoCapitalize="none"
-                            />
+                    <View style={styles.photoContent}>
+                        <View style={styles.exampleWrap}>
+                            <View style={styles.examplePhoto}>
+                                <Image
+                                    source={faceExampleImage}
+                                    style={styles.exampleImage}
+                                    resizeMode="cover"
+                                />
+                                <View style={styles.exampleBadge}>
+                                    <Text style={styles.exampleBadgeText}>示例</Text>
+                                </View>
+                            </View>
+                            <Text style={styles.requireTitle}>拍摄要求</Text>
+                            <Text style={styles.requireText}>
+                                正面、免冠、素颜、清晰{"\n"}光线良好、背景整洁
+                            </Text>
                         </View>
-                    </View>
 
-                    <View style={styles.formGroup}>
-                        <Text style={styles.label}>身份证号</Text>
-                        <View style={styles.inputWrapper}>
-                            <Ionicons name="card-outline" size={20} color="#999" />
-                            <TextInput
-                                style={styles.input}
-                                placeholder="请输入18位身份证号"
-                                value={idCard}
-                                onChangeText={setIdCard}
-                                maxLength={18}
-                                autoCapitalize="none"
-                            />
-                        </View>
-                        <Text style={styles.hint}>
-                            {profile?.idCardNumber ? "已认证，如需重新认证请再次提交完整信息" : "请确保身份证号与真实姓名一致"}
-                        </Text>
+                        <Pressable
+                            style={[
+                                styles.faceUploadButton,
+                                loading && styles.faceUploadButtonDisabled,
+                            ]}
+                            className="flex"
+                            onPress={handleTakeFacePhoto}
+                            disabled={loading}
+                        >
+                            {faceImageUri ? (
+                                <Image
+                                    source={{ uri: faceImageUri }}
+                                    style={styles.faceUploadPreview}
+                                    resizeMode="cover"
+                                />
+                            ) : (
+                                <View style={styles.cameraCircle}>
+                                    <Ionicons name="camera" size={34} color="#fff" />
+                                </View>
+                            )}
+
+                            {loading && (
+                                <View style={styles.faceUploadLoadingMask}>
+                                    <ActivityIndicator size="small" color="#2f7df6" />
+                                    <Text style={styles.faceUploadLoadingText}>上传中...</Text>
+                                </View>
+                            )}
+                        </Pressable>
                     </View>
                 </View>
 
-                {/* 安全说明 */}
-                <View style={styles.securityCard}>
-                    <View style={styles.securityItem}>
-                        <Ionicons name="shield-checkmark" size={20} color="#4CAF50" />
-                        <Text style={styles.securityText}>信息加密传输</Text>
-                    </View>
-                    <View style={styles.securityItem}>
-                        <Ionicons name="lock-closed" size={20} color="#4CAF50" />
-                        <Text style={styles.securityText}>严格保密</Text>
-                    </View>
-                    <View style={styles.securityItem}>
-                        <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
-                        <Text style={styles.securityText}>仅用于身份验证</Text>
-                    </View>
-                </View>
-
-                {/* 提交按钮 */}
                 <TouchableOpacity
                     style={[styles.submitButton, loading && styles.submitButtonDisabled]}
                     onPress={handleSubmit}
@@ -202,167 +307,245 @@ export default function IdCardVerificationScreen() {
                         {loading ? "认证中..." : "提交认证"}
                     </Text>
                 </TouchableOpacity>
-            </ScrollView>
-        </KeyboardAvoidingView>
+
+                <View style={styles.explainSection}>
+                    <View style={styles.questionTitleRow}>
+                        <Ionicons name="help-circle" size={16} color="#3b82f6" />
+                        <Text style={styles.questionTitle}>什么是实名认证?</Text>
+                    </View>
+                    <Text style={styles.questionText}>
+                        实人认证是指通过姓名、身份证号和实拍照片，核实认证人员身份真实性的一种手段。上单平台将严格保护您的隐私，您上传的身份信息仅供平台认证使用，不会泄露给任何第三方。
+                    </Text>
+
+                    <View style={styles.questionTitleRow}>
+                        <Ionicons name="help-circle" size={16} color="#3b82f6" />
+                        <Text style={styles.questionTitle}>为什么要进行实人认证?</Text>
+                    </View>
+                    <Text style={styles.questionText}>
+                        叮咚上单作为叮咚上门旗下的上门服务人员就业接单平台，需要对服务人员的身份进行核实，以确保用户的安全。更重要的是，平台需要维护服务人员的权益，避免不法分子伪造、冒用他人身份信息，对其他服务人员的从业经历及名誉造成影响。
+                    </Text>
+                </View>
+            </KeyboardAwareScrollView>
+        </KeyboardAwareScreen>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#f5f5f5",
+        backgroundColor: "#f3f3f3",
     },
     header: {
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
-        paddingHorizontal: 20,
-        paddingTop: 60,
-        paddingBottom: 20,
+        paddingHorizontal: 14,
+        paddingTop: 44,
+        height: 88,
         backgroundColor: "white",
-        borderBottomWidth: 1,
-        borderBottomColor: "#eee",
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: "#d9d9d9",
     },
     backButton: {
-        padding: 4,
+        width: 44,
+        height: 44,
+        alignItems: "flex-start",
+        justifyContent: "center",
     },
     title: {
         fontSize: 18,
-        fontWeight: "bold",
-        color: "#333",
+        fontWeight: "500",
+        color: "#222",
     },
     placeholder: {
-        width: 32,
+        width: 44,
     },
     content: {
         flex: 1,
-        padding: 16,
     },
-    tipCard: {
-        flexDirection: "row",
-        backgroundColor: "#E3F2FD",
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 16,
-    },
-    tipContent: {
-        flex: 1,
-        marginLeft: 12,
-    },
-    tipTitle: {
-        fontSize: 14,
-        fontWeight: "bold",
-        color: "#1976D2",
-        marginBottom: 4,
-    },
-    tipText: {
-        fontSize: 12,
-        color: "#1976D2",
-        lineHeight: 18,
+    scrollContent: {
+        paddingBottom: 40,
     },
     formCard: {
-        backgroundColor: "white",
-        borderRadius: 12,
-        padding: 20,
-        marginBottom: 16,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
+        backgroundColor: "#fff",
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: "#ededed",
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: "#ededed",
     },
-    formGroup: {
-        marginBottom: 20,
-    },
-    label: {
-        fontSize: 16,
-        fontWeight: "bold",
-        color: "#333",
-        marginBottom: 12,
-    },
-    inputWrapper: {
+    inputRow: {
+        minHeight: 58,
         flexDirection: "row",
         alignItems: "center",
-        backgroundColor: "#f5f5f5",
-        borderRadius: 8,
-        paddingHorizontal: 12,
-        borderWidth: 1,
-        borderColor: "#e0e0e0",
+        paddingHorizontal: 16,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: "#e6e6e6",
+    },
+    inputLabel: {
+        width: 84,
+        fontSize: 16,
+        fontWeight: "600",
+        color: "#222",
     },
     input: {
         flex: 1,
-        height: 48,
+        minHeight: 58,
         fontSize: 16,
-        color: "#333",
-        marginLeft: 8,
+        color: "#222",
+        paddingVertical: 0,
     },
-    hint: {
+    verifiedHint: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
         fontSize: 12,
-        color: "#999",
+        lineHeight: 18,
+        color: "#8a8a8a",
+    },
+    photoSection: {
+        marginTop: 10,
+        paddingTop: 18,
+        paddingHorizontal: 16,
+        paddingBottom: 12,
+        backgroundColor: "#fff",
+    },
+    photoTitle: {
+        fontSize: 16,
+        lineHeight: 22,
+        fontWeight: "600",
+        color: "#222",
+        marginBottom: 18,
+    },
+    requiredMark: {
+        color: "#ef4444",
+    },
+    photoContent: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        gap: 16,
+    },
+    exampleWrap: {
+        flex: 1.2,
+        minWidth: 0,
+        alignItems: "center",
+    },
+    examplePhoto: {
+        width: 94,
+        height: 94,
+        borderRadius: 4,
+        backgroundColor: "#e8e5e0",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+    },
+    exampleImage: {
+        width: "100%",
+        height: "100%",
+    },
+    exampleBadge: {
+        position: "absolute",
+        right: 0,
+        bottom: 0,
+        paddingHorizontal: 5,
+        height: 18,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#ff8a3d",
+        borderTopLeftRadius: 3,
+    },
+    exampleBadgeText: {
+        fontSize: 11,
+        color: "#fff",
+    },
+    requireTitle: {
+        marginTop: 12,
+        fontSize: 17,
+        lineHeight: 24,
+        fontWeight: "700",
+        color: "#333",
+    },
+    requireText: {
+        marginTop: 2,
+        fontSize: 15,
+        lineHeight: 21,
+        color: "#333",
+        textAlign: "center",
+    },
+    faceUploadButton: {
+        flex: 1,
+        minWidth: 0,
+        aspectRatio: 1,
+        borderRadius: 4,
+        backgroundColor: "#f4f4f4",
+        alignItems: "center",
+        justifyContent: "center",
+        overflow: "hidden",
+    },
+    faceUploadButtonDisabled: {
+        opacity: 0.5,
+    },
+    faceUploadPreview: {
+        width: "100%",
+        height: "100%",
+        borderRadius: 4,
+    },
+    cameraCircle: {
+        width: 58,
+        height: 58,
+        borderRadius: 29,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#6ea2ff",
+    },
+    faceUploadLoadingMask: {
+        ...StyleSheet.absoluteFillObject,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "rgba(255,255,255,0.8)",
+    },
+    faceUploadLoadingText: {
+        fontSize: 12,
+        color: "#2f7df6",
         marginTop: 8,
     },
-    securityCard: {
-        backgroundColor: "white",
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 16,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
-    },
-    securityItem: {
-        flexDirection: "row",
-        alignItems: "center",
-        marginVertical: 8,
-    },
-    securityText: {
-        fontSize: 14,
-        color: "#666",
-        marginLeft: 12,
-    },
     submitButton: {
-        backgroundColor: "#4CAF50",
-        borderRadius: 12,
-        padding: 16,
+        height: 48,
+        marginHorizontal: 16,
+        marginTop: 24,
+        marginBottom: 16,
+        backgroundColor: "#2f7df6",
+        borderRadius: 3,
         alignItems: "center",
-        marginBottom: 32,
+        justifyContent: "center",
     },
     submitButtonDisabled: {
-        backgroundColor: "#ccc",
+        backgroundColor: "#a8c7fb",
     },
     submitText: {
         fontSize: 16,
-        fontWeight: "bold",
+        fontWeight: "500",
         color: "white",
     },
-    currentInfoCard: {
-        backgroundColor: "white",
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 16,
-        borderWidth: 1,
-        borderColor: "#e0e0e0",
+    explainSection: {
+        paddingHorizontal: 16,
+        paddingBottom: 40,
     },
-    infoTitle: {
-        fontSize: 16,
-        fontWeight: "bold",
-        marginBottom: 12,
-        color: "#333",
-    },
-    infoRow: {
+    questionTitleRow: {
         flexDirection: "row",
-        justifyContent: "space-between",
-        marginBottom: 8,
+        alignItems: "center",
+        gap: 4,
+        marginTop: 10,
+        marginBottom: 7,
     },
-    infoLabel: {
-        fontSize: 14,
-        color: "#666",
-    },
-    infoValue: {
-        fontSize: 14,
+    questionTitle: {
+        fontSize: 16,
+        lineHeight: 22,
+        fontWeight: "700",
         color: "#333",
+    },
+    questionText: {
+        fontSize: 14,
+        lineHeight: 20,
+        color: "#222",
     },
 
 });

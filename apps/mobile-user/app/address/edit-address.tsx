@@ -1,4 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { KeyboardAwareScreen } from "@repo/mobile-ui/components/app/KeyboardAwareScreen";
+import { KeyboardAwareScrollView } from "@repo/mobile-ui/components/app/KeyboardAwareScrollView";
 import { Button } from "@repo/mobile-ui/components/ui/button";
 import { Input } from "@repo/mobile-ui/components/ui/input";
 import { RadioGroup } from "@repo/mobile-ui/components/ui/radio-group";
@@ -9,7 +11,7 @@ import { CreateUserAddressSchema, UpdateUserAddressSchema } from "@repo/types";
 import { router, useFocusEffect, useNavigation } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { Pressable, RefreshControl, View } from "react-native";
 import { toast } from "sonner-native";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -308,8 +310,8 @@ export default function EditAddressScreen() {
     }
 
     return (
-        <View className="flex-1 bg-background">
-            <ScrollView
+        <KeyboardAwareScreen className="flex-1 bg-background">
+            <KeyboardAwareScrollView
                 className="flex-1"
                 showsVerticalScrollIndicator={false}
                 refreshControl={
@@ -515,7 +517,7 @@ export default function EditAddressScreen() {
 
                 {/* 底部安全区域 */}
                 <View className="h-24" />
-            </ScrollView>
+            </KeyboardAwareScrollView>
 
             {/* 底部保存按钮 - 固定在底部 */}
             <View className="p-4 bg-background/95 backdrop-blur-sm border-t border-border/50">
@@ -529,6 +531,6 @@ export default function EditAddressScreen() {
                     </Text>
                 </Button>
             </View>
-        </View>
+        </KeyboardAwareScreen>
     );
 }

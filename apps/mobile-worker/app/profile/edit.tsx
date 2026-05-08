@@ -1,11 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
+import { KeyboardAwareScreen } from "@repo/mobile-ui/components/app/KeyboardAwareScreen";
+import { KeyboardAwareScrollView } from "@repo/mobile-ui/components/app/KeyboardAwareScrollView";
 import { useRouter } from "expo-router";
 import {
     ActivityIndicator,
     Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
     StyleSheet,
     Text,
     TextInput,
@@ -134,10 +133,7 @@ export default function EditProfileScreen() {
     const isLoading = isFetching && !profile;
 
     return (
-        <KeyboardAvoidingView
-            style={styles.container}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-        >
+        <KeyboardAwareScreen style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity
                     style={styles.backButton}
@@ -159,7 +155,7 @@ export default function EditProfileScreen() {
                 </TouchableOpacity>
             </View>
 
-            <ScrollView
+            <KeyboardAwareScrollView
                 style={styles.content}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: 40 }}
@@ -221,8 +217,8 @@ export default function EditProfileScreen() {
                         </View>
                     </>
                 )}
-            </ScrollView>
-        </KeyboardAvoidingView>
+            </KeyboardAwareScrollView>
+        </KeyboardAwareScreen>
     );
 }
 

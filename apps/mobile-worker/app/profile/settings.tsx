@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Directory, Paths } from "expo-file-system";
-import { useRouter } from "expo-router";
+import { Directory, File, Paths } from "expo-file-system";
+import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
     Alert,
@@ -15,29 +15,117 @@ import {
 import Constants from "expo-constants";
 import { useAppUpdate } from "@repo/mobile-ui/app-update/AppUpdateProvider";
 
+type MenuItem = {
+    icon: keyof typeof Ionicons.glyphMap;
+    title: string;
+    route: string;
+};
+
+const MENU_ITEMS: MenuItem[] = [
+    {
+        icon: "wallet-outline",
+        title: "账号绑定",
+        route: "/profile/account-binding",
+    },
+    { icon: "person-outline", title: "个人信息", route: "/profile/edit" },
+    {
+        icon: "construct-outline",
+        title: "服务发布",
+        route: "/profile/service-settings-redesign",
+    },
+    { icon: "card-outline", title: "实名认证", route: "/verification/id-card" },
+    {
+        icon: "call-outline",
+        title: "紧急联系人",
+        route: "/profile/emergency-contact",
+    },
+
+];
+
+const formatCacheSize = (bytes: number | null) => {
+    if (bytes === null) {
+        return "计算中...";
+    }
+    if (bytes < 1024) {
+        return `${bytes} B`;
+    }
+
+    const units = ["KB", "MB", "GB"];
+    let size = bytes / 1024;
+    let unitIndex = 0;
+
+    while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024;
+        unitIndex += 1;
+    }
+
+    return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+};
+
+const getDirectorySize = (directory: Directory): number => {
+    if (!directory.exists) {
+        return 0;
+    }
+
+    return directory.list().reduce((total, entry) => {
+        try {
+            if (entry instanceof Directory) {
+                return total + getDirectorySize(entry);
+            }
+            if (entry instanceof File) {
+                return total + entry.size;
+            }
+        } catch {
+            return total;
+        }
+
+        return total;
+    }, 0);
+};
+
 export default function SettingsScreen() {
     const router = useRouter();
     const { checkForUpdate, status: updateStatus } = useAppUpdate();
-    const [pushEnabled, setPushEnabled] = useState(true);
-    const [soundEnabled, setSoundEnabled] = useState(true);
-    const [vibrationEnabled, setVibrationEnabled] = useState(true);
+    const [cacheSizeBytes, setCacheSizeBytes] = useState<number | null>(null);
+    const [isClearingCache, setIsClearingCache] = useState(false);
     const versionLabel = Constants.expoConfig?.version
         ? `v${Constants.expoConfig.version}`
         : "未设置";
 
+    const refreshCacheSize = useCallback(() => {
+        try {
+            const cacheDir = new Directory(Paths.cache);
+            setCacheSizeBytes(getDirectorySize(cacheDir));
+        } catch {
+            setCacheSizeBytes(0);
+        }
+    }, []);
+
+    useFocusEffect(refreshCacheSize);
+
     const clearCache = () => {
+        if (isClearingCache) {
+            return;
+        }
+
+        setIsClearingCache(true);
         try {
             const cacheDir = new Directory(Paths.cache);
             if (!cacheDir.exists) {
+                setCacheSizeBytes(0);
                 Alert.alert("提示", "没有可清理的缓存");
                 return;
             }
 
             cacheDir.list().forEach((entry) => entry.delete());
+            setCacheSizeBytes(0);
 
             Alert.alert("成功", "缓存已清除");
-        } catch (error) {
+        } catch {
+            refreshCacheSize();
             Alert.alert("提示", "清除缓存时出现问题，请稍后再试");
+        } finally {
+            setIsClearingCache(false);
         }
     };
 
@@ -83,69 +171,36 @@ export default function SettingsScreen() {
             </View>
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                {/* 通知设置 */}
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>通知设置</Text>
+                    <Text style={styles.sectionTitle}>账号与服务</Text>
                     <View style={styles.settingCard}>
-                        <View style={styles.settingItem}>
-                            <View style={styles.settingLeft}>
-                                <Ionicons name="notifications-outline" size={20} color="#666" />
-                                <Text style={styles.settingText}>推送通知</Text>
-                            </View>
-                            <Switch
-                                value={pushEnabled}
-                                onValueChange={setPushEnabled}
-                                trackColor={{ false: "#ddd", true: "#4CAF50" }}
-                            />
-                        </View>
-
-                        <View style={styles.settingItem}>
-                            <View style={styles.settingLeft}>
-                                <Ionicons name="volume-high-outline" size={20} color="#666" />
-                                <Text style={styles.settingText}>声音提醒</Text>
-                            </View>
-                            <Switch
-                                value={soundEnabled}
-                                onValueChange={setSoundEnabled}
-                                trackColor={{ false: "#ddd", true: "#4CAF50" }}
-                            />
-                        </View>
-
-                        <View style={[styles.settingItem, styles.settingItemLast]}>
-                            <View style={styles.settingLeft}>
-                                <Ionicons name="phone-portrait-outline" size={20} color="#666" />
-                                <Text style={styles.settingText}>震动提醒</Text>
-                            </View>
-                            <Switch
-                                value={vibrationEnabled}
-                                onValueChange={setVibrationEnabled}
-                                trackColor={{ false: "#ddd", true: "#4CAF50" }}
-                            />
-                        </View>
-                    </View>
-                </View>
-
-                {/* 账号安全 */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>账号安全</Text>
-                    <View style={styles.settingCard}>
-                        <TouchableOpacity style={styles.settingItem}>
-                            <View style={styles.settingLeft}>
-                                <Ionicons name="lock-closed-outline" size={20} color="#666" />
-                                <Text style={styles.settingText}>修改密码</Text>
-                            </View>
-                            <Ionicons name="chevron-forward" size={20} color="#999" />
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.settingItem, styles.settingItemLast]}
-                        >
-                            <View style={styles.settingLeft}>
-                                <Ionicons name="shield-checkmark-outline" size={20} color="#666" />
-                                <Text style={styles.settingText}>账号安全</Text>
-                            </View>
-                            <Ionicons name="chevron-forward" size={20} color="#999" />
-                        </TouchableOpacity>
+                        {MENU_ITEMS.map((item, index) => (
+                            <TouchableOpacity
+                                key={item.route}
+                                style={[
+                                    styles.settingItem,
+                                    index === MENU_ITEMS.length - 1 &&
+                                        styles.settingItemLast,
+                                ]}
+                                onPress={() => router.push(item.route as never)}
+                            >
+                                <View style={styles.settingLeft}>
+                                    <Ionicons
+                                        name={item.icon}
+                                        size={20}
+                                        color="#666"
+                                    />
+                                    <Text style={styles.settingText}>
+                                        {item.title}
+                                    </Text>
+                                </View>
+                                <Ionicons
+                                    name="chevron-forward"
+                                    size={20}
+                                    color="#999"
+                                />
+                            </TouchableOpacity>
+                        ))}
                     </View>
                 </View>
 
@@ -155,14 +210,38 @@ export default function SettingsScreen() {
                     <View style={styles.settingCard}>
                         <TouchableOpacity
                             style={styles.settingItem}
+                            onPress={() =>
+                                router.push("/profile/account-cancellation" as never)
+                            }
+                        >
+                            <View style={styles.settingLeft}>
+                                <Ionicons
+                                    name="person-remove-outline"
+                                    size={20}
+                                    color="#666"
+                                />
+                                <Text style={styles.settingText}>注销账号</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={20} color="#999" />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.settingItem}
                             onPress={handleClearCache}
+                            disabled={isClearingCache}
                         >
                             <View style={styles.settingLeft}>
                                 <Ionicons name="trash-outline" size={20} color="#666" />
                                 <Text style={styles.settingText}>清除缓存</Text>
                             </View>
                             <View style={styles.settingRight}>
-                                <Text style={styles.cacheSize}>12.5 MB</Text>
+                                {isClearingCache ? (
+                                    <ActivityIndicator size="small" color="#666" />
+                                ) : (
+                                    <Text style={styles.cacheSize}>
+                                        {formatCacheSize(cacheSizeBytes)}
+                                    </Text>
+                                )}
                                 <Ionicons name="chevron-forward" size={20} color="#999" />
                             </View>
                         </TouchableOpacity>

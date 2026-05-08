@@ -10,6 +10,7 @@ import * as Notifications from "expo-notifications";
 import * as React from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { AppKeyboardAvoidingView } from "@repo/mobile-ui/components/app/AppKeyboardAvoidingView";
 import { Provider } from "@repo/mobile-ui/components/provider";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { ensureWeChatAppRegistered } from "@repo/lib/pay";
@@ -181,8 +182,10 @@ export default function RootLayout() {
                         <StatusBar
                             style={colorScheme === "dark" ? "light" : "dark"}
                         />
-                        <RootNavigation />
-                        <PortalHost />
+                        <AppKeyboardAvoidingView>
+                            <RootNavigation />
+                            <PortalHost />
+                        </AppKeyboardAvoidingView>
                     </ThemeProvider>
                 </AppUpdateProvider>
             </Provider>
@@ -318,6 +321,20 @@ function RootNavigation() {
                         name="profile/settings"
                         options={{
                             title: "系统设置",
+                            headerShown: false,
+                        }}
+                    />
+                    <Stack.Screen
+                        name="profile/account-cancellation"
+                        options={{
+                            title: "注销账号",
+                            headerShown: false,
+                        }}
+                    />
+                    <Stack.Screen
+                        name="profile/emergency-contact"
+                        options={{
+                            title: "紧急联系人",
                             headerShown: false,
                         }}
                     />

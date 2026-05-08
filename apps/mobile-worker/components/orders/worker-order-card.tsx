@@ -130,7 +130,7 @@ export function WorkerOrderCard({ order }: { order: StaffOrder }) {
     const router = useRouter();
     const hideOrderForStaff = useHideOrderForStaff();
     const meta =
-        ORDER_STATUS_DISPLAY[order.status] ?? ORDER_STATUS_DISPLAY.cancelled;
+        ORDER_STATUS_DISPLAY[order.status];
     const orderTime = formatFriendlyTime(order.createdAt);
     const appointment = formatFriendlyAppointmentTime(order.appointmentTime);
     const price = formatCurrency(order.totalAmount);
@@ -269,6 +269,11 @@ export function WorkerOrderCard({ order }: { order: StaffOrder }) {
                                 ? { blurhash: serviceIconBlurhash }
                                 : undefined
                         }
+                        style={{
+                            width: 42,
+                            height: 42,
+                            borderRadius: 12,
+                        }}
                         contentFit="cover"
                     />
                 ) : (

@@ -56,11 +56,12 @@ export function ChatMessageRow(props: {
 
 function ChatImageMessage(props: { message: ChatMessage }) {
     const content = props.message.content;
+    const { data } = useFile(content.type === "image" ? content.fileId : "");
+    const uri = data?.fileUrl;
+
     if (content.type !== "image") {
         return null;
     }
-    const { data } = useFile(content.fileId);
-    const uri = data?.fileUrl;
 
     return (
         <View className="rounded-lg border border-border bg-card px-2 py-2">
@@ -86,11 +87,12 @@ function ChatImageMessage(props: { message: ChatMessage }) {
 
 function ChatVideoMessage(props: { message: ChatMessage }) {
     const content = props.message.content;
+    const { data } = useFile(content.type === "video" ? content.fileId : "");
+    const uri = data?.fileUrl;
+
     if (content.type !== "video") {
         return null;
     }
-    const { data } = useFile(content.fileId);
-    const uri = data?.fileUrl;
 
     return (
         <Pressable

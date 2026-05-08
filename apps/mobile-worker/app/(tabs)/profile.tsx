@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
@@ -24,28 +24,8 @@ import {
     useServicePersonnelDashboardStats,
 } from "@repo/hooks/api/service-personnel";
 import { signOutWithCleanup } from "../../lib/auth";
-
-type MenuItem = {
-    icon: keyof typeof Ionicons.glyphMap;
-    title: string;
-    route: string;
-};
-
-const MENU_ITEMS: MenuItem[] = [
-    { icon: "person-outline", title: "个人信息", route: "/profile/edit" },
-    {
-        icon: "construct-outline",
-        title: "服务发布",
-        route: "/profile/service-settings-redesign",
-    },
-    { icon: "card-outline", title: "实名认证", route: "/verification/id-card" },
-    {
-        icon: "wallet-outline",
-        title: "账号绑定",
-        route: "/profile/account-binding",
-    },
-    // { icon: "settings-outline", title: "设置", route: "/profile/settings" },
-];
+import { Icon } from "@repo/mobile-ui/components/ui/icon";
+import { Settings } from "lucide-react-native";
 
 const maskPhone = (value: string) => {
     if (!value) {
@@ -116,8 +96,10 @@ function ProfileContent() {
             ]),
     });
 
-    const workerMeta =
-        (session?.user?.metadata as Record<string, any> | undefined) ?? {};
+    const workerMeta = useMemo(
+        () => (session?.user?.metadata as Record<string, any> | undefined) ?? {},
+        [session?.user?.metadata]
+    );
     const displayName = personnelProfile?.name ?? "未命名服务者";
     const rawPhone =
         workerMeta.phone ??
@@ -175,7 +157,10 @@ function ProfileContent() {
         };
     }, [dashboardStats, workerMeta]);
 
-    const services = personnelProfile?.services ?? [];
+    const services = useMemo(
+        () => personnelProfile?.services ?? [],
+        [personnelProfile?.services]
+    );
 
     const aggregatedServices = useMemo(() => {
         return services.map((service) => {
@@ -287,7 +272,7 @@ function ProfileContent() {
                         }
                         refetchSession();
                         router.replace("/(tabs)");
-                    } catch (err) {
+                    } catch {
                         Alert.alert("错误", "退出登录失败，请重试");
                     }
                 },
@@ -311,10 +296,26 @@ function ProfileContent() {
 
     return (
         <View style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>个人中心</Text>
-                <Text style={styles.subtitle}>
-                    查看资料、认证状态与账号安全
+                <View style={styles.header}>
+                    <View style={styles.headerTopRow}>
+                        <Text style={styles.title}>个人中心</Text>
+                        <TouchableOpacity
+                            style={styles.settingsButton}
+                            accessibilityRole="button"
+                            accessibilityLabel="打开设置"
+                            onPress={() =>
+                                router.push("/profile/settings" as never)
+                            }
+                        >
+                            <Icon
+                                as={Settings}
+                                className="text-black"
+                                size={25}
+                            />
+                        </TouchableOpacity>
+                    </View>
+                    <Text style={styles.subtitle}>
+                        查看资料、认证状态与账号安全
                 </Text>
             </View>
 
@@ -576,36 +577,6 @@ function ProfileContent() {
                     </View>
                 )}
 
-                <View style={styles.menuSection}>
-                    {MENU_ITEMS.map((item, index) => (
-                        <TouchableOpacity
-                            key={item.route}
-                            style={[
-                                styles.menuItem,
-                                index === MENU_ITEMS.length - 1 &&
-                                styles.menuItemLast,
-                            ]}
-                            onPress={() => router.push(item.route as never)}
-                        >
-                            <View style={styles.menuLeft}>
-                                <Ionicons
-                                    name={item.icon}
-                                    size={24}
-                                    color="#333"
-                                />
-                                <Text style={styles.menuTitle}>
-                                    {item.title}
-                                </Text>
-                            </View>
-                            <Ionicons
-                                name="chevron-forward"
-                                size={20}
-                                color="#999"
-                            />
-                        </TouchableOpacity>
-                    ))}
-                </View>
-
                 <TouchableOpacity
                     style={styles.logoutButton}
                     onPress={handleLogout}
@@ -632,6 +603,18 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         borderBottomWidth: 1,
         borderBottomColor: "#eee",
+    },
+    headerTopRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+    },
+    settingsButton: {
+        width: 40,
+        height: 40,
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: 20,
     },
     title: {
         fontSize: 24,
@@ -738,38 +721,6 @@ const styles = StyleSheet.create({
     statDivider: {
         width: 1,
         backgroundColor: "#eee",
-    },
-    menuSection: {
-        backgroundColor: "white",
-        marginHorizontal: 16,
-        marginBottom: 16,
-        borderRadius: 12,
-        overflow: "hidden",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 6,
-        elevation: 3,
-    },
-    menuItem: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: "#eee",
-    },
-    menuItemLast: {
-        borderBottomWidth: 0,
-    },
-    menuLeft: {
-        flexDirection: "row",
-        alignItems: "center",
-    },
-    menuTitle: {
-        fontSize: 16,
-        color: "#333",
-        marginLeft: 12,
     },
     logoutButton: {
         backgroundColor: "white",

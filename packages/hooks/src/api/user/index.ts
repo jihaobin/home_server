@@ -45,15 +45,22 @@ interface VerifyRealNamePayload {
 	name: string;
 	idCard: string;
 	userId: string;
+	faceImageFileId?: string | null;
 }
 
 export const useVerifyAndSaveRealName = () => {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: async ({ name, idCard, userId }: VerifyRealNamePayload) => {
+		mutationFn: async ({
+			name,
+			idCard,
+			userId,
+			faceImageFileId,
+		}: VerifyRealNamePayload) => {
 			const normalizedName = name.trim();
 			const normalizedIdCard = idCard.trim().toUpperCase();
+			const normalizedFaceImageFileId = faceImageFileId?.trim() || undefined;
 
 			const verificationResponse = await apiClient.get(
 				"/userAuthRealName/realNameAuth",
@@ -61,6 +68,9 @@ export const useVerifyAndSaveRealName = () => {
 					query: {
 						name: normalizedName,
 						idcard: normalizedIdCard,
+						...(normalizedFaceImageFileId
+							? { faceImageFileId: normalizedFaceImageFileId }
+							: {}),
 					},
 					schema: userAuthRealNameDataSchema,
 				},
@@ -72,26 +82,6 @@ export const useVerifyAndSaveRealName = () => {
 					ErrorCode.BUSINESS_ERROR,
 					verificationResult?.description ?? "实名认证未通过，请检查身份信息",
 				);
-			}
-
-			const payload = {
-				realName: normalizedName,
-				idCardNumber: normalizedIdCard,
-			};
-
-			try {
-				await apiClient.post("/userAuthRealName", payload);
-			} catch (error) {
-				if (
-					isApiClientError(error) &&
-					(error.code === ErrorCode.BAD_REQUEST ||
-						error.code === ErrorCode.RESOURCE_EXISTS ||
-						error.code === ErrorCode.CONFLICT)
-				) {
-					await apiClient.post(`/userAuthRealName/${userId}`, payload);
-				} else {
-					throw error;
-				}
 			}
 
 			await queryClient.invalidateQueries({

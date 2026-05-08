@@ -1,6 +1,9 @@
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 import {
+    Keyboard,
     Modal,
+    Platform,
     Pressable,
     StyleSheet,
     useWindowDimensions,
@@ -18,8 +21,10 @@ import Animated, {
     SlideOutDown,
     useAnimatedStyle,
     useSharedValue,
+    withTiming,
     withSpring,
 } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export interface BottomSheetModalProps {
     visible: boolean;
@@ -71,9 +76,11 @@ export function BottomSheetModal({
     sheetClassName,
 }: BottomSheetModalProps) {
     const { height } = useWindowDimensions();
+    const insets = useSafeAreaInsets();
 
     const context = useSharedValue({ y: 0 });
     const modalHeight = useSharedValue(height * initialHeightRatio);
+    const keyboardOffset = useSharedValue(0);
 
     // 拖动手势
     const panGesture = Gesture.Pan()
@@ -127,13 +134,50 @@ export function BottomSheetModal({
     const animatedModalStyle = useAnimatedStyle(() => {
         return {
             height: modalHeight.value,
+            marginBottom: keyboardOffset.value,
         };
     });
 
     // 当 modal 关闭或打开时重置高度
     const handleModalOpen = () => {
         modalHeight.value = height * initialHeightRatio;
+        keyboardOffset.value = 0;
     };
+
+    useEffect(() => {
+        if (!visible) {
+            keyboardOffset.value = 0;
+            return;
+        }
+
+        keyboardOffset.value = 0;
+
+        const showEvent =
+            Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+        const hideEvent =
+            Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+        const showSubscription = Keyboard.addListener(showEvent, (event) => {
+            const nextOffset = Math.max(
+                0,
+                event.endCoordinates.height - insets.bottom,
+            );
+            keyboardOffset.value = withTiming(nextOffset, {
+                duration: event.duration ?? 250,
+            });
+        });
+
+        const hideSubscription = Keyboard.addListener(hideEvent, (event) => {
+            keyboardOffset.value = withTiming(0, {
+                duration: event.duration ?? 250,
+            });
+        });
+
+        return () => {
+            showSubscription.remove();
+            hideSubscription.remove();
+        };
+    }, [insets.bottom, keyboardOffset, visible]);
 
     return (
         <Modal

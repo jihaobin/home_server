@@ -8,6 +8,7 @@ import { useColorScheme } from "nativewind";
 import * as React from "react";
 import { Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { AppKeyboardAvoidingView } from "@repo/mobile-ui/components/app/AppKeyboardAvoidingView";
 import { Provider } from "@repo/mobile-ui/components/provider";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { AppUpdateProvider } from "@repo/mobile-ui/app-update/AppUpdateProvider";
@@ -55,8 +56,10 @@ export default function RootLayout() {
                         <StatusBar
                             style={colorScheme === "dark" ? "light" : "dark"}
                         />
-                        <RootNavigation />
-                        <PortalHost />
+                        <AppKeyboardAvoidingView>
+                            <RootNavigation />
+                            <PortalHost />
+                        </AppKeyboardAvoidingView>
                     </ThemeProvider>
                 </AppUpdateProvider>
             </Provider>

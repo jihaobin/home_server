@@ -5,6 +5,7 @@ import { useServicePersonnelProfile } from "@repo/hooks/api/service-personnel";
 import { useUpdateServiceOfferings } from "@repo/hooks/api/work-skill";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import { apiClient } from "@repo/lib/http-client";
+import { KeyboardAwareScrollView } from "@repo/mobile-ui/components/app/KeyboardAwareScrollView";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { Image } from "@repo/mobile-ui/components/ui/image";
 import { Input } from "@repo/mobile-ui/components/ui/input";
@@ -25,8 +26,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
-    KeyboardAvoidingView,
-    Platform,
     Pressable,
     RefreshControl,
     ScrollView,
@@ -34,6 +33,8 @@ import {
     View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Icon } from "@repo/mobile-ui/components/ui/icon";
+import { ChevronLeft } from "lucide-react-native";
 
 type EditableSpecification = {
     id?: string;
@@ -660,8 +661,8 @@ export default function ServiceSettingsDetailRedesignScreen() {
     return (
         <SafeAreaView className="flex-1 bg-[#F5F6F8]" edges={["top", "bottom"]}>
             <View className="flex-row items-center px-5 pb-4 pt-2">
-                <Pressable hitSlop={10} onPress={() => router.back()}>
-                    <Text className="text-[22px] leading-[33px] text-black">‹</Text>
+                <Pressable hitSlop={16} className="p-2" onPress={() => router.back()}>
+                    <Icon as={ChevronLeft} className="text-[28px] text-black" />
                 </Pressable>
                 <Text className="flex-1 text-center text-[17px] leading-[26px] text-black">
                     编辑服务
@@ -1081,10 +1082,7 @@ function SpecificationEditSheet(props: {
             backdropClassName="bg-black/40"
             sheetClassName="rounded-t-[28px] bg-white"
         >
-            <KeyboardAvoidingView
-                className="flex-1"
-                behavior={Platform.OS === "ios" ? "padding" : undefined}
-            >
+            <View className="flex-1">
                 <View className="flex-row items-center justify-between px-4 pb-3">
                     <Pressable hitSlop={10} onPress={props.onClose}>
                         <Text className="text-sm leading-5 text-[#6A7282]">取消</Text>
@@ -1102,11 +1100,10 @@ function SpecificationEditSheet(props: {
                     </Pressable>
                 </View>
 
-                <ScrollView
+                <KeyboardAwareScrollView
                     className="flex-1"
                     contentContainerClassName="gap-3 px-4 pb-6"
                     showsVerticalScrollIndicator={false}
-                    keyboardShouldPersistTaps="handled"
                     nestedScrollEnabled
                 >
                     <View className="gap-2">
@@ -1331,8 +1328,8 @@ function SpecificationEditSheet(props: {
                             )}
                         />
                     </Pressable>
-                </ScrollView>
-            </KeyboardAvoidingView>
+                </KeyboardAwareScrollView>
+            </View>
         </BottomSheetModal>
     );
 }
