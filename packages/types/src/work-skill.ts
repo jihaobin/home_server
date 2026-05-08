@@ -61,14 +61,34 @@ export const UpdateServicePersonnelProfileRequestSchema = z
             .max(255, "头像文件标识过长")
             .nullable()
             .optional(),
+        emergencyContactPhone: z
+            .string()
+            .trim()
+            .regex(/^1[3-9]\d{9}$/, "请输入正确的紧急联系人手机号")
+            .nullable()
+            .optional(),
+        emergencyContactName: z
+            .string()
+            .trim()
+            .min(1, "紧急联系人姓名不能为空")
+            .max(50, "紧急联系人姓名最多 50 个字符")
+            .nullable()
+            .optional(),
     })
-    .refine((data) => data.name !== undefined || data.avatar !== undefined, {
-        message: "至少需要更新名称或头像",
+    .refine(
+        (data) =>
+            data.name !== undefined ||
+            data.avatar !== undefined ||
+            data.emergencyContactPhone !== undefined ||
+            data.emergencyContactName !== undefined,
+        {
+        message: "至少需要更新名称、头像或紧急联系人信息",
         path: ["name"],
-    })
+        },
+    )
     .meta({
         title: "更新服务人员基础资料",
-        description: "更新服务人员的名称与头像（头像存 hash）",
+        description: "更新服务人员的名称、头像与紧急联系人信息（头像存 hash）",
     });
 
 // 更新工作人员技能请求 Schema
@@ -540,6 +560,8 @@ export const ServicePersonnelProfileSchema = z
         lastActiveAt: z.date(),
         maskedPhoneNumber: z.string().nullable(),
         maskedIdCardNumber: z.string().nullable(),
+        emergencyContactPhone: z.string().nullable(),
+        emergencyContactName: z.string().nullable(),
         avatar: FileAccessInfoSchema.nullable(),
         services: z.array(ServicePersonnelOfferingSchema),
         merchantQualificationImage: FileAccessInfoSchema.nullable(),

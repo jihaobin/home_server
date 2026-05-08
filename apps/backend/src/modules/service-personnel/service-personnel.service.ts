@@ -456,6 +456,8 @@ export class ServicePersonnelService {
             maskedPhoneNumber: this.maskPhoneNumber(userInfo.phoneNumber),
             maskedIdCardNumber:
                 maskIdCardNumber(userInfo.idCardNumber ?? null) ?? null,
+            emergencyContactPhone: personnel.emergencyContactPhone ?? null,
+            emergencyContactName: personnel.emergencyContactName ?? null,
             avatar,
             services,
             merchantQualificationImage,
@@ -470,7 +472,10 @@ export class ServicePersonnelService {
     ) {
         if (
             !payload ||
-            (payload.name === undefined && payload.avatar === undefined)
+            (payload.name === undefined &&
+                payload.avatar === undefined &&
+                payload.emergencyContactPhone === undefined &&
+                payload.emergencyContactName === undefined)
         ) {
             throw new BadRequestException('请提供需要更新的字段');
         }

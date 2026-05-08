@@ -152,6 +152,8 @@ describe('ServicePersonnelService.getPersonnelProfile', () => {
             lastActiveAt: new Date('2026-04-22T08:00:00.000Z'),
             merchantQualificationFileId: 'file_merchant',
             vocationalQualificationFileId: 'file_vocational',
+            emergencyContactPhone: '13912345678',
+            emergencyContactName: '王女士',
             skills: [
                 {
                     id: 'svc_massage_1',
@@ -212,6 +214,8 @@ describe('ServicePersonnelService.getPersonnelProfile', () => {
         expect(result.vocationalQualificationImage?.url).toBe(
             'https://example.com/vocational.jpg',
         );
+        expect(result.emergencyContactPhone).toBe('13912345678');
+        expect(result.emergencyContactName).toBe('王女士');
         expect(result.services[0]).toMatchObject({
             categoryId: 'wgla64hwo7zr9iz',
             categoryName: '上门按摩',

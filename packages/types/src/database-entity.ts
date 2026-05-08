@@ -1091,6 +1091,14 @@ export const ServicePersonnelSchema = z
             description: "从业资格证书文件 ID",
             title: "从业资格证书文件 ID",
         }),
+        emergencyContactPhone: z.string().max(20).optional().nullable().meta({
+            description: "紧急联系人手机号",
+            title: "紧急联系人手机号",
+        }),
+        emergencyContactName: z.string().max(50).optional().nullable().meta({
+            description: "紧急联系人姓名",
+            title: "紧急联系人姓名",
+        }),
         // MVP阶段注释店铺关联字段
         // shopId: z.string().max(255).optional().meta({
         //     description: "服务人员所属店铺ID",

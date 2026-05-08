@@ -985,8 +985,6 @@ export class PayService {
             throw new BadRequestException('支付宝授权返回异常，请稍后重试');
         }
 
-        console.log(parsed);
-
         if (!parsed.userId && !parsed.openId) {
             throw new BadRequestException(
                 '未能获取到支付宝用户标识，请重新授权',

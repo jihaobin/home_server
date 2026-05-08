@@ -1,6 +1,24 @@
 import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { AlipaySdk } from 'alipay-sdk';
+import type { AlipaySdkConfig } from 'alipay-sdk/dist/commonjs/types';
+
+function readOptionalEnv(name: string) {
+    const value = process.env[name]?.trim();
+    return value ? value : undefined;
+}
+
+function getAlipayEncryptConfig(scope: 'default' | 'worker') {
+    const encryptKey =
+        scope === 'worker'
+            ? readOptionalEnv('ALIPAY_WORKER_ENCRYPT_KEY') ||
+              readOptionalEnv('ALIPAY_ENCRYPT_KEY')
+            : readOptionalEnv('ALIPAY_ENCRYPT_KEY');
+
+    return encryptKey
+        ? ({ encryptKey } satisfies Pick<AlipaySdkConfig, 'encryptKey'>)
+        : {};
+}
 
 export function createAliPaySdk() {
     if (!process.env.ALIPAY_APP_ID) throw new Error('没有设置appId');
@@ -26,6 +44,7 @@ export function createAliPaySdk() {
 
             endpoint: 'https://openapi-sandbox.dl.alipaydev.com/gateway.do',
             gateway: 'https://openapi-sandbox.dl.alipaydev.com/gateway.do',
+            ...getAlipayEncryptConfig('default'),
         });
     } else {
         // 在生产环境中，证书文件会被复制到 dist/alipay_certificate 目录
@@ -52,6 +71,7 @@ export function createAliPaySdk() {
             // 密钥类型，请与生成的密钥格式保持一致，参考平台配置一节
             // 设置网关地址，默认是 https://openapi.alipay.com
             endpoint: 'https://openapi.alipay.com',
+            ...getAlipayEncryptConfig('default'),
         });
     }
 }
@@ -84,6 +104,7 @@ export function createWorkerAliPaySdk() {
             alipayPublicKey: workerPublicKey,
             endpoint: 'https://openapi-sandbox.dl.alipaydev.com/gateway.do',
             gateway: 'https://openapi-sandbox.dl.alipaydev.com/gateway.do',
+            ...getAlipayEncryptConfig('worker'),
         });
     }
 
@@ -108,5 +129,6 @@ export function createWorkerAliPaySdk() {
         // 密钥类型，请与生成的密钥格式保持一致，参考平台配置一节
         // 设置网关地址，默认是 https://openapi.alipay.com
         endpoint: 'https://openapi.alipay.com',
+        ...getAlipayEncryptConfig('worker'),
     });
 }

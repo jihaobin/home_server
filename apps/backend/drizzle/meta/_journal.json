@@ -505,6 +505,13 @@
       "when": 1777946332556,
       "tag": "0071_sticky_psylocke",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1778135935089,
+      "tag": "0072_familiar_agent_zero",
+      "breakpoints": true
     }
   ]
 }

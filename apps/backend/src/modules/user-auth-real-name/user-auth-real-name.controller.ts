@@ -93,7 +93,8 @@ export class UserAuthRealNameController {
         description: '成功获取实名信息',
     })
     async realNameAuth(
-        @Query() query: { name: string; idcard: string },
+        @Query()
+        query: { name: string; idcard: string; faceImageFileId?: string },
         @Req() req: Request,
     ) {
         const response = await this.userAuthRealNameService.authRealName({

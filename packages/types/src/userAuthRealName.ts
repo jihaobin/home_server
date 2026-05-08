@@ -7,13 +7,18 @@ import { UserProfilesSchema } from "./database-entity";
 export const userAuthRealNameDataSchema = z.object({
     name: z.string().describe("姓名"),
     idcard: z.string().describe("身份证号"),
-    birthday: z.string().describe("出生日期"),
-    res: z.union([z.string(), z.number()]).describe("是否一致 1为一致，2为不一致，3无记录").transform((val) => {
-        return Number(val) === 1
+    birthday: z.string().describe("出生日期").optional(),
+    res: z.union([z.string(), z.number(), z.boolean()]).describe("是否一致").transform((val) => {
+        return val === true || Number(val) === 1
     }),
-    address: z.string().describe("地址"),
-    sex: z.string().describe("性别"),
+    passed: z.boolean().optional().describe("是否认证通过"),
+    address: z.string().describe("地址").optional(),
+    sex: z.string().describe("性别").optional(),
     description: z.string().describe("核验结果状态描述"),
+    certifyNo: z.string().nullable().optional().describe("支付宝核验流水号"),
+    score: z.string().nullable().optional().describe("人脸比对分"),
+    quality: z.string().nullable().optional().describe("图像质量"),
+    mismatchReason: z.string().nullable().optional().describe("未通过原因"),
 }).optional()
 
 /**
@@ -30,7 +35,8 @@ export const userAuthRealNameApiSchema = z.object({
 export const userAuthRealNameApiRequestSchema = z.object({
     // 请求参数
     name: z.string().describe("姓名"),
-    idcard: z.string().describe("身份证号")
+    idcard: z.string().describe("身份证号"),
+    faceImageFileId: z.string().trim().max(255).optional().describe("人脸照片文件 ID"),
 })
 
 export type UserAuthRealNameApiRequest = z.infer<typeof userAuthRealNameApiRequestSchema>;

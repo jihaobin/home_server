@@ -102,6 +102,12 @@ export const servicePersonnel = pgTable(
         vocationalQualificationFileId: varchar('vocational_qualification_file_id', {
             length: 255,
         }),
+        emergencyContactPhone: varchar('emergency_contact_phone', {
+            length: 20,
+        }),
+        emergencyContactName: varchar('emergency_contact_name', {
+            length: 50,
+        }),
         // MVP阶段注释店铺关联字段
         // shopId: varchar('shop_id', { length: 255 }).references(() => shops.id, {
         //     onDelete: 'set null',

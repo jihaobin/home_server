@@ -8,6 +8,7 @@ import {
 import * as crypto from 'crypto';
 import { desc, eq, sql } from 'drizzle-orm';
 import * as path from 'path';
+import { Readable } from 'stream';
 import type { IAdvancedCacheService } from 'src/common/cache/interfaces/cache-service.interface';
 import { CACHE_SERVICE } from 'src/common/cache/providers/cache.provider';
 import { DB } from 'src/common/database/database.provider';
@@ -439,6 +440,60 @@ export class FilesService {
         ]);
 
         return fileRecords[0];
+    }
+
+    async getFileObjectBufferByIdentifier(fileIdentifier: string): Promise<{
+        buffer: Buffer;
+        mimeType: string;
+        fileSize: number;
+    }> {
+        let fileRecord: typeof files.$inferSelect;
+        try {
+            fileRecord = await this.getFileByHash(fileIdentifier);
+        } catch {
+            fileRecord = await this.getFileById(fileIdentifier);
+        }
+
+        const object = await this.minioService.getObject(
+            fileRecord.bucketName,
+            fileRecord.objectPath,
+        );
+        await this.incrementAccessCount(fileRecord.id);
+
+        return {
+            buffer: await this.streamToBuffer(object),
+            mimeType: fileRecord.mimeType,
+            fileSize: fileRecord.fileSize,
+        };
+    }
+
+    private async streamToBuffer(value: unknown): Promise<Buffer> {
+        if (Buffer.isBuffer(value)) {
+            return value;
+        }
+
+        if (value instanceof Uint8Array) {
+            return Buffer.from(value);
+        }
+
+        if (
+            value &&
+            typeof value === 'object' &&
+            'transformToByteArray' in value &&
+            typeof (value as { transformToByteArray: unknown })
+                .transformToByteArray === 'function'
+        ) {
+            const bytes = await (
+                value as { transformToByteArray: () => Promise<Uint8Array> }
+            ).transformToByteArray();
+            return Buffer.from(bytes);
+        }
+
+        const chunks: Buffer[] = [];
+        for await (const chunk of value as Readable) {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+        return Buffer.concat(chunks);
     }
 
     /**

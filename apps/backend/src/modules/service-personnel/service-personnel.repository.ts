@@ -580,6 +580,22 @@ export class ServicePersonnelRepository {
             updates.avatar = normalizedAvatar ? normalizedAvatar : null;
         }
 
+        if (payload.emergencyContactPhone !== undefined) {
+            const normalizedPhone =
+                typeof payload.emergencyContactPhone === 'string'
+                    ? payload.emergencyContactPhone.trim()
+                    : payload.emergencyContactPhone;
+            updates.emergencyContactPhone = normalizedPhone || null;
+        }
+
+        if (payload.emergencyContactName !== undefined) {
+            const normalizedName =
+                typeof payload.emergencyContactName === 'string'
+                    ? payload.emergencyContactName.trim()
+                    : payload.emergencyContactName;
+            updates.emergencyContactName = normalizedName || null;
+        }
+
         if (Object.keys(updates).length === 0) {
             return null;
         }
