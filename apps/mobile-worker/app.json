@@ -89,6 +89,13 @@
                 }
             ],
             [
+                "../../packages/mobile-ui/plugins/withJVerification",
+                {
+                    "appKey": "REPLACE_WITH_JVERIFICATION_MOBILE_WORKER_APP_KEY",
+                    "channel": "default"
+                }
+            ],
+            [
                 "expo-image-picker",
                 {
                     "photosPermission": "允许 $(PRODUCT_NAME) 访问您的相册以选择照片"
@@ -124,6 +131,13 @@
         ],
         "experiments": {
             "typedRoutes": true
+        },
+        "extra": {
+            "jverification": {
+                "appKey": "REPLACE_WITH_JVERIFICATION_MOBILE_WORKER_APP_KEY",
+                "channel": "default",
+                "isProduction": false
+            }
         }
     }
 }

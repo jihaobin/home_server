@@ -2,6 +2,8 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { genericOAuth, phoneNumber, openAPI } from 'better-auth/plugins';
 import { APIError } from 'better-call';
+import { setSessionCookie } from 'better-auth/cookies';
+import { createAuthEndpoint } from '@better-auth/core/api';
 import db, { type DbType } from './src/common/database/db';
 
 import * as schema from 'src/common/database/schema';
@@ -11,6 +13,12 @@ import { eq, sql } from 'drizzle-orm';
 import { SmsService } from 'src/common/sms/sms.service';
 import { normalizeUserRoles } from 'src/modules/auth/rbac.utils';
 import type { UserRole } from '@repo/types';
+import type { Session, User } from 'better-auth';
+import * as z from 'zod';
+import {
+    JVerificationLoginError,
+    loginWithJVerification,
+} from 'src/modules/auth/jverification-login';
 
 const envTrustedOrigins = process.env.TRUSTED_ORIGINS
     ? process.env.TRUSTED_ORIGINS.split(',').map((origin) => origin.trim())
@@ -27,11 +35,62 @@ const isHttps =
 const DEFAULT_WORK_DAYS = '1234567';
 const WORKER_ORIGIN_PREFIX = 'mobileworker://';
 
+const jverificationLoginBodySchema = z.object({
+    loginToken: z.string().min(1),
+    app: z.enum(['mobile-user', 'mobile-worker']),
+    platform: z.enum(['android', 'ios']),
+    exId: z.string().min(1).max(128).optional(),
+});
+
 function isWorkerOrigin(origin?: string | null) {
     if (!origin) {
         return false;
     }
     return origin.startsWith(WORKER_ORIGIN_PREFIX);
+}
+
+function createJVerificationEndpoint() {
+    return createAuthEndpoint(
+        '/jverification/login',
+        {
+            method: 'POST',
+            body: jverificationLoginBodySchema,
+        },
+        async (ctx) => {
+            try {
+                const { session, user } = await loginWithJVerification(
+                    ctx.body,
+                    ctx.context.internalAdapter,
+                );
+                await setSessionCookie(ctx, {
+                    session: session as Session,
+                    user: user as User,
+                });
+
+                return ctx.json({
+                    status: true,
+                    token: session.token,
+                    user: {
+                        id: user.id,
+                        email: user.email,
+                        emailVerified: user.emailVerified,
+                        name: user.name,
+                        image: user.image,
+                        phoneNumber: user.phoneNumber,
+                        phoneNumberVerified: user.phoneNumberVerified,
+                        createdAt: user.createdAt,
+                        updatedAt: user.updatedAt,
+                        role: user.role,
+                    },
+                });
+            } catch (error) {
+                if (error instanceof JVerificationLoginError) {
+                    throw new APIError(error.status, { message: error.message });
+                }
+                throw error;
+            }
+        },
+    );
 }
 
 function getTimestamp(value: unknown): number | null {
@@ -560,6 +619,12 @@ export function createAuth(
             }),
             expo(),
             openAPI(),
+            {
+                id: 'jverification',
+                endpoints: {
+                    jverificationLogin: createJVerificationEndpoint(),
+                },
+            },
         ],
         databaseHooks: {
             user: {

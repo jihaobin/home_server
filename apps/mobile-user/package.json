@@ -83,6 +83,8 @@
         "expo-wechat": "file:..\\..\\expo-wechat-0.2.6.tgz",
         "gcoord": "^1.0.7",
         "immer": "^10.1.1",
+        "jcore-react-native": "^2.3.5",
+        "jverification-react-native": "^2.8.7",
         "native-expo-alipay": "^1.0.0",
         "nativewind": "^4.2.1",
         "react": "catalog:react19-1",

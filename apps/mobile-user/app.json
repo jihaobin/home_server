@@ -17,7 +17,9 @@
             "permissions": [
                 "android.permission.ACCESS_COARSE_LOCATION",
                 "android.permission.ACCESS_FINE_LOCATION",
-                "android.permission.REQUEST_INSTALL_PACKAGES"
+                "android.permission.REQUEST_INSTALL_PACKAGES",
+                "android.permission.READ_PHONE_STATE",
+                "android.permission.WRITE_EMBEDDED_SUBSCRIPTIONS"
             ],
             "blockedPermissions": [
                 "android.permission.WRITE_EXTERNAL_STORAGE"
@@ -96,6 +98,13 @@
                 }
             ],
             [
+                "../../packages/mobile-ui/plugins/withJVerification",
+                {
+                    "appKey": "310ada9739aaf74b6744256b",
+                    "channel": "default"
+                }
+            ],
+            [
                 "expo-build-properties",
                 {
                     "android": {
@@ -126,6 +135,11 @@
         },
         "extra": {
             "router": {},
+            "jverification": {
+                "appKey": "310ada9739aaf74b6744256b",
+                "channel": "default",
+                "isProduction": false
+            },
             "eas": {
                 "projectId": "56004597-0fe8-4294-9aad-4566216d42bf"
             }
