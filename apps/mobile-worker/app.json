@@ -48,6 +48,13 @@
             ],
             "expo-router",
             [
+                "../../packages/mobile-ui/plugins/withJVerification",
+                {
+                    "appKey": "c684f3c470a7487d20309ea0",
+                    "channel": "default"
+                }
+            ],
+            [
                 "./plugins/withCleartextTraffic",
                 {
                     "allowInsecureHttp": true
@@ -89,13 +96,6 @@
                 }
             ],
             [
-                "../../packages/mobile-ui/plugins/withJVerification",
-                {
-                    "appKey": "REPLACE_WITH_JVERIFICATION_MOBILE_WORKER_APP_KEY",
-                    "channel": "default"
-                }
-            ],
-            [
                 "expo-image-picker",
                 {
                     "photosPermission": "允许 $(PRODUCT_NAME) 访问您的相册以选择照片"
@@ -134,7 +134,7 @@
         },
         "extra": {
             "jverification": {
-                "appKey": "REPLACE_WITH_JVERIFICATION_MOBILE_WORKER_APP_KEY",
+                "appKey": "c684f3c470a7487d20309ea0",
                 "channel": "default",
                 "isProduction": false
             }

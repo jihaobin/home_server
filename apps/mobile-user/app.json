@@ -100,7 +100,7 @@
             [
                 "../../packages/mobile-ui/plugins/withJVerification",
                 {
-                    "appKey": "310ada9739aaf74b6744256b",
+                    "appKey": "ded53907383b71c3e909ba01",
                     "channel": "default"
                 }
             ],
@@ -136,7 +136,7 @@
         "extra": {
             "router": {},
             "jverification": {
-                "appKey": "310ada9739aaf74b6744256b",
+                "appKey": "ded53907383b71c3e909ba01",
                 "channel": "default",
                 "isProduction": false
             },

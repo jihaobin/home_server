@@ -1,17 +1,15 @@
 import { FontAwesome5 } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import {
-    ArrowLeft,
     ChevronRight,
     ShieldCheck,
     Smartphone,
-    Zap,
 } from "lucide-react-native";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
     BackHandler,
+    GestureResponderEvent,
     KeyboardAvoidingView,
-    Modal,
     Platform,
     Pressable,
     ScrollView,
@@ -32,14 +30,20 @@ import {
     dismissLoginPage,
     loginWithJVerificationOneClick,
 } from "@repo/lib/jverification";
+import { LoginLegalGuideDialog } from "@/components/login-legal-guide-dialog";
+import { LegalWebModal } from "@/components/legal-web-modal";
+import type { LegalDocKey } from "@/lib/legal-documents";
+import { LEGAL_DOCUMENT_CONFIG } from "@/lib/legal-documents";
+import {
+    hasSeenLoginLegalGuide,
+    markLoginLegalGuideSeen,
+} from "@/lib/login-legal-guide";
 import { useFocusEffect, useLocalSearchParams, router } from "expo-router";
 import { toast } from "sonner-native";
-import { authClient, signOutWithCleanup } from "../../lib/auth";
+import { authClient } from "../../lib/auth";
 import { API_BASE_URL } from "../../lib/config";
 
 const PRODUCT_NAME = "叮咚上单";
-const LOGIN_SLOGAN = "高效接单，专业服务";
-const MASKED_LOGIN_PHONE = "190****6306";
 const CODE_LENGTH = 6;
 const SOFT_SHADOW_STYLE = {
     shadowColor: "#111827",
@@ -49,16 +53,12 @@ const SOFT_SHADOW_STYLE = {
     elevation: 3,
 };
 const BUTTON_SHADOW_STYLE = {
-    shadowColor: "#2563eb",
+    shadowColor: "#f7951b",
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.24,
     shadowRadius: 18,
     elevation: 4,
 };
-const UPGRADE_ENDPOINT = new URL(
-    "/api/service-personnel/upgrade",
-    API_BASE_URL,
-).toString();
 const phoneRegex = /^1[3-9]\d{9}$/;
 const jverificationConfig = Constants.expoConfig?.extra?.jverification as
     | {
@@ -78,41 +78,6 @@ const replaceRoute = (href: string) => {
     router.replace(href as any);
 };
 
-const normalizeRoles = (roles?: string | string[]) => {
-    if (!roles) {
-        return [];
-    }
-    if (Array.isArray(roles)) {
-        return roles.filter(Boolean);
-    }
-    return roles
-        .split(",")
-        .map((role) => role.trim())
-        .filter(Boolean);
-};
-
-const parseUpgradeError = async (response: Response) => {
-    const contentType = response.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
-        try {
-            const payload = (await response.json()) as any;
-            return (
-                (payload?.error as any)?.message ||
-                payload?.message ||
-                "申请服务人员权限失败"
-            );
-        } catch {
-            return "申请服务人员权限失败";
-        }
-    }
-    try {
-        const text = await response.text();
-        return text || "申请服务人员权限失败";
-    } catch {
-        return "申请服务人员权限失败";
-    }
-};
-
 export default function WorkerLoginScreen() {
     const { refetch } = useSession();
     const { mode } = useLocalSearchParams<{ mode?: string }>();
@@ -128,17 +93,30 @@ export default function WorkerLoginScreen() {
     const [isOneClickGateActive, setIsOneClickGateActive] = useState(
         () => routeLoginMode === "oneClick",
     );
-    const [isUpgradeModalVisible, setIsUpgradeModalVisible] = useState(false);
-    const [isUpgradeSubmitting, setIsUpgradeSubmitting] = useState(false);
+    const [isLegalGuideOpen, setIsLegalGuideOpen] = useState(
+        () => !hasSeenLoginLegalGuide(),
+    );
+    const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocKey | null>(
+        null,
+    );
     const autoOpenAttemptedRef = useRef(false);
     const shouldReopenOnFocusRef = useRef(false);
     const isSwitchingToOtpRef = useRef(false);
 
+    const normalizedPhone = phone.trim();
+    const normalizedCode = code.trim();
+    const canSendOtp =
+        phoneRegex.test(normalizedPhone) && agreeToTerms && !isSendingOtp;
+    const canOtpLogin =
+        phoneRegex.test(normalizedPhone) &&
+        normalizedCode.length === CODE_LENGTH &&
+        agreeToTerms &&
+        !isVerifyingOtp;
+    const canOneClickLogin = isOneClickAvailable && !isOneClickLoggingIn;
+
     useEffect(() => {
         const handleHardwareBack = () => {
             if (routeLoginMode === "otp") {
-                shouldReopenOnFocusRef.current = true;
-                autoOpenAttemptedRef.current = false;
                 router.back();
                 return true;
             }
@@ -156,17 +134,6 @@ export default function WorkerLoginScreen() {
             hardwareBackSub.remove();
         };
     }, [routeLoginMode]);
-
-    const normalizedPhone = phone.trim();
-    const normalizedCode = code.trim();
-    const canSendOtp =
-        phoneRegex.test(normalizedPhone) && agreeToTerms && !isSendingOtp;
-    const canOtpLogin =
-        phoneRegex.test(normalizedPhone) &&
-        normalizedCode.length === CODE_LENGTH &&
-        agreeToTerms &&
-        !isVerifyingOtp;
-    const canOneClickLogin = isOneClickAvailable && !isOneClickLoggingIn;
 
     useEffect(() => {
         setLoginMode(routeLoginMode);
@@ -209,14 +176,27 @@ export default function WorkerLoginScreen() {
         };
     }, []);
 
-    const refreshAndEnter = useCallback(async () => {
-        try {
-            await refetch();
-        } catch {
-            // ignore session refresh error to avoid blocking navigation
-        }
-        replaceRoute("/(tabs)");
-    }, [refetch]);
+    const toggleAgreeToTerms = useCallback(() => {
+        setAgreeToTerms((prev) => !prev);
+    }, []);
+
+    const handleOpenLegalDoc = useCallback((doc: LegalDocKey) => {
+        setActiveLegalDoc(doc);
+    }, []);
+
+    const handleConfirmLegalGuide = useCallback(() => {
+        markLoginLegalGuideSeen();
+        setIsLegalGuideOpen(false);
+        setAgreeToTerms(true);
+    }, []);
+
+    const handleOpenLegalDocFromPressable = useCallback(
+        (doc: LegalDocKey) => (event: GestureResponderEvent) => {
+            event.stopPropagation();
+            handleOpenLegalDoc(doc);
+        },
+        [handleOpenLegalDoc],
+    );
 
     const switchToOtpLogin = useCallback(() => {
         isSwitchingToOtpRef.current = true;
@@ -283,17 +263,14 @@ export default function WorkerLoginScreen() {
             });
             if (error) {
                 toast.error(translateAuthErrorMessage(error));
-                setCode("");
                 return;
             }
-            const sessionResponse = await authClient.getSession();
-            const sessionUser = sessionResponse.data?.user;
-            const roles = normalizeRoles(sessionUser?.role);
-            if (roles.includes("service_personnel")) {
-                await refreshAndEnter();
-                return;
+            try {
+                await refetch();
+            } catch {
+                // ignore session refresh error to avoid blocking navigation
             }
-            setIsUpgradeModalVisible(true);
+            replaceRoute("/(tabs)");
         } catch (error) {
             toast.error(translateAuthErrorMessage(error));
         } finally {
@@ -315,12 +292,20 @@ export default function WorkerLoginScreen() {
                 appKey: jverificationConfig?.appKey,
                 channel: jverificationConfig?.channel,
                 isProduction: jverificationConfig?.isProduction,
-                authBaseUrl: API_BASE_URL,
+                authBaseUrl:
+                    process.env.EXPO_PUBLIC_AUTH_BASE_URL ||
+                    process.env.EXPO_PUBLIC_API_BASE_URL ||
+                    API_BASE_URL,
                 authClient,
                 pageTitle: PRODUCT_NAME,
                 onSwitchToOtp: switchToOtpLogin,
             });
-            await refreshAndEnter();
+            try {
+                await refetch();
+            } catch {
+                // ignore session refresh error to avoid blocking navigation
+            }
+            replaceRoute("/(tabs)");
         } catch (error) {
             if (
                 error instanceof Error &&
@@ -350,7 +335,7 @@ export default function WorkerLoginScreen() {
         } finally {
             setIsOneClickLoggingIn(false);
         }
-    }, [isOneClickAvailable, refreshAndEnter, routeLoginMode, switchToOtpLogin]);
+    }, [isOneClickAvailable, refetch, routeLoginMode, switchToOtpLogin]);
 
     useFocusEffect(
         useCallback(() => {
@@ -360,7 +345,12 @@ export default function WorkerLoginScreen() {
             ) {
                 shouldReopenOnFocusRef.current = false;
                 autoOpenAttemptedRef.current = false;
-                if (isOneClickAvailable && !isOneClickLoggingIn) {
+                if (
+                    isOneClickAvailable &&
+                    !isOneClickLoggingIn &&
+                    !isLegalGuideOpen &&
+                    !activeLegalDoc
+                ) {
                     void handleOneClickLogin();
                 }
             }
@@ -368,6 +358,8 @@ export default function WorkerLoginScreen() {
             handleOneClickLogin,
             isOneClickAvailable,
             isOneClickLoggingIn,
+            activeLegalDoc,
+            isLegalGuideOpen,
             routeLoginMode,
         ]),
     );
@@ -377,6 +369,8 @@ export default function WorkerLoginScreen() {
             routeLoginMode !== "oneClick" ||
             !isOneClickAvailable ||
             isOneClickLoggingIn ||
+            isLegalGuideOpen ||
+            activeLegalDoc ||
             autoOpenAttemptedRef.current
         ) {
             return;
@@ -385,64 +379,13 @@ export default function WorkerLoginScreen() {
         autoOpenAttemptedRef.current = true;
         void handleOneClickLogin();
     }, [
+        activeLegalDoc,
         handleOneClickLogin,
+        isLegalGuideOpen,
         isOneClickAvailable,
         isOneClickLoggingIn,
         routeLoginMode,
     ]);
-
-    const handleUpgradeDecline = () => {
-        if (isUpgradeSubmitting) {
-            return;
-        }
-        setIsUpgradeModalVisible(false);
-        void signOutWithCleanup().finally(() => {
-            replaceRoute("/auth/login");
-        });
-    };
-
-    const handleUpgradeConfirm = () => {
-        if (isUpgradeSubmitting) {
-            return;
-        }
-        void (async () => {
-            setIsUpgradeSubmitting(true);
-            try {
-                const cookieHeader = authClient
-                    .getCookie?.()
-                    ?.replace(/^\s*;\s*/, "")
-                    .trim();
-                if (!cookieHeader) {
-                    toast.error("登录状态已失效，请重新登录");
-                    setIsUpgradeModalVisible(false);
-                    replaceRoute("/auth/login");
-                    return;
-                }
-                const response = await fetch(UPGRADE_ENDPOINT, {
-                    method: "POST",
-                    headers: {
-                        Cookie: cookieHeader,
-                    },
-                });
-                if (!response.ok) {
-                    toast.error(await parseUpgradeError(response));
-                    return;
-                }
-                try {
-                    await refetch();
-                } catch {
-                    // ignore session refresh error
-                }
-                toast.success("已申请服务人员权限");
-                setIsUpgradeModalVisible(false);
-                replaceRoute("/(tabs)");
-            } catch (error) {
-                toast.error(translateAuthErrorMessage(error));
-            } finally {
-                setIsUpgradeSubmitting(false);
-            }
-        })();
-    };
 
     const renderBrandMark = () => (
         <View className="h-44 w-44 items-center justify-center">
@@ -465,32 +408,42 @@ export default function WorkerLoginScreen() {
     );
 
     const renderAgreement = () => (
-        <View className="flex-row items-start justify-center px-1">
+        <View className="flex-row items-start justify-center px-2 py-1">
             <Checkbox
                 checked={agreeToTerms}
                 onCheckedChange={(checked) => setAgreeToTerms(Boolean(checked))}
-                className="mt-0.5 size-4 rounded-full border border-border bg-card"
+                className="mt-1 size-5 rounded-full border border-border bg-card"
                 checkedClassName="border-primary bg-primary"
                 indicatorClassName="bg-primary"
                 iconClassName="text-primary-foreground"
             />
             <Pressable
-                className="ml-2 flex-row flex-wrap items-center"
-                onPress={() => setAgreeToTerms((prev) => !prev)}
-                hitSlop={8}
+                className="ml-3 flex-row flex-wrap items-center"
+                onPress={toggleAgreeToTerms}
+                hitSlop={10}
             >
-                <Text className="text-xs leading-5 text-muted-foreground">
+                <Text className="text-sm leading-6 text-muted-foreground">
                     我已阅读并同意
                 </Text>
-                <Text className="text-xs leading-5 text-primary">
-                    《用户协议》
-                </Text>
-                <Text className="text-xs leading-5 text-muted-foreground">
+                <Pressable
+                    onPress={handleOpenLegalDocFromPressable("terms")}
+                    hitSlop={8}
+                >
+                    <Text className="text-sm leading-6 text-primary">
+                        《用户协议》
+                    </Text>
+                </Pressable>
+                <Text className="text-sm leading-6 text-muted-foreground">
                     和
                 </Text>
-                <Text className="text-xs leading-5 text-primary">
-                    《隐私政策》
-                </Text>
+                <Pressable
+                    onPress={handleOpenLegalDocFromPressable("privacy")}
+                    hitSlop={8}
+                >
+                    <Text className="text-sm leading-6 text-primary">
+                        《隐私政策》
+                    </Text>
+                </Pressable>
             </Pressable>
         </View>
     );
@@ -508,7 +461,6 @@ export default function WorkerLoginScreen() {
                 {[
                     { name: "微信", icon: "weixin", color: "#35c759" },
                     { name: "QQ", icon: "qq", color: "#111827" },
-                    { name: "Apple", icon: "apple", color: "#111827" },
                 ].map((item) => (
                     <View key={item.name} className="items-center gap-2">
                         <View
@@ -542,22 +494,8 @@ export default function WorkerLoginScreen() {
             <View className="items-center pt-10">
                 {renderBrandMark()}
                 <Text className="mt-2 text-center text-2xl font-semibold text-foreground">
-                    欢迎来到{" "}
-                    <Text className="text-2xl font-semibold text-primary">
+                    <Text className="text-2xl font-semibold">
                         {PRODUCT_NAME}
-                    </Text>
-                </Text>
-                <View className="mt-3 flex-row items-center gap-3">
-                    <View className="h-px w-8 bg-border" />
-                    <Text className="text-sm text-muted-foreground">
-                        {LOGIN_SLOGAN}
-                    </Text>
-                    <View className="h-px w-8 bg-border" />
-                </View>
-                <Text className="mt-5 text-center text-sm text-muted-foreground">
-                    当前登录手机号：
-                    <Text className="text-sm font-medium text-primary">
-                        {MASKED_LOGIN_PHONE}
                     </Text>
                 </Text>
                 <Button
@@ -566,9 +504,6 @@ export default function WorkerLoginScreen() {
                     disabled={!canOneClickLogin}
                     style={BUTTON_SHADOW_STYLE}
                 >
-                    <View className="mr-1 h-5 w-5 items-center justify-center rounded-full bg-primary-foreground">
-                        <Icon as={Zap} size={13} className="text-primary" />
-                    </View>
                     <Text className="text-base font-semibold text-primary-foreground">
                         {isOneClickLoggingIn ? "登录中..." : "一键登录"}
                     </Text>
@@ -595,13 +530,6 @@ export default function WorkerLoginScreen() {
     const renderOtp = () => (
         <View className="flex-1 justify-between">
             <View>
-                <Pressable
-                    className="mt-3 h-10 w-10 items-center justify-center rounded-full"
-                    onPress={switchToOneClickLogin}
-                    hitSlop={10}
-                >
-                    <Icon as={ArrowLeft} size={22} className="text-foreground" />
-                </Pressable>
                 <View className="mt-14 items-center">
                     <Text className="text-center text-2xl font-semibold text-foreground">
                         手机号验证码登录
@@ -682,13 +610,8 @@ export default function WorkerLoginScreen() {
                         hitSlop={10}
                     >
                         <Text className="text-sm font-medium text-primary">
-                            切换一键登录
+                            本机号码切换一键登录
                         </Text>
-                        <Icon
-                            as={ChevronRight}
-                            size={16}
-                            className="ml-1 text-primary"
-                        />
                     </Pressable>
                 </View>
             </View>
@@ -696,13 +619,41 @@ export default function WorkerLoginScreen() {
         </View>
     );
 
+    const renderLegalOverlays = () => (
+        <>
+            <LegalWebModal
+                visible={activeLegalDoc !== null}
+                title={
+                    activeLegalDoc
+                        ? LEGAL_DOCUMENT_CONFIG[activeLegalDoc].title
+                        : ""
+                }
+                url={
+                    activeLegalDoc
+                        ? LEGAL_DOCUMENT_CONFIG[activeLegalDoc].url
+                        : ""
+                }
+                onClose={() => setActiveLegalDoc(null)}
+            />
+            <LoginLegalGuideDialog
+                open={isLegalGuideOpen}
+                onConfirm={handleConfirmLegalGuide}
+                onOpenLegalDoc={handleOpenLegalDoc}
+            />
+        </>
+    );
+
     if (routeLoginMode === "oneClick" && isOneClickGateActive) {
-        return <View className="flex-1 bg-background" />;
+        return (
+            <View className="flex-1 bg-background">
+                {renderLegalOverlays()}
+            </View>
+        );
     }
 
     return (
         <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
             className="flex-1 bg-background"
         >
             <SafeAreaView className="flex-1 bg-background">
@@ -726,43 +677,7 @@ export default function WorkerLoginScreen() {
                 </ScrollView>
             </SafeAreaView>
 
-            <Modal
-                visible={isUpgradeModalVisible}
-                transparent
-                animationType="fade"
-                onRequestClose={() => {}}
-            >
-                <View className="flex-1 items-center justify-center bg-black/40 px-6">
-                    <View className="w-full rounded-2xl bg-background p-6">
-                        <Text className="text-lg font-semibold text-foreground">
-                            申请服务人员权限？
-                        </Text>
-                        <Text className="mt-2 text-sm text-muted-foreground">
-                            该手机号已注册为普通用户，是否申请服务人员权限？
-                        </Text>
-                        <View className="mt-6 flex-row gap-3">
-                            <Pressable
-                                className="flex-1 rounded-xl border border-border py-3"
-                                onPress={handleUpgradeDecline}
-                                disabled={isUpgradeSubmitting}
-                            >
-                                <Text className="text-center text-sm text-foreground">
-                                    暂不
-                                </Text>
-                            </Pressable>
-                            <Pressable
-                                className={`flex-1 rounded-xl py-3 ${isUpgradeSubmitting ? "bg-primary/70" : "bg-primary"}`}
-                                onPress={handleUpgradeConfirm}
-                                disabled={isUpgradeSubmitting}
-                            >
-                                <Text className="text-center text-sm font-semibold text-primary-foreground">
-                                    {isUpgradeSubmitting ? "申请中..." : "申请"}
-                                </Text>
-                            </Pressable>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
+            {renderLegalOverlays()}
         </KeyboardAvoidingView>
     );
 }
