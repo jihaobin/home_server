@@ -65,6 +65,9 @@ function EarningsContent() {
         const tabParam = Array.isArray(params.tab) ? params.tab[0] : params.tab;
         return isValidTabFilter(tabParam) ? tabParam : "all";
     });
+    const [expandedIncomeIds, setExpandedIncomeIds] = useState<
+        Record<string, boolean>
+    >({});
     useEffect(() => {
         const tabParam = Array.isArray(params.tab) ? params.tab[0] : params.tab;
         if (isValidTabFilter(tabParam)) {
@@ -218,6 +221,13 @@ function EarningsContent() {
         isWithdrawalTab,
     ]);
 
+    const toggleIncomeExpanded = useCallback((itemId: string) => {
+        setExpandedIncomeIds((prev) => ({
+            ...prev,
+            [itemId]: !prev[itemId],
+        }));
+    }, []);
+
     const renderTransaction = (item: TransactionItem) => {
         const isIncome = item.flowType === "income";
         const amountColor = "#4CAF50";
@@ -228,7 +238,7 @@ function EarningsContent() {
         const incomeTimeLabel = formatOptionalTransactionTime(
             resolveTransactionOccurredAt(item),
         );
-        const incomeExplainMeta = getIncomeExplainMeta(item, customerLabel);
+        const incomeExplainMeta = getIncomeExplainMeta(item);
         const commissionRateLabel = formatCommissionRate(
             item.commissionRate,
             financialFallback,
@@ -246,6 +256,7 @@ function EarningsContent() {
             financialFallback,
         );
         const incomeInfoItems = getIncomeInfoItems(item, {
+            orderNumberLabel: getIncomeOrderNumberLabel(item),
             customerLabel,
             customerPhone,
             serviceName: item.serviceName?.trim() || "未知服务",
@@ -254,76 +265,68 @@ function EarningsContent() {
             originalOrderPriceLabel,
             settlementAmountLabel,
             commissionAmountLabel,
+            incomeTimeLabel,
         });
 
         if (isIncome) {
             const resolvedIncomeSummary = getIncomeSummary(item);
+            const isExpanded = Boolean(expandedIncomeIds[item.id]);
             return (
                 <View key={item.id} style={styles.incomeCard}>
-                    <View style={styles.incomeCardTop}>
-                        <View style={styles.incomeCardTopLeft}>
-                            <View style={styles.incomeIconWrap}>
+                    <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => toggleIncomeExpanded(item.id)}
+                        style={styles.incomeHeaderButton}
+                    >
+                        <View style={styles.incomeCardTop}>
+                            <View style={styles.incomeCardTopLeft}>
+                                <View style={styles.incomeIconWrap}>
+                                    <Ionicons
+                                        name="arrow-down"
+                                        size={20}
+                                        color="#12B76A"
+                                    />
+                                </View>
+                                <View style={styles.incomeTitleWrap}>
+                                    <Text style={styles.incomeTitle}>
+                                        {resolvedIncomeSummary.title}
+                                    </Text>
+                                    <Text style={styles.incomeSubtitle}>
+                                        {resolvedIncomeSummary.subtitle}
+                                    </Text>
+                                </View>
+                            </View>
+                            <View style={styles.incomeHeaderRight}>
+                                <Text
+                                    style={[
+                                        styles.incomeAmount,
+                                        { color: amountColor },
+                                    ]}
+                                >
+                                    +¥{formatCurrency(Math.abs(item.amount))}
+                                </Text>
                                 <Ionicons
-                                    name="arrow-down"
-                                    size={20}
-                                    color="#12B76A"
+                                    name={
+                                        isExpanded
+                                            ? "chevron-up"
+                                            : "chevron-down"
+                                    }
+                                    size={18}
+                                    color="#98A2B3"
                                 />
                             </View>
-                            <View style={styles.incomeTitleWrap}>
-                                <Text style={styles.incomeTitle}>
-                                    {resolvedIncomeSummary.title}
-                                </Text>
-                                <Text style={styles.incomeSubtitle}>
-                                    {resolvedIncomeSummary.subtitle}
-                                </Text>
-                            </View>
                         </View>
-                        <Text
-                            style={[
-                                styles.incomeAmount,
-                                { color: amountColor },
-                            ]}
-                        >
-                            +¥{formatCurrency(Math.abs(item.amount))}
-                        </Text>
-                    </View>
 
-                    <View style={styles.incomeBadgeRow}>
-                        <View
-                            style={[
-                                styles.incomeBadge,
-                                {
-                                    backgroundColor:
-                                        incomeExplainMeta.sourceBadge
-                                            .backgroundColor,
-                                    borderColor:
-                                        incomeExplainMeta.sourceBadge
-                                            .borderColor,
-                                },
-                            ]}
-                        >
-                            <Text
-                                style={[
-                                    styles.incomeBadgeText,
-                                    {
-                                        color: incomeExplainMeta.sourceBadge
-                                            .textColor,
-                                    },
-                                ]}
-                            >
-                                {incomeExplainMeta.sourceBadge.label}
-                            </Text>
-                        </View>
-                        {incomeExplainMeta.ruleBadge ? (
+                        <View style={styles.incomeBadgeRow}>
                             <View
                                 style={[
                                     styles.incomeBadge,
                                     {
                                         backgroundColor:
-                                            incomeExplainMeta.ruleBadge
+                                            incomeExplainMeta.sourceBadge
                                                 .backgroundColor,
                                         borderColor:
-                                            incomeExplainMeta.ruleBadge
+                                            incomeExplainMeta.sourceBadge
                                                 .borderColor,
                                     },
                                 ]}
@@ -332,64 +335,63 @@ function EarningsContent() {
                                     style={[
                                         styles.incomeBadgeText,
                                         {
-                                            color: incomeExplainMeta.ruleBadge
+                                            color: incomeExplainMeta.sourceBadge
                                                 .textColor,
                                         },
                                     ]}
                                 >
-                                    {incomeExplainMeta.ruleBadge.label}
+                                    {incomeExplainMeta.sourceBadge.label}
                                 </Text>
                             </View>
-                        ) : null}
-                    </View>
-
-                    <View style={styles.incomeExplainBox}>
-                        <View style={styles.incomeExplainRow}>
-                            <Ionicons
-                                name="pricetag-outline"
-                                size={14}
-                                color="#1f5fb8"
-                            />
-                            <Text style={styles.incomeExplainText}>
-                                {incomeExplainMeta.sourceDescription}
-                            </Text>
+                            {incomeExplainMeta.ruleBadge ? (
+                                <View
+                                    style={[
+                                        styles.incomeBadge,
+                                        {
+                                            backgroundColor:
+                                                incomeExplainMeta.ruleBadge
+                                                    .backgroundColor,
+                                            borderColor:
+                                                incomeExplainMeta.ruleBadge
+                                                    .borderColor,
+                                        },
+                                    ]}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.incomeBadgeText,
+                                            {
+                                                color: incomeExplainMeta.ruleBadge
+                                                    .textColor,
+                                            },
+                                        ]}
+                                    >
+                                        {incomeExplainMeta.ruleBadge.label}
+                                    </Text>
+                                </View>
+                            ) : null}
                         </View>
-                        {incomeExplainMeta.ruleDescription ? (
-                            <View style={styles.incomeExplainRow}>
-                                <Ionicons
-                                    name="information-circle-outline"
-                                    size={14}
-                                    color="#1f5fb8"
-                                />
-                                <Text style={styles.incomeExplainText}>
-                                    {incomeExplainMeta.ruleDescription}
-                                </Text>
-                            </View>
-                        ) : null}
-                    </View>
+                    </TouchableOpacity>
 
-                    <View style={styles.incomeInfoGrid}>
-                        {incomeInfoItems.map((infoItem) => (
-                            <View
-                                key={`${item.id}-${infoItem.label}`}
-                                style={styles.incomeInfoItem}
-                            >
-                                <Text style={styles.incomeInfoLabel}>
-                                    {infoItem.label}
-                                </Text>
-                                <Text style={styles.incomeInfoValue}>
-                                    {infoItem.value}
-                                </Text>
+                    {isExpanded ? (
+                        <>
+                            <View style={styles.incomeInfoGrid}>
+                                {incomeInfoItems.map((infoItem) => (
+                                    <View
+                                        key={`${item.id}-${infoItem.label}`}
+                                        style={styles.incomeInfoItem}
+                                    >
+                                        <Text style={styles.incomeInfoLabel}>
+                                            {infoItem.label}
+                                        </Text>
+                                        <Text style={styles.incomeInfoValue}>
+                                            {infoItem.value}
+                                        </Text>
+                                    </View>
+                                ))}
                             </View>
-                        ))}
-                    </View>
-
-                    <View style={styles.incomeTimeBox}>
-                        <Text style={styles.incomeInfoLabel}>入账时间</Text>
-                        <Text style={styles.incomeInfoValue}>
-                            {incomeTimeLabel}
-                        </Text>
-                    </View>
+                        </>
+                    ) : null}
                 </View>
             );
         }
@@ -1032,6 +1034,13 @@ const styles = StyleSheet.create({
         fontWeight: "700",
         letterSpacing: -0.3,
     },
+    incomeHeaderButton: {
+        gap: 14,
+    },
+    incomeHeaderRight: {
+        alignItems: "flex-end",
+        gap: 6,
+    },
     incomeBadgeRow: {
         flexDirection: "row",
         flexWrap: "wrap",
@@ -1047,26 +1056,6 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: "600",
     },
-    incomeExplainBox: {
-        backgroundColor: "#F5F9FF",
-        borderRadius: 14,
-        borderWidth: 1,
-        borderColor: "#DCE9FF",
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        gap: 8,
-    },
-    incomeExplainRow: {
-        flexDirection: "row",
-        alignItems: "flex-start",
-        gap: 8,
-    },
-    incomeExplainText: {
-        flex: 1,
-        fontSize: 12,
-        lineHeight: 18,
-        color: "#3B4D65",
-    },
     incomeInfoGrid: {
         flexDirection: "row",
         flexWrap: "wrap",
@@ -1074,16 +1063,6 @@ const styles = StyleSheet.create({
     },
     incomeInfoItem: {
         width: "48%",
-        backgroundColor: "#F8FAFC",
-        borderRadius: 14,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        gap: 4,
-    },
-    incomeInfoItemFull: {
-        width: "100%",
-    },
-    incomeTimeBox: {
         backgroundColor: "#F8FAFC",
         borderRadius: 14,
         paddingHorizontal: 12,
@@ -1161,10 +1140,7 @@ function formatCurrency(value?: number | string | null) {
     return amount.toFixed(2);
 }
 
-function getTransactionDescription(item: TransactionItem) {
-    if (item.description) {
-        return item.description;
-    }
+function getIncomeTitle(item: TransactionItem) {
     switch (item.transactionType) {
         case "service_earning":
             return "服务收益入账";
@@ -1177,7 +1153,7 @@ function getTransactionDescription(item: TransactionItem) {
         case "adjustment":
             return "财务调整";
         default:
-            return "资金变动";
+            return "服务收益入账";
     }
 }
 
@@ -1221,7 +1197,7 @@ function getIncomeSummary(item: TransactionItem) {
         case "service_earning":
             return {
                 title: "服务收益入账",
-                subtitle: "订单完成后系统已入账",
+                subtitle: "系统已完成本次收益入账",
             };
         case "bonus":
             return {
@@ -1235,22 +1211,19 @@ function getIncomeSummary(item: TransactionItem) {
             };
         default:
             return {
-                title: getTransactionDescription(item),
+                title: getIncomeTitle(item),
                 subtitle: "收入已计入账户余额",
             };
     }
 }
 
-function getIncomeExplainMeta(item: TransactionItem, customerLabel: string) {
+function getIncomeExplainMeta(item: TransactionItem) {
     const sourceBadge = getIncomeSourceBadge(item.transactionType);
-    const sourceDescription = getIncomeSourceDescription(item, customerLabel);
     const ruleMeta = getIncomeRuleMeta(item);
 
     return {
         sourceBadge,
-        sourceDescription,
         ruleBadge: ruleMeta?.badge,
-        ruleDescription: ruleMeta?.description,
     };
 }
 
@@ -1260,6 +1233,10 @@ function getIncomeCustomerLabel(item: TransactionItem) {
 
 function getIncomeCustomerPhone(item: TransactionItem) {
     return item.customerPhone?.trim() || "暂无手机号";
+}
+
+function getIncomeOrderNumberLabel(item: TransactionItem) {
+    return item.id?.trim();
 }
 
 function getIncomeSourceBadge(
@@ -1294,24 +1271,6 @@ function getIncomeSourceBadge(
                 backgroundColor: "#F2F4F7",
                 borderColor: "#E4E7EC",
             };
-    }
-}
-
-function getIncomeSourceDescription(
-    item: TransactionItem,
-    customerLabel: string,
-) {
-    switch (item.transactionType) {
-        case "service_earning":
-            return item.customerName?.trim()
-                ? `这笔收入来自 ${customerLabel} 的服务订单，订单完成后系统已自动入账。`
-                : "这笔收入来自已完成的服务订单，订单完成后系统已自动入账。";
-        case "bonus":
-            return "这笔收入来自平台奖励，金额已直接计入您的账户余额。";
-        case "adjustment":
-            return "这笔收入来自平台调整，平台已按规则更新本次收入流水。";
-        default:
-            return `${getTransactionDescription(item)}已计入您的账户余额。`;
     }
 }
 
@@ -1425,6 +1384,7 @@ function getIncomeRuleMeta(item: TransactionItem) {
 function getIncomeInfoItems(
     item: TransactionItem,
     values: {
+        orderNumberLabel: string;
         customerLabel: string;
         customerPhone: string;
         serviceName: string;
@@ -1433,6 +1393,7 @@ function getIncomeInfoItems(
         originalOrderPriceLabel: string;
         settlementAmountLabel: string;
         commissionAmountLabel: string;
+        incomeTimeLabel: string;
     },
 ): IncomeInfoItemMeta[] {
     const shouldShowCustomerInfo =
@@ -1453,7 +1414,12 @@ function getIncomeInfoItems(
                   settlementAmount: "结算金额",
                   commissionAmount: "规则扣减",
               };
-    const items: IncomeInfoItemMeta[] = [];
+    const items: IncomeInfoItemMeta[] = [
+        {
+            label: "订单号",
+            value: values.orderNumberLabel,
+        },
+    ];
 
     if (shouldShowCustomerInfo) {
         if (item.transactionType === "service_earning") {
@@ -1497,6 +1463,10 @@ function getIncomeInfoItems(
         {
             label: amountLabels.commissionAmount,
             value: values.commissionAmountLabel,
+        },
+        {
+            label: "入账时间",
+            value: values.incomeTimeLabel,
         },
     );
 

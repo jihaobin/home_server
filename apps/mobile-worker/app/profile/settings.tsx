@@ -14,6 +14,8 @@ import {
 } from "react-native";
 import Constants from "expo-constants";
 import { useAppUpdate } from "@repo/mobile-ui/app-update/AppUpdateProvider";
+import { useSession } from "@repo/mobile-ui/components/SessionProvider";
+import { signOutWithCleanup } from "../../lib/auth";
 
 type MenuItem = {
     icon: keyof typeof Ionicons.glyphMap;
@@ -85,6 +87,7 @@ const getDirectorySize = (directory: Directory): number => {
 
 export default function SettingsScreen() {
     const router = useRouter();
+    const { refetch: refetchSession } = useSession();
     const { checkForUpdate, status: updateStatus } = useAppUpdate();
     const [cacheSizeBytes, setCacheSizeBytes] = useState<number | null>(null);
     const [isClearingCache, setIsClearingCache] = useState(false);
@@ -156,6 +159,29 @@ export default function SettingsScreen() {
     const handleCheckUpdate = useCallback(() => {
         void checkForUpdate({ manual: true, force: true });
     }, [checkForUpdate]);
+
+    const handleLogout = useCallback(() => {
+        Alert.alert("确认退出", "您确定要退出登录吗？", [
+            { text: "取消", style: "cancel" },
+            {
+                text: "退出",
+                style: "destructive",
+                onPress: async () => {
+                    try {
+                        const { error } = await signOutWithCleanup();
+                        if (error) {
+                            Alert.alert("退出登录失败", error.message || "登录时发生错误");
+                            return;
+                        }
+                        await refetchSession();
+                        router.replace("/(tabs)");
+                    } catch {
+                        Alert.alert("错误", "退出登录失败，请重试");
+                    }
+                },
+            },
+        ]);
+    }, [refetchSession, router]);
 
     return (
         <View style={styles.container}>
@@ -298,6 +324,10 @@ export default function SettingsScreen() {
                         </TouchableOpacity>
                     </View>
                 </View>
+
+                <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+                    <Text style={styles.logoutText}>退出登录</Text>
+                </TouchableOpacity>
             </ScrollView>
         </View>
     );
@@ -387,5 +417,24 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: "#999",
         marginRight: 8,
+    },
+    logoutButton: {
+        backgroundColor: "white",
+        marginTop: 24,
+        marginHorizontal: 16,
+        marginBottom: 32,
+        paddingVertical: 18,
+        borderRadius: 12,
+        alignItems: "center",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        elevation: 3,
+    },
+    logoutText: {
+        fontSize: 16,
+        color: "#FF5722",
+        fontWeight: "bold",
     },
 });

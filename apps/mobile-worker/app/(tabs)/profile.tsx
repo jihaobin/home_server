@@ -23,7 +23,6 @@ import {
     useServicePersonnelProfile,
     useServicePersonnelDashboardStats,
 } from "@repo/hooks/api/service-personnel";
-import { signOutWithCleanup } from "../../lib/auth";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
 import { Settings } from "lucide-react-native";
 
@@ -253,32 +252,6 @@ function ProfileContent() {
             userId,
         ]),
     );
-
-    const handleLogout = async () => {
-        Alert.alert("确认退出", "您确定要退出登录吗？", [
-            { text: "取消", style: "cancel" },
-            {
-                text: "退出",
-                style: "destructive",
-                onPress: async () => {
-                    try {
-                        const { error } = await signOutWithCleanup();
-                        if (error) {
-                            Alert.alert(
-                                "退出登录失败",
-                                error.message || "登录时发生错误",
-                            );
-                            return;
-                        }
-                        refetchSession();
-                        router.replace("/(tabs)");
-                    } catch {
-                        Alert.alert("错误", "退出登录失败，请重试");
-                    }
-                },
-            },
-        ]);
-    };
 
     const isRefreshingState =
         refreshing ||
@@ -577,15 +550,6 @@ function ProfileContent() {
                     </View>
                 )}
 
-                <TouchableOpacity
-                    style={styles.logoutButton}
-                    onPress={handleLogout}
-                >
-                    <Text style={styles.logoutText}>退出登录</Text>
-                    <Text style={styles.logoutDesc}>
-                        若遇到账号遗失，请立即联系客服冻结
-                    </Text>
-                </TouchableOpacity>
             </ScrollView>
         </View>
     );
@@ -721,29 +685,6 @@ const styles = StyleSheet.create({
     statDivider: {
         width: 1,
         backgroundColor: "#eee",
-    },
-    logoutButton: {
-        backgroundColor: "white",
-        marginHorizontal: 16,
-        marginBottom: 32,
-        padding: 18,
-        borderRadius: 12,
-        alignItems: "center",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 6,
-        elevation: 3,
-    },
-    logoutText: {
-        fontSize: 16,
-        color: "#FF5722",
-        fontWeight: "bold",
-    },
-    logoutDesc: {
-        marginTop: 4,
-        fontSize: 12,
-        color: "#999",
     },
     infoCard: {
         backgroundColor: "white",
