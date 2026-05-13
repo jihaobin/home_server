@@ -5,14 +5,19 @@ import {
     Logger,
     Optional,
 } from '@nestjs/common';
-import { AlipaySdk } from 'alipay-sdk';
+import { createSign, createVerify, randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
+import { AlipayFormStream, AlipayRequestError, AlipaySdk } from 'alipay-sdk';
+import urllib from 'urllib';
+import * as cryptoJs from 'crypto-js';
 import { createWorkerAliPaySdk } from 'src/lib/alipaySdk';
 
 export type AlipayFaceSourceCertifyParams = {
     name: string;
     idcard: string;
     outerBizNo: string;
-    faceImageBase64?: string;
+    faceImageBuffer?: Buffer;
+    faceImageExtension?: 'jpg' | 'png';
 };
 
 export type AlipayFaceSourceCertifyResult = {
@@ -26,6 +31,29 @@ export type AlipayFaceSourceCertifyResult = {
 
 const FACE_SOURCE_CERTIFY_PATH =
     '/v3/datadigital/fincloud/generalsaas/face/source/certify';
+
+type EncryptedMultipartCurlParams = {
+    sdk: AlipaySdk;
+    path: string;
+    body: Record<string, string>;
+    file: {
+        fieldName: string;
+        fileName: string;
+        stream: Readable;
+    };
+    requestId: string;
+    requestTimeout: number;
+};
+
+type EncryptedMultipartCurl = (
+    params: EncryptedMultipartCurlParams,
+) => Promise<EncryptedMultipartCurlResult>;
+
+type EncryptedMultipartCurlResult = {
+    data: unknown;
+    responseHttpStatus: number;
+    traceId: string;
+};
 
 function readField(
     source: Record<string, unknown>,
@@ -42,6 +70,61 @@ function normalizeNullableString(value: unknown) {
     return String(value);
 }
 
+function normalizePassed(value: unknown) {
+    if (value === true) {
+        return true;
+    }
+
+    if (value === false) {
+        return false;
+    }
+
+    const normalized = String(value).trim().toUpperCase();
+    if (normalized === 'T' || normalized === 'TRUE') {
+        return true;
+    }
+    if (normalized === 'F' || normalized === 'FALSE') {
+        return false;
+    }
+
+    return false;
+}
+
+function parseAesKey(aesKey: string) {
+    return {
+        iv: cryptoJs.enc.Hex.parse('00000000000000000000000000000000'),
+        key: cryptoJs.enc.Base64.parse(aesKey),
+    };
+}
+
+function aesEncryptText(plainText: string, aesKey: string) {
+    const { iv, key } = parseAesKey(aesKey);
+    return cryptoJs.AES.encrypt(plainText, key, { iv }).toString();
+}
+
+function aesDecryptText(encryptedText: string, aesKey: string) {
+    const { iv, key } = parseAesKey(aesKey);
+    return cryptoJs.AES.decrypt(encryptedText, key, { iv }).toString(
+        cryptoJs.enc.Utf8,
+    );
+}
+
+function signatureV3(signString: string, appPrivateKey: string) {
+    return createSign('RSA-SHA256')
+        .update(signString, 'utf-8')
+        .sign(appPrivateKey, 'base64');
+}
+
+function verifySignatureV3(
+    signString: string,
+    expectedSignature: string,
+    alipayPublicKey: string,
+) {
+    return createVerify('RSA-SHA256')
+        .update(signString, 'utf-8')
+        .verify(alipayPublicKey, expectedSignature, 'base64');
+}
+
 function isTimeoutError(error: unknown) {
     if (!(error instanceof Error)) {
         return false;
@@ -54,6 +137,20 @@ function isTimeoutError(error: unknown) {
         code === 'ECONNABORTED' ||
         message.includes('timeout') ||
         message.includes('timed out')
+    );
+}
+
+function isMissingAlipayResponseSignatureError(error: unknown) {
+    if (!(error instanceof TypeError)) {
+        return false;
+    }
+
+    const code = (error as Error & { code?: string }).code;
+
+    return (
+        code === 'ERR_INVALID_ARG_TYPE' &&
+        error.message.includes('"signature"') &&
+        error.message.includes('Received undefined')
     );
 }
 
@@ -82,10 +179,16 @@ function getSafeErrorLogPayload(error: unknown) {
 @Injectable()
 export class AlipayFaceCertifyClient {
     private readonly alipaySdk: AlipaySdk;
+    private readonly encryptedMultipartCurl: EncryptedMultipartCurl;
     private readonly logger = new Logger(AlipayFaceCertifyClient.name);
 
-    constructor(@Optional() alipaySdk?: AlipaySdk) {
+    constructor(
+        @Optional() alipaySdk?: AlipaySdk,
+        @Optional() encryptedMultipartCurl?: EncryptedMultipartCurl,
+    ) {
         this.alipaySdk = alipaySdk ?? createWorkerAliPaySdk();
+        this.encryptedMultipartCurl =
+            encryptedMultipartCurl ?? curlEncryptedMultipart;
     }
 
     async certify(
@@ -96,22 +199,22 @@ export class AlipayFaceCertifyClient {
                 cert_name: params.name,
                 cert_no: params.idcard,
                 outer_biz_no: params.outerBizNo,
+                cert_type: 'IDENTITY_CARD',
             };
 
-            if (params.faceImageBase64) {
-                body.face_image = params.faceImageBase64;
-            }
-
-            const response = await this.alipaySdk.curl(
-                'POST',
-                FACE_SOURCE_CERTIFY_PATH,
-                {
-                    body,
-                    needEncrypt: true,
-                    requestId: params.outerBizNo,
-                    requestTimeout: 10000,
-                },
-            );
+            const response = params.faceImageBuffer
+                ? await this.certifyWithFaceImage({
+                      body,
+                      faceImageBuffer: params.faceImageBuffer,
+                      faceImageExtension: params.faceImageExtension ?? 'jpg',
+                      outerBizNo: params.outerBizNo,
+                  })
+                : await this.alipaySdk.curl('POST', FACE_SOURCE_CERTIFY_PATH, {
+                      body,
+                      needEncrypt: true,
+                      requestId: params.outerBizNo,
+                      requestTimeout: 10000,
+                  });
 
             return this.normalizeResponse(response);
         } catch (error) {
@@ -129,6 +232,15 @@ export class AlipayFaceCertifyClient {
                     '人脸认证服务响应超时，请稍后重试',
                 );
             }
+            if (isMissingAlipayResponseSignatureError(error)) {
+                this.logger.error(
+                    `支付宝人脸核身响应缺少签名头，SDK验签失败: ${JSON.stringify(getSafeErrorLogPayload(error))}`,
+                );
+                throw new BadGatewayException(
+                    '认证服务响应异常，请稍后重试',
+                    error.message,
+                );
+            }
             this.logger.error(
                 `支付宝人脸核身调用失败: ${JSON.stringify(getSafeErrorLogPayload(error))}`,
             );
@@ -137,6 +249,31 @@ export class AlipayFaceCertifyClient {
                 error instanceof Error ? error.message : undefined,
             );
         }
+    }
+
+    private async certifyWithFaceImage({
+        body,
+        faceImageBuffer,
+        faceImageExtension,
+        outerBizNo,
+    }: {
+        body: Record<string, string>;
+        faceImageBuffer: Buffer;
+        faceImageExtension: 'jpg' | 'png';
+        outerBizNo: string;
+    }) {
+        return this.encryptedMultipartCurl({
+            sdk: this.alipaySdk,
+            path: FACE_SOURCE_CERTIFY_PATH,
+            body,
+            file: {
+                fieldName: 'file_content',
+                fileName: `${outerBizNo}.${faceImageExtension}`,
+                stream: Readable.from(faceImageBuffer),
+            },
+            requestId: outerBizNo,
+            requestTimeout: 10000,
+        });
     }
 
     private normalizeResponse(raw: unknown): AlipayFaceSourceCertifyResult {
@@ -159,7 +296,7 @@ export class AlipayFaceCertifyClient {
             throw new BadGatewayException('认证服务响应异常，请稍后重试');
         }
 
-        const passed = passedRaw === true || String(passedRaw) === 'true';
+        const passed = normalizePassed(passedRaw);
 
         return {
             certifyNo: normalizeNullableString(
@@ -176,4 +313,147 @@ export class AlipayFaceCertifyClient {
             raw,
         };
     }
+}
+
+async function curlEncryptedMultipart({
+    sdk,
+    path,
+    body,
+    file,
+    requestId,
+    requestTimeout,
+}: EncryptedMultipartCurlParams): Promise<EncryptedMultipartCurlResult> {
+    const config = sdk.config;
+    if (!config.encryptKey) {
+        throw new TypeError(
+            '请配置 config.encryptKey 才能通过加密表单上传调用支付宝',
+        );
+    }
+
+    const endpointUrl = new URL(`${config.endpoint}${path}`);
+    const httpRequestUrl = endpointUrl.pathname + endpointUrl.search;
+    const encryptedBody = aesEncryptText(
+        JSON.stringify(body),
+        config.encryptKey,
+    );
+
+    const form = new AlipayFormStream();
+    form.field('data', encryptedBody, 'text/plain');
+    form.stream(file.fieldName, file.stream, file.fileName);
+
+    const headers: Record<string, string> = {
+        'user-agent': sdk.version,
+        'alipay-request-id': requestId,
+        'alipay-encryption-algm': 'AES',
+        'alipay-encrypt-type': 'AES',
+        accept: 'application/json',
+        ...form.headers(),
+    };
+
+    if (config.alipayRootCertSn) {
+        headers['alipay-root-cert-sn'] = config.alipayRootCertSn;
+    }
+
+    let authString = `app_id=${config.appId}`;
+    if (config.appCertSn) {
+        authString += `,app_cert_sn=${config.appCertSn}`;
+    }
+    authString += `,nonce=${randomUUID()},timestamp=${Date.now()}`;
+    if (config.additionalAuthInfo) {
+        authString += `,${config.additionalAuthInfo}`;
+    }
+
+    const signString = `${authString}\nPOST\n${httpRequestUrl}\n${encryptedBody}\n`;
+    const signature = signatureV3(signString, config.privateKey);
+    headers.authorization = `ALIPAY-SHA256withRSA ${authString},sign=${signature}`;
+
+    const httpResponse = await urllib.request<string>(endpointUrl.toString(), {
+        method: 'POST',
+        dataType: 'text',
+        timeout: requestTimeout ?? config.timeout,
+        headers,
+        content: new Readable().wrap(form as any),
+        dispatcher: config.proxyAgent,
+    });
+
+    const traceId =
+        (httpResponse.headers['alipay-trace-id'] as string | undefined) ??
+        requestId;
+
+    if (httpResponse.status >= 400) {
+        const errorData = JSON.parse(httpResponse.data) as {
+            code?: string;
+            message?: string;
+            links?: unknown;
+        };
+        throw new AlipayRequestError(errorData.message || '支付宝请求失败', {
+            code: errorData.code,
+            links: errorData.links as any,
+            responseHttpStatus: httpResponse.status,
+            responseHttpHeaders: httpResponse.headers,
+            traceId,
+        });
+    }
+
+    let httpResponseBody = httpResponse.data;
+    const expectedSignature = httpResponse.headers['alipay-signature'] as
+        | string
+        | undefined;
+    if (expectedSignature && config.alipayPublicKey) {
+        const responseSignString = `${httpResponse.headers['alipay-timestamp'] as string}\n${httpResponse.headers['alipay-nonce'] as string}\n${httpResponseBody}\n`;
+        const expectedAlipaySN = httpResponse.headers['alipay-sn'] as
+            | string
+            | undefined;
+        if (
+            expectedAlipaySN &&
+            config.alipayCertSn &&
+            expectedAlipaySN !== config.alipayCertSn
+        ) {
+            throw new AlipayRequestError(
+                `支付宝公钥证书号不匹配，服务端返回的是：${expectedAlipaySN}，SDK 配置的是：${config.alipayCertSn}`,
+                {
+                    code: 'response-alipay-sn-verify-error',
+                    responseDataRaw: httpResponse.data,
+                    responseHttpStatus: httpResponse.status,
+                    responseHttpHeaders: httpResponse.headers,
+                    traceId,
+                },
+            );
+        }
+        if (
+            !verifySignatureV3(
+                responseSignString,
+                expectedSignature,
+                config.alipayPublicKey,
+            )
+        ) {
+            throw new AlipayRequestError('支付宝响应验签失败', {
+                code: 'response-signature-verify-error',
+                responseDataRaw: httpResponse.data,
+                responseHttpStatus: httpResponse.status,
+                responseHttpHeaders: httpResponse.headers,
+                traceId,
+            });
+        }
+    }
+
+    httpResponseBody = aesDecryptText(httpResponseBody, config.encryptKey);
+    if (!httpResponseBody) {
+        throw new AlipayRequestError(
+            '解密失败，请确认 config.encryptKey 设置正确',
+            {
+                code: 'decrypt-error',
+                responseDataRaw: httpResponse.data,
+                responseHttpStatus: httpResponse.status,
+                responseHttpHeaders: httpResponse.headers,
+                traceId,
+            },
+        );
+    }
+
+    return {
+        data: JSON.parse(httpResponseBody),
+        responseHttpStatus: httpResponse.status,
+        traceId,
+    };
 }

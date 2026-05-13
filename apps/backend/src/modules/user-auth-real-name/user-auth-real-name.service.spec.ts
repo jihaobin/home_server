@@ -11,6 +11,7 @@ import type {
 } from './alipay-face-certify.client';
 import type { UserAuthRealNameRepository } from './user-auth-real-name-repository';
 import { UserAuthRealNameService } from './user-auth-real-name.service';
+import * as sharp from 'sharp';
 
 jest.mock('sharp', () => jest.fn());
 
@@ -29,6 +30,8 @@ type MockAlipayClient = jest.Mocked<Pick<AlipayFaceCertifyClient, 'certify'>>;
 type MockFilesService = jest.Mocked<
     Pick<FilesService, 'getFileObjectBufferByIdentifier'>
 >;
+
+const sharpMock = sharp as unknown as jest.Mock;
 
 const passedResult = (
     overrides: Partial<AlipayFaceSourceCertifyResult> = {},
@@ -49,6 +52,14 @@ describe('UserAuthRealNameService', () => {
     let filesService: MockFilesService;
 
     beforeEach(() => {
+        sharpMock.mockReset();
+        sharpMock.mockReturnValue({
+            rotate: jest.fn().mockReturnThis(),
+            metadata: jest.fn().mockResolvedValue({ width: 720, height: 1280 }),
+            resize: jest.fn().mockReturnThis(),
+            jpeg: jest.fn().mockReturnThis(),
+            toBuffer: jest.fn().mockResolvedValue(Buffer.from('normalized-jpeg')),
+        });
         repository = {
             isIdCardUsedByAnotherUser: jest.fn().mockResolvedValue(false),
             getUserRealNameByUserId: jest.fn().mockResolvedValue(null),
@@ -106,7 +117,7 @@ describe('UserAuthRealNameService', () => {
             expect.objectContaining({
                 name: '张三',
                 idcard: '110101199001011234',
-                faceImageBase64: undefined,
+                faceImageBuffer: undefined,
                 outerBizNo: expect.stringMatching(/^face_user_1_\d+_/),
             }),
         );
@@ -137,7 +148,15 @@ describe('UserAuthRealNameService', () => {
         expect(repository.createUserRealNameAuth).not.toHaveBeenCalled();
     });
 
-    it('传入人脸文件时读取图片并提交 base64', async () => {
+    it('传入人脸文件时规范化为高质量 JPEG 后提交支付宝', async () => {
+        const imagePipeline = {
+            rotate: jest.fn().mockReturnThis(),
+            metadata: jest.fn().mockResolvedValue({ width: 720, height: 1280 }),
+            resize: jest.fn().mockReturnThis(),
+            jpeg: jest.fn().mockReturnThis(),
+            toBuffer: jest.fn().mockResolvedValue(Buffer.from('normalized-jpeg')),
+        };
+        sharpMock.mockReturnValue(imagePipeline);
         filesService.getFileObjectBufferByIdentifier.mockResolvedValue({
             buffer: Buffer.from('image-content'),
             mimeType: 'image/jpeg',
@@ -156,9 +175,39 @@ describe('UserAuthRealNameService', () => {
         );
         expect(alipayClient.certify).toHaveBeenCalledWith(
             expect.objectContaining({
-                faceImageBase64: Buffer.from('image-content').toString('base64'),
+                faceImageBuffer: Buffer.from('normalized-jpeg'),
+                faceImageExtension: 'jpg',
             }),
         );
+        expect(imagePipeline.resize).toHaveBeenCalledWith({
+            width: 720,
+            height: 1920,
+            fit: 'inside',
+            withoutEnlargement: true,
+        });
+        expect(imagePipeline.jpeg).toHaveBeenCalledWith({
+            quality: 92,
+            mozjpeg: true,
+        });
+    });
+
+    it('PNG 人脸文件不符合支付宝格式要求时拒绝', async () => {
+        filesService.getFileObjectBufferByIdentifier.mockResolvedValue({
+            buffer: Buffer.from('png-content'),
+            mimeType: 'image/png',
+            fileSize: 11,
+        });
+
+        await expect(
+            service.authRealName({
+                userId: 'user_1',
+                name: '张三',
+                idcard: '110101199001011234',
+                faceImageFileId: 'file_1',
+            }),
+        ).rejects.toThrow('人脸照片格式仅支持 JPG 或 JPEG');
+
+        expect(alipayClient.certify).not.toHaveBeenCalled();
     });
 
     it('人脸文件不是图片时拒绝', async () => {
@@ -177,6 +226,132 @@ describe('UserAuthRealNameService', () => {
             }),
         ).rejects.toBeInstanceOf(BadRequestException);
 
+        expect(alipayClient.certify).not.toHaveBeenCalled();
+    });
+
+    it('人脸文件超过 1MB 时压缩后再提交支付宝', async () => {
+        const originalBuffer = Buffer.alloc(1024 * 1024 + 100);
+        const compressedBuffer = Buffer.from('compressed-image');
+        const toBuffer = jest.fn().mockResolvedValue(compressedBuffer);
+        const imagePipeline = {
+            rotate: jest.fn().mockReturnThis(),
+            metadata: jest.fn().mockResolvedValue({ width: 720, height: 1280 }),
+            resize: jest.fn().mockReturnThis(),
+            jpeg: jest.fn().mockReturnThis(),
+            toBuffer,
+        };
+        sharpMock.mockReturnValue(imagePipeline);
+        filesService.getFileObjectBufferByIdentifier.mockResolvedValue({
+            buffer: originalBuffer,
+            mimeType: 'image/jpeg',
+            fileSize: originalBuffer.length,
+        });
+
+        await service.authRealName({
+            userId: 'user_1',
+            name: '张三',
+            idcard: '110101199001011234',
+            faceImageFileId: 'file_1',
+        });
+
+        expect(sharpMock).toHaveBeenCalledWith(originalBuffer);
+        expect(imagePipeline.resize).toHaveBeenCalledWith({
+            width: 720,
+            height: 1920,
+            fit: 'inside',
+            withoutEnlargement: true,
+        });
+        expect(imagePipeline.jpeg).toHaveBeenCalledWith({
+            quality: 92,
+            mozjpeg: true,
+        });
+        expect(alipayClient.certify).toHaveBeenCalledWith(
+            expect.objectContaining({
+                faceImageBuffer: compressedBuffer,
+                faceImageExtension: 'jpg',
+            }),
+        );
+    });
+
+    it('人脸照片宽大于高时拒绝', async () => {
+        sharpMock.mockReturnValue({
+            rotate: jest.fn().mockReturnThis(),
+            metadata: jest.fn().mockResolvedValue({ width: 1280, height: 720 }),
+            resize: jest.fn().mockReturnThis(),
+            jpeg: jest.fn().mockReturnThis(),
+            toBuffer: jest.fn(),
+        });
+        filesService.getFileObjectBufferByIdentifier.mockResolvedValue({
+            buffer: Buffer.from('landscape-image'),
+            mimeType: 'image/jpeg',
+            fileSize: 15,
+        });
+
+        await expect(
+            service.authRealName({
+                userId: 'user_1',
+                name: '张三',
+                idcard: '110101199001011234',
+                faceImageFileId: 'file_1',
+            }),
+        ).rejects.toThrow('人脸照片需保持竖向拍摄');
+
+        expect(alipayClient.certify).not.toHaveBeenCalled();
+    });
+
+    it('人脸照片分辨率低于 640x480 时拒绝', async () => {
+        sharpMock.mockReturnValue({
+            rotate: jest.fn().mockReturnThis(),
+            metadata: jest.fn().mockResolvedValue({ width: 360, height: 600 }),
+            resize: jest.fn().mockReturnThis(),
+            jpeg: jest.fn().mockReturnThis(),
+            toBuffer: jest.fn(),
+        });
+        filesService.getFileObjectBufferByIdentifier.mockResolvedValue({
+            buffer: Buffer.from('small-image'),
+            mimeType: 'image/jpeg',
+            fileSize: 11,
+        });
+
+        await expect(
+            service.authRealName({
+                userId: 'user_1',
+                name: '张三',
+                idcard: '110101199001011234',
+                faceImageFileId: 'file_1',
+            }),
+        ).rejects.toThrow('人脸照片分辨率不能低于 640x480');
+
+        expect(alipayClient.certify).not.toHaveBeenCalled();
+    });
+
+    it('人脸文件压缩后仍超过 1MB 时拒绝且不调用支付宝', async () => {
+        const originalBuffer = Buffer.alloc(1024 * 1024 + 100);
+        const oversizedBuffer = Buffer.alloc(1024 * 1024 + 1);
+        const toBuffer = jest.fn().mockResolvedValue(oversizedBuffer);
+        sharpMock.mockReturnValue({
+            rotate: jest.fn().mockReturnThis(),
+            metadata: jest.fn().mockResolvedValue({ width: 720, height: 1280 }),
+            resize: jest.fn().mockReturnThis(),
+            jpeg: jest.fn().mockReturnThis(),
+            toBuffer,
+        });
+        filesService.getFileObjectBufferByIdentifier.mockResolvedValue({
+            buffer: originalBuffer,
+            mimeType: 'image/jpeg',
+            fileSize: originalBuffer.length,
+        });
+
+        await expect(
+            service.authRealName({
+                userId: 'user_1',
+                name: '张三',
+                idcard: '110101199001011234',
+                faceImageFileId: 'file_1',
+            }),
+        ).rejects.toThrow('人脸照片压缩后仍超过 1MB');
+
+        expect(toBuffer).toHaveBeenCalledTimes(1);
         expect(alipayClient.certify).not.toHaveBeenCalled();
     });
 

@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
-import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
+import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import {
     ActivityIndicator,
     Alert,
@@ -23,6 +23,13 @@ import { useUploadFile } from "@repo/hooks/api/files";
 import { useUserRealNameProfile, useVerifyAndSaveRealName } from "@repo/hooks/api/user";
 
 const faceExampleImage = require("../../assets/images/face-example.png");
+const MAX_ALIPAY_FACE_IMAGE_BYTES = 1024 * 1024;
+const FACE_IMAGE_TARGET_SHORT_SIDE = 720;
+const FACE_IMAGE_MAX_WIDTH = 1080;
+const FACE_IMAGE_MAX_HEIGHT = 1920;
+const FACE_IMAGE_MIN_WIDTH = 480;
+const FACE_IMAGE_MIN_HEIGHT = 640;
+const FACE_IMAGE_JPEG_QUALITY = 0.92;
 
 function maskIdCardNumber(value: string) {
     const normalized = value.trim();
@@ -126,30 +133,92 @@ export default function IdCardVerificationScreen() {
         };
     };
 
-    const compressFaceImage = async (uri: string) => {
+    const getLocalFileSize = async (uri: string) => {
+        const fileInfo = await FileSystem.getInfoAsync(uri);
+        if (!fileInfo.exists) {
+            throw new Error("文件不存在");
+        }
+        return "size" in fileInfo ? (fileInfo.size ?? 0) : 0;
+    };
+
+    const validateFaceImageSize = (asset: ImagePicker.ImagePickerAsset) => {
+        const width = asset.width ?? 0;
+        const height = asset.height ?? 0;
+
+        if (width <= 0 || height <= 0) {
+            throw new Error("无法识别人脸照片尺寸，请重新拍摄或选择照片");
+        }
+
+        if (width > height) {
+            throw new Error("人脸照片需保持竖向拍摄，请正对摄像头重新拍摄");
+        }
+
+        if (width < FACE_IMAGE_MIN_WIDTH || height < FACE_IMAGE_MIN_HEIGHT) {
+            throw new Error("人脸照片分辨率不能低于 640x480，请上传更清晰的照片");
+        }
+    };
+
+    const normalizeFaceImage = async (asset: ImagePicker.ImagePickerAsset) => {
         try {
-            const fileInfo = await FileSystem.getInfoAsync(uri);
-            if (!fileInfo.exists) {
-                throw new Error("文件不存在");
-            }
+            validateFaceImageSize(asset);
 
-            const size = "size" in fileInfo ? fileInfo.size : 0;
-            if (size <= 1024 * 1024 * 2) {
-                return uri;
-            }
+            const originalWidth = asset.width ?? 0;
+            const originalHeight = asset.height ?? 0;
+            const shortSide = Math.min(originalWidth, originalHeight);
+            const targetScale =
+                shortSide > FACE_IMAGE_TARGET_SHORT_SIDE
+                    ? FACE_IMAGE_TARGET_SHORT_SIDE / shortSide
+                    : 1;
+            const maxScale = Math.min(
+                FACE_IMAGE_MAX_WIDTH / originalWidth,
+                FACE_IMAGE_MAX_HEIGHT / originalHeight,
+                1,
+            );
+            const scale = Math.min(targetScale, maxScale);
+            const targetWidth = Math.round(originalWidth * scale);
+            const targetHeight = Math.round(originalHeight * scale);
 
-            const result = await ImageManipulator.manipulateAsync(
-                uri,
-                [{ resize: { width: 1280, height: 1280 } }],
+            const result = await manipulateAsync(
+                asset.uri,
+                [{ resize: { width: targetWidth, height: targetHeight } }],
                 {
-                    compress: 0.7,
+                    compress: FACE_IMAGE_JPEG_QUALITY,
                     format: SaveFormat.JPEG,
                 },
             );
-            return result.uri;
-        } catch {
-            return uri;
+
+            const normalizedSize = await getLocalFileSize(result.uri);
+            if (normalizedSize > 0 && normalizedSize <= MAX_ALIPAY_FACE_IMAGE_BYTES) {
+                return result.uri;
+            }
+
+            throw new Error("照片处理后仍超过 1MB，请重新拍摄或选择更小的清晰照片");
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error;
+            }
+            throw new Error("照片处理失败，请重新选择照片");
         }
+    };
+
+    const uploadPickedFaceImage = async (asset: ImagePicker.ImagePickerAsset) => {
+        const normalizedUri = await normalizeFaceImage(asset);
+        setFaceImageUri(normalizedUri);
+        setFaceImageFileId(null);
+
+        const response = await handleUploadFaceImage({
+            uri: normalizedUri,
+            name: `face_${Date.now()}.jpg`,
+            type: "image/jpeg",
+        });
+
+        setFaceImageFileId(response.fileIdentifier);
+    };
+
+    const handleFaceImageError = (error: unknown) => {
+        setFaceImageFileId(null);
+        const message = error instanceof Error ? error.message : "人脸照片上传失败，请重试";
+        Alert.alert("上传失败", message);
     };
 
     const handleTakeFacePhoto = async () => {
@@ -165,7 +234,6 @@ export default function IdCardVerificationScreen() {
 
         const result = await ImagePicker.launchCameraAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
-            aspect: [1, 1],
             quality: 1,
         });
 
@@ -176,20 +244,36 @@ export default function IdCardVerificationScreen() {
         const asset = result.assets[0];
 
         try {
-            const compressedUri = await compressFaceImage(asset.uri);
-            setFaceImageUri(compressedUri);
-            setFaceImageFileId(null);
-
-            const response = await handleUploadFaceImage({
-                uri: compressedUri,
-                name: asset.fileName || `face_${Date.now()}.jpg`,
-                type: asset.mimeType || "image/jpeg",
-            });
-
-            setFaceImageFileId(response.fileIdentifier);
+            await uploadPickedFaceImage(asset);
         } catch (error) {
-            setFaceImageFileId(null);
-            Alert.alert("上传失败", (error as Error).message || "人脸照片上传失败，请重试");
+            handleFaceImageError(error);
+        }
+    };
+
+    const handlePickFaceImage = async () => {
+        if (loading) {
+            return;
+        }
+
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (permission.status !== "granted") {
+            Alert.alert("提示", "需要相册权限才能选择照片");
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            quality: 1,
+        });
+
+        if (result.canceled || !result.assets?.length) {
+            return;
+        }
+
+        try {
+            await uploadPickedFaceImage(result.assets[0]);
+        } catch (error) {
+            handleFaceImageError(error);
         }
     };
 
@@ -267,34 +351,48 @@ export default function IdCardVerificationScreen() {
                             </Text>
                         </View>
 
-                        <Pressable
-                            style={[
-                                styles.faceUploadButton,
-                                loading && styles.faceUploadButtonDisabled,
-                            ]}
-                            className="flex"
-                            onPress={handleTakeFacePhoto}
-                            disabled={loading}
-                        >
-                            {faceImageUri ? (
-                                <Image
-                                    source={{ uri: faceImageUri }}
-                                    style={styles.faceUploadPreview}
-                                    resizeMode="cover"
-                                />
-                            ) : (
-                                <View style={styles.cameraCircle}>
-                                    <Ionicons name="camera" size={34} color="#fff" />
-                                </View>
-                            )}
+                        <View style={styles.faceUploadWrap}>
+                            <Pressable
+                                style={[
+                                    styles.faceUploadButton,
+                                    loading && styles.faceUploadButtonDisabled,
+                                ]}
+                                className="flex"
+                                onPress={handleTakeFacePhoto}
+                                disabled={loading}
+                            >
+                                {faceImageUri ? (
+                                    <Image
+                                        source={{ uri: faceImageUri }}
+                                        style={styles.faceUploadPreview}
+                                        resizeMode="cover"
+                                    />
+                                ) : (
+                                    <View style={styles.cameraCircle}>
+                                        <Ionicons name="camera" size={34} color="#fff" />
+                                    </View>
+                                )}
 
-                            {loading && (
-                                <View style={styles.faceUploadLoadingMask}>
-                                    <ActivityIndicator size="small" color="#2f7df6" />
-                                    <Text style={styles.faceUploadLoadingText}>上传中...</Text>
-                                </View>
-                            )}
-                        </Pressable>
+                                {loading && (
+                                    <View style={styles.faceUploadLoadingMask}>
+                                        <ActivityIndicator size="small" color="#2f7df6" />
+                                        <Text style={styles.faceUploadLoadingText}>上传中...</Text>
+                                    </View>
+                                )}
+                            </Pressable>
+
+                            <TouchableOpacity
+                                style={[
+                                    styles.albumButton,
+                                    loading && styles.faceUploadButtonDisabled,
+                                ]}
+                                onPress={handlePickFaceImage}
+                                disabled={loading}
+                            >
+                                <Ionicons name="images-outline" size={16} color="#2f7df6" />
+                                <Text style={styles.albumButtonText}>从相册选择</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </View>
 
@@ -470,9 +568,13 @@ const styles = StyleSheet.create({
         color: "#333",
         textAlign: "center",
     },
-    faceUploadButton: {
+    faceUploadWrap: {
         flex: 1,
         minWidth: 0,
+        gap: 10,
+    },
+    faceUploadButton: {
+        width: "100%",
         aspectRatio: 1,
         borderRadius: 4,
         backgroundColor: "#f4f4f4",
@@ -506,6 +608,22 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: "#2f7df6",
         marginTop: 8,
+    },
+    albumButton: {
+        minHeight: 36,
+        borderRadius: 4,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: "#2f7df6",
+        backgroundColor: "#f5f9ff",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 6,
+    },
+    albumButtonText: {
+        fontSize: 13,
+        fontWeight: "600",
+        color: "#2f7df6",
     },
     submitButton: {
         height: 48,
