@@ -559,7 +559,7 @@ export default function ServiceSettingsDetailRedesignScreen() {
                     vocationalQualificationFileId: vocationalQualification?.id ?? null,
                 });
                 await refetchProfile();
-                Alert.alert("发布成功", "服务设置已更新", [
+                Alert.alert("提交成功", "已提交审核，等待管理员审核", [
                     { text: "好的", onPress: () => router.back() },
                 ]);
             } catch (error) {
@@ -917,7 +917,7 @@ export default function ServiceSettingsDetailRedesignScreen() {
                     {saving ? (
                         <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
-                        <Text className="text-sm leading-[21px] text-white">发布服务</Text>
+                        <Text className="text-sm leading-[21px] text-white">提交审核</Text>
                     )}
                 </Pressable>
             </View>

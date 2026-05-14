@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react"
 import {
+    ClipboardCheck,
     ClipboardList,
     LayoutDashboard,
     Layers3,
@@ -56,6 +57,12 @@ const managementNav: NavItem[] = [
         href: "/service-tags",
         icon: Tags,
         description: "按摩标签维护与启停",
+    },
+    {
+        label: "服务发布管理",
+        href: "/service-offerings",
+        icon: ClipboardCheck,
+        description: "服务审核、上架状态与下架处理",
     },
     {
         label: "收益记录",

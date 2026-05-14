@@ -512,6 +512,13 @@
       "when": 1778135935089,
       "tag": "0072_familiar_agent_zero",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1778730156661,
+      "tag": "0073_chunky_gargoyle",
+      "breakpoints": true
     }
   ]
 }

@@ -14,6 +14,8 @@ import {
     type AdminWithdrawalsQueryInput,
     adminMerchantJoinRequestsQueryOptions,
     type AdminMerchantJoinRequestsQueryInput,
+    adminServiceOfferingsQueryOptions,
+    type AdminServiceOfferingsQueryInput,
     adminAppReleasesQueryOptions,
     type AdminAppReleasesQueryInput,
     adminServiceTagsQueryOptions,
@@ -202,6 +204,28 @@ export async function preloadMerchantJoinRequestsPageState(
         ) {
             redirect("/auth/login");
         }
+        throw error;
+    }
+}
+
+export async function preloadServiceOfferingsPageState(
+    query: AdminServiceOfferingsQueryInput = {},
+) {
+    ensureSsrApiClient();
+
+    try {
+        return await prefetchDehydratedState(async (queryClient) => {
+            await queryClient.fetchQuery(adminServiceOfferingsQueryOptions(query));
+        });
+    } catch (error) {
+        if (
+            error instanceof ApiClientError &&
+            (error.code === ErrorCode.UNAUTHORIZED ||
+                error.code === ErrorCode.FORBIDDEN)
+        ) {
+            redirect("/auth/login");
+        }
+
         throw error;
     }
 }

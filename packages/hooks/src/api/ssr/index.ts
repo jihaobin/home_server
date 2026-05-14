@@ -89,6 +89,20 @@ export type {
     NormalizedAdminMerchantJoinRequestsQuery,
 } from "./admin-merchant-join-requests";
 export {
+    adminServiceOfferingsQueryOptions,
+    adminServiceOfferingsQueryKey,
+    normalizeAdminServiceOfferingsQuery,
+    useAdminServiceOfferings,
+    invalidateAdminServiceOfferingsQuery,
+    useApproveAdminServiceOfferingDraft,
+    useRejectAdminServiceOfferingDraft,
+    useTakeDownAdminServiceOffering,
+} from "./admin-service-offerings";
+export type {
+    AdminServiceOfferingsQueryInput,
+    NormalizedAdminServiceOfferingsQuery,
+} from "./admin-service-offerings";
+export {
     adminAppReleasesQueryOptions,
     adminAppReleaseDetailQueryOptions,
     useAdminAppReleases,

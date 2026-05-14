@@ -28,6 +28,7 @@ type ServiceCardData = {
     tone: ServiceCardTone;
     icon: ServiceCardIcon;
     badge?: string;
+    statusText?: string;
 };
 
 export default function ServiceSettingsRedesignScreen() {
@@ -58,6 +59,10 @@ export default function ServiceSettingsRedesignScreen() {
             tone: index % 2 === 0 ? "slate" : "amber",
             icon,
             badge: needsQualification(service, hasQualification) ? "需资质" : undefined,
+            statusText:
+                service.publicationStatus === "taken_down"
+                    ? `已下架：${service.takeDownReason?.trim() || "暂无原因"}`
+                    : undefined,
         };
     });
 
@@ -124,6 +129,7 @@ export default function ServiceSettingsRedesignScreen() {
                                 icon={service.icon}
                                 tone={service.tone}
                                 badge={service.badge}
+                                statusText={service.statusText}
                                 onPress={() => openServiceDetail(service.id)}
                             />
                         ))
@@ -171,6 +177,7 @@ function ServiceCard(props: {
     icon: ServiceCardIcon;
     tone: ServiceCardTone;
     badge?: string;
+    statusText?: string;
     onPress: () => void;
 }) {
     return (
@@ -194,6 +201,11 @@ function ServiceCard(props: {
                 <Text className="mt-0.5 text-xs leading-[18px] text-[#6A7282]" numberOfLines={1}>
                     {props.description}
                 </Text>
+                {props.statusText ? (
+                    <Text className="mt-1 text-[11px] leading-[17px] text-[#FF5252]" numberOfLines={1}>
+                        {props.statusText}
+                    </Text>
+                ) : null}
             </View>
             {props.badge ? (
                 <View className="rounded-lg bg-[#EEF1F5] px-2.5 py-1">

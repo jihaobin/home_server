@@ -20,6 +20,7 @@ import { DbType } from 'src/common/database/db';
 import {
     reviewStats,
     servicePersonnel,
+    servicePersonnelOfferingStatuses,
     servicePersonnelPricing,
     servicePersonnelSkills,
     services,
@@ -29,6 +30,21 @@ import {
 import { GeoLocationService } from 'src/common/services/geo-location.service';
 import { extractParams } from 'src/lib/utlis';
 import { OrderRepository } from '../order/order.reposityro';
+
+export function buildActiveOfferingCondition() {
+    return and(
+        eq(
+            servicePersonnelOfferingStatuses.personnelUserId,
+            servicePersonnelPricing.userId,
+        ),
+        eq(
+            servicePersonnelOfferingStatuses.serviceId,
+            servicePersonnelPricing.serviceId,
+        ),
+        eq(servicePersonnelOfferingStatuses.publicationStatus, 'active'),
+        eq(servicePersonnelOfferingStatuses.reviewStatus, 'approved'),
+    );
+}
 
 @Injectable()
 export class ServicePersonnelRepository {
@@ -88,10 +104,19 @@ export class ServicePersonnelRepository {
                     )`.as('row_num'),
                 })
                 .from(servicePersonnelPricing)
+                .innerJoin(
+                    services,
+                    eq(services.id, servicePersonnelPricing.serviceId),
+                )
+                .innerJoin(
+                    servicePersonnelOfferingStatuses,
+                    buildActiveOfferingCondition(),
+                )
                 .where(
                     and(
                         eq(servicePersonnelPricing.serviceId, serviceId),
                         eq(servicePersonnelPricing.isActive, true),
+                        eq(services.isActive, true),
                     ),
                 ),
         );
@@ -371,6 +396,44 @@ export class ServicePersonnelRepository {
                 name: servicePersonnel.name,
             })
             .from(servicePersonnel)
+            .innerJoin(
+                servicePersonnelOfferingStatuses,
+                and(
+                    eq(
+                        servicePersonnelOfferingStatuses.personnelUserId,
+                        servicePersonnel.userId,
+                    ),
+                    eq(
+                        servicePersonnelOfferingStatuses.publicationStatus,
+                        'active',
+                    ),
+                    eq(
+                        servicePersonnelOfferingStatuses.reviewStatus,
+                        'approved',
+                    ),
+                ),
+            )
+            .innerJoin(
+                services,
+                and(
+                    eq(services.id, servicePersonnelOfferingStatuses.serviceId),
+                    eq(services.isActive, true),
+                ),
+            )
+            .innerJoin(
+                servicePersonnelPricing,
+                and(
+                    eq(
+                        servicePersonnelPricing.userId,
+                        servicePersonnel.userId,
+                    ),
+                    eq(
+                        servicePersonnelPricing.serviceId,
+                        servicePersonnelOfferingStatuses.serviceId,
+                    ),
+                    eq(servicePersonnelPricing.isActive, true),
+                ),
+            )
             .where(
                 and(
                     eq(servicePersonnel.isAvailable, true),
@@ -378,6 +441,7 @@ export class ServicePersonnelRepository {
                 ),
             )
             .orderBy(asc(servicePersonnel.name), asc(servicePersonnel.userId))
+            .groupBy(servicePersonnel.userId, servicePersonnel.name)
             .limit(limit);
     }
 
@@ -393,12 +457,51 @@ export class ServicePersonnelRepository {
                 name: servicePersonnel.name,
             })
             .from(servicePersonnel)
+            .innerJoin(
+                servicePersonnelOfferingStatuses,
+                and(
+                    eq(
+                        servicePersonnelOfferingStatuses.personnelUserId,
+                        servicePersonnel.userId,
+                    ),
+                    eq(
+                        servicePersonnelOfferingStatuses.publicationStatus,
+                        'active',
+                    ),
+                    eq(
+                        servicePersonnelOfferingStatuses.reviewStatus,
+                        'approved',
+                    ),
+                ),
+            )
+            .innerJoin(
+                services,
+                and(
+                    eq(services.id, servicePersonnelOfferingStatuses.serviceId),
+                    eq(services.isActive, true),
+                ),
+            )
+            .innerJoin(
+                servicePersonnelPricing,
+                and(
+                    eq(
+                        servicePersonnelPricing.userId,
+                        servicePersonnel.userId,
+                    ),
+                    eq(
+                        servicePersonnelPricing.serviceId,
+                        servicePersonnelOfferingStatuses.serviceId,
+                    ),
+                    eq(servicePersonnelPricing.isActive, true),
+                ),
+            )
             .where(
                 and(
                     eq(servicePersonnel.isAvailable, true),
                     sql`regexp_replace(trim(${servicePersonnel.name}), '\s+', ' ', 'g') = ${normalizedKeyword}`,
                 ),
             )
+            .groupBy(servicePersonnel.userId, servicePersonnel.name)
             .limit(2);
 
         return rows.length === 1 ? rows[0] : null;
@@ -462,6 +565,10 @@ export class ServicePersonnelRepository {
                     services,
                     eq(services.id, servicePersonnelPricing.serviceId),
                 )
+                .innerJoin(
+                    servicePersonnelOfferingStatuses,
+                    buildActiveOfferingCondition(),
+                )
                 .where(
                     and(
                         inArray(
@@ -474,62 +581,85 @@ export class ServicePersonnelRepository {
                 ),
         );
 
+        const personnelMatchesCTE = this.db.$with('personnel_matches').as(
+            this.db
+                .with(optimalPricingCTE)
+                .select({
+                    personnelId: servicePersonnel.userId,
+                    name: servicePersonnel.name,
+                    avatar: servicePersonnel.avatar,
+                    serviceId: optimalPricingCTE.serviceId,
+                    serviceName: optimalPricingCTE.serviceName,
+                    pricingId: optimalPricingCTE.pricingId,
+                    minPrice:
+                        sql<number>`CAST(${optimalPricingCTE.price} AS DECIMAL(18,2))`.as(
+                            'min_price',
+                        ),
+                    distanceKm: distanceSelect,
+                    addressText: servicePersonnel.detailedAddress,
+                    workDays: servicePersonnel.workDays,
+                    workStartTime: servicePersonnel.workStartTime,
+                    workEndTime: servicePersonnel.workEndTime,
+                    reviewCount:
+                        sql<number>`COALESCE(${reviewStats.totalCount}, 0)`.as(
+                            'review_count',
+                        ),
+                    goodRatePercentage: sql<number>`CASE
+                            WHEN COALESCE(${reviewStats.totalCount}, 0) = 0 THEN 0
+                            ELSE ROUND(COALESCE(${reviewStats.goodCount}, 0)::decimal / ${reviewStats.totalCount} * 100, 2)
+                        END`.as('good_rate_percentage'),
+                    ratingValue:
+                        sql<number>`COALESCE(${reviewStats.averageRating}, 0) / 100.0`.as(
+                            'rating_value',
+                        ),
+                    personnelRowNum: sql<number>`ROW_NUMBER() OVER (
+                        PARTITION BY ${servicePersonnel.userId}
+                        ORDER BY ${distanceSelect} ASC,
+                                 CAST(${optimalPricingCTE.price} AS DECIMAL(18,2)) ASC,
+                                 ${optimalPricingCTE.serviceName} ASC,
+                                 ${optimalPricingCTE.serviceId} ASC
+                    )`.as('personnel_row_num'),
+                })
+                .from(servicePersonnel)
+                .innerJoin(
+                    optimalPricingCTE,
+                    and(
+                        eq(optimalPricingCTE.userId, servicePersonnel.userId),
+                        sql`${optimalPricingCTE.rowNum} = 1`,
+                    ),
+                )
+                .leftJoin(
+                    reviewStats,
+                    and(
+                        eq(reviewStats.targetId, servicePersonnel.userId),
+                        sql`${reviewStats.targetType} = 'personnel'`,
+                        eq(reviewStats.serviceId, optimalPricingCTE.serviceId),
+                    ),
+                )
+                .where(
+                    and(
+                        eq(servicePersonnel.isAvailable, true),
+                        ...(excludePersonnelUserId
+                            ? [
+                                  ne(
+                                      servicePersonnel.userId,
+                                      excludePersonnelUserId,
+                                  ),
+                              ]
+                            : []),
+                    ),
+                ),
+        );
+
         const rows = await this.db
-            .with(optimalPricingCTE)
-            .select({
-                personnelId: servicePersonnel.userId,
-                name: servicePersonnel.name,
-                avatar: servicePersonnel.avatar,
-                serviceId: optimalPricingCTE.serviceId,
-                serviceName: optimalPricingCTE.serviceName,
-                pricingId: optimalPricingCTE.pricingId,
-                minPrice:
-                    sql<number>`CAST(${optimalPricingCTE.price} AS DECIMAL(18,2))`.as(
-                        'min_price',
-                    ),
-                distanceKm: distanceSelect,
-                addressText: servicePersonnel.detailedAddress,
-                workDays: servicePersonnel.workDays,
-                workStartTime: servicePersonnel.workStartTime,
-                workEndTime: servicePersonnel.workEndTime,
-                reviewCount:
-                    sql<number>`COALESCE(${reviewStats.totalCount}, 0)`.as(
-                        'review_count',
-                    ),
-                goodRatePercentage: sql<number>`CASE
-                        WHEN COALESCE(${reviewStats.totalCount}, 0) = 0 THEN 0
-                        ELSE ROUND(COALESCE(${reviewStats.goodCount}, 0)::decimal / ${reviewStats.totalCount} * 100, 2)
-                    END`.as('good_rate_percentage'),
-                ratingValue:
-                    sql<number>`COALESCE(${reviewStats.averageRating}, 0) / 100.0`.as(
-                        'rating_value',
-                    ),
-            })
-            .from(servicePersonnel)
-            .innerJoin(
-                optimalPricingCTE,
-                and(
-                    eq(optimalPricingCTE.userId, servicePersonnel.userId),
-                    sql`${optimalPricingCTE.rowNum} = 1`,
-                ),
+            .with(optimalPricingCTE, personnelMatchesCTE)
+            .select()
+            .from(personnelMatchesCTE)
+            .where(sql`${personnelMatchesCTE.personnelRowNum} = 1`)
+            .orderBy(
+                asc(personnelMatchesCTE.distanceKm),
+                asc(personnelMatchesCTE.personnelId),
             )
-            .leftJoin(
-                reviewStats,
-                and(
-                    eq(reviewStats.targetId, servicePersonnel.userId),
-                    sql`${reviewStats.targetType} = 'personnel'`,
-                    eq(reviewStats.serviceId, optimalPricingCTE.serviceId),
-                ),
-            )
-            .where(
-                and(
-                    eq(servicePersonnel.isAvailable, true),
-                    ...(excludePersonnelUserId
-                        ? [ne(servicePersonnel.userId, excludePersonnelUserId)]
-                        : []),
-                ),
-            )
-            .orderBy(asc(distanceSelect), asc(servicePersonnel.userId))
             .limit(limit + 1)
             .offset(offset);
 
@@ -684,6 +814,36 @@ export class ServicePersonnelRepository {
 
     async getPersonnelServiceDetails(personnelId: string, serviceId: string) {
         const now = new Date();
+        const activeOffering = await this.db
+            .select({ serviceId: servicePersonnelOfferingStatuses.serviceId })
+            .from(servicePersonnelOfferingStatuses)
+            .innerJoin(
+                services,
+                eq(services.id, servicePersonnelOfferingStatuses.serviceId),
+            )
+            .where(
+                and(
+                    eq(
+                        servicePersonnelOfferingStatuses.personnelUserId,
+                        personnelId,
+                    ),
+                    eq(servicePersonnelOfferingStatuses.serviceId, serviceId),
+                    eq(
+                        servicePersonnelOfferingStatuses.publicationStatus,
+                        'active',
+                    ),
+                    eq(
+                        servicePersonnelOfferingStatuses.reviewStatus,
+                        'approved',
+                    ),
+                    eq(services.isActive, true),
+                ),
+            )
+            .limit(1);
+        if (activeOffering.length === 0) {
+            return null;
+        }
+
         const query = await this.db.query.servicePersonnel.findFirst({
             where: and(eq(servicePersonnel.userId, personnelId)),
             columns: {

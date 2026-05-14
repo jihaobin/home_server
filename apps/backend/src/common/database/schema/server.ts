@@ -4,15 +4,19 @@ import {
     foreignKey,
     index,
     integer,
+    jsonb,
+    pgEnum,
     pgTable,
     primaryKey,
     text,
+    timestamp,
     uniqueIndex,
     varchar,
 } from 'drizzle-orm/pg-core';
 import { createId } from '.';
 import { servicePersonnel } from './shops-service';
 import { files } from './file';
+import { users } from './auth-user';
 
 // =================================================================
 // 服务与分类模块
@@ -168,6 +172,103 @@ export const servicePersonnelSkills = pgTable(
     ],
 );
 
+export const serviceOfferingDraftStatusEnum = pgEnum(
+    'service_offering_draft_status',
+    ['pending', 'approved', 'rejected'],
+);
+
+export const serviceOfferingPublicationStatusEnum = pgEnum(
+    'service_offering_publication_status',
+    ['active', 'taken_down'],
+);
+
+export const servicePersonnelOfferingDrafts = pgTable(
+    'service_personnel_offering_drafts',
+    {
+        id: varchar('id', { length: 255 })
+            .primaryKey()
+            .$default(() => createId())
+            .unique(),
+        personnelUserId: varchar('personnel_user_id', { length: 255 })
+            .notNull()
+            .references(() => servicePersonnel.userId, { onDelete: 'cascade' }),
+        submittedSnapshot: jsonb('submitted_snapshot').notNull(),
+        status: serviceOfferingDraftStatusEnum('status')
+            .notNull()
+            .default('pending'),
+        rejectionReason: text('rejection_reason'),
+        reviewedBy: varchar('reviewed_by', { length: 255 }).references(
+            () => users.id,
+            { onDelete: 'set null' },
+        ),
+        reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+        createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+        updatedAt: timestamp('updated_at', { withTimezone: true })
+            .defaultNow()
+            .$onUpdateFn(() => new Date()),
+    },
+    (table) => [
+        index('idx_service_offering_drafts_personnel_status').on(
+            table.personnelUserId,
+            table.status,
+            table.updatedAt.desc(),
+        ),
+        uniqueIndex('uniq_service_offering_drafts_pending_personnel')
+            .on(table.personnelUserId)
+            .where(sql`status = 'pending'`),
+    ],
+);
+
+export const servicePersonnelOfferingStatuses = pgTable(
+    'service_personnel_offering_statuses',
+    {
+        personnelUserId: varchar('personnel_user_id', { length: 255 })
+            .notNull()
+            .references(() => servicePersonnel.userId, { onDelete: 'cascade' }),
+        serviceId: varchar('service_id', { length: 255 })
+            .notNull()
+            .references(() => services.id, { onDelete: 'cascade' }),
+        publicationStatus: serviceOfferingPublicationStatusEnum(
+            'publication_status',
+        )
+            .notNull()
+            .default('active'),
+        reviewStatus: serviceOfferingDraftStatusEnum('review_status')
+            .notNull()
+            .default('approved'),
+        takeDownReason: text('take_down_reason'),
+        takenDownBy: varchar('taken_down_by', { length: 255 }).references(
+            () => users.id,
+            { onDelete: 'set null' },
+        ),
+        takenDownAt: timestamp('taken_down_at', { withTimezone: true }),
+        lastApprovedDraftId: varchar('last_approved_draft_id', {
+            length: 255,
+        }).references(() => servicePersonnelOfferingDrafts.id, {
+            onDelete: 'set null',
+        }),
+        lastApprovedAt: timestamp('last_approved_at', { withTimezone: true }),
+        createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+        updatedAt: timestamp('updated_at', { withTimezone: true })
+            .defaultNow()
+            .$onUpdateFn(() => new Date()),
+    },
+    (table) => [
+        primaryKey({
+            columns: [table.personnelUserId, table.serviceId],
+            name: 'service_personnel_offering_statuses_pkey',
+        }),
+        index('idx_service_offering_status_active').on(
+            table.serviceId,
+            table.publicationStatus,
+        ),
+        index('idx_service_offering_status_personnel').on(
+            table.personnelUserId,
+            table.publicationStatus,
+        ),
+    ],
+);
+
 // 服务分类关系定义
 export const serviceCategoriesRelations = relations(
     serviceCategories,
@@ -207,6 +308,7 @@ export const servicesRelations = relations(services, ({ one, many }) => ({
         references: [serviceTags.id],
     }),
     personnelSkills: many(servicePersonnelSkills),
+    offeringStatuses: many(servicePersonnelOfferingStatuses),
 }));
 
 // 服务人员技能关系定义
@@ -220,6 +322,43 @@ export const servicePersonnelSkillsRelations = relations(
         service: one(services, {
             fields: [servicePersonnelSkills.serviceId],
             references: [services.id],
+        }),
+    }),
+);
+
+export const servicePersonnelOfferingDraftsRelations = relations(
+    servicePersonnelOfferingDrafts,
+    ({ one, many }) => ({
+        personnel: one(servicePersonnel, {
+            fields: [servicePersonnelOfferingDrafts.personnelUserId],
+            references: [servicePersonnel.userId],
+        }),
+        reviewer: one(users, {
+            fields: [servicePersonnelOfferingDrafts.reviewedBy],
+            references: [users.id],
+        }),
+        offeringStatuses: many(servicePersonnelOfferingStatuses),
+    }),
+);
+
+export const servicePersonnelOfferingStatusesRelations = relations(
+    servicePersonnelOfferingStatuses,
+    ({ one }) => ({
+        personnel: one(servicePersonnel, {
+            fields: [servicePersonnelOfferingStatuses.personnelUserId],
+            references: [servicePersonnel.userId],
+        }),
+        service: one(services, {
+            fields: [servicePersonnelOfferingStatuses.serviceId],
+            references: [services.id],
+        }),
+        takenDownByUser: one(users, {
+            fields: [servicePersonnelOfferingStatuses.takenDownBy],
+            references: [users.id],
+        }),
+        lastApprovedDraft: one(servicePersonnelOfferingDrafts, {
+            fields: [servicePersonnelOfferingStatuses.lastApprovedDraftId],
+            references: [servicePersonnelOfferingDrafts.id],
         }),
     }),
 );

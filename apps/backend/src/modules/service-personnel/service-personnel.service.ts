@@ -30,6 +30,13 @@ type RawPersonnelSkill = {
     isActive: boolean;
     personnelDescription?: string | null;
     galleryFileIds?: string[] | null;
+    reviewStatus?: 'pending' | 'approved' | 'rejected';
+    publicationStatus?: 'active' | 'taken_down';
+    rejectionReason?: string | null;
+    takeDownReason?: string | null;
+    pendingDraftId?: string | null;
+    lastApprovedAt?: Date | null;
+    takenDownAt?: Date | null;
     specifications: Array<{
         id: string;
         userId: string;
@@ -84,7 +91,7 @@ export class ServicePersonnelService {
         const dedupedRows = new Map<string, SearchPersonnelRow>();
 
         for (const row of rows) {
-            const dedupeKey = `${row.personnelId}::${row.serviceId ?? row.pricingId ?? ''}`;
+            const dedupeKey = row.personnelId;
             const existing = dedupedRows.get(dedupeKey);
 
             if (!existing) {
@@ -98,6 +105,21 @@ export class ServicePersonnelService {
             const existingPrice = Number(
                 existing.minPrice ?? Number.POSITIVE_INFINITY,
             );
+            const currentDistance = Number(
+                row.distanceKm ?? Number.POSITIVE_INFINITY,
+            );
+            const existingDistance = Number(
+                existing.distanceKm ?? Number.POSITIVE_INFINITY,
+            );
+
+            if (currentDistance < existingDistance) {
+                dedupedRows.set(dedupeKey, row);
+                continue;
+            }
+
+            if (currentDistance > existingDistance) {
+                continue;
+            }
 
             if (currentPrice < existingPrice) {
                 dedupedRows.set(dedupeKey, row);
@@ -199,6 +221,8 @@ export class ServicePersonnelService {
         const dedupedPersonnel = this.dedupeSearchPersonnelRows(
             result.personnel,
         );
+        const hasMore =
+            dedupedPersonnel.length >= params.limit ? result.hasMore : false;
 
         const isHttpUrl = (value: string) =>
             value.startsWith('http://') || value.startsWith('https://');
@@ -232,6 +256,8 @@ export class ServicePersonnelService {
 
         return {
             ...result,
+            hasMore,
+            nextPage: hasMore ? result.nextPage : null,
             personnel: dedupedPersonnel.map((item) => {
                 const rawAvatar = item.avatar?.trim() ?? '';
                 const avatar = !rawAvatar
@@ -265,7 +291,7 @@ export class ServicePersonnelService {
 
     async getPersonnelServicesSummary(personnelId: string) {
         const personnel =
-            await this.workSkillService.getPersonnelInfo(personnelId);
+            await this.workSkillService.getPublishedPersonnelInfo(personnelId);
         if (!personnel) {
             throw new NotFoundException('服务人员不存在');
         }
@@ -364,13 +390,14 @@ export class ServicePersonnelService {
         personnelId: string,
     ): Promise<ServicePersonnelProfile> {
         const personnel =
-            await this.workSkillService.getPersonnelInfo(personnelId);
+            await this.workSkillService.getPublishedPersonnelInfo(personnelId);
         if (!personnel) {
             throw new NotFoundException('服务人员不存在');
         }
-        const userInfo = (await this.servicePersonnelRepository.getPersonnelContactInfo(
-            personnelId,
-        )) as PersonnelContactInfo | null;
+        const userInfo =
+            (await this.servicePersonnelRepository.getPersonnelContactInfo(
+                personnelId,
+            )) as PersonnelContactInfo | null;
         if (!userInfo) {
             throw new NotFoundException('服务人员不存在');
         }
@@ -421,6 +448,13 @@ export class ServicePersonnelService {
                     galleryFileIds,
                     gallery,
                     specifications: specs,
+                    reviewStatus: skill.reviewStatus ?? 'approved',
+                    publicationStatus: skill.publicationStatus ?? 'active',
+                    rejectionReason: skill.rejectionReason ?? null,
+                    takeDownReason: skill.takeDownReason ?? null,
+                    pendingDraftId: skill.pendingDraftId ?? null,
+                    lastApprovedAt: skill.lastApprovedAt ?? null,
+                    takenDownAt: skill.takenDownAt ?? null,
                 };
             }),
         );

@@ -7,12 +7,15 @@ import {
     OrderStatusEnum,
     PaymentMethodEnum,
     PaymentStatusEnum,
+    ServiceOfferingDraftStatusEnum,
+    ServiceOfferingPublicationStatusEnum,
     ServiceCategoriesSchema,
     TransactionTypeEnum,
     UserRoleEnum,
     WithdrawalPayeeAccountTypeEnum,
     WithdrawalStatusEnum,
 } from "./database-entity";
+import { FileAccessInfoSchema } from "./work-skill";
 import { ServiceTagDomainEnum } from "./service-tag";
 
 /**
@@ -401,6 +404,259 @@ export const AdminBulkUpdateOrderStatusResultSchema = z
 
 export type AdminBulkUpdateOrderStatusResult = z.infer<
     typeof AdminBulkUpdateOrderStatusResultSchema
+>;
+
+// =========================
+// 服务上架审核管理
+// =========================
+
+export const AdminServiceOfferingListQuerySchema = z
+    .object({
+        page: PaginationQuerySchema.shape.page.default(1),
+        limit: PaginationQuerySchema.shape.limit.default(20),
+        keyword: z.string().trim().optional().describe("服务人员或服务关键词"),
+        status: z
+            .enum(["all", "pending", "published"])
+            .default("all")
+            .describe("列表类型筛选"),
+        reviewStatus: z
+            .enum(["all", "pending", "approved", "rejected"])
+            .default("all")
+            .describe("审核状态筛选"),
+        publicationStatus: z
+            .enum(["all", "active", "taken_down"])
+            .default("all")
+            .describe("发布状态筛选"),
+    })
+    .describe("管理员服务上架审核列表查询参数");
+
+export type AdminServiceOfferingListQuery = z.infer<
+    typeof AdminServiceOfferingListQuerySchema
+>;
+
+export const AdminServiceOfferingReasonSchema = z
+    .object({
+        reason: z
+            .string()
+            .trim()
+            .min(1, "原因不能为空")
+            .max(500, "原因不能超过 500 个字符"),
+    })
+    .describe("管理员服务审核或下架原因");
+
+export type AdminServiceOfferingReason = z.infer<
+    typeof AdminServiceOfferingReasonSchema
+>;
+
+export const AdminServiceOfferingApproveSchema = z
+    .object({
+        draftId: z.string().min(1, "草稿ID不能为空"),
+    })
+    .describe("管理员通过服务上架审核请求");
+
+export type AdminServiceOfferingApprove = z.infer<
+    typeof AdminServiceOfferingApproveSchema
+>;
+
+export const AdminServiceOfferingRejectSchema =
+    AdminServiceOfferingReasonSchema.extend({
+        draftId: z.string().min(1, "草稿ID不能为空"),
+    }).describe("管理员拒绝服务上架审核请求");
+
+export type AdminServiceOfferingReject = z.infer<
+    typeof AdminServiceOfferingRejectSchema
+>;
+
+export const AdminServiceOfferingTakeDownSchema =
+    AdminServiceOfferingReasonSchema.extend({
+        personnelUserId: z.string().min(1, "服务人员用户ID不能为空"),
+        serviceId: z.string().min(1, "服务ID不能为空"),
+    }).describe("管理员下架服务请求");
+
+export type AdminServiceOfferingTakeDown = z.infer<
+    typeof AdminServiceOfferingTakeDownSchema
+>;
+
+export const AdminServiceOfferingRestoreSchema = z
+    .object({
+        personnelUserId: z.string().min(1, "服务人员用户ID不能为空"),
+        serviceId: z.string().min(1, "服务ID不能为空"),
+    })
+    .describe("管理员恢复已下架服务请求");
+
+export type AdminServiceOfferingRestore = z.infer<
+    typeof AdminServiceOfferingRestoreSchema
+>;
+
+export const AdminServiceOfferingPersonnelSummarySchema = z
+    .object({
+        id: z.string().describe("服务人员用户 ID"),
+        name: z.string().nullable().describe("服务人员姓名"),
+        phoneNumber: z.string().nullable().describe("服务人员手机号"),
+        merchantQualificationFileId: z
+            .string()
+            .nullable()
+            .optional()
+            .describe("商家资质文件 ID"),
+        vocationalQualificationFileId: z
+            .string()
+            .nullable()
+            .optional()
+            .describe("职业资质文件 ID"),
+        merchantQualification: FileAccessInfoSchema.nullable()
+            .optional()
+            .describe("商家资质文件访问数据"),
+        vocationalQualification: FileAccessInfoSchema.nullable()
+            .optional()
+            .describe("职业资质文件访问数据"),
+    })
+    .describe("服务人员摘要");
+
+export type AdminServiceOfferingPersonnelSummary = z.infer<
+    typeof AdminServiceOfferingPersonnelSummarySchema
+>;
+
+export const AdminServiceOfferingServiceSummarySchema = z
+    .object({
+        id: z.string().describe("服务 ID"),
+        name: z.string().describe("服务名称"),
+        categoryId: z.string().nullable().optional().describe("服务分类 ID"),
+        categoryName: z
+            .string()
+            .nullable()
+            .optional()
+            .describe("服务分类名称"),
+        description: z.string().nullable().optional().describe("服务人员端服务描述"),
+        galleryFileIds: z
+            .array(z.string())
+            .default([])
+            .describe("宣传图文件 ID 列表"),
+        gallery: z
+            .array(FileAccessInfoSchema)
+            .default([])
+            .describe("宣传图访问数据"),
+    })
+    .describe("服务摘要");
+
+export type AdminServiceOfferingServiceSummary = z.infer<
+    typeof AdminServiceOfferingServiceSummarySchema
+>;
+
+export const AdminServiceOfferingSpecificationSchema = z
+    .object({
+        id: z.string().describe("规格 ID"),
+        name: z.string().nullable().optional().describe("规格名称"),
+        serviceId: z.string().describe("服务 ID"),
+        price: z.string().describe("规格价格"),
+        currency: z.string().describe("币种"),
+        estimatedDurationMinutes: z
+            .number()
+            .int()
+            .positive()
+            .nullable()
+            .optional()
+            .describe("预计耗时分钟数"),
+        isActive: z.boolean().describe("是否有效"),
+    })
+    .describe("管理员服务规格摘要");
+
+export type AdminServiceOfferingSpecification = z.infer<
+    typeof AdminServiceOfferingSpecificationSchema
+>;
+
+export const AdminServiceOfferingDraftListItemSchema = z
+    .object({
+        draftId: z.string().describe("草稿 ID"),
+        personnel: AdminServiceOfferingPersonnelSummarySchema,
+        reviewStatus: ServiceOfferingDraftStatusEnum.describe("审核状态"),
+        rejectionReason: z.string().nullable().optional().describe("拒绝原因"),
+        submittedSnapshot: z.unknown().describe("提交快照"),
+        reviewedBy: z.string().nullable().optional().describe("审核人用户 ID"),
+        reviewedAt: IsoDateTimeStringSchema.nullable()
+            .optional()
+            .describe("审核时间"),
+        createdAt: IsoDateTimeStringSchema.describe("提交时间"),
+        updatedAt: IsoDateTimeStringSchema.describe("更新时间"),
+    })
+    .describe("管理员服务待审核草稿列表项");
+
+export type AdminServiceOfferingDraftListItem = z.infer<
+    typeof AdminServiceOfferingDraftListItemSchema
+>;
+
+export const AdminServiceOfferingPublishedListItemSchema = z
+    .object({
+        personnel: AdminServiceOfferingPersonnelSummarySchema,
+        service: AdminServiceOfferingServiceSummarySchema,
+        specifications: z
+            .array(AdminServiceOfferingSpecificationSchema)
+            .default([])
+            .describe("服务规格列表"),
+        reviewStatus: ServiceOfferingDraftStatusEnum.describe("最近审核状态"),
+        publicationStatus:
+            ServiceOfferingPublicationStatusEnum.describe("发布状态"),
+        takeDownReason: z.string().nullable().optional().describe("下架原因"),
+        takenDownBy: z
+            .string()
+            .nullable()
+            .optional()
+            .describe("下架操作人用户 ID"),
+        takenDownAt: IsoDateTimeStringSchema.nullable()
+            .optional()
+            .describe("下架时间"),
+        lastApprovedDraftId: z
+            .string()
+            .nullable()
+            .optional()
+            .describe("最近通过审核的草稿 ID"),
+        lastApprovedAt: IsoDateTimeStringSchema.nullable()
+            .optional()
+            .describe("最近通过审核时间"),
+        createdAt: IsoDateTimeStringSchema.describe("创建时间"),
+        updatedAt: IsoDateTimeStringSchema.describe("更新时间"),
+    })
+    .describe("管理员已上架服务列表项");
+
+export type AdminServiceOfferingPublishedListItem = z.infer<
+    typeof AdminServiceOfferingPublishedListItemSchema
+>;
+
+export const AdminServiceOfferingListItemSchema = z.discriminatedUnion("kind", [
+    AdminServiceOfferingDraftListItemSchema.extend({
+        kind: z.literal("draft"),
+    }),
+    AdminServiceOfferingPublishedListItemSchema.extend({
+        kind: z.literal("published"),
+    }),
+]);
+
+export type AdminServiceOfferingListItem = z.infer<
+    typeof AdminServiceOfferingListItemSchema
+>;
+
+export const AdminServiceOfferingDraftListResponseSchema = PaginatedDataSchema(
+    AdminServiceOfferingDraftListItemSchema,
+).describe("管理员服务待审核列表响应");
+
+export type AdminServiceOfferingDraftListResponse = z.infer<
+    typeof AdminServiceOfferingDraftListResponseSchema
+>;
+
+export const AdminServiceOfferingPublishedListResponseSchema =
+    PaginatedDataSchema(AdminServiceOfferingPublishedListItemSchema).describe(
+        "管理员已上架服务列表响应",
+    );
+
+export type AdminServiceOfferingPublishedListResponse = z.infer<
+    typeof AdminServiceOfferingPublishedListResponseSchema
+>;
+
+export const AdminServiceOfferingListResponseSchema = PaginatedDataSchema(
+    AdminServiceOfferingListItemSchema,
+).describe("管理员服务上架审核统一列表响应");
+
+export type AdminServiceOfferingListResponse = z.infer<
+    typeof AdminServiceOfferingListResponseSchema
 >;
 
 // =========================

@@ -2,6 +2,8 @@ import { z } from "zod/v4";
 import {
     ServicePersonnelPricingSchema,
     ServicePersonnelSchema,
+    ServiceOfferingDraftStatusEnum,
+    ServiceOfferingPublicationStatusEnum,
     ServicesSchema,
     ReviewsSchema,
 } from "./database-entity";
@@ -492,6 +494,11 @@ export const ServiceOfferingSpecificationInputSchema = z
         description: "服务人员为某个分类配置的单条规格信息",
     });
 
+export const ServiceOfferingDraftStatusSchema = ServiceOfferingDraftStatusEnum;
+
+export const ServiceOfferingPublicationStatusSchema =
+    ServiceOfferingPublicationStatusEnum;
+
 export const UpdateServiceOfferingsRequestSchema = z
     .object({
         services: z
@@ -522,6 +529,21 @@ export const UpdateServiceOfferingsRequestSchema = z
         description: "批量配置服务分类、描述、规格与按摩资质证书",
     });
 
+export const ServiceOfferingSubmittedSnapshotSchema =
+    UpdateServiceOfferingsRequestSchema;
+
+export const ServiceOfferingSubmissionResultSchema = z
+    .object({
+        draftId: z.string(),
+        status: ServiceOfferingDraftStatusSchema,
+        submittedAt: z.date(),
+        message: z.string(),
+    })
+    .meta({
+        title: "服务设置提交审核结果",
+        description: "服务人员提交服务设置审核草稿后的响应",
+    });
+
 export const ServicePersonnelOfferingSchema = z
     .object({
         serviceId: z.string().min(1, "服务ID不能为空"),
@@ -536,6 +558,14 @@ export const ServicePersonnelOfferingSchema = z
         gallery: z.array(FileAccessInfoSchema).default([]),
         specifications: z.array(specificationSchema).default([]),
         pricing: PersonnelPricingInfoSchema.nullable().optional(),
+        reviewStatus: ServiceOfferingDraftStatusSchema.default("approved"),
+        publicationStatus:
+            ServiceOfferingPublicationStatusSchema.default("active"),
+        rejectionReason: z.string().nullable().optional(),
+        takeDownReason: z.string().nullable().optional(),
+        pendingDraftId: z.string().nullable().optional(),
+        lastApprovedAt: z.date().nullable().optional(),
+        takenDownAt: z.date().nullable().optional(),
     })
     .meta({
         title: "服务人员可提供的服务及定价",
@@ -669,6 +699,12 @@ export type RemovePersonnelPricingRequest = z.infer<
 export type PersonnelPricingInfo = z.infer<typeof PersonnelPricingInfoSchema>;
 export type UpdateServiceOfferingsRequest = z.infer<
     typeof UpdateServiceOfferingsRequestSchema
+>;
+export type ServiceOfferingSubmittedSnapshot = z.infer<
+    typeof ServiceOfferingSubmittedSnapshotSchema
+>;
+export type ServiceOfferingSubmissionResult = z.infer<
+    typeof ServiceOfferingSubmissionResultSchema
 >;
 export type ServiceOfferingSpecificationInput = z.infer<
     typeof ServiceOfferingSpecificationInputSchema

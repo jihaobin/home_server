@@ -20,6 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 type ServiceCategory = ServiceListResponse["items"][number];
 type ServiceOption = ServiceCategory["children"][number];
+type PersonnelService = ServicePersonnelProfile["services"][number];
 
 const MASSAGE_KEYWORD = "按摩";
 
@@ -38,6 +39,24 @@ export default function ServiceSettingsManageRedesignScreen() {
 
     const selectedServiceIds = useMemo(() => {
         return new Set(profile?.services.map((service) => service.serviceId) ?? []);
+    }, [profile?.services]);
+    const reviewStatusItems = useMemo(() => {
+        const services = profile?.services ?? [];
+        const hasPendingDraft = services.some(
+            (service) =>
+                service.reviewStatus === "pending" || Boolean(service.pendingDraftId),
+        );
+        const rejectedService = services.find(
+            (service) =>
+                service.reviewStatus === "rejected" &&
+                Boolean(service.rejectionReason?.trim()),
+        );
+        return [
+            hasPendingDraft ? "待审核" : null,
+            rejectedService?.rejectionReason
+                ? `审核未通过：${rejectedService.rejectionReason}`
+                : null,
+        ].filter((item): item is string => Boolean(item));
     }, [profile?.services]);
 
     const hasQualification = Boolean(
@@ -83,6 +102,8 @@ export default function ServiceSettingsManageRedesignScreen() {
                 </View>
             </View>
 
+            <ReviewStatusStrip items={reviewStatusItems} />
+
             <View className="px-4 pb-3">
                 <View className="flex-row items-center rounded-full bg-white px-5 py-3">
                     <Input
@@ -127,6 +148,34 @@ export default function ServiceSettingsManageRedesignScreen() {
                 </Text>
             </View>
         </SafeAreaView>
+    );
+}
+
+function ReviewStatusStrip(props: { items: string[] }) {
+    if (props.items.length === 0) {
+        return null;
+    }
+
+    return (
+        <View className="px-4 pb-3">
+            <View className="gap-1.5 rounded-2xl border border-[#FFE1B3] bg-[#FFF8ED] px-3 py-2">
+                {props.items.map((item) => (
+                    <View key={item} className="flex-row items-center gap-1.5">
+                        <Ionicons
+                            name="alert-circle-outline"
+                            size={14}
+                            color="#B45309"
+                        />
+                        <Text
+                            className="flex-1 text-xs leading-[18px] text-[#92400E]"
+                            numberOfLines={2}
+                        >
+                            {item}
+                        </Text>
+                    </View>
+                ))}
+            </View>
+        </View>
     );
 }
 
@@ -345,9 +394,13 @@ function ServiceOptionRow(props: {
     onPress: (service: ServiceOption) => void;
 }) {
     const imageUrl = props.service.imageFileUrl;
+    const offering = props.profile?.services.find(
+        (service) => service.serviceId === props.service.id,
+    );
     const status = getServiceStatus({
         selected: props.selected,
         needsQualification: props.needsQualification,
+        offering,
     });
 
     return (
@@ -395,7 +448,21 @@ function ServiceOptionRow(props: {
     );
 }
 
-function getServiceStatus(input: { selected: boolean; needsQualification: boolean }) {
+function getServiceStatus(input: {
+    selected: boolean;
+    needsQualification: boolean;
+    offering?: PersonnelService;
+}) {
+    if (input.offering?.publicationStatus === "taken_down") {
+        const reason = input.offering.takeDownReason?.trim() || "暂无原因";
+        return {
+            label: "已下架",
+            description: `已下架：${reason}`,
+            color: "#FF5252",
+            backgroundColor: "#FFF1F1",
+        };
+    }
+
     if (input.selected) {
         return {
             label: "已添加",

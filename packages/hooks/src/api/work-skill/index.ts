@@ -1,10 +1,12 @@
 import type {
 	RemovePersonnelPricingRequest,
+	ServiceOfferingSubmissionResult,
 	UpdatePersonnelSkillsRequest,
 	UpsertPersonnelPricingRequest,
 	UpsertWorkInfoRequest,
 	UpdateServiceOfferingsRequest,
 } from "@repo/types";
+import { ServiceOfferingSubmissionResultSchema } from "@repo/types";
 import { apiClient } from "@repo/lib/http-client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -79,11 +81,14 @@ export const useUpdateServiceOfferings = () => {
 
 	return useMutation({
 		mutationFn: async (payload: UpdateServiceOfferingsRequest) => {
-			const response = await apiClient.put(
+			const response = await apiClient.put<ServiceOfferingSubmissionResult>(
 				"/workSkill/offerings",
 				payload,
 			);
-			return response.data;
+			return ServiceOfferingSubmissionResultSchema.parse({
+				...response.data,
+				submittedAt: new Date(response.data.submittedAt),
+			});
 		},
 		onSuccess: () => invalidatePersonnelProfile(queryClient),
 		scope: {

@@ -81,6 +81,24 @@ export const WithdrawalStatusEnum = z.enum([
 ]);
 export type WithdrawalStatus = z.infer<typeof WithdrawalStatusEnum>;
 
+// 服务人员服务审核状态
+export const ServiceOfferingDraftStatusEnum = z.enum([
+    "pending", // 待审核
+    "approved", // 审核通过
+    "rejected", // 审核拒绝
+]);
+export type ServiceOfferingDraftStatus = z.infer<
+    typeof ServiceOfferingDraftStatusEnum
+>;
+
+export const ServiceOfferingPublicationStatusEnum = z.enum([
+    "active", // 已上架
+    "taken_down", // 已下架
+]);
+export type ServiceOfferingPublicationStatus = z.infer<
+    typeof ServiceOfferingPublicationStatusEnum
+>;
+
 // 通知模块枚举
 export const NotificationPriorityEnum = z.enum([
     "high", // 关键事务，必须实时送达
@@ -1287,6 +1305,106 @@ export const ServicePersonnelSkillsSchema = z
     .meta({
         title: "服务人员技能关联表",
         description: "存储服务人员与技能关联信息的表",
+    });
+
+// 服务人员服务审核草稿表
+export const ServicePersonnelOfferingDraftsSchema = z
+    .object({
+        id: z.string().max(255).meta({
+            description: "服务审核草稿ID",
+            title: "服务审核草稿ID",
+        }),
+        personnelUserId: z.string().max(255).meta({
+            description: "服务人员用户ID",
+            title: "服务人员用户ID",
+        }),
+        submittedSnapshot: z.unknown().meta({
+            description: "提交时的服务配置快照",
+            title: "提交快照",
+        }),
+        status: ServiceOfferingDraftStatusEnum.default("pending").meta({
+            description: "草稿审核状态",
+            title: "草稿审核状态",
+        }),
+        rejectionReason: z.string().nullable().optional().meta({
+            description: "审核拒绝原因",
+            title: "拒绝原因",
+        }),
+        reviewedBy: z.string().max(255).nullable().optional().meta({
+            description: "审核人用户ID",
+            title: "审核人",
+        }),
+        reviewedAt: z.date().nullable().optional().meta({
+            description: "审核时间",
+            title: "审核时间",
+        }),
+        createdAt: z.date().default(() => new Date()).meta({
+            description: "创建时间",
+            title: "创建时间",
+        }),
+        updatedAt: z.date().default(() => new Date()).meta({
+            description: "更新时间",
+            title: "更新时间",
+        }),
+    })
+    .meta({
+        title: "服务人员服务审核草稿表",
+        description: "存储服务人员提交的服务设置审核草稿",
+    });
+
+// 服务人员服务发布状态表
+export const ServicePersonnelOfferingStatusesSchema = z
+    .object({
+        personnelUserId: z.string().max(255).meta({
+            description: "服务人员用户ID",
+            title: "服务人员用户ID",
+        }),
+        serviceId: z.string().max(255).meta({
+            description: "服务ID",
+            title: "服务ID",
+        }),
+        publicationStatus: ServiceOfferingPublicationStatusEnum.default(
+            "active",
+        ).meta({
+            description: "发布状态",
+            title: "发布状态",
+        }),
+        reviewStatus: ServiceOfferingDraftStatusEnum.default("approved").meta({
+            description: "最近审核状态",
+            title: "最近审核状态",
+        }),
+        takeDownReason: z.string().nullable().optional().meta({
+            description: "下架原因",
+            title: "下架原因",
+        }),
+        takenDownBy: z.string().max(255).nullable().optional().meta({
+            description: "下架操作人用户ID",
+            title: "下架操作人",
+        }),
+        takenDownAt: z.date().nullable().optional().meta({
+            description: "下架时间",
+            title: "下架时间",
+        }),
+        lastApprovedDraftId: z.string().max(255).nullable().optional().meta({
+            description: "最近通过审核的草稿ID",
+            title: "最近通过草稿",
+        }),
+        lastApprovedAt: z.date().nullable().optional().meta({
+            description: "最近通过审核时间",
+            title: "最近通过审核时间",
+        }),
+        createdAt: z.date().default(() => new Date()).meta({
+            description: "创建时间",
+            title: "创建时间",
+        }),
+        updatedAt: z.date().default(() => new Date()).meta({
+            description: "更新时间",
+            title: "更新时间",
+        }),
+    })
+    .meta({
+        title: "服务人员服务发布状态表",
+        description: "存储服务人员单个服务的审核与上下架状态",
     });
 
 // 用户地址表（关联用户）
@@ -2567,6 +2685,12 @@ export type ServicePersonnelPricing = z.infer<
 >;
 export type ServicePersonnelSkills = z.infer<
     typeof ServicePersonnelSkillsSchema
+>;
+export type ServicePersonnelOfferingDrafts = z.infer<
+    typeof ServicePersonnelOfferingDraftsSchema
+>;
+export type ServicePersonnelOfferingStatuses = z.infer<
+    typeof ServicePersonnelOfferingStatusesSchema
 >;
 export type UserAddresses = z.infer<typeof UserAddressesSchema>;
 export type Orders = z.infer<typeof OrdersSchema>;

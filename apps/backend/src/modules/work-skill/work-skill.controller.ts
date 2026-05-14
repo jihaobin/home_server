@@ -15,6 +15,7 @@ import {
     PersonnelDetailInfoSchema,
     PersonnelPricingInfoSchema,
     ServicePersonnelSchema,
+    ServiceOfferingSubmissionResultSchema,
     SkillUpdateResultSchema,
     type UpdatePersonnelSkillsRequest,
     UpdatePersonnelSkillsRequestSchema,
@@ -69,19 +70,18 @@ export class WorkSkillController {
         description: '批量配置服务分类、服务描述以及不同规格的价格和耗时',
     })
     @ApiBodies(UpdateServiceOfferingsRequestSchema)
-    @ApiSuccessResponse(z.object({ success: z.boolean() }), {
-        description: '成功更新服务设置',
+    @ApiSuccessResponse(ServiceOfferingSubmissionResultSchema, {
+        description: '成功提交服务设置审核',
     })
     @ApiErrorResponses()
     async updateServiceOfferings(
         @Body() payload: UpdateServiceOfferingsRequest,
         @Req() req: Request,
     ) {
-        await this.workSkillService.updateServiceOfferings(
+        return await this.workSkillService.updateServiceOfferings(
             req.user.id,
             payload,
         );
-        return { success: true };
     }
 
     @UseGuards(AuthGuard)

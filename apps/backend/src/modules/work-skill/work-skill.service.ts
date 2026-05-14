@@ -6,6 +6,7 @@ import {
     UpdatePersonnelSkillsRequest,
     SkillUpdateResult,
     UpdateServiceOfferingsRequest,
+    ServiceOfferingSubmissionResult,
 } from '@repo/types';
 
 @Injectable()
@@ -59,6 +60,13 @@ export class WorkSkillService {
      */
     async getPersonnelInfo(personnelId: string, serviceId?: string) {
         return await this.workSkillRepository.getPersonnelInfo(
+            personnelId,
+            serviceId,
+        );
+    }
+
+    async getPublishedPersonnelInfo(personnelId: string, serviceId?: string) {
+        return await this.workSkillRepository.getPublishedPersonnelInfo(
             personnelId,
             serviceId,
         );
@@ -129,7 +137,7 @@ export class WorkSkillService {
     async updateServiceOfferings(
         personnelId: string,
         payload: UpdateServiceOfferingsRequest,
-    ) {
+    ): Promise<ServiceOfferingSubmissionResult> {
         const serviceIds = payload.services.map((service) => service.serviceId);
         const boundServices = await this.workSkillRepository.findServicesByIds(
             serviceIds,
@@ -146,9 +154,17 @@ export class WorkSkillService {
             throw new BadRequestException('上门按摩服务需至少上传一种资质证书');
         }
 
-        await this.workSkillRepository.updateServiceOfferings(
-            personnelId,
-            payload,
-        );
+        const draft =
+            await this.workSkillRepository.submitServiceOfferingsForReview(
+                personnelId,
+                payload,
+            );
+
+        return {
+            draftId: draft.id,
+            status: draft.status,
+            submittedAt: draft.createdAt ?? new Date(),
+            message: '已提交审核，等待管理员审核',
+        };
     }
 }

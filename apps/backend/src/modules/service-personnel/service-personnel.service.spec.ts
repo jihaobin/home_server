@@ -1,3 +1,7 @@
+jest.mock('../files/files.service', () => ({
+    FilesService: class FilesService {},
+}));
+
 import { ServicePersonnelService } from './service-personnel.service';
 import type { ServicePersonnelRepository } from './service-personnel.repository';
 import type { WorkSkillService } from '../work-skill/work-skill.service';
@@ -93,6 +97,65 @@ describe('ServicePersonnelService.searchPersonnelByServiceIds', () => {
             minPrice: 199,
         });
     });
+
+    it('多服务命中同一人员时按展示人员重算分页标记', async () => {
+        servicePersonnelRepository.searchPersonnelByServiceIds.mockResolvedValue(
+            {
+                personnel: [
+                    {
+                        personnelId: 'worker_1',
+                        name: '收纳师',
+                        avatar: null,
+                        serviceId: 'svc_room',
+                        serviceName: '房间收纳',
+                        pricingId: 'price_room',
+                        minPrice: 199,
+                        distanceKm: 1.2,
+                        addressText: '静安区',
+                        workDays: '12345',
+                        workStartTime: '09:00:00',
+                        workEndTime: '18:00:00',
+                        tag: '房间收纳',
+                        reviewCount: 10,
+                        goodRatePercentage: 99,
+                        ratingValue: 4.9,
+                    },
+                    {
+                        personnelId: 'worker_1',
+                        name: '收纳师',
+                        avatar: null,
+                        serviceId: 'svc_kitchen',
+                        serviceName: '厨房收纳',
+                        pricingId: 'price_kitchen',
+                        minPrice: 259,
+                        distanceKm: 1.2,
+                        addressText: '静安区',
+                        workDays: '12345',
+                        workStartTime: '09:00:00',
+                        workEndTime: '18:00:00',
+                        tag: '厨房收纳',
+                        reviewCount: 10,
+                        goodRatePercentage: 99,
+                        ratingValue: 4.9,
+                    },
+                ],
+                page: 1,
+                limit: 2,
+                hasMore: true,
+                nextPage: 2,
+            },
+        );
+
+        const result = await service.searchPersonnelByServiceIds({
+            serviceIds: ['svc_room', 'svc_kitchen'],
+            page: 1,
+            limit: 2,
+        });
+
+        expect(result.personnel).toHaveLength(1);
+        expect(result.hasMore).toBe(false);
+        expect(result.nextPage).toBeNull();
+    });
 });
 
 type ProfileRepository = jest.Mocked<
@@ -100,7 +163,7 @@ type ProfileRepository = jest.Mocked<
 >;
 
 type ProfileWorkSkillService = jest.Mocked<
-    Pick<WorkSkillService, 'getPersonnelInfo'>
+    Pick<WorkSkillService, 'getPersonnelInfo' | 'getPublishedPersonnelInfo'>
 >;
 
 type ProfileFilesService = jest.Mocked<Pick<FilesService, 'getFileAccessInfo'>>;
@@ -117,6 +180,7 @@ describe('ServicePersonnelService.getPersonnelProfile', () => {
         };
         workSkillService = {
             getPersonnelInfo: jest.fn(),
+            getPublishedPersonnelInfo: jest.fn(),
         };
         filesService = {
             getFileAccessInfo: jest.fn(),
@@ -133,7 +197,7 @@ describe('ServicePersonnelService.getPersonnelProfile', () => {
     });
 
     it('返回脱敏身份证号和结构化证书字段', async () => {
-        workSkillService.getPersonnelInfo.mockResolvedValue({
+        workSkillService.getPublishedPersonnelInfo.mockResolvedValue({
             userId: 'worker_1',
             name: '李师傅',
             avatar: null,
@@ -178,6 +242,13 @@ describe('ServicePersonnelService.getPersonnelProfile', () => {
                     isActive: true,
                     galleryFileIds: [],
                     specifications: [],
+                    reviewStatus: 'approved',
+                    publicationStatus: 'active',
+                    rejectionReason: null,
+                    takeDownReason: null,
+                    pendingDraftId: null,
+                    lastApprovedAt: new Date('2026-04-22T08:00:00.000Z'),
+                    takenDownAt: null,
                 },
             ],
         });
@@ -219,6 +290,91 @@ describe('ServicePersonnelService.getPersonnelProfile', () => {
         expect(result.services[0]).toMatchObject({
             categoryId: 'wgla64hwo7zr9iz',
             categoryName: '上门按摩',
+            reviewStatus: 'approved',
+            publicationStatus: 'active',
         });
+        expect(workSkillService.getPublishedPersonnelInfo).toHaveBeenCalledWith(
+            'worker_1',
+        );
+        expect(workSkillService.getPersonnelInfo).not.toHaveBeenCalled();
+    });
+
+    it('公开详情使用已发布服务查询，不返回 owner 可见的下架服务', async () => {
+        workSkillService.getPersonnelInfo.mockResolvedValue({
+            userId: 'worker_1',
+            skills: [
+                {
+                    id: 'svc_taken_down',
+                    name: '下架服务',
+                    reviewStatus: 'approved',
+                    publicationStatus: 'taken_down',
+                    takeDownReason: '资料不合规',
+                },
+            ],
+        } as any);
+        workSkillService.getPublishedPersonnelInfo.mockResolvedValue({
+            userId: 'worker_1',
+            name: '李师傅',
+            avatar: null,
+            bio: null,
+            province: '湖北省',
+            district: '黄冈市',
+            county: null,
+            detailedAddress: '测试路 1 号',
+            geom: [114.87, 30.45],
+            yearsOfExperience: 5,
+            workStartTime: '09:00:00',
+            workEndTime: '18:00:00',
+            workDays: '1234567',
+            isAvailable: true,
+            currentStatus: 'available',
+            lastActiveAt: new Date('2026-04-22T08:00:00.000Z'),
+            merchantQualificationFileId: null,
+            vocationalQualificationFileId: null,
+            emergencyContactPhone: null,
+            emergencyContactName: null,
+            skills: [
+                {
+                    id: 'svc_active',
+                    name: '上架服务',
+                    categoryId: null,
+                    categoryName: null,
+                    description: null,
+                    personnelDescription: null,
+                    isActive: true,
+                    galleryFileIds: [],
+                    specifications: [],
+                    reviewStatus: 'approved',
+                    publicationStatus: 'active',
+                    rejectionReason: null,
+                    takeDownReason: null,
+                    pendingDraftId: null,
+                    lastApprovedAt: null,
+                    takenDownAt: null,
+                },
+            ],
+        } as any);
+        repository.getPersonnelContactInfo.mockResolvedValue({
+            phoneNumber: null,
+            idCardNumber: null,
+        });
+
+        const result = await service.getPersonnelProfile('worker_1');
+
+        expect(result.services).toHaveLength(1);
+        expect(result.services[0]).toMatchObject({
+            serviceId: 'svc_active',
+            publicationStatus: 'active',
+            reviewStatus: 'approved',
+        });
+        expect(
+            result.services.some(
+                (item) => item.serviceId === 'svc_taken_down',
+            ),
+        ).toBe(false);
+        expect(workSkillService.getPublishedPersonnelInfo).toHaveBeenCalledWith(
+            'worker_1',
+        );
+        expect(workSkillService.getPersonnelInfo).not.toHaveBeenCalled();
     });
 });
