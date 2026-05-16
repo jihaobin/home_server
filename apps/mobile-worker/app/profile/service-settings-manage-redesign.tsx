@@ -1,12 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useServiceList } from "@repo/hooks/api/service";
-import { useServicePersonnelProfile } from "@repo/hooks/api/service-personnel";
+import { useMyWorkerServices } from "@repo/hooks/api/work-skill";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
-import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { Image } from "@repo/mobile-ui/components/ui/image";
 import { Input } from "@repo/mobile-ui/components/ui/input";
 import { Text } from "@repo/mobile-ui/components/ui/text";
-import type { ServiceListResponse, ServicePersonnelProfile } from "@repo/types";
+import type { ServiceListResponse } from "@repo/types";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Suspense, useMemo, useState } from "react";
 import {
@@ -20,48 +19,32 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 type ServiceCategory = ServiceListResponse["items"][number];
 type ServiceOption = ServiceCategory["children"][number];
-type PersonnelService = ServicePersonnelProfile["services"][number];
-
-const MASSAGE_KEYWORD = "按摩";
 
 export default function ServiceSettingsManageRedesignScreen() {
     const router = useRouter();
     const params = useLocalSearchParams<{ mode?: string }>();
-    const { session } = useSession();
-    const userId = session?.user?.id;
     const [search, setSearch] = useState("");
 
     const {
-        data: profile,
-        isFetching: isFetchingProfile,
-        refetch: refetchProfile,
-    } = useServicePersonnelProfile(userId);
+        data: workerServices,
+        isFetching: isFetchingWorkerServices,
+        refetch: refetchWorkerServices,
+    } = useMyWorkerServices();
 
     const selectedServiceIds = useMemo(() => {
-        return new Set(profile?.services.map((service) => service.serviceId) ?? []);
-    }, [profile?.services]);
-    const reviewStatusItems = useMemo(() => {
-        const services = profile?.services ?? [];
-        const hasPendingDraft = services.some(
-            (service) =>
-                service.reviewStatus === "pending" || Boolean(service.pendingDraftId),
-        );
-        const rejectedService = services.find(
-            (service) =>
-                service.reviewStatus === "rejected" &&
-                Boolean(service.rejectionReason?.trim()),
-        );
-        return [
-            hasPendingDraft ? "待审核" : null,
-            rejectedService?.rejectionReason
-                ? `审核未通过：${rejectedService.rejectionReason}`
-                : null,
-        ].filter((item): item is string => Boolean(item));
-    }, [profile?.services]);
-
-    const hasQualification = Boolean(
-        profile?.merchantQualificationImage || profile?.vocationalQualificationImage,
-    );
+        const serviceIds =
+            workerServices?.services
+                .map(
+                    (item) =>
+                        item.serviceId ??
+                        item.draft?.snapshot.services[0]?.serviceId,
+                )
+                .filter(
+                    (serviceId): serviceId is string =>
+                        typeof serviceId === "string",
+                ) ?? [];
+        return new Set(serviceIds);
+    }, [workerServices?.services]);
 
     const isAddMode = params.mode !== "manage";
 
@@ -75,6 +58,7 @@ export default function ServiceSettingsManageRedesignScreen() {
         router.push({
             pathname: "/profile/service-settings-detail-redesign",
             params: {
+                mode: "create",
                 serviceId: input.serviceId,
                 categoryId: input.categoryId,
                 categoryName: input.categoryName,
@@ -84,25 +68,25 @@ export default function ServiceSettingsManageRedesignScreen() {
         } as never);
     };
 
-    const isLoading = isFetchingProfile && !profile;
+    const isLoading = isFetchingWorkerServices && !workerServices;
 
     return (
         <SafeAreaView className="flex-1 bg-[#F5F6F8]" edges={["top", "bottom"]}>
             <View className="flex-row items-center px-5 pb-4 pt-3">
                 <Pressable hitSlop={10} onPress={() => router.back()}>
-                    <Text className="text-[22px] leading-[33px] text-black">‹</Text>
+                    <Text className="text-[22px] leading-[33px] text-black">
+                        ‹
+                    </Text>
                 </Pressable>
                 <Text className="flex-1 text-center text-[17px] leading-[26px] text-black">
                     {isAddMode ? "添加服务" : "管理服务"}
                 </Text>
                 <View className="w-[22px] items-end">
-                    {isFetchingProfile ? (
+                    {isFetchingWorkerServices ? (
                         <ActivityIndicator size="small" color="#2B6EF5" />
                     ) : null}
                 </View>
             </View>
-
-            <ReviewStatusStrip items={reviewStatusItems} />
 
             <View className="px-4 pb-3">
                 <View className="flex-row items-center rounded-full bg-white px-5 py-3">
@@ -131,18 +115,19 @@ export default function ServiceSettingsManageRedesignScreen() {
                 >
                     <ServiceCategoryList
                         search={search}
-                        profile={profile ?? null}
                         selectedServiceIds={selectedServiceIds}
-                        hasQualification={hasQualification}
                         onServicePress={openServiceDetail}
-                        refetchProfile={refetchProfile}
-                        userId={userId}
+                        refetchWorkerServices={refetchWorkerServices}
                     />
                 </Suspense>
             )}
 
             <View className="flex-row items-center justify-center gap-2 border-t border-[#F3F4F6] bg-white px-4 pb-3 pt-3">
-                <Ionicons name="information-circle-outline" size={14} color="#6A7282" />
+                <Ionicons
+                    name="information-circle-outline"
+                    size={14}
+                    color="#6A7282"
+                />
                 <Text className="text-xs leading-[18px] text-[#6A7282]">
                     点击服务可直接进入编辑页面完善信息
                 </Text>
@@ -151,39 +136,9 @@ export default function ServiceSettingsManageRedesignScreen() {
     );
 }
 
-function ReviewStatusStrip(props: { items: string[] }) {
-    if (props.items.length === 0) {
-        return null;
-    }
-
-    return (
-        <View className="px-4 pb-3">
-            <View className="gap-1.5 rounded-2xl border border-[#FFE1B3] bg-[#FFF8ED] px-3 py-2">
-                {props.items.map((item) => (
-                    <View key={item} className="flex-row items-center gap-1.5">
-                        <Ionicons
-                            name="alert-circle-outline"
-                            size={14}
-                            color="#B45309"
-                        />
-                        <Text
-                            className="flex-1 text-xs leading-[18px] text-[#92400E]"
-                            numberOfLines={2}
-                        >
-                            {item}
-                        </Text>
-                    </View>
-                ))}
-            </View>
-        </View>
-    );
-}
-
 function ServiceCategoryList(props: {
     search: string;
-    profile: ServicePersonnelProfile | null;
     selectedServiceIds: Set<string>;
-    hasQualification: boolean;
     onServicePress: (input: {
         serviceId: string;
         categoryId?: string;
@@ -191,8 +146,7 @@ function ServiceCategoryList(props: {
         serviceName?: string;
         serviceDescription?: string | null;
     }) => void;
-    refetchProfile: () => Promise<unknown>;
-    userId?: string;
+    refetchWorkerServices: () => Promise<unknown>;
 }) {
     const [expandedCategoryIds, setExpandedCategoryIds] = useState<Set<string>>(
         () => new Set(),
@@ -218,9 +172,9 @@ function ServiceCategoryList(props: {
     const { refreshing, onRefresh } = useGlobalPageRefresh({
         refetchActiveQueries: false,
         extraRefresh: () =>
-            Promise.allSettled([
-                props.userId ? props.refetchProfile() : Promise.resolve(),
+            Promise.all([
                 refetchCategories({ throwOnError: false }),
+                props.refetchWorkerServices(),
             ]),
     });
 
@@ -265,10 +219,8 @@ function ServiceCategoryList(props: {
                 <View className="mb-3">
                     <ServiceCategoryCard
                         category={category}
-                        profile={props.profile}
                         expanded={isCategoryExpanded(category.id, index)}
                         selectedServiceIds={props.selectedServiceIds}
-                        hasQualification={props.hasQualification}
                         onToggle={() => toggleCategory(category.id)}
                         onServicePress={(service) =>
                             props.onServicePress({
@@ -285,7 +237,11 @@ function ServiceCategoryList(props: {
             ListEmptyComponent={
                 <View className="items-center rounded-2xl bg-white px-5 py-8">
                     <View className="h-12 w-12 items-center justify-center rounded-2xl bg-[#EEF1F5]">
-                        <Ionicons name="search-outline" size={24} color="#99A1AF" />
+                        <Ionicons
+                            name="search-outline"
+                            size={24}
+                            color="#99A1AF"
+                        />
                     </View>
                     <Text className="mt-3 text-[15px] leading-[23px] text-black">
                         暂无可选服务
@@ -324,10 +280,8 @@ function ServiceCategoryList(props: {
 
 function ServiceCategoryCard(props: {
     category: ServiceCategory;
-    profile: ServicePersonnelProfile | null;
     expanded: boolean;
     selectedServiceIds: Set<string>;
-    hasQualification: boolean;
     onToggle: () => void;
     onServicePress: (service: ServiceOption) => void;
 }) {
@@ -349,7 +303,11 @@ function ServiceCategoryCard(props: {
                 </View>
                 <Text
                     className="text-sm leading-[21px] text-[#99A1AF]"
-                    style={{ transform: [{ rotate: props.expanded ? "180deg" : "0deg" }] }}
+                    style={{
+                        transform: [
+                            { rotate: props.expanded ? "180deg" : "0deg" },
+                        ],
+                    }}
                 >
                     ▾
                 </Text>
@@ -362,15 +320,12 @@ function ServiceCategoryCard(props: {
                             <ServiceOptionRow
                                 key={service.id}
                                 service={service}
-                                profile={props.profile}
-                                selected={props.selectedServiceIds.has(service.id)}
-                                needsQualification={
-                                    !props.hasQualification &&
-                                    `${props.category.name}${service.name}`.includes(
-                                        MASSAGE_KEYWORD,
-                                    )
+                                selected={props.selectedServiceIds.has(
+                                    service.id,
+                                )}
+                                isLast={
+                                    index === props.category.children.length - 1
                                 }
-                                isLast={index === props.category.children.length - 1}
                                 onPress={props.onServicePress}
                             />
                         ))
@@ -387,20 +342,13 @@ function ServiceCategoryCard(props: {
 
 function ServiceOptionRow(props: {
     service: ServiceOption;
-    profile: ServicePersonnelProfile | null;
     selected: boolean;
-    needsQualification: boolean;
     isLast: boolean;
     onPress: (service: ServiceOption) => void;
 }) {
     const imageUrl = props.service.imageFileUrl;
-    const offering = props.profile?.services.find(
-        (service) => service.serviceId === props.service.id,
-    );
     const status = getServiceStatus({
         selected: props.selected,
-        needsQualification: props.needsQualification,
-        offering,
     });
 
     return (
@@ -411,6 +359,7 @@ function ServiceOptionRow(props: {
                     ? undefined
                     : { borderBottomColor: "#F3F4F6", borderBottomWidth: 1 }
             }
+            disabled={props.selected}
             onPress={() => props.onPress(props.service)}
         >
             <View className="h-10 w-10 overflow-hidden rounded-[14px] bg-[#EEF1F5]">
@@ -422,7 +371,11 @@ function ServiceOptionRow(props: {
                     />
                 ) : (
                     <View className="h-full w-full items-center justify-center">
-                        <Ionicons name="briefcase-outline" size={18} color="#99A1AF" />
+                        <Ionicons
+                            name="briefcase-outline"
+                            size={18}
+                            color="#99A1AF"
+                        />
                     </View>
                 )}
             </View>
@@ -431,16 +384,24 @@ function ServiceOptionRow(props: {
                 <Text className="text-sm leading-[21px] text-black">
                     {props.service.name}
                 </Text>
-                <Text className="mt-px text-[11px] leading-[17px] text-[#6A7282]" numberOfLines={1}>
-                    {status.description}
-                </Text>
+                {props.service.description ? (
+                    <Text
+                        className="mt-px text-[11px] leading-[17px] text-[#6A7282]"
+                        numberOfLines={1}
+                    >
+                        {props.service.description}
+                    </Text>
+                ) : null}
             </View>
 
             <View
                 className="min-w-[60px] items-center rounded-lg px-3 py-1.5"
                 style={{ backgroundColor: status.backgroundColor }}
             >
-                <Text className="text-xs leading-[18px]" style={{ color: status.color }}>
+                <Text
+                    className="text-xs leading-[18px]"
+                    style={{ color: status.color }}
+                >
                     {status.label}
                 </Text>
             </View>
@@ -448,42 +409,17 @@ function ServiceOptionRow(props: {
     );
 }
 
-function getServiceStatus(input: {
-    selected: boolean;
-    needsQualification: boolean;
-    offering?: PersonnelService;
-}) {
-    if (input.offering?.publicationStatus === "taken_down") {
-        const reason = input.offering.takeDownReason?.trim() || "暂无原因";
-        return {
-            label: "已下架",
-            description: `已下架：${reason}`,
-            color: "#FF5252",
-            backgroundColor: "#FFF1F1",
-        };
-    }
-
+function getServiceStatus(input: { selected: boolean }) {
     if (input.selected) {
         return {
             label: "已添加",
-            description: "已加入草稿",
             color: "#2B6EF5",
-            backgroundColor: "#EEF1F5",
-        };
-    }
-
-    if (input.needsQualification) {
-        return {
-            label: "需资质",
-            description: "需资质后才能启用",
-            color: "#FF5252",
-            backgroundColor: "#EEF1F5",
+            backgroundColor: "#EEF4FF",
         };
     }
 
     return {
-        label: "添加",
-        description: "可直接加入草稿",
+        label: "+ 添加",
         color: "#22C55E",
         backgroundColor: "#E6F7EA",
     };

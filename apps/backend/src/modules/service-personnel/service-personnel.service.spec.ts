@@ -244,9 +244,11 @@ describe('ServicePersonnelService.getPersonnelProfile', () => {
                     specifications: [],
                     reviewStatus: 'approved',
                     publicationStatus: 'active',
+                    hasOfferingStatus: true,
                     rejectionReason: null,
                     takeDownReason: null,
                     pendingDraftId: null,
+                    draft: null,
                     lastApprovedAt: new Date('2026-04-22T08:00:00.000Z'),
                     takenDownAt: null,
                 },
@@ -376,5 +378,96 @@ describe('ServicePersonnelService.getPersonnelProfile', () => {
             'worker_1',
         );
         expect(workSkillService.getPersonnelInfo).not.toHaveBeenCalled();
+    });
+
+    it('owner 资料返回已下架服务的原信息用于整改', async () => {
+        workSkillService.getPersonnelInfo.mockResolvedValue({
+            userId: 'worker_1',
+            name: '李师傅',
+            avatar: null,
+            bio: null,
+            province: '湖北省',
+            district: '黄冈市',
+            county: null,
+            detailedAddress: '测试路 1 号',
+            geom: [114.87, 30.45],
+            yearsOfExperience: 5,
+            workStartTime: '09:00:00',
+            workEndTime: '18:00:00',
+            workDays: '1234567',
+            isAvailable: true,
+            currentStatus: 'available',
+            lastActiveAt: new Date('2026-04-22T08:00:00.000Z'),
+            merchantQualificationFileId: null,
+            vocationalQualificationFileId: null,
+            emergencyContactPhone: null,
+            emergencyContactName: null,
+            skills: [
+                {
+                    id: 'svc_taken_down',
+                    name: '下架服务',
+                    categoryId: 'cat_1',
+                    categoryName: '保洁',
+                    description: '平台服务说明',
+                    personnelDescription: '服务人员原描述',
+                    isActive: true,
+                    galleryFileIds: ['gallery_1'],
+                    specifications: [
+                        {
+                            id: 'price_1',
+                            userId: 'worker_1',
+                            serviceId: 'svc_taken_down',
+                            name: '标准版',
+                            price: '99',
+                            currency: 'CNY',
+                            estimatedDurationMinutes: 60,
+                        },
+                    ],
+                    reviewStatus: 'approved',
+                    publicationStatus: 'taken_down',
+                    rejectionReason: null,
+                    takeDownReason: '资料不合规',
+                    pendingDraftId: null,
+                    lastApprovedAt: new Date('2026-05-13T00:00:00.000Z'),
+                    takenDownAt: new Date('2026-05-14T00:00:00.000Z'),
+                },
+            ],
+        } as any);
+        repository.getPersonnelContactInfo.mockResolvedValue({
+            phoneNumber: null,
+            idCardNumber: null,
+        });
+        filesService.getFileAccessInfo.mockResolvedValue({
+            fileUrl: 'https://example.com/gallery.jpg',
+            fileName: 'gallery.jpg',
+            mimeType: 'image/jpeg',
+            fileSize: 1,
+            expiresIn: 3600,
+        });
+
+        const result = await service.getOwnPersonnelProfile('worker_1');
+
+        expect(result.services).toHaveLength(1);
+        expect(result.services[0]).toMatchObject({
+            serviceId: 'svc_taken_down',
+            publicationStatus: 'taken_down',
+            takeDownReason: '资料不合规',
+            personnelDescription: '服务人员原描述',
+            galleryFileIds: ['gallery_1'],
+            specifications: [
+                expect.objectContaining({
+                    id: 'price_1',
+                    name: '标准版',
+                    price: '99',
+                }),
+            ],
+        });
+        expect(result.services[0].gallery[0]?.url).toBe(
+            'https://example.com/gallery.jpg',
+        );
+        expect(workSkillService.getPersonnelInfo).toHaveBeenCalledWith(
+            'worker_1',
+        );
+        expect(workSkillService.getPublishedPersonnelInfo).not.toHaveBeenCalled();
     });
 });

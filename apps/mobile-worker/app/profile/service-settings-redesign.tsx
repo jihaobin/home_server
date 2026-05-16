@@ -1,70 +1,62 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useServicePersonnelProfile } from "@repo/hooks/api/service-personnel";
+import { useMyWorkerServices } from "@repo/hooks/api/work-skill";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
-import { useSession } from "@repo/mobile-ui/components/SessionProvider";
-import { Image } from "@repo/mobile-ui/components/ui/image";
+import { StatusBadge } from "@repo/mobile-ui/components/StatusBadge";
 import { Text } from "@repo/mobile-ui/components/ui/text";
-import { LinearGradient, type LinearGradientProps } from "expo-linear-gradient";
+import type { WorkerServiceItem } from "@repo/types";
 import { useRouter } from "expo-router";
-import { cssInterop } from "nativewind";
-import type { ComponentType } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { useMemo, useState } from "react";
+import {
+    ActivityIndicator,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+    WORKER_SERVICE_TABS,
+    formatAuditElapsed,
+    getWorkerServiceReason,
+    getWorkerServiceStatusLabel,
+    getWorkerServiceStatusTone,
+    getWorkerServiceTitle,
+    groupWorkerServicesByTab,
+    hasPendingUpdateForTakenDownService,
+    type WorkerServiceTabKey,
+} from "./service-settings-audit-model";
 
-cssInterop(LinearGradient, { className: "style" });
+const EMPTY_WORKER_SERVICES: WorkerServiceItem[] = [];
 
-const NativeWindLinearGradient = LinearGradient as ComponentType<
-    LinearGradientProps & { className?: string }
->;
-
-type ServiceCardIcon = keyof typeof Ionicons.glyphMap;
-
-type ServiceCardTone = "slate" | "amber";
-
-type ServiceCardData = {
-    id: string;
-    title: string;
-    description: string;
-    tone: ServiceCardTone;
-    icon: ServiceCardIcon;
-    badge?: string;
-    statusText?: string;
+type WorkerServiceWithLegacyOffering = WorkerServiceItem & {
+    offering?: {
+        id?: string | null;
+        name?: string | null;
+        categoryName?: string | null;
+        takedownReason?: string | null;
+    } | null;
 };
 
 export default function ServiceSettingsRedesignScreen() {
     const router = useRouter();
-    const { session } = useSession();
-    const userId = session?.user?.id;
     const {
-        data: profile,
+        data: workerServicesResponse,
         isFetching,
-        refetch: refetchProfile,
-    } = useServicePersonnelProfile(userId);
+        refetch: refetchWorkerServices,
+    } = useMyWorkerServices();
+    const [activeTab, setActiveTab] = useState<WorkerServiceTabKey>("active");
     const { refreshing, onRefresh } = useGlobalPageRefresh({
         refetchActiveQueries: false,
-        extraRefresh: () => (userId ? refetchProfile() : Promise.resolve()),
+        extraRefresh: () => refetchWorkerServices(),
     });
 
-    const services = profile?.services ?? [];
-    const hasQualification = Boolean(
-        profile?.merchantQualificationImage || profile?.vocationalQualificationImage,
+    const workerServices =
+        workerServicesResponse?.services ?? EMPTY_WORKER_SERVICES;
+    const groupedServices = useMemo(
+        () => groupWorkerServicesByTab(workerServices),
+        [workerServices],
     );
-    const serviceCards = services.map<ServiceCardData>((service, index) => {
-        const icon: ServiceCardIcon =
-            index === 0 ? "sparkles-outline" : "briefcase-outline";
-        return {
-            id: service.serviceId,
-            title: service.serviceName,
-            description: buildServiceDescription(service),
-            tone: index % 2 === 0 ? "slate" : "amber",
-            icon,
-            badge: needsQualification(service, hasQualification) ? "需资质" : undefined,
-            statusText:
-                service.publicationStatus === "taken_down"
-                    ? `已下架：${service.takeDownReason?.trim() || "暂无原因"}`
-                    : undefined,
-        };
-    });
+    const visibleServices = groupedServices[activeTab];
 
     const openServiceManage = (mode: "add" | "manage") => {
         router.push(
@@ -72,11 +64,14 @@ export default function ServiceSettingsRedesignScreen() {
         );
     };
 
-
-    const openServiceDetail = (serviceId: string) => {
+    const openServiceDetail = (item: WorkerServiceWithLegacyOffering) => {
         router.push({
             pathname: "/profile/service-settings-detail-redesign",
-            params: { serviceId },
+            params: {
+                serviceId: item.serviceId,
+                mode: item.derivedStatus,
+                draftId: item.draft?.id,
+            },
         } as never);
     };
 
@@ -102,7 +97,11 @@ export default function ServiceSettingsRedesignScreen() {
                         hitSlop={10}
                         onPress={() => router.back()}
                     >
-                        <Ionicons name="chevron-back" size={22} color="#111827" />
+                        <Ionicons
+                            name="chevron-back"
+                            size={22}
+                            color="#111827"
+                        />
                     </Pressable>
                     {isFetching ? (
                         <ActivityIndicator size="small" color="#2B6EF5" />
@@ -116,33 +115,66 @@ export default function ServiceSettingsRedesignScreen() {
                 </Text>
 
                 <Text className="mt-5 px-1 text-[15px] leading-[23px] text-black">
-                    已启用服务
+                    我的服务
                 </Text>
 
+                <View className="mt-3 flex-row gap-2">
+                    {WORKER_SERVICE_TABS.map((tab) => {
+                        const selected = tab.key === activeTab;
+                        const count = groupedServices[tab.key].length;
+                        return (
+                            <Pressable
+                                key={tab.key}
+                                className={
+                                    selected
+                                        ? "flex-1 items-center rounded-full border border-[#2B6EF5] px-2 py-2.5"
+                                        : "flex-1 items-center rounded-full border border-[#E5E7EB] bg-white px-2 py-2.5"
+                                }
+                                style={
+                                    selected
+                                        ? { backgroundColor: "#EEF4FF" }
+                                        : undefined
+                                }
+                                onPress={() => setActiveTab(tab.key)}
+                            >
+                                <Text
+                                    className={
+                                        selected
+                                            ? "text-center text-[12px] leading-[18px] text-[#2B6EF5]"
+                                            : "text-center text-[12px] leading-[18px] text-[#6A7282]"
+                                    }
+                                    numberOfLines={1}
+                                >
+                                    {tab.label} {count}
+                                </Text>
+                            </Pressable>
+                        );
+                    })}
+                </View>
+
                 <View className="mt-3 gap-3">
-                    {serviceCards.length > 0 ? (
-                        serviceCards.map((service) => (
-                            <ServiceCard
-                                key={service.id}
-                                title={service.title}
-                                description={service.description}
-                                icon={service.icon}
-                                tone={service.tone}
-                                badge={service.badge}
-                                statusText={service.statusText}
-                                onPress={() => openServiceDetail(service.id)}
+                    {visibleServices.length > 0 ? (
+                        visibleServices.map((service) => (
+                            <AuditServiceCard
+                                key={`${service.serviceId}-${service.draft?.id ?? "current"}`}
+                                service={service}
+                                onPress={() => openServiceDetail(service)}
                             />
                         ))
                     ) : (
                         <View className="items-center rounded-2xl bg-white px-5 py-8">
                             <View className="h-12 w-12 items-center justify-center rounded-2xl bg-[#EEF1F5]">
-                                <Ionicons name="briefcase-outline" size={24} color="#99A1AF" />
+                                <Ionicons
+                                    name="briefcase-outline"
+                                    size={24}
+                                    color="#99A1AF"
+                                />
                             </View>
                             <Text className="mt-3 text-[15px] leading-[23px] text-black">
-                                暂无已启用服务
+                                当前状态暂无服务
                             </Text>
                             <Text className="mt-1 text-center text-xs leading-[18px] text-[#6A7282]">
-                                添加服务后会在这里展示服务状态
+                                点击右下角添加服务，提交后会进入审核流程。
                             </Text>
                         </View>
                     )}
@@ -171,75 +203,66 @@ export default function ServiceSettingsRedesignScreen() {
     );
 }
 
-function ServiceCard(props: {
-    title: string;
-    description: string;
-    icon: ServiceCardIcon;
-    tone: ServiceCardTone;
-    badge?: string;
-    statusText?: string;
+function AuditServiceCard(props: {
+    service: WorkerServiceWithLegacyOffering;
     onPress: () => void;
 }) {
+    const reason = getWorkerServiceReason(props.service);
+    const hasTakenDownPendingUpdate = hasPendingUpdateForTakenDownService(
+        props.service,
+    );
+    const submittedAt =
+        props.service.draft?.submittedAt ?? props.service.lastSubmittedAt;
+    const categoryName =
+        props.service.current?.categoryName ??
+        props.service.offering?.categoryName ??
+        "平台服务";
+
     return (
-        <Pressable
-            className="flex-row items-center rounded-2xl bg-white p-4"
-            onPress={props.onPress}
-        >
-            <View
-                className={
-                    props.tone === "slate"
-                        ? "h-11 w-11 items-center justify-center rounded-[14px] bg-slate-100"
-                        : "h-11 w-11 items-center justify-center rounded-[14px] bg-amber-100"
-                }
-            >
-                <Ionicons name={props.icon} size={22} color="#2B3440" />
-            </View>
-            <View className="ml-3 flex-1">
-                <Text className="text-[15px] leading-[23px] text-black">
-                    {props.title}
-                </Text>
-                <Text className="mt-0.5 text-xs leading-[18px] text-[#6A7282]" numberOfLines={1}>
-                    {props.description}
-                </Text>
-                {props.statusText ? (
-                    <Text className="mt-1 text-[11px] leading-[17px] text-[#FF5252]" numberOfLines={1}>
-                        {props.statusText}
+        <Pressable className="rounded-2xl bg-white p-4" onPress={props.onPress}>
+            <View className="flex-row items-start justify-between gap-3">
+                <View className="flex-1">
+                    <Text className="text-[15px] leading-[23px] text-black">
+                        {getWorkerServiceTitle(props.service)}
                     </Text>
-                ) : null}
-            </View>
-            {props.badge ? (
-                <View className="rounded-lg bg-[#EEF1F5] px-2.5 py-1">
-                    <Text className="text-[11px] leading-[17px] text-[#FF5252]">
-                        {props.badge}
+                    <Text className="mt-1 text-xs leading-[18px] text-[#6A7282]">
+                        {categoryName}
                     </Text>
                 </View>
-            ) :   <Text className="text-[13px] leading-5 text-[#2B6EF5]">
-                    编辑
-                </Text>}
+                <StatusBadge
+                    label={getWorkerServiceStatusLabel(props.service)}
+                    tone={getWorkerServiceStatusTone(props.service)}
+                />
+            </View>
+
+            {props.service.derivedStatus === "active_with_pending_update" ||
+            hasTakenDownPendingUpdate ? (
+                <View className="mt-3 rounded-xl bg-[#FFF7ED] px-3 py-2">
+                    <Text className="text-xs leading-[18px] text-[#B45309]">
+                        {hasTakenDownPendingUpdate
+                            ? "整改内容已提交，等待管理员重新审核。已提交 "
+                            : "更新审核中，老版本继续运营。已提交 "}
+                        {formatAuditElapsed(submittedAt)}
+                    </Text>
+                </View>
+            ) : null}
+
+            {reason ? (
+                <View className="mt-3 rounded-xl bg-[#FEF2F2] px-3 py-2">
+                    <Text className="text-xs leading-[18px] text-[#DC2626]">
+                        {reason}
+                    </Text>
+                </View>
+            ) : null}
+
+            <View className="mt-3 flex-row items-center justify-between">
+                <Text className="text-xs leading-[18px] text-[#99A1AF]">
+                    {submittedAt
+                        ? `已提交 ${formatAuditElapsed(submittedAt)}`
+                        : "查看服务详情"}
+                </Text>
+                <Ionicons name="chevron-forward" size={18} color="#99A1AF" />
+            </View>
         </Pressable>
     );
-}
-
-function buildServiceDescription(service: {
-    categoryName?: string | null;
-    personnelDescription?: string | null;
-    serviceDescription?: string | null;
-    specifications: { price?: string | number | null }[];
-}) {
-    const prices = service.specifications
-        .map((spec) => Number(spec.price))
-        .filter((price) => Number.isFinite(price) && price > 0);
-    const priceText =
-        prices.length > 0
-            ? `¥${Math.min(...prices)}-${Math.max(...prices)}`
-            : service.personnelDescription || service.serviceDescription || "暂无服务说明";
-    const prefix = service.categoryName ? `${service.categoryName}：` : "";
-    return `${prefix}${priceText}、${service.specifications.length || 1}个规格`;
-}
-
-function needsQualification(
-    service: { categoryName?: string | null; serviceName: string },
-    hasQualification: boolean,
-) {
-    return `${service.categoryName ?? ""}`.includes("按摩") && !hasQualification;
 }

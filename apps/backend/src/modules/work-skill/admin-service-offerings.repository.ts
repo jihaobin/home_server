@@ -5,6 +5,8 @@ import type {
     AdminServiceOfferingListResponse,
     AdminServiceOfferingSpecification,
     FileAccessInfo,
+    ServiceOfferingLifecycle,
+    ServiceOfferingLifecycleFilter,
     ServiceOfferingSubmittedSnapshot,
 } from '@repo/types';
 import { UpdateServiceOfferingsRequestSchema } from '@repo/types';
@@ -63,15 +65,58 @@ type NormalizedListQuery = {
     limit: number;
     offset: number;
     keyword?: string;
-    status: AdminServiceOfferingListQuery['status'];
-    reviewStatus: AdminServiceOfferingListQuery['reviewStatus'];
-    publicationStatus: AdminServiceOfferingListQuery['publicationStatus'];
+    lifecycle: ServiceOfferingLifecycleFilter;
 };
 
-type ExistingOfferingStatus = {
-    serviceId: string;
-    publicationStatus: 'active' | 'taken_down';
-};
+type DraftLifecycleSource = 'pending' | 'rejected';
+type PublishedLifecycleSource = 'active' | 'taken_down';
+
+function deriveDraftLifecycle(
+    reviewStatus: 'pending' | 'approved' | 'rejected',
+): ServiceOfferingLifecycle {
+    if (reviewStatus === 'rejected') {
+        return 'rejected';
+    }
+    return 'pending_review';
+}
+
+function derivePublishedLifecycle(
+    publicationStatus: PublishedLifecycleSource,
+): ServiceOfferingLifecycle {
+    return publicationStatus === 'taken_down' ? 'taken_down' : 'active';
+}
+
+function lifecycleIncludesDraft(lifecycle: ServiceOfferingLifecycleFilter) {
+    return (
+        lifecycle === 'all' ||
+        lifecycle === 'pending_review' ||
+        lifecycle === 'rejected'
+    );
+}
+
+function lifecycleIncludesPublished(lifecycle: ServiceOfferingLifecycleFilter) {
+    return (
+        lifecycle === 'all' ||
+        lifecycle === 'active' ||
+        lifecycle === 'taken_down'
+    );
+}
+
+function lifecycleToDraftReviewStatus(
+    lifecycle: ServiceOfferingLifecycleFilter,
+): DraftLifecycleSource | undefined {
+    if (lifecycle === 'pending_review') return 'pending';
+    if (lifecycle === 'rejected') return 'rejected';
+    return undefined;
+}
+
+function lifecycleToPublicationStatus(
+    lifecycle: ServiceOfferingLifecycleFilter,
+): PublishedLifecycleSource | undefined {
+    if (lifecycle === 'active') return 'active';
+    if (lifecycle === 'taken_down') return 'taken_down';
+    return undefined;
+}
 
 type ExistingPricingSpec = {
     id: string;
@@ -125,18 +170,21 @@ export class AdminServiceOfferingsRepository {
         query: AdminServiceOfferingListQuery,
     ): Promise<AdminServiceOfferingListResponse> {
         const normalized = this.normalizeQuery(query);
-        if (normalized.status === 'pending') {
-            const result = await this.findDraftItems(normalized);
+        const includeDraft = lifecycleIncludesDraft(normalized.lifecycle);
+        const includePublished = lifecycleIncludesPublished(normalized.lifecycle);
+
+        if (includeDraft && !includePublished) {
+            const result = await this.findDraftItems(normalized, true);
             return this.buildPaginatedResponse(result.items, result.total, normalized);
         }
-        if (normalized.status === 'published') {
-            const result = await this.findPublishedItems(normalized);
+        if (includePublished && !includeDraft) {
+            const result = await this.findPublishedItems(normalized, true);
             return this.buildPaginatedResponse(result.items, result.total, normalized);
         }
 
         const [draftResult, publishedResult] = await Promise.all([
-            this.findDraftItems(normalized),
-            this.findPublishedItems(normalized),
+            this.findDraftItems(normalized, false),
+            this.findPublishedItems(normalized, false),
         ]);
         const combined = [...draftResult.items, ...publishedResult.items].sort(
             (a, b) => b.updatedAt.localeCompare(a.updatedAt),
@@ -148,17 +196,25 @@ export class AdminServiceOfferingsRepository {
         );
     }
 
-    private async findDraftItems(normalized: NormalizedListQuery): Promise<{
+    private async findDraftItems(
+        normalized: NormalizedListQuery,
+        applyPagination: boolean,
+    ): Promise<{
         items: AdminServiceOfferingListItem[];
         total: number;
     }> {
+        const draftReviewStatus = lifecycleToDraftReviewStatus(
+            normalized.lifecycle,
+        );
         const conditions = [
-            normalized.reviewStatus === 'all'
-                ? undefined
-                : eq(
-                      servicePersonnelOfferingDrafts.status,
-                      normalized.reviewStatus,
-                  ),
+            draftReviewStatus
+                ? eq(servicePersonnelOfferingDrafts.status, draftReviewStatus)
+                : normalized.lifecycle === 'all'
+                  ? inArray(servicePersonnelOfferingDrafts.status, [
+                        'pending',
+                        'rejected',
+                    ])
+                  : undefined,
             this.buildDraftKeywordCondition(normalized.keyword),
         ].filter(Boolean);
         const where = conditions.length ? and(...conditions) : undefined;
@@ -167,6 +223,7 @@ export class AdminServiceOfferingsRepository {
             this.db
                 .select({
                     draftId: servicePersonnelOfferingDrafts.id,
+                    serviceId: servicePersonnelOfferingDrafts.serviceId,
                     personnelId: servicePersonnel.userId,
                     personnelName: servicePersonnel.name,
                     phoneNumber: users.phoneNumber,
@@ -179,6 +236,9 @@ export class AdminServiceOfferingsRepository {
                         servicePersonnelOfferingDrafts.rejectionReason,
                     submittedSnapshot:
                         servicePersonnelOfferingDrafts.submittedSnapshot,
+                    serviceName: services.name,
+                    categoryId: serviceCategories.id,
+                    categoryName: serviceCategories.name,
                     reviewedBy: servicePersonnelOfferingDrafts.reviewedBy,
                     reviewedAt: servicePersonnelOfferingDrafts.reviewedAt,
                     createdAt: servicePersonnelOfferingDrafts.createdAt,
@@ -193,14 +253,22 @@ export class AdminServiceOfferingsRepository {
                     ),
                 )
                 .innerJoin(users, eq(users.id, servicePersonnel.userId))
+                .innerJoin(
+                    services,
+                    eq(services.id, servicePersonnelOfferingDrafts.serviceId),
+                )
+                .leftJoin(
+                    serviceCategories,
+                    eq(serviceCategories.id, services.categoryId),
+                )
                 .where(where)
                 .orderBy(desc(servicePersonnelOfferingDrafts.updatedAt))
                 .limit(
-                    normalized.status === 'pending'
+                    applyPagination
                         ? normalized.limit
                         : normalized.offset + normalized.limit,
                 )
-                .offset(normalized.status === 'pending' ? normalized.offset : 0),
+                .offset(applyPagination ? normalized.offset : 0),
             this.db
                 .select({ total: count() })
                 .from(servicePersonnelOfferingDrafts)
@@ -212,6 +280,14 @@ export class AdminServiceOfferingsRepository {
                     ),
                 )
                 .innerJoin(users, eq(users.id, servicePersonnel.userId))
+                .innerJoin(
+                    services,
+                    eq(services.id, servicePersonnelOfferingDrafts.serviceId),
+                )
+                .leftJoin(
+                    serviceCategories,
+                    eq(serviceCategories.id, services.categoryId),
+                )
                 .where(where),
         ]);
 
@@ -230,9 +306,16 @@ export class AdminServiceOfferingsRepository {
                             item.vocationalQualificationFileId,
                     }),
                     reviewStatus: item.reviewStatus,
+                    lifecycle: deriveDraftLifecycle(item.reviewStatus),
                     rejectionReason: item.rejectionReason,
                     submittedSnapshot: await this.enrichSubmittedSnapshot(
                         item.submittedSnapshot,
+                        {
+                            serviceId: item.serviceId,
+                            serviceName: item.serviceName,
+                            categoryId: item.categoryId,
+                            categoryName: item.categoryName,
+                        },
                     ),
                     reviewedBy: item.reviewedBy,
                     reviewedAt: this.toNullableIsoString(item.reviewedAt),
@@ -244,23 +327,27 @@ export class AdminServiceOfferingsRepository {
         };
     }
 
-    private async findPublishedItems(normalized: NormalizedListQuery): Promise<{
+    private async findPublishedItems(
+        normalized: NormalizedListQuery,
+        applyPagination: boolean,
+    ): Promise<{
         items: AdminServiceOfferingListItem[];
         total: number;
     }> {
+        const publicationStatus = lifecycleToPublicationStatus(
+            normalized.lifecycle,
+        );
         const conditions = [
-            normalized.reviewStatus === 'all'
-                ? undefined
-                : eq(
-                      servicePersonnelOfferingStatuses.reviewStatus,
-                      normalized.reviewStatus,
-                  ),
-            normalized.publicationStatus === 'all'
-                ? undefined
-                : eq(
+            eq(
+                servicePersonnelOfferingStatuses.reviewStatus,
+                'approved',
+            ),
+            publicationStatus
+                ? eq(
                       servicePersonnelOfferingStatuses.publicationStatus,
-                      normalized.publicationStatus,
-                  ),
+                      publicationStatus,
+                  )
+                : undefined,
             this.buildPublishedKeywordCondition(normalized.keyword),
         ].filter(Boolean);
         const where = conditions.length ? and(...conditions) : undefined;
@@ -331,13 +418,11 @@ export class AdminServiceOfferingsRepository {
                 .where(where)
                 .orderBy(desc(servicePersonnelOfferingStatuses.updatedAt))
                 .limit(
-                    normalized.status === 'published'
+                    applyPagination
                         ? normalized.limit
                         : normalized.offset + normalized.limit,
                 )
-                .offset(
-                    normalized.status === 'published' ? normalized.offset : 0,
-                ),
+                .offset(applyPagination ? normalized.offset : 0),
             this.db
                 .select({ total: count() })
                 .from(servicePersonnelOfferingStatuses)
@@ -410,6 +495,9 @@ export class AdminServiceOfferingsRepository {
                             specificationsByOffering.get(offeringKey) ?? [],
                         reviewStatus: item.reviewStatus,
                         publicationStatus: item.publicationStatus,
+                        lifecycle: derivePublishedLifecycle(
+                            item.publicationStatus,
+                        ),
                         takeDownReason: item.takeDownReason,
                         takenDownBy: item.takenDownBy,
                         takenDownAt: this.toNullableIsoString(item.takenDownAt),
@@ -521,16 +609,12 @@ export class AdminServiceOfferingsRepository {
             const targetServiceIds = Array.from(
                 new Set(normalizedServices.map((service) => service.serviceId)),
             );
-            const existingSkillRows = await tx
-                .select({ serviceId: servicePersonnelSkills.serviceId })
-                .from(servicePersonnelSkills)
-                .where(
-                    eq(servicePersonnelSkills.userId, draft.personnelUserId),
-                );
-            const targetServiceIdSet = new Set(targetServiceIds);
-            const pricingRemovedServiceIds = existingSkillRows
-                .map((skill) => skill.serviceId)
-                .filter((serviceId) => !targetServiceIdSet.has(serviceId));
+            if (
+                targetServiceIds.length !== 1 ||
+                targetServiceIds[0] !== draft.serviceId
+            ) {
+                throw new BadRequestException('待审核草稿服务不一致');
+            }
 
             await tx
                 .update(servicePersonnel)
@@ -542,42 +626,27 @@ export class AdminServiceOfferingsRepository {
                 })
                 .where(eq(servicePersonnel.userId, draft.personnelUserId));
 
-            await tx
-                .delete(servicePersonnelSkills)
-                .where(
-                    eq(servicePersonnelSkills.userId, draft.personnelUserId),
-                );
-
-            if (pricingRemovedServiceIds.length > 0) {
-                await tx
-                    .update(servicePersonnelPricing)
-                    .set({
-                        isActive: false,
-                        updatedAt: now,
-                    })
-                    .where(
-                        and(
-                            eq(
-                                servicePersonnelPricing.userId,
-                                draft.personnelUserId,
-                            ),
-                            inArray(
-                                servicePersonnelPricing.serviceId,
-                                pricingRemovedServiceIds,
-                            ),
-                        ),
-                    );
-            }
-
             if (normalizedServices.length > 0) {
-                await tx.insert(servicePersonnelSkills).values(
-                    normalizedServices.map((service) => ({
-                        userId: draft.personnelUserId,
-                        serviceId: service.serviceId,
-                        description: service.description ?? null,
-                        galleryFileIds: service.galleryFileIds ?? [],
-                    })),
-                );
+                await tx
+                    .insert(servicePersonnelSkills)
+                    .values(
+                        normalizedServices.map((service) => ({
+                            userId: draft.personnelUserId,
+                            serviceId: service.serviceId,
+                            description: service.description ?? null,
+                            galleryFileIds: service.galleryFileIds ?? [],
+                        })),
+                    )
+                    .onConflictDoUpdate({
+                        target: [
+                            servicePersonnelSkills.userId,
+                            servicePersonnelSkills.serviceId,
+                        ],
+                        set: {
+                            description: sql`excluded.description`,
+                            galleryFileIds: sql`excluded.gallery_file_ids`,
+                        },
+                    });
             }
 
             const existingSpecs = await tx
@@ -700,48 +769,6 @@ export class AdminServiceOfferingsRepository {
                             updatedAt: now,
                         },
                     });
-            }
-
-            const existingStatuses = await tx
-                .select({
-                    serviceId: servicePersonnelOfferingStatuses.serviceId,
-                    publicationStatus:
-                        servicePersonnelOfferingStatuses.publicationStatus,
-                })
-                .from(servicePersonnelOfferingStatuses)
-                .where(
-                    eq(
-                        servicePersonnelOfferingStatuses.personnelUserId,
-                        draft.personnelUserId,
-                    ),
-                );
-            const removedServiceIds = getActiveRemovedServiceIds(
-                existingStatuses,
-                targetServiceIds,
-            );
-
-            if (removedServiceIds.length > 0) {
-                await tx
-                    .update(servicePersonnelOfferingStatuses)
-                    .set({
-                        publicationStatus: 'taken_down',
-                        takeDownReason: '服务人员已移除此服务',
-                        takenDownBy: null,
-                        takenDownAt: now,
-                        updatedAt: now,
-                    })
-                    .where(
-                        and(
-                            eq(
-                                servicePersonnelOfferingStatuses.personnelUserId,
-                                draft.personnelUserId,
-                            ),
-                            inArray(
-                                servicePersonnelOfferingStatuses.serviceId,
-                                removedServiceIds,
-                            ),
-                        ),
-                    );
             }
 
             await tx
@@ -882,9 +909,7 @@ export class AdminServiceOfferingsRepository {
             limit,
             offset: (page - 1) * limit,
             keyword: query.keyword?.trim() || undefined,
-            status: query.status ?? 'all',
-            reviewStatus: query.reviewStatus ?? 'all',
-            publicationStatus: query.publicationStatus ?? 'all',
+            lifecycle: query.lifecycle ?? 'all',
         };
     }
 
@@ -965,7 +990,15 @@ export class AdminServiceOfferingsRepository {
         };
     }
 
-    private async enrichSubmittedSnapshot(snapshot: unknown) {
+    private async enrichSubmittedSnapshot(
+        snapshot: unknown,
+        serviceMeta?: {
+            serviceId: string;
+            serviceName: string;
+            categoryId: string | null;
+            categoryName: string | null;
+        },
+    ) {
         const parsed = UpdateServiceOfferingsRequestSchema.safeParse(snapshot);
         if (!parsed.success) {
             return snapshot;
@@ -974,6 +1007,18 @@ export class AdminServiceOfferingsRepository {
         const servicesWithGallery = await Promise.all(
             parsed.data.services.map(async (service) => ({
                 ...service,
+                serviceName:
+                    service.serviceId === serviceMeta?.serviceId
+                        ? serviceMeta.serviceName
+                        : undefined,
+                categoryId:
+                    service.serviceId === serviceMeta?.serviceId
+                        ? serviceMeta.categoryId
+                        : undefined,
+                categoryName:
+                    service.serviceId === serviceMeta?.serviceId
+                        ? serviceMeta.categoryName
+                        : undefined,
                 galleryFileIds: service.galleryFileIds ?? [],
                 gallery: await this.buildFileAccessList(
                     service.galleryFileIds ?? [],
@@ -1034,20 +1079,6 @@ export class AdminServiceOfferingsRepository {
     private toRequiredIsoString(value: Date | null | undefined): string {
         return (value ?? new Date(0)).toISOString();
     }
-}
-
-export function getActiveRemovedServiceIds(
-    existingStatuses: ExistingOfferingStatus[],
-    targetServiceIds: string[],
-): string[] {
-    const targetServiceIdSet = new Set(targetServiceIds);
-    return existingStatuses
-        .filter(
-            (status) =>
-                status.publicationStatus === 'active' &&
-                !targetServiceIdSet.has(status.serviceId),
-        )
-        .map((status) => status.serviceId);
 }
 
 export function buildPricingSyncPlan(

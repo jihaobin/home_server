@@ -391,6 +391,20 @@ export class ServicePersonnelService {
     ): Promise<ServicePersonnelProfile> {
         const personnel =
             await this.workSkillService.getPublishedPersonnelInfo(personnelId);
+        return await this.buildPersonnelProfile(personnelId, personnel);
+    }
+
+    async getOwnPersonnelProfile(
+        personnelId: string,
+    ): Promise<ServicePersonnelProfile> {
+        const personnel = await this.workSkillService.getPersonnelInfo(personnelId);
+        return await this.buildPersonnelProfile(personnelId, personnel);
+    }
+
+    private async buildPersonnelProfile(
+        personnelId: string,
+        personnel: Awaited<ReturnType<WorkSkillService['getPersonnelInfo']>>,
+    ): Promise<ServicePersonnelProfile> {
         if (!personnel) {
             throw new NotFoundException('服务人员不存在');
         }

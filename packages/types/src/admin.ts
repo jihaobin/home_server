@@ -410,23 +410,32 @@ export type AdminBulkUpdateOrderStatusResult = z.infer<
 // 服务上架审核管理
 // =========================
 
+export const ServiceOfferingLifecycleEnum = z
+    .enum(["pending_review", "rejected", "active", "taken_down"])
+    .describe(
+        "服务生命周期：待审核/已拒绝/已上架/已下架",
+    );
+
+export type ServiceOfferingLifecycle = z.infer<
+    typeof ServiceOfferingLifecycleEnum
+>;
+
+export const ServiceOfferingLifecycleFilterEnum = z
+    .enum(["all", "pending_review", "rejected", "active", "taken_down"])
+    .describe("服务生命周期筛选");
+
+export type ServiceOfferingLifecycleFilter = z.infer<
+    typeof ServiceOfferingLifecycleFilterEnum
+>;
+
 export const AdminServiceOfferingListQuerySchema = z
     .object({
         page: PaginationQuerySchema.shape.page.default(1),
         limit: PaginationQuerySchema.shape.limit.default(20),
         keyword: z.string().trim().optional().describe("服务人员或服务关键词"),
-        status: z
-            .enum(["all", "pending", "published"])
-            .default("all")
-            .describe("列表类型筛选"),
-        reviewStatus: z
-            .enum(["all", "pending", "approved", "rejected"])
-            .default("all")
-            .describe("审核状态筛选"),
-        publicationStatus: z
-            .enum(["all", "active", "taken_down"])
-            .default("all")
-            .describe("发布状态筛选"),
+        lifecycle: ServiceOfferingLifecycleFilterEnum.default("all").describe(
+            "生命周期筛选",
+        ),
     })
     .describe("管理员服务上架审核列表查询参数");
 
@@ -569,6 +578,7 @@ export const AdminServiceOfferingDraftListItemSchema = z
         draftId: z.string().describe("草稿 ID"),
         personnel: AdminServiceOfferingPersonnelSummarySchema,
         reviewStatus: ServiceOfferingDraftStatusEnum.describe("审核状态"),
+        lifecycle: ServiceOfferingLifecycleEnum.describe("生命周期阶段"),
         rejectionReason: z.string().nullable().optional().describe("拒绝原因"),
         submittedSnapshot: z.unknown().describe("提交快照"),
         reviewedBy: z.string().nullable().optional().describe("审核人用户 ID"),
@@ -595,6 +605,7 @@ export const AdminServiceOfferingPublishedListItemSchema = z
         reviewStatus: ServiceOfferingDraftStatusEnum.describe("最近审核状态"),
         publicationStatus:
             ServiceOfferingPublicationStatusEnum.describe("发布状态"),
+        lifecycle: ServiceOfferingLifecycleEnum.describe("生命周期阶段"),
         takeDownReason: z.string().nullable().optional().describe("下架原因"),
         takenDownBy: z
             .string()

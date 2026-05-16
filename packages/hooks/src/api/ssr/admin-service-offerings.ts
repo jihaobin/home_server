@@ -27,9 +27,7 @@ export type NormalizedAdminServiceOfferingsQuery = {
     page: number
     limit: number
     keyword?: string
-    status?: AdminServiceOfferingListQuery["status"]
-    reviewStatus?: AdminServiceOfferingListQuery["reviewStatus"]
-    publicationStatus?: AdminServiceOfferingListQuery["publicationStatus"]
+    lifecycle?: AdminServiceOfferingListQuery["lifecycle"]
 }
 
 export function normalizeAdminServiceOfferingsQuery(
@@ -48,16 +46,8 @@ export function normalizeAdminServiceOfferingsQuery(
         normalized.keyword = input.keyword.trim()
     }
 
-    if (input.status && input.status !== "all") {
-        normalized.status = input.status
-    }
-
-    if (input.reviewStatus && input.reviewStatus !== "all") {
-        normalized.reviewStatus = input.reviewStatus
-    }
-
-    if (input.publicationStatus && input.publicationStatus !== "all") {
-        normalized.publicationStatus = input.publicationStatus
+    if (input.lifecycle && input.lifecycle !== "all") {
+        normalized.lifecycle = input.lifecycle
     }
 
     return normalized
@@ -73,16 +63,8 @@ function buildQueryParams(input: NormalizedAdminServiceOfferingsQuery) {
         query.keyword = input.keyword
     }
 
-    if (input.status) {
-        query.status = input.status
-    }
-
-    if (input.reviewStatus) {
-        query.reviewStatus = input.reviewStatus
-    }
-
-    if (input.publicationStatus) {
-        query.publicationStatus = input.publicationStatus
+    if (input.lifecycle) {
+        query.lifecycle = input.lifecycle
     }
 
     return query

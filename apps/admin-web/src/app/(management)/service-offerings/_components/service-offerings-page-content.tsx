@@ -10,25 +10,31 @@ import {
     useTransition,
 } from "react"
 import { usePathname, useRouter } from "next/navigation"
-import { RefreshCcw } from "lucide-react"
-import type { AdminServiceOfferingListItem, PaginatedData } from "@repo/types"
+import type {
+    AdminServiceOfferingListItem,
+    PaginatedData,
+    ServiceOfferingLifecycleFilter,
+} from "@repo/types"
 import {
     useAdminServiceOfferings,
     useApproveAdminServiceOfferingDraft,
     useRejectAdminServiceOfferingDraft,
     useTakeDownAdminServiceOffering,
 } from "@repo/hooks/api/ssr"
-import { Button } from "@repo/web-ui/components/button"
-import { cn } from "@repo/web-ui/lib/utils"
+import { Tabs, TabsList, TabsTrigger } from "@repo/web-ui/components/tabs"
 import { toast } from "sonner"
-import { PageHeader, PageHeaderToolbar } from "@/components/common"
-import type { ServiceOfferingsQueryState } from "../_utils/query"
+import { PageHeader } from "@/components/common"
+import type {
+    ServiceOfferingsGroupMode,
+    ServiceOfferingsQueryState,
+} from "../_utils/query"
 import {
     buildServiceOfferingsSearchParams,
     normalizeServiceOfferingsQuery,
     toAdminServiceOfferingsQueryInput,
 } from "../_utils/query"
-import { ServiceOfferingReasonDialog } from "./service-offering-reason-dialog"
+import { ServiceOfferingDetailSheet } from "./service-offering-detail-sheet"
+import { ServiceOfferingReasonAlert } from "./service-offering-reason-alert"
 import {
     ServiceOfferingsFilterBar,
     type ServiceOfferingsFilterValues,
@@ -49,6 +55,17 @@ type ReasonDialogState =
     | { type: "takeDown"; offering: PublishedItem }
     | null
 
+const LIFECYCLE_TABS: Array<{
+    value: ServiceOfferingLifecycleFilter
+    label: string
+}> = [
+        { value: "pending_review", label: "待审核" },
+        { value: "active", label: "已上架" },
+        { value: "rejected", label: "已拒绝" },
+        { value: "taken_down", label: "已下架" },
+        { value: "all", label: "全部" },
+    ]
+
 export function ServiceOfferingsPageContent({
     initialQuery,
 }: ServiceOfferingsPageContentProps) {
@@ -62,6 +79,8 @@ export function ServiceOfferingsPageContent({
         useState<ServiceOfferingsListResponse | null>(null)
     const [isTableFetching, setIsTableFetching] = useState(false)
     const [reasonDialog, setReasonDialog] = useState<ReasonDialogState>(null)
+    const [detailItem, setDetailItem] =
+        useState<AdminServiceOfferingListItem | null>(null)
     const refetchRef = useRef<(() => Promise<unknown> | void) | null>(null)
 
     const requestQuery = useMemo(
@@ -92,25 +111,10 @@ export function ServiceOfferingsPageContent({
         })
     }, [pathname, queryState, router])
 
-    const currentItems = tableSnapshot?.items ?? []
-    const totalItems = tableSnapshot?.meta.total ?? 0
-    const pendingCount = currentItems.filter(
-        (item) => item.kind === "draft" && item.reviewStatus === "pending",
-    ).length
-    const activeCount = currentItems.filter(
-        (item) => item.kind === "published" && item.publicationStatus === "active",
-    ).length
-    const takenDownCount = currentItems.filter(
-        (item) =>
-            item.kind === "published" && item.publicationStatus === "taken_down",
-    ).length
-
     const filterDefaults = useMemo<ServiceOfferingsFilterValues>(
         () => ({
             keyword: queryState.keyword,
-            status: queryState.status,
-            reviewStatus: queryState.reviewStatus,
-            publicationStatus: queryState.publicationStatus,
+            groupMode: queryState.groupMode,
         }),
         [queryState],
     )
@@ -137,25 +141,25 @@ export function ServiceOfferingsPageContent({
                     ...current,
                     page: 1,
                     keyword: values.keyword,
-                    status: values.status as ServiceOfferingsQueryState["status"],
-                    reviewStatus:
-                        values.reviewStatus as ServiceOfferingsQueryState["reviewStatus"],
-                    publicationStatus:
-                        values.publicationStatus as ServiceOfferingsQueryState["publicationStatus"],
+                    groupMode: values.groupMode,
                 }),
             )
         },
         [],
     )
 
-    const handleResetFilters = useCallback(() => {
-        setQueryState((current) =>
-            normalizeServiceOfferingsQuery({
-                page: 1,
-                limit: current.limit,
-            }),
-        )
-    }, [])
+    const handleLifecycleChange = useCallback(
+        (lifecycle: ServiceOfferingLifecycleFilter) => {
+            setQueryState((current) =>
+                normalizeServiceOfferingsQuery({
+                    ...current,
+                    page: 1,
+                    lifecycle,
+                }),
+            )
+        },
+        [],
+    )
 
     const handlePaginationChange = useCallback(
         (next: { page: number; limit: number }) => {
@@ -173,6 +177,7 @@ export function ServiceOfferingsPageContent({
         async (draft: DraftItem) => {
             await approveMutation.mutateAsync(draft.draftId)
             toast.success("服务发布草稿已通过")
+            setDetailItem(null)
         },
         [approveMutation],
     )
@@ -190,6 +195,7 @@ export function ServiceOfferingsPageContent({
                 })
                 toast.success("服务发布草稿已拒绝")
                 setReasonDialog(null)
+                setDetailItem(null)
                 return
             }
 
@@ -200,72 +206,64 @@ export function ServiceOfferingsPageContent({
             })
             toast.success("服务已下架")
             setReasonDialog(null)
+            setDetailItem(null)
         },
         [reasonDialog, rejectMutation, takeDownMutation],
     )
 
+    const handleRefresh = useCallback(() => {
+        void refetchRef.current?.()
+    }, [])
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-5">
             <PageHeader
                 title="服务发布管理"
                 description="审核服务人员提交的服务草稿，处理已发布服务下架。"
+            />
+
+            <Tabs
+                value={queryState.lifecycle}
+                onValueChange={(value) =>
+                    handleLifecycleChange(
+                        value as ServiceOfferingLifecycleFilter,
+                    )
+                }
             >
-                <PageHeaderToolbar>
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={isTableFetching || isNavigating}
-                        onClick={() => {
-                            void refetchRef.current?.()
-                        }}
-                    >
-                        <RefreshCcw
-                            className={cn(
-                                "mr-2 size-4",
-                                isTableFetching ? "animate-spin" : undefined,
-                            )}
-                        />
-                        刷新
-                    </Button>
-                </PageHeaderToolbar>
-            </PageHeader>
+                <TabsList>
+                    {LIFECYCLE_TABS.map((tab) => (
+                        <TabsTrigger key={tab.value} value={tab.value}>
+                            {tab.label}
+                        </TabsTrigger>
+                    ))}
+                </TabsList>
+            </Tabs>
 
             <ServiceOfferingsFilterBar
                 defaultValues={filterDefaults}
                 onApply={handleApplyFilters}
-                onReset={handleResetFilters}
+                onRefresh={handleRefresh}
+                isFetching={isTableFetching}
                 isSubmitting={isNavigating}
             />
-
-            <div className="grid gap-3 md:grid-cols-4">
-                <SummaryTile label="当前页记录" value={currentItems.length} />
-                <SummaryTile label="待审核" value={pendingCount} />
-                <SummaryTile label="上架中" value={activeCount} />
-                <SummaryTile label="已下架" value={takenDownCount} />
-            </div>
 
             <Suspense fallback={<ServiceOfferingsTableSkeleton />}>
                 <ServiceOfferingsTableContent
                     query={requestQuery}
                     page={queryState.page}
                     limit={queryState.limit}
+                    groupMode={queryState.groupMode}
                     isActionPending={isActionPending}
                     onPaginationChange={handlePaginationChange}
+                    onOpenDetail={setDetailItem}
                     onApproveDraft={(draft) => {
                         void handleApproveDraft(draft)
                     }}
                     onRejectDraft={(draft) =>
-                        setReasonDialog({
-                            type: "reject",
-                            draft,
-                        })
+                        setReasonDialog({ type: "reject", draft })
                     }
                     onTakeDown={(offering) =>
-                        setReasonDialog({
-                            type: "takeDown",
-                            offering,
-                        })
+                        setReasonDialog({ type: "takeDown", offering })
                     }
                     onDataChange={handleDataChange}
                     onFetchingChange={handleFetchingChange}
@@ -273,16 +271,44 @@ export function ServiceOfferingsPageContent({
                 />
             </Suspense>
 
-            <ServiceOfferingReasonDialog
+            <ServiceOfferingDetailSheet
+                item={detailItem}
+                open={detailItem !== null}
+                isActionPending={isActionPending}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setDetailItem(null)
+                    }
+                }}
+                onApproveDraft={(draft) => {
+                    void handleApproveDraft(draft)
+                }}
+                onRejectDraft={(draft) =>
+                    setReasonDialog({ type: "reject", draft })
+                }
+                onTakeDown={(offering) =>
+                    setReasonDialog({ type: "takeDown", offering })
+                }
+            />
+
+            <ServiceOfferingReasonAlert
                 open={reasonDialog !== null}
-                title={reasonDialog?.type === "takeDown" ? "下架服务" : "拒绝审核"}
+                title={
+                    reasonDialog?.type === "takeDown" ? "下架服务" : "拒绝审核"
+                }
                 description={
                     reasonDialog?.type === "takeDown"
                         ? "下架原因会发送给服务人员，并在相关页面展示。"
                         : "拒绝原因会发送给服务人员，用于修改后重新提交。"
                 }
-                confirmLabel={reasonDialog?.type === "takeDown" ? "确认下架" : "确认拒绝"}
-                isPending={rejectMutation.isPending || takeDownMutation.isPending}
+                confirmLabel={
+                    reasonDialog?.type === "takeDown"
+                        ? "确认下架"
+                        : "确认拒绝"
+                }
+                isPending={
+                    rejectMutation.isPending || takeDownMutation.isPending
+                }
                 onOpenChange={(open) => {
                     if (!open) {
                         setReasonDialog(null)
@@ -298,8 +324,10 @@ type ServiceOfferingsTableContentProps = {
     query: ReturnType<typeof toAdminServiceOfferingsQueryInput>
     page: number
     limit: number
+    groupMode: ServiceOfferingsGroupMode
     isActionPending?: boolean
     onPaginationChange: (next: { page: number; limit: number }) => void
+    onOpenDetail: (item: AdminServiceOfferingListItem) => void
     onApproveDraft: (draft: DraftItem) => void
     onRejectDraft: (draft: DraftItem) => void
     onTakeDown: (offering: PublishedItem) => void
@@ -312,8 +340,10 @@ function ServiceOfferingsTableContent({
     query,
     page,
     limit,
+    groupMode,
     isActionPending,
     onPaginationChange,
+    onOpenDetail,
     onApproveDraft,
     onRejectDraft,
     onTakeDown,
@@ -349,20 +379,13 @@ function ServiceOfferingsTableContent({
             total={data.meta.total}
             page={page}
             limit={limit}
+            groupMode={groupMode}
             isActionPending={isActionPending}
             onPaginationChange={onPaginationChange}
+            onOpenDetail={onOpenDetail}
             onApproveDraft={onApproveDraft}
             onRejectDraft={onRejectDraft}
             onTakeDown={onTakeDown}
         />
-    )
-}
-
-function SummaryTile({ label, value }: { label: string; value: number }) {
-    return (
-        <div className="rounded-xl border bg-card p-4">
-            <div className="text-sm text-muted-foreground">{label}</div>
-            <div className="mt-2 text-2xl font-semibold">{value}</div>
-        </div>
     )
 }

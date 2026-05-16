@@ -1,9 +1,21 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import type { UpdateServiceOfferingsRequest } from '@repo/types';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import type {
+    FileAccessInfo,
+    UpdateServiceNonSensitiveFieldsRequest,
+    UpdateServiceOfferingsRequest,
+    WorkerServiceAuditLog,
+    WorkerServiceAuditLogType,
+    WorkerServiceCurrent,
+    WorkerServiceDerivedStatus,
+    WorkerServiceDraft,
+    WorkerServiceItem,
+    WithdrawServiceDraftResponse,
+} from '@repo/types';
 import { DB } from 'src/common/database/database.provider';
 import { DbType } from 'src/common/database/db';
 import {
+    serviceOfferingAuditLogs,
     servicePersonnel,
     servicePersonnelOfferingStatuses,
     servicePersonnelSkills,
@@ -13,6 +25,7 @@ import {
     services,
     users,
 } from 'src/common/database/schema';
+import { FilesService } from '../files/files.service';
 
 export function resolveOfferingVisibilityState({
     draftStatus,
@@ -29,10 +42,17 @@ export function resolveOfferingVisibilityState({
     };
 }
 
+type WorkerVisibleService = NonNullable<
+    Awaited<ReturnType<WorkSkillRepository['getPersonnelInfo']>>
+>['skills'][number];
+
 @Injectable()
 export class WorkSkillRepository {
     @Inject(DB)
     private readonly db: DbType;
+
+    @Inject(FilesService)
+    private readonly filesService?: FilesService;
 
     /**
      * 设置或更新工作人员的工作信息
@@ -235,10 +255,7 @@ export class WorkSkillRepository {
                 },
                 pricing: options.publicOnly
                     ? {
-                          where: (
-                              servicePersonnelPricing,
-                              { and, eq },
-                          ) =>
+                          where: (servicePersonnelPricing, { and, eq }) =>
                               and(
                                   eq(servicePersonnelPricing.isActive, true),
                                   options.serviceId
@@ -246,10 +263,19 @@ export class WorkSkillRepository {
                                             servicePersonnelPricing.serviceId,
                                             options.serviceId,
                                         )
-                                      : sql`true`,
+                                          : sql`true`,
                               ),
+                          orderBy: (servicePersonnelPricing, { asc }) => [
+                              asc(servicePersonnelPricing.effectiveFrom),
+                              asc(servicePersonnelPricing.id),
+                          ],
                       }
-                    : true,
+                    : {
+                          orderBy: (servicePersonnelPricing, { asc }) => [
+                              asc(servicePersonnelPricing.effectiveFrom),
+                              asc(servicePersonnelPricing.id),
+                          ],
+                      },
             },
         });
 
@@ -298,6 +324,10 @@ export class WorkSkillRepository {
                             servicePersonnelOfferingDrafts.personnelUserId,
                             personnelId,
                         ),
+                        inArray(
+                            servicePersonnelOfferingDrafts.serviceId,
+                            serviceIds,
+                        ),
                         inArray(servicePersonnelOfferingDrafts.status, [
                             'pending',
                             'rejected',
@@ -312,13 +342,18 @@ export class WorkSkillRepository {
         }
         const draftMap = new Map<string, (typeof drafts)[number]>();
         for (const draft of drafts) {
-            const snapshot = draft.submittedSnapshot as {
-                services?: Array<{ serviceId?: string }>;
-            };
-            for (const service of snapshot.services ?? []) {
-                if (service.serviceId && !draftMap.has(service.serviceId)) {
-                    draftMap.set(service.serviceId, draft);
-                }
+            const status = statusMap.get(draft.serviceId);
+            const reviewedAt = draft.reviewedAt ?? draft.updatedAt;
+            if (
+                draft.status === 'rejected' &&
+                status?.lastApprovedAt &&
+                reviewedAt &&
+                reviewedAt <= status.lastApprovedAt
+            ) {
+                continue;
+            }
+            if (!draftMap.has(draft.serviceId)) {
+                draftMap.set(draft.serviceId, draft);
             }
         }
 
@@ -333,8 +368,9 @@ export class WorkSkillRepository {
             pricingMap.get(item.serviceId)?.push(item);
         }
 
-        const skillsWithPrice = skills
-            .map((skill) => {
+        const skillsWithPrice = (
+            await Promise.all(
+                skills.map(async (skill) => {
                 const status = statusMap.get(skill.serviceId);
                 const draft = draftMap.get(skill.serviceId);
                 const specifications = pricingMap.get(skill.serviceId) ?? [];
@@ -354,7 +390,7 @@ export class WorkSkillRepository {
                     return null;
                 }
 
-                return {
+                    return {
                     ...skill.service,
                     categoryId: skill.service.categoryId,
                     categoryName: skill.service.category?.name ?? null,
@@ -363,17 +399,32 @@ export class WorkSkillRepository {
                     personnelDescription: skill.description ?? null,
                     reviewStatus,
                     publicationStatus,
+                    hasOfferingStatus: Boolean(status),
                     rejectionReason:
                         draft?.status === 'rejected'
                             ? draft.rejectionReason
                             : null,
                     takeDownReason: status?.takeDownReason ?? null,
-                    pendingDraftId: draft?.status === 'pending' ? draft.id : null,
+                    pendingDraftId:
+                        draft?.status === 'pending' ? draft.id : null,
+                    draft: draft
+                        ? {
+                              id: draft.id,
+                              status: draft.status,
+                              submittedAt: draft.submittedAt,
+                              reviewedAt: draft.reviewedAt,
+                              rejectionReason: draft.rejectionReason,
+                              submittedSnapshot: draft.submittedSnapshot,
+                              createdAt: draft.createdAt,
+                              updatedAt: draft.updatedAt,
+                          }
+                        : null,
                     lastApprovedAt: status?.lastApprovedAt ?? null,
                     takenDownAt: status?.takenDownAt ?? null,
-                };
-            })
-            .filter((skill) => skill !== null);
+                    };
+                }),
+            )
+        ).filter((skill) => skill !== null);
 
         return {
             ...personnelInfo,
@@ -533,6 +584,530 @@ export class WorkSkillRepository {
                 eq(serviceCategories.id, services.categoryId),
             )
             .where(inArray(services.id, serviceIds));
+    }
+
+    async listWorkerServices(
+        personnelId: string,
+    ): Promise<WorkerServiceItem[]> {
+        const personnel = await this.getPersonnelInfo(personnelId);
+        if (!personnel) {
+            throw new BadRequestException('该服务人员不存在');
+        }
+
+        const logs = await this.listServiceAuditLogs(personnelId);
+        return await Promise.all(
+            personnel.skills.map((service) =>
+                this.toWorkerServiceItem(service, logs.get(service.id) ?? []),
+            ),
+        );
+    }
+
+    async withdrawServiceDraft(
+        personnelId: string,
+        serviceId: string,
+    ): Promise<WithdrawServiceDraftResponse> {
+        await this.db.transaction(async (tx) => {
+            const [draft] = await tx
+                .select()
+                .from(servicePersonnelOfferingDrafts)
+                .where(
+                    and(
+                        eq(
+                            servicePersonnelOfferingDrafts.personnelUserId,
+                            personnelId,
+                        ),
+                        eq(servicePersonnelOfferingDrafts.serviceId, serviceId),
+                        eq(servicePersonnelOfferingDrafts.status, 'pending'),
+                    ),
+                )
+                .orderBy(desc(servicePersonnelOfferingDrafts.updatedAt))
+                .limit(1);
+
+            if (!draft) {
+                throw new BadRequestException('当前服务没有可撤回的审核提交');
+            }
+
+            await tx.insert(serviceOfferingAuditLogs).values({
+                personnelUserId: personnelId,
+                serviceId,
+                draftId: draft.id,
+                type: 'withdrawn',
+                occurredAt: new Date(),
+                note: '服务人员撤回提交',
+            });
+
+            const deletedRows = await tx
+                .delete(servicePersonnelOfferingDrafts)
+                .where(
+                    and(
+                        eq(
+                            servicePersonnelOfferingDrafts.personnelUserId,
+                            personnelId,
+                        ),
+                        eq(servicePersonnelOfferingDrafts.serviceId, serviceId),
+                        eq(servicePersonnelOfferingDrafts.status, 'pending'),
+                    ),
+                )
+                .returning({ id: servicePersonnelOfferingDrafts.id });
+            if (deletedRows.length === 0) {
+                throw new BadRequestException('当前服务没有可撤回的审核提交');
+            }
+        });
+
+        return { serviceId, withdrawn: true, message: '已撤回提交' };
+    }
+
+    async updateServiceNonSensitiveFields(
+        personnelId: string,
+        payload: UpdateServiceNonSensitiveFieldsRequest,
+    ): Promise<{ serviceId: string; updated: true }> {
+        const [skill] = await this.db
+            .select({ serviceId: servicePersonnelSkills.serviceId })
+            .from(servicePersonnelSkills)
+            .where(
+                and(
+                    eq(servicePersonnelSkills.userId, personnelId),
+                    eq(servicePersonnelSkills.serviceId, payload.serviceId),
+                ),
+            )
+            .limit(1);
+
+        if (!skill) {
+            throw new BadRequestException('服务不存在');
+        }
+
+        await this.db.transaction(async (tx) => {
+            const personnelPatch: Partial<typeof servicePersonnel.$inferInsert> =
+                {};
+
+            if (payload.serviceArea) {
+                const area = payload.serviceArea;
+                if (area.province !== undefined) {
+                    personnelPatch.province = area.province;
+                }
+                if (area.district !== undefined) {
+                    personnelPatch.district = area.district;
+                }
+                if (area.county !== undefined) {
+                    personnelPatch.county = area.county;
+                }
+                if (area.detailedAddress !== undefined) {
+                    personnelPatch.detailedAddress = area.detailedAddress;
+                }
+            }
+
+            if (payload.availableSlots) {
+                const slots = payload.availableSlots;
+                if (slots.workStartTime !== undefined) {
+                    personnelPatch.workStartTime = slots.workStartTime;
+                }
+                if (slots.workEndTime !== undefined) {
+                    personnelPatch.workEndTime = slots.workEndTime;
+                }
+                if (slots.workDays !== undefined) {
+                    personnelPatch.workDays = slots.workDays;
+                }
+            }
+
+            if (Object.keys(personnelPatch).length > 0) {
+                await tx
+                    .update(servicePersonnel)
+                    .set(personnelPatch)
+                    .where(eq(servicePersonnel.userId, personnelId));
+            }
+
+            if (payload.defaultSpecId) {
+                const [firstActiveSpec] = await tx
+                    .select({
+                        id: servicePersonnelPricing.id,
+                        effectiveFrom: servicePersonnelPricing.effectiveFrom,
+                    })
+                    .from(servicePersonnelPricing)
+                    .where(
+                        and(
+                            eq(servicePersonnelPricing.userId, personnelId),
+                            eq(
+                                servicePersonnelPricing.serviceId,
+                                payload.serviceId,
+                            ),
+                            eq(servicePersonnelPricing.isActive, true),
+                        ),
+                    )
+                    .orderBy(
+                        asc(servicePersonnelPricing.effectiveFrom),
+                        asc(servicePersonnelPricing.id),
+                    )
+                    .limit(1);
+                const [defaultSpec] = await tx
+                    .select({
+                        id: servicePersonnelPricing.id,
+                        effectiveFrom: servicePersonnelPricing.effectiveFrom,
+                    })
+                    .from(servicePersonnelPricing)
+                    .where(
+                        and(
+                            eq(servicePersonnelPricing.id, payload.defaultSpecId),
+                            eq(servicePersonnelPricing.userId, personnelId),
+                            eq(
+                                servicePersonnelPricing.serviceId,
+                                payload.serviceId,
+                            ),
+                            eq(servicePersonnelPricing.isActive, true),
+                        ),
+                    )
+                    .limit(1);
+
+                if (!defaultSpec) {
+                    throw new BadRequestException('默认规格不存在');
+                }
+
+                const now = new Date();
+                const anchor = firstActiveSpec?.effectiveFrom ?? now;
+                const earlier = anchor
+                    ? new Date(anchor.getTime() - 1000)
+                    : new Date(now.getTime() - 1000);
+
+                await tx
+                    .update(servicePersonnelPricing)
+                    .set({
+                        effectiveFrom: earlier,
+                        updatedAt: now,
+                    })
+                    .where(eq(servicePersonnelPricing.id, defaultSpec.id));
+            }
+        });
+
+        return { serviceId: payload.serviceId, updated: true };
+    }
+
+    async selfTakedownService(
+        personnelId: string,
+        serviceId: string,
+    ): Promise<{ serviceId: string; takenDown: true }> {
+        const [skill] = await this.db
+            .select({ serviceId: servicePersonnelSkills.serviceId })
+            .from(servicePersonnelSkills)
+            .where(
+                and(
+                    eq(servicePersonnelSkills.userId, personnelId),
+                    eq(servicePersonnelSkills.serviceId, serviceId),
+                ),
+            )
+            .limit(1);
+
+        if (!skill) {
+            throw new BadRequestException('服务不存在');
+        }
+
+        const now = new Date();
+        await this.db.transaction(async (tx) => {
+            await tx
+                .insert(servicePersonnelOfferingStatuses)
+                .values({
+                    personnelUserId: personnelId,
+                    serviceId,
+                    publicationStatus: 'taken_down',
+                    reviewStatus: 'approved',
+                    takeDownReason: '服务人员主动下架',
+                    takenDownBy: personnelId,
+                    takenDownAt: now,
+                    updatedAt: now,
+                })
+                .onConflictDoUpdate({
+                    target: [
+                        servicePersonnelOfferingStatuses.personnelUserId,
+                        servicePersonnelOfferingStatuses.serviceId,
+                    ],
+                    set: {
+                        publicationStatus: 'taken_down',
+                        takeDownReason: '服务人员主动下架',
+                        takenDownBy: personnelId,
+                        takenDownAt: now,
+                        updatedAt: now,
+                    },
+                });
+
+            await tx.insert(serviceOfferingAuditLogs).values({
+                personnelUserId: personnelId,
+                serviceId,
+                type: 'takendown',
+                operatorId: personnelId,
+                occurredAt: now,
+                note: '服务人员主动下架',
+            });
+        });
+
+        return { serviceId, takenDown: true };
+    }
+
+    async getWorkerServiceName(
+        personnelId: string,
+        serviceId: string,
+    ): Promise<string | null> {
+        const [service] = await this.db
+            .select({ name: services.name })
+            .from(servicePersonnelSkills)
+            .innerJoin(
+                services,
+                eq(servicePersonnelSkills.serviceId, services.id),
+            )
+            .where(
+                and(
+                    eq(servicePersonnelSkills.userId, personnelId),
+                    eq(servicePersonnelSkills.serviceId, serviceId),
+                ),
+            )
+            .limit(1);
+
+        return service?.name ?? null;
+    }
+
+    async deleteWorkerService(
+        personnelId: string,
+        serviceId: string,
+    ): Promise<{ serviceId: string; deleted: true }> {
+        await this.db.transaction(async (tx) => {
+            await tx
+                .delete(serviceOfferingAuditLogs)
+                .where(
+                    and(
+                        eq(
+                            serviceOfferingAuditLogs.personnelUserId,
+                            personnelId,
+                        ),
+                        eq(serviceOfferingAuditLogs.serviceId, serviceId),
+                    ),
+                );
+
+            await tx
+                .delete(servicePersonnelOfferingDrafts)
+                .where(
+                    and(
+                        eq(
+                            servicePersonnelOfferingDrafts.personnelUserId,
+                            personnelId,
+                        ),
+                        eq(servicePersonnelOfferingDrafts.serviceId, serviceId),
+                    ),
+                );
+
+            await tx
+                .delete(servicePersonnelPricing)
+                .where(
+                    and(
+                        eq(servicePersonnelPricing.userId, personnelId),
+                        eq(servicePersonnelPricing.serviceId, serviceId),
+                    ),
+                );
+
+            await tx
+                .delete(servicePersonnelOfferingStatuses)
+                .where(
+                    and(
+                        eq(
+                            servicePersonnelOfferingStatuses.personnelUserId,
+                            personnelId,
+                        ),
+                        eq(
+                            servicePersonnelOfferingStatuses.serviceId,
+                            serviceId,
+                        ),
+                    ),
+                );
+
+            const deletedSkills = await tx
+                .delete(servicePersonnelSkills)
+                .where(
+                    and(
+                        eq(servicePersonnelSkills.userId, personnelId),
+                        eq(servicePersonnelSkills.serviceId, serviceId),
+                    ),
+                )
+                .returning({ serviceId: servicePersonnelSkills.serviceId });
+
+            if (deletedSkills.length === 0) {
+                throw new BadRequestException('服务不存在');
+            }
+        });
+
+        return { serviceId, deleted: true };
+    }
+
+    private async listServiceAuditLogs(
+        personnelId: string,
+    ): Promise<Map<string, WorkerServiceAuditLog[]>> {
+        const rows = await this.db.query.serviceOfferingAuditLogs.findMany({
+            where: eq(serviceOfferingAuditLogs.personnelUserId, personnelId),
+            orderBy: [asc(serviceOfferingAuditLogs.occurredAt)],
+        });
+
+        const logs = new Map<string, WorkerServiceAuditLog[]>();
+        for (const row of rows) {
+            if (!logs.has(row.serviceId)) {
+                logs.set(row.serviceId, []);
+            }
+            logs.get(row.serviceId)?.push({
+                id: row.id,
+                type: this.toTimelineType(row.type),
+                occurredAt: row.occurredAt,
+                operatorId: row.operatorId ?? null,
+                note: row.note ?? null,
+            });
+        }
+        return logs;
+    }
+
+    private toTimelineType(
+        type: typeof serviceOfferingAuditLogs.$inferSelect.type,
+    ): WorkerServiceAuditLogType {
+        return type === 'restored' ? 'updated' : type;
+    }
+
+    private async toWorkerServiceItem(
+        service: WorkerVisibleService,
+        auditLogs: WorkerServiceAuditLog[],
+    ): Promise<WorkerServiceItem> {
+        const hasOffering =
+            Boolean(service.hasOfferingStatus) &&
+            (service.publicationStatus === 'active' ||
+                service.publicationStatus === 'taken_down');
+        const hasPendingDraft =
+            service.reviewStatus === 'pending' ||
+            Boolean(service.pendingDraftId);
+        const hasRejectedDraft =
+            service.reviewStatus === 'rejected' &&
+            Boolean(service.rejectionReason);
+        let derivedStatus: WorkerServiceDerivedStatus;
+
+        if (
+            Boolean(service.hasOfferingStatus) &&
+            service.publicationStatus === 'taken_down'
+        ) {
+            derivedStatus = 'takendown';
+        } else if (hasOffering && hasPendingDraft) {
+            derivedStatus = 'active_with_pending_update';
+        } else if (hasOffering && hasRejectedDraft) {
+            derivedStatus = 'active_with_rejected_update';
+        } else if (!hasOffering && hasPendingDraft) {
+            derivedStatus = 'pending';
+        } else if (!hasOffering && hasRejectedDraft) {
+            derivedStatus = 'rejected';
+        } else {
+            derivedStatus = 'active';
+        }
+
+        const current: WorkerServiceCurrent | null = hasOffering
+            ? {
+                  description: service.personnelDescription ?? null,
+                  categoryId: service.categoryId ?? null,
+                  categoryName: service.categoryName ?? null,
+                  galleryFileIds: service.galleryFileIds ?? [],
+                  gallery: await this.buildFileAccessList(
+                      service.galleryFileIds ?? [],
+                  ),
+                  specifications: (service.specifications ?? []).map(
+                      (specification) => ({
+                          id: specification.id,
+                          userId: specification.userId,
+                          serviceId: specification.serviceId,
+                          name: specification.name ?? undefined,
+                          price: specification.price,
+                          currency: specification.currency,
+                          estimatedDurationMinutes:
+                              specification.estimatedDurationMinutes,
+                      }),
+                  ),
+                  pricing: null,
+              }
+            : null;
+        const draft = await this.toWorkerServiceDraft(service);
+
+        return {
+            serviceId: service.id,
+            serviceName: service.name,
+            serviceIconUrl: null,
+            derivedStatus,
+            current,
+            draft,
+            auditLogs,
+            statusReason: service.rejectionReason ?? null,
+            lastSubmittedAt: draft?.submittedAt ?? null,
+            lastReviewedAt: draft?.reviewedAt ?? service.lastApprovedAt ?? null,
+            takenDownReason: service.takeDownReason ?? null,
+            updatedAt:
+                draft?.reviewedAt ??
+                draft?.submittedAt ??
+                service.takenDownAt ??
+                service.lastApprovedAt ??
+                null,
+        };
+    }
+
+    private async toWorkerServiceDraft(
+        service: WorkerVisibleService,
+    ): Promise<WorkerServiceDraft | null> {
+        if (!service.draft) {
+            return null;
+        }
+        const snapshot = service.draft
+            .submittedSnapshot as WorkerServiceDraft['snapshot'];
+        const servicesWithGallery = await Promise.all(
+            snapshot.services.map(async (snapshotService) => ({
+                ...snapshotService,
+                gallery: await this.buildFileAccessList(
+                    snapshotService.galleryFileIds ?? [],
+                ),
+            })),
+        );
+
+        return {
+            id: service.draft.id,
+            status: service.draft.status,
+            submittedAt: service.draft.submittedAt ?? service.draft.createdAt,
+            reviewedAt: service.draft.reviewedAt ?? null,
+            rejectionReason: service.draft.rejectionReason ?? null,
+            snapshot: {
+                ...snapshot,
+                services: servicesWithGallery,
+            },
+        };
+    }
+
+    private async buildFileAccessList(
+        fileIds: string[] | null | undefined,
+    ): Promise<FileAccessInfo[]> {
+        if (!fileIds?.length || !this.filesService) {
+            return [];
+        }
+
+        const files = await Promise.all(
+            fileIds.map((fileId) => this.getFileAccessInfoSafely(fileId)),
+        );
+
+        return files.filter((file): file is FileAccessInfo => Boolean(file));
+    }
+
+    private async getFileAccessInfoSafely(
+        fileId: string | null | undefined,
+    ): Promise<FileAccessInfo | null> {
+        if (!fileId || !this.filesService) {
+            return null;
+        }
+
+        try {
+            const file = await this.filesService.getFileAccessInfo(fileId);
+            return {
+                fileId,
+                url: file.fileUrl,
+                fileName: file.fileName,
+                mimeType: file.mimeType,
+                fileSize: file.fileSize,
+                expiresIn: file.expiresIn,
+                blurhash: file.blurhash,
+            };
+        } catch {
+            return null;
+        }
     }
 
     async updateServiceOfferings(
@@ -740,23 +1315,105 @@ export class WorkSkillRepository {
             ...payload,
             services: normalizedServices,
         };
-        const [draft] = await this.db
-            .insert(servicePersonnelOfferingDrafts)
-            .values({
-                personnelUserId: personnelId,
-                status: 'pending',
-                submittedSnapshot,
-            })
-            .onConflictDoUpdate({
-                target: servicePersonnelOfferingDrafts.personnelUserId,
-                targetWhere: sql`${servicePersonnelOfferingDrafts.status} = 'pending'`,
-                set: {
-                    submittedSnapshot,
-                    updatedAt: new Date(),
-                },
-            })
-            .returning();
+        if (normalizedServices.length !== 1) {
+            throw new BadRequestException('一次只能提交一个服务进行审核');
+        }
+        const serviceId = normalizedServices[0].serviceId;
 
-        return draft;
+        const now = new Date();
+        return await this.db.transaction(async (tx) => {
+            const draftValues = {
+                submittedSnapshot,
+                submittedAt: now,
+                rejectionReason: null,
+                reviewedBy: null,
+                reviewedAt: null,
+                updatedAt: now,
+            };
+            const [pendingDraft] = await tx
+                .select()
+                .from(servicePersonnelOfferingDrafts)
+                .where(
+                    and(
+                        eq(
+                            servicePersonnelOfferingDrafts.personnelUserId,
+                            personnelId,
+                        ),
+                        eq(servicePersonnelOfferingDrafts.serviceId, serviceId),
+                        eq(servicePersonnelOfferingDrafts.status, 'pending'),
+                    ),
+                )
+                .limit(1);
+            const [rejectedDraft] = await tx
+                .select()
+                .from(servicePersonnelOfferingDrafts)
+                .where(
+                    and(
+                        eq(
+                            servicePersonnelOfferingDrafts.personnelUserId,
+                            personnelId,
+                        ),
+                        eq(servicePersonnelOfferingDrafts.serviceId, serviceId),
+                        eq(servicePersonnelOfferingDrafts.status, 'rejected'),
+                    ),
+                )
+                .orderBy(desc(servicePersonnelOfferingDrafts.updatedAt))
+                .limit(1);
+
+            const [draft] = pendingDraft
+                ? await tx
+                      .update(servicePersonnelOfferingDrafts)
+                      .set(draftValues)
+                      .where(
+                          eq(
+                              servicePersonnelOfferingDrafts.id,
+                              pendingDraft.id,
+                          ),
+                      )
+                      .returning()
+                : rejectedDraft
+                  ? await tx
+                        .update(servicePersonnelOfferingDrafts)
+                        .set({
+                            ...draftValues,
+                            status: 'pending',
+                        })
+                        .where(
+                            eq(
+                                servicePersonnelOfferingDrafts.id,
+                                rejectedDraft.id,
+                            ),
+                        )
+                        .returning()
+                  : await tx
+                        .insert(servicePersonnelOfferingDrafts)
+                        .values({
+                            personnelUserId: personnelId,
+                            serviceId,
+                            status: 'pending',
+                            submittedSnapshot,
+                            submittedAt: now,
+                        })
+                        .onConflictDoUpdate({
+                            target: [
+                                servicePersonnelOfferingDrafts.personnelUserId,
+                                servicePersonnelOfferingDrafts.serviceId,
+                            ],
+                            targetWhere: sql`${servicePersonnelOfferingDrafts.status} = 'pending'`,
+                            set: draftValues,
+                        })
+                        .returning();
+
+            await tx.insert(serviceOfferingAuditLogs).values({
+                personnelUserId: personnelId,
+                serviceId,
+                draftId: draft.id,
+                type: 'submitted',
+                occurredAt: now,
+                note: null,
+            });
+
+            return draft;
+        });
     }
 }

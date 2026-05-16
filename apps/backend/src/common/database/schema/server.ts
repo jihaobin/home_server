@@ -91,10 +91,7 @@ export const serviceTags = pgTable(
             table.sortOrder,
             table.id,
         ),
-        uniqueIndex('uq_service_tags_domain_slug').on(
-            table.domain,
-            table.slug,
-        ),
+        uniqueIndex('uq_service_tags_domain_slug').on(table.domain, table.slug),
     ],
 );
 
@@ -182,6 +179,11 @@ export const serviceOfferingPublicationStatusEnum = pgEnum(
     ['active', 'taken_down'],
 );
 
+export const serviceOfferingAuditLogTypeEnum = pgEnum(
+    'service_offering_audit_log_type',
+    ['submitted', 'approved', 'rejected', 'takendown', 'restored', 'withdrawn'],
+);
+
 export const servicePersonnelOfferingDrafts = pgTable(
     'service_personnel_offering_drafts',
     {
@@ -192,6 +194,9 @@ export const servicePersonnelOfferingDrafts = pgTable(
         personnelUserId: varchar('personnel_user_id', { length: 255 })
             .notNull()
             .references(() => servicePersonnel.userId, { onDelete: 'cascade' }),
+        serviceId: varchar('service_id', { length: 255 })
+            .notNull()
+            .references(() => services.id, { onDelete: 'cascade' }),
         submittedSnapshot: jsonb('submitted_snapshot').notNull(),
         status: serviceOfferingDraftStatusEnum('status')
             .notNull()
@@ -201,6 +206,7 @@ export const servicePersonnelOfferingDrafts = pgTable(
             () => users.id,
             { onDelete: 'set null' },
         ),
+        submittedAt: timestamp('submitted_at', { withTimezone: true }),
         reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
         createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true })
@@ -210,11 +216,12 @@ export const servicePersonnelOfferingDrafts = pgTable(
     (table) => [
         index('idx_service_offering_drafts_personnel_status').on(
             table.personnelUserId,
+            table.serviceId,
             table.status,
             table.updatedAt.desc(),
         ),
-        uniqueIndex('uniq_service_offering_drafts_pending_personnel')
-            .on(table.personnelUserId)
+        uniqueIndex('uniq_service_offering_drafts_pending_personnel_service')
+            .on(table.personnelUserId, table.serviceId)
             .where(sql`status = 'pending'`),
     ],
 );
@@ -269,6 +276,42 @@ export const servicePersonnelOfferingStatuses = pgTable(
     ],
 );
 
+export const serviceOfferingAuditLogs = pgTable(
+    'service_offering_audit_logs',
+    {
+        id: varchar('id', { length: 255 })
+            .primaryKey()
+            .$default(() => createId()),
+        personnelUserId: varchar('personnel_user_id', { length: 255 })
+            .notNull()
+            .references(() => servicePersonnel.userId, { onDelete: 'cascade' }),
+        serviceId: varchar('service_id', { length: 255 })
+            .notNull()
+            .references(() => services.id, { onDelete: 'cascade' }),
+        draftId: varchar('draft_id', { length: 255 }).references(
+            () => servicePersonnelOfferingDrafts.id,
+            { onDelete: 'set null' },
+        ),
+        type: serviceOfferingAuditLogTypeEnum('type').notNull(),
+        occurredAt: timestamp('occurred_at', { withTimezone: true })
+            .defaultNow()
+            .notNull(),
+        operatorId: varchar('operator_id', { length: 255 }).references(
+            () => users.id,
+            { onDelete: 'set null' },
+        ),
+        note: text('note'),
+    },
+    (table) => [
+        index('idx_service_offering_audit_logs_personnel_service').on(
+            table.personnelUserId,
+            table.serviceId,
+            table.occurredAt,
+        ),
+        index('idx_service_offering_audit_logs_draft').on(table.draftId),
+    ],
+);
+
 // 服务分类关系定义
 export const serviceCategoriesRelations = relations(
     serviceCategories,
@@ -309,6 +352,7 @@ export const servicesRelations = relations(services, ({ one, many }) => ({
     }),
     personnelSkills: many(servicePersonnelSkills),
     offeringStatuses: many(servicePersonnelOfferingStatuses),
+    offeringAuditLogs: many(serviceOfferingAuditLogs),
 }));
 
 // 服务人员技能关系定义
@@ -333,11 +377,16 @@ export const servicePersonnelOfferingDraftsRelations = relations(
             fields: [servicePersonnelOfferingDrafts.personnelUserId],
             references: [servicePersonnel.userId],
         }),
+        service: one(services, {
+            fields: [servicePersonnelOfferingDrafts.serviceId],
+            references: [services.id],
+        }),
         reviewer: one(users, {
             fields: [servicePersonnelOfferingDrafts.reviewedBy],
             references: [users.id],
         }),
         offeringStatuses: many(servicePersonnelOfferingStatuses),
+        auditLogs: many(serviceOfferingAuditLogs),
     }),
 );
 
@@ -359,6 +408,28 @@ export const servicePersonnelOfferingStatusesRelations = relations(
         lastApprovedDraft: one(servicePersonnelOfferingDrafts, {
             fields: [servicePersonnelOfferingStatuses.lastApprovedDraftId],
             references: [servicePersonnelOfferingDrafts.id],
+        }),
+    }),
+);
+
+export const serviceOfferingAuditLogsRelations = relations(
+    serviceOfferingAuditLogs,
+    ({ one }) => ({
+        personnel: one(servicePersonnel, {
+            fields: [serviceOfferingAuditLogs.personnelUserId],
+            references: [servicePersonnel.userId],
+        }),
+        service: one(services, {
+            fields: [serviceOfferingAuditLogs.serviceId],
+            references: [services.id],
+        }),
+        draft: one(servicePersonnelOfferingDrafts, {
+            fields: [serviceOfferingAuditLogs.draftId],
+            references: [servicePersonnelOfferingDrafts.id],
+        }),
+        operator: one(users, {
+            fields: [serviceOfferingAuditLogs.operatorId],
+            references: [users.id],
         }),
     }),
 );

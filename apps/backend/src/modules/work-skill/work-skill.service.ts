@@ -7,6 +7,9 @@ import {
     SkillUpdateResult,
     UpdateServiceOfferingsRequest,
     ServiceOfferingSubmissionResult,
+    UpdateServiceNonSensitiveFieldsRequest,
+    WithdrawServiceDraftResponse,
+    WorkerServiceItem,
 } from '@repo/types';
 
 @Injectable()
@@ -134,16 +137,75 @@ export class WorkSkillService {
         );
     }
 
+    async listWorkerServices(
+        personnelId: string,
+    ): Promise<WorkerServiceItem[]> {
+        return await this.workSkillRepository.listWorkerServices(personnelId);
+    }
+
+    async withdrawServiceDraft(
+        personnelId: string,
+        serviceId: string,
+    ): Promise<WithdrawServiceDraftResponse> {
+        return await this.workSkillRepository.withdrawServiceDraft(
+            personnelId,
+            serviceId,
+        );
+    }
+
+    async updateServiceNonSensitiveFields(
+        personnelId: string,
+        payload: UpdateServiceNonSensitiveFieldsRequest,
+    ): Promise<{ serviceId: string; updated: true }> {
+        return await this.workSkillRepository.updateServiceNonSensitiveFields(
+            personnelId,
+            payload,
+        );
+    }
+
+    async selfTakedownService(
+        personnelId: string,
+        serviceId: string,
+    ): Promise<{ serviceId: string; takenDown: true }> {
+        return await this.workSkillRepository.selfTakedownService(
+            personnelId,
+            serviceId,
+        );
+    }
+
+    async deleteWorkerService(
+        personnelId: string,
+        serviceId: string,
+        confirmName: string,
+    ): Promise<{ serviceId: string; deleted: true }> {
+        const serviceName = await this.workSkillRepository.getWorkerServiceName(
+            personnelId,
+            serviceId,
+        );
+
+        if (serviceName !== confirmName) {
+            throw new BadRequestException('服务名称不匹配');
+        }
+
+        return await this.workSkillRepository.deleteWorkerService(
+            personnelId,
+            serviceId,
+        );
+    }
+
     async updateServiceOfferings(
         personnelId: string,
         payload: UpdateServiceOfferingsRequest,
     ): Promise<ServiceOfferingSubmissionResult> {
+        if (payload.services.length !== 1) {
+            throw new BadRequestException('一次只能提交一个服务进行审核');
+        }
+
         const serviceIds = payload.services.map((service) => service.serviceId);
-        const boundServices = await this.workSkillRepository.findServicesByIds(
-            serviceIds,
-        );
-        const requiresCertificates = boundServices.some(
-            (service) => service.categoryName?.includes('按摩'),
+        const boundServices =
+            await this.workSkillRepository.findServicesByIds(serviceIds);
+        const requiresCertificates = boundServices.some((service) =>
+            service.categoryName?.includes('按摩'),
         );
 
         if (
@@ -163,7 +225,7 @@ export class WorkSkillService {
         return {
             draftId: draft.id,
             status: draft.status,
-            submittedAt: draft.createdAt ?? new Date(),
+            submittedAt: draft.submittedAt ?? draft.createdAt ?? new Date(),
             message: '已提交审核，等待管理员审核',
         };
     }

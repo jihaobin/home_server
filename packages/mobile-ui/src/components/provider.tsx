@@ -126,7 +126,7 @@ export function Provider({
                                     {children}
                                 </Suspense>
                             </SessionProvider>
-                            <DevToolsBubble onCopy={onCopy} queryClient={queryClient} />
+                            {/* <DevToolsBubble onCopy={onCopy} queryClient={queryClient} /> */}
                             {Platform.OS === "android" ? (
                                 <LayoutAnimationConfig skipEntering skipExiting>
                                     {toasterNode}

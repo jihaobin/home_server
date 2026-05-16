@@ -9,12 +9,14 @@ import {
     reviewStats,
     serviceCategories,
     servicePersonnel,
+    servicePersonnelOfferingStatuses,
     servicePersonnelPricing,
     services,
     userAddresses,
 } from 'src/common/database/schema';
 import { FilesService } from '../files/files.service';
 import { GeoLocationService } from 'src/common/services/geo-location.service';
+import { buildActiveOfferingCondition } from '../service-personnel/service-personnel.repository';
 import type {
     HomeBanner,
     HomeGuarantee,
@@ -404,6 +406,10 @@ export class HomeRepository {
                     serviceCategories,
                     eq(serviceCategories.id, services.categoryId),
                 )
+                .innerJoin(
+                    servicePersonnelOfferingStatuses,
+                    buildActiveOfferingCondition(),
+                )
                 .where(and(...optimalPricingConditions)),
         );
 
@@ -617,6 +623,10 @@ export class HomeRepository {
                 .innerJoin(
                     serviceCategories,
                     eq(serviceCategories.id, services.categoryId),
+                )
+                .innerJoin(
+                    servicePersonnelOfferingStatuses,
+                    buildActiveOfferingCondition(),
                 )
                 .where(and(...optimalPricingConditions)),
         );

@@ -1,15 +1,25 @@
 import type { AdminServiceOfferingsQueryInput } from "@repo/hooks/api/ssr"
+import type { ServiceOfferingLifecycleFilter } from "@repo/types"
 
 const DEFAULT_PAGE = 1
 const DEFAULT_LIMIT = 20
+
+export const SERVICE_OFFERINGS_LIFECYCLE_VALUES: ServiceOfferingLifecycleFilter[] = [
+    "all",
+    "pending_review",
+    "rejected",
+    "active",
+    "taken_down",
+]
+
+export type ServiceOfferingsGroupMode = "flat" | "by-personnel"
 
 export type ServiceOfferingsQueryState = {
     page: number
     limit: number
     keyword: string
-    status: "all" | "pending" | "published"
-    reviewStatus: "all" | "pending" | "approved" | "rejected"
-    publicationStatus: "all" | "active" | "taken_down"
+    lifecycle: ServiceOfferingLifecycleFilter
+    groupMode: ServiceOfferingsGroupMode
 }
 
 export function parseServiceOfferingsSearchParams(
@@ -19,11 +29,8 @@ export function parseServiceOfferingsSearchParams(
         page: parseNumberParam(searchParams.page),
         limit: parseNumberParam(searchParams.limit),
         keyword: parseStringParam(searchParams.keyword),
-        status: parseStatusParam(searchParams.status),
-        reviewStatus: parseReviewStatusParam(searchParams.reviewStatus),
-        publicationStatus: parsePublicationStatusParam(
-            searchParams.publicationStatus,
-        ),
+        lifecycle: parseLifecycleParam(searchParams.lifecycle),
+        groupMode: parseGroupModeParam(searchParams.group),
     })
 }
 
@@ -34,9 +41,8 @@ export function normalizeServiceOfferingsQuery(
         page: input.page && input.page > 0 ? input.page : DEFAULT_PAGE,
         limit: input.limit && input.limit > 0 ? input.limit : DEFAULT_LIMIT,
         keyword: input.keyword?.trim() ?? "",
-        status: input.status ?? "all",
-        reviewStatus: input.reviewStatus ?? "all",
-        publicationStatus: input.publicationStatus ?? "all",
+        lifecycle: input.lifecycle ?? "pending_review",
+        groupMode: input.groupMode ?? "flat",
     }
 }
 
@@ -47,9 +53,7 @@ export function toAdminServiceOfferingsQueryInput(
         page: query.page,
         limit: query.limit,
         keyword: query.keyword || undefined,
-        status: query.status,
-        reviewStatus: query.reviewStatus,
-        publicationStatus: query.publicationStatus,
+        lifecycle: query.lifecycle,
     }
 }
 
@@ -71,16 +75,12 @@ export function buildServiceOfferingsSearchParams(
         params.set("keyword", normalized.keyword)
     }
 
-    if (normalized.status !== "all") {
-        params.set("status", normalized.status)
+    if (normalized.lifecycle !== "pending_review") {
+        params.set("lifecycle", normalized.lifecycle)
     }
 
-    if (normalized.reviewStatus !== "all") {
-        params.set("reviewStatus", normalized.reviewStatus)
-    }
-
-    if (normalized.publicationStatus !== "all") {
-        params.set("publicationStatus", normalized.publicationStatus)
+    if (normalized.groupMode !== "flat") {
+        params.set("group", normalized.groupMode)
     }
 
     const serialized = params.toString()
@@ -102,26 +102,18 @@ function parseStringParam(value: string | string[] | undefined) {
     return raw?.trim() || undefined
 }
 
-function parseStatusParam(value: string | string[] | undefined) {
+function parseLifecycleParam(
+    value: string | string[] | undefined,
+): ServiceOfferingLifecycleFilter | undefined {
     const raw = parseStringParam(value)
-    return raw === "pending" || raw === "published" || raw === "all"
-        ? raw
+    return raw && (SERVICE_OFFERINGS_LIFECYCLE_VALUES as string[]).includes(raw)
+        ? (raw as ServiceOfferingLifecycleFilter)
         : undefined
 }
 
-function parseReviewStatusParam(value: string | string[] | undefined) {
+function parseGroupModeParam(
+    value: string | string[] | undefined,
+): ServiceOfferingsGroupMode | undefined {
     const raw = parseStringParam(value)
-    return raw === "pending" ||
-        raw === "approved" ||
-        raw === "rejected" ||
-        raw === "all"
-        ? raw
-        : undefined
-}
-
-function parsePublicationStatusParam(value: string | string[] | undefined) {
-    const raw = parseStringParam(value)
-    return raw === "active" || raw === "taken_down" || raw === "all"
-        ? raw
-        : undefined
+    return raw === "by-personnel" || raw === "flat" ? raw : undefined
 }

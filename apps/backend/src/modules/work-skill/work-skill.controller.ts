@@ -4,6 +4,7 @@ import {
     Delete,
     Get,
     Param,
+    Patch,
     Post,
     Put,
     Req,
@@ -17,14 +18,18 @@ import {
     ServicePersonnelSchema,
     ServiceOfferingSubmissionResultSchema,
     SkillUpdateResultSchema,
+    type UpdateServiceNonSensitiveFieldsRequest,
     type UpdatePersonnelSkillsRequest,
     UpdatePersonnelSkillsRequestSchema,
     type UpsertPersonnelPricingRequest,
     UpsertPersonnelPricingRequestSchema,
     type UpdateServiceOfferingsRequest,
     UpdateServiceOfferingsRequestSchema,
+    UpdateServiceNonSensitiveFieldsRequestSchema,
     type UpsertWorkInfoRequest,
     UpsertWorkInfoRequestSchema,
+    WithdrawServiceDraftResponseSchema,
+    WorkerServicesResponseSchema,
 } from '@repo/types';
 import { Request } from 'express';
 import { ApiErrorResponses, ApiSuccessResponse } from 'src/common/decorator';
@@ -33,6 +38,15 @@ import { ZodValidationPipe } from 'src/common/pipes';
 import { z } from 'zod/v4';
 import { AuthGuard } from '../auth/auth.guard';
 import { WorkSkillService } from './work-skill.service';
+
+const UpdateWorkerServiceBodySchema =
+    UpdateServiceNonSensitiveFieldsRequestSchema.omit({ serviceId: true });
+const UpdateWorkerServicePayloadPipe = new ZodValidationPipe(
+    UpdateServiceNonSensitiveFieldsRequestSchema,
+);
+const DeleteWorkerServiceBodySchema = z.object({
+    confirmName: z.string().min(1),
+});
 
 @ApiTags('工作技能管理')
 @Controller('workSkill')
@@ -81,6 +95,115 @@ export class WorkSkillController {
         return await this.workSkillService.updateServiceOfferings(
             req.user.id,
             payload,
+        );
+    }
+
+    @UseGuards(AuthGuard)
+    @Get('worker/services')
+    @ApiOperation({
+        summary: '获取服务人员服务审核聚合列表',
+    })
+    @ApiSuccessResponse(WorkerServicesResponseSchema, {
+        description: '成功获取服务人员服务审核聚合列表',
+    })
+    async listWorkerServices(@Req() req: Request) {
+        const services = await this.workSkillService.listWorkerServices(
+            req.user.id,
+        );
+        return { services };
+    }
+
+    @UseGuards(AuthGuard)
+    @Patch('worker/services/:serviceId')
+    @ApiOperation({
+        summary: '更新服务人员服务非敏感字段',
+    })
+    @ApiParam({
+        name: 'serviceId',
+        description: '服务ID',
+        type: String,
+    })
+    @ApiBodies(UpdateWorkerServiceBodySchema)
+    async updateWorkerServiceNonSensitiveFields(
+        @Param('serviceId') serviceId: string,
+        @Body() body: Record<string, never>,
+        @Req() req: Request,
+    ) {
+        const payload = UpdateWorkerServicePayloadPipe.transform(
+            { serviceId, ...body },
+            { type: 'body' },
+        ) as UpdateServiceNonSensitiveFieldsRequest;
+
+        return await this.workSkillService.updateServiceNonSensitiveFields(
+            req.user.id,
+            payload,
+        );
+    }
+
+    @UseGuards(AuthGuard)
+    @Post('worker/services/:serviceId/takedown')
+    @ApiOperation({
+        summary: '服务人员主动下架服务',
+    })
+    @ApiParam({
+        name: 'serviceId',
+        description: '服务ID',
+        type: String,
+    })
+    async selfTakedownService(
+        @Param('serviceId') serviceId: string,
+        @Req() req: Request,
+    ) {
+        return await this.workSkillService.selfTakedownService(
+            req.user.id,
+            serviceId,
+        );
+    }
+
+    @UseGuards(AuthGuard)
+    @Delete('worker/services/:serviceId')
+    @ApiOperation({
+        summary: '服务人员删除整个服务',
+    })
+    @ApiParam({
+        name: 'serviceId',
+        description: '服务ID',
+        type: String,
+    })
+    @ApiBodies(DeleteWorkerServiceBodySchema)
+    async deleteWorkerService(
+        @Param('serviceId') serviceId: string,
+        @Body(new ZodValidationPipe(DeleteWorkerServiceBodySchema))
+        body: z.infer<typeof DeleteWorkerServiceBodySchema>,
+        @Req() req: Request,
+    ) {
+        return await this.workSkillService.deleteWorkerService(
+            req.user.id,
+            serviceId,
+            body.confirmName,
+        );
+    }
+
+    @UseGuards(AuthGuard)
+    @Delete('worker/services/:serviceId/draft')
+    @ApiOperation({
+        summary: '撤回服务审核草稿',
+    })
+    @ApiParam({
+        name: 'serviceId',
+        description: '服务ID',
+        type: String,
+    })
+    @ApiSuccessResponse(WithdrawServiceDraftResponseSchema, {
+        description: '成功撤回服务审核草稿',
+    })
+    async withdrawServiceDraft(
+        @Param('serviceId') serviceId: string,
+        @Req() req: Request,
+    ) {
+        return await this.workSkillService.withdrawServiceDraft(
+            req.user.id,
+            serviceId,
         );
     }
 

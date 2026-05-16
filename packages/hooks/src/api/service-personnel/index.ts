@@ -271,6 +271,23 @@ export const useServicePersonnelProfile = (personnelId?: string) =>
         },
     });
 
+/**
+ * 获取当前服务人员自己的聚合资料，包含已下架/待审核/未通过等管理态服务。
+ */
+export const useOwnServicePersonnelProfile = () =>
+    useQuery({
+        queryKey: ["service-personnel-profile", "me"],
+        queryFn: async () => {
+            const response = await apiClient.get<ServicePersonnelProfile>(
+                "/service-personnel/profile/me",
+            );
+            return response.data;
+        },
+        meta: {
+            errorMessage: "服务人员资料获取失败",
+        },
+    });
+
 export const useServicePersonnelDashboardStats = (personnelId?: string) =>
     useQuery({
         queryKey: ["service-personnel-dashboard", personnelId],

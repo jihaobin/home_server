@@ -128,6 +128,24 @@ export class ServicePersonnelController {
         });
     }
 
+    @Get('profile/me')
+    @UseGuards(AuthGuard)
+    @Roles(['service_personnel'])
+    @ApiOperation({
+        summary: '获取当前服务人员自己的聚合资料',
+        description:
+            '用于服务人员端管理页面，包含已下架、待审核、审核未通过等 owner 可见服务状态。',
+    })
+    @ApiSuccessResponse(ServicePersonnelProfileSchema, {
+        description: '当前服务人员聚合资料',
+    })
+    @ApiErrorResponses()
+    async getOwnPersonnelProfile(@Req() req: Request) {
+        return await this.servicePersonnelService.getOwnPersonnelProfile(
+            req.user.id,
+        );
+    }
+
     @Get('profile/:personnelId')
     @ApiOperation({
         summary: '聚合获取服务人员资料',

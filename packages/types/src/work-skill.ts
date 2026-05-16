@@ -84,8 +84,8 @@ export const UpdateServicePersonnelProfileRequestSchema = z
             data.emergencyContactPhone !== undefined ||
             data.emergencyContactName !== undefined,
         {
-        message: "至少需要更新名称、头像或紧急联系人信息",
-        path: ["name"],
+            message: "至少需要更新名称、头像或紧急联系人信息",
+            path: ["name"],
         },
     )
     .meta({
@@ -499,6 +499,24 @@ export const ServiceOfferingDraftStatusSchema = ServiceOfferingDraftStatusEnum;
 export const ServiceOfferingPublicationStatusSchema =
     ServiceOfferingPublicationStatusEnum;
 
+export const WorkerServiceDerivedStatusSchema = z.enum([
+    "pending",
+    "rejected",
+    "active",
+    "takendown",
+    "active_with_pending_update",
+    "active_with_rejected_update",
+]);
+
+export const WorkerServiceAuditLogTypeSchema = z.enum([
+    "submitted",
+    "approved",
+    "rejected",
+    "takendown",
+    "updated",
+    "withdrawn",
+]);
+
 export const UpdateServiceOfferingsRequestSchema = z
     .object({
         services: z
@@ -521,8 +539,18 @@ export const UpdateServiceOfferingsRequestSchema = z
                 }),
             )
             .min(1, "请至少选择一个服务分类"),
-        merchantQualificationFileId: z.string().trim().max(255).nullable().optional(),
-        vocationalQualificationFileId: z.string().trim().max(255).nullable().optional(),
+        merchantQualificationFileId: z
+            .string()
+            .trim()
+            .max(255)
+            .nullable()
+            .optional(),
+        vocationalQualificationFileId: z
+            .string()
+            .trim()
+            .max(255)
+            .nullable()
+            .optional(),
     })
     .meta({
         title: "更新服务人员提供的服务",
@@ -531,6 +559,9 @@ export const UpdateServiceOfferingsRequestSchema = z
 
 export const ServiceOfferingSubmittedSnapshotSchema =
     UpdateServiceOfferingsRequestSchema;
+
+export const WorkerServiceDraftSnapshotSchema =
+    ServiceOfferingSubmittedSnapshotSchema;
 
 export const ServiceOfferingSubmissionResultSchema = z
     .object({
@@ -542,6 +573,90 @@ export const ServiceOfferingSubmissionResultSchema = z
     .meta({
         title: "服务设置提交审核结果",
         description: "服务人员提交服务设置审核草稿后的响应",
+    });
+
+export const WorkerServiceAuditLogSchema = z.object({
+    id: z.string().min(1, "审计日志ID不能为空"),
+    type: WorkerServiceAuditLogTypeSchema,
+    occurredAt: z.date(),
+    operatorId: z.string().nullable(),
+    note: z.string().nullable(),
+});
+
+export const WorkerServiceDraftSchema = z.object({
+    id: z.string().min(1, "审核稿ID不能为空"),
+    status: ServiceOfferingDraftStatusSchema,
+    submittedAt: z.date().nullable(),
+    reviewedAt: z.date().nullable(),
+    rejectionReason: z.string().nullable(),
+    snapshot: WorkerServiceDraftSnapshotSchema.extend({
+        services: z.array(
+            WorkerServiceDraftSnapshotSchema.shape.services.element.extend({
+                gallery: z.array(FileAccessInfoSchema).default([]),
+            }),
+        ),
+    }),
+});
+
+export const WorkerServiceCurrentSchema = z.object({
+    description: z.string().nullable(),
+    categoryId: z.string().nullable(),
+    categoryName: z.string().nullable(),
+    galleryFileIds: z.array(z.string()).default([]),
+    gallery: z.array(FileAccessInfoSchema).default([]),
+    specifications: z.array(specificationSchema).default([]),
+    pricing: PersonnelPricingInfoSchema.nullable().optional(),
+});
+
+export const WorkerServiceItemSchema = z.object({
+    serviceId: z.string().min(1, "服务ID不能为空"),
+    serviceName: z.string().min(1, "服务名称不能为空"),
+    serviceIconUrl: z.url().nullable(),
+    derivedStatus: WorkerServiceDerivedStatusSchema,
+    current: WorkerServiceCurrentSchema.nullable(),
+    draft: WorkerServiceDraftSchema.nullable(),
+    auditLogs: z.array(WorkerServiceAuditLogSchema),
+    statusReason: z.string().nullable(),
+    lastSubmittedAt: z.date().nullable(),
+    lastReviewedAt: z.date().nullable(),
+    takenDownReason: z.string().nullable(),
+    updatedAt: z.date().nullable(),
+});
+
+export const WorkerServicesResponseSchema = z.object({
+    services: z.array(WorkerServiceItemSchema),
+});
+
+export const WithdrawServiceDraftResponseSchema = z.object({
+    serviceId: z.string().min(1, "服务ID不能为空"),
+    withdrawn: z.boolean(),
+    message: z.string(),
+});
+
+export const UpdateServiceNonSensitiveFieldsRequestSchema = z
+    .object({
+        serviceId: z.string().min(1, "服务ID不能为空"),
+        serviceArea: z
+            .object({
+                province: z.string().trim().min(1).max(100).optional(),
+                district: z.string().trim().max(100).nullable().optional(),
+                county: z.string().trim().max(100).nullable().optional(),
+                detailedAddress: z.string().trim().max(255).nullable().optional(),
+            })
+            .optional(),
+        availableSlots: z
+            .object({
+                workStartTime: z.string().trim().min(1).optional(),
+                workEndTime: z.string().trim().min(1).optional(),
+                workDays: z.string().trim().min(1).max(7).optional(),
+            })
+            .optional(),
+        defaultSpecId: z.string().trim().min(1).nullable().optional(),
+    })
+    .strict()
+    .refine((data) => data.serviceArea || data.availableSlots || data.defaultSpecId, {
+        message: "请至少提供一个非敏感字段",
+        path: ["serviceId"],
     });
 
 export const ServicePersonnelOfferingSchema = z
@@ -564,6 +679,7 @@ export const ServicePersonnelOfferingSchema = z
         rejectionReason: z.string().nullable().optional(),
         takeDownReason: z.string().nullable().optional(),
         pendingDraftId: z.string().nullable().optional(),
+        draft: WorkerServiceDraftSchema.nullable().optional(),
         lastApprovedAt: z.date().nullable().optional(),
         takenDownAt: z.date().nullable().optional(),
     })
@@ -709,6 +825,31 @@ export type ServiceOfferingSubmissionResult = z.infer<
 export type ServiceOfferingSpecificationInput = z.infer<
     typeof ServiceOfferingSpecificationInputSchema
 >;
+export type WorkerServiceDerivedStatus = z.infer<
+    typeof WorkerServiceDerivedStatusSchema
+>;
+export type WorkerServiceAuditLogType = z.infer<
+    typeof WorkerServiceAuditLogTypeSchema
+>;
+export type WorkerServiceAuditLog = z.infer<typeof WorkerServiceAuditLogSchema>;
+export type WorkerServiceDraftSnapshot = z.infer<
+    typeof WorkerServiceDraftSnapshotSchema
+>;
+export type WorkerServiceDraft = z.infer<typeof WorkerServiceDraftSchema>;
+export type WorkerServiceCurrent = z.infer<typeof WorkerServiceCurrentSchema>;
+export type WorkerServiceItem = z.infer<typeof WorkerServiceItemSchema>;
+export type WorkerServicesResponse = z.infer<
+    typeof WorkerServicesResponseSchema
+>;
+export type WithdrawServiceDraftResponse = z.infer<
+    typeof WithdrawServiceDraftResponseSchema
+>;
+export type UpdateServiceNonSensitiveFieldsRequest = z.infer<
+    typeof UpdateServiceNonSensitiveFieldsRequestSchema
+> & {
+    description?: never;
+    galleryFileIds?: never;
+};
 
 // 服务人员筛选相关类型
 export type ServicePersonnelFilterRequest = z.infer<
