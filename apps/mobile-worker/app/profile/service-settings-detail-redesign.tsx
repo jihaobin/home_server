@@ -5,6 +5,7 @@ import { useOwnServicePersonnelProfile } from "@repo/hooks/api/service-personnel
 import {
     useDeleteService,
     useMyWorkerServices,
+    useSubmitServiceOfferingAppeal,
     useSubmitServiceUpdate,
     useTakedownService,
     useUpdateActiveService,
@@ -114,6 +115,10 @@ type SpecSheetFormValues = {
     isDefault: boolean;
 };
 
+type AppealFormValues = {
+    appealReason: string;
+};
+
 type QualificationUploadKey = "merchant" | "vocational";
 type ServiceOffering = ServicePersonnelProfile["services"][number];
 type ServiceOption = ServiceListResponse["items"][number]["children"][number];
@@ -135,7 +140,8 @@ type ServiceAuditNotice = {
     message: string;
     tone: ServiceAuditTone;
     icon: keyof typeof Ionicons.glyphMap;
-    showAppeal?: boolean;
+    appealState?: "available" | "pending" | "rejected";
+    appealRejectReason?: string | null;
     steps?: ReturnType<typeof buildStepItems>;
 };
 
@@ -210,6 +216,7 @@ export default function ServiceSettingsDetailRedesignScreen() {
         useState<LoadSource | null>(null);
     const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
     const [deleteConfirmName, setDeleteConfirmName] = useState("");
+    const [isAppealSheetOpen, setIsAppealSheetOpen] = useState(false);
     const [baselineVersion, setBaselineVersion] = useState(0);
     const {
         control: serviceFormControl,
@@ -223,6 +230,11 @@ export default function ServiceSettingsDetailRedesignScreen() {
     } = useForm<ServiceFormValues>({
         defaultValues: DEFAULT_SERVICE_FORM_VALUES,
     });
+    const appealForm = useForm<AppealFormValues>({
+        defaultValues: {
+            appealReason: "",
+        },
+    });
 
     const {
         data: profile,
@@ -235,6 +247,7 @@ export default function ServiceSettingsDetailRedesignScreen() {
         refetch: refetchWorkerServices,
     } = useMyWorkerServices();
     const submitServiceUpdate = useSubmitServiceUpdate();
+    const submitAppealMutation = useSubmitServiceOfferingAppeal();
     const updateActiveService = useUpdateActiveService();
     const withdrawServiceDraft = useWithdrawServiceDraft();
     const takedownService = useTakedownService();
@@ -1131,6 +1144,24 @@ export default function ServiceSettingsDetailRedesignScreen() {
         serviceId,
     ]);
 
+    const handleSubmitAppeal = appealForm.handleSubmit(async (values) => {
+        if (submitAppealMutation.isPending) {
+            return;
+        }
+        if (!currentAuditItem?.serviceId) {
+            toast.error("服务信息不存在");
+            return;
+        }
+
+        await submitAppealMutation.mutateAsync({
+            serviceId: currentAuditItem.serviceId,
+            appealReason: values.appealReason,
+        });
+        toast.success("申诉已提交");
+        appealForm.reset({ appealReason: "" });
+        setIsAppealSheetOpen(false);
+    });
+
     const isLoading =
         (isFetchingProfile && !profile) ||
         (isFetchingWorkerServices &&
@@ -1366,7 +1397,10 @@ export default function ServiceSettingsDetailRedesignScreen() {
                         </View>
 
                         {auditNotice ? (
-                            <ServiceAuditNoticeCard notice={auditNotice} />
+                            <ServiceAuditNoticeCard
+                                notice={auditNotice}
+                                onAppealPress={() => setIsAppealSheetOpen(true)}
+                            />
                         ) : null}
 
                         {showSensitiveUpdateBanner ? (
@@ -1747,6 +1781,82 @@ export default function ServiceSettingsDetailRedesignScreen() {
                 onClose={() => setDeleteConfirmVisible(false)}
                 onConfirm={confirmDeleteService}
             />
+            <BottomSheetModal
+                visible={isAppealSheetOpen}
+                onClose={() => {
+                    if (!submitAppealMutation.isPending) {
+                        appealForm.reset({ appealReason: "" });
+                        setIsAppealSheetOpen(false);
+                    }
+                }}
+            >
+                <View className="gap-4 px-5 pb-6 pt-2">
+                    <View>
+                        <Text className="text-lg font-semibold text-[#111827]">
+                            提交申诉
+                        </Text>
+                        <Text className="mt-1 text-sm leading-5 text-[#6A7282]">
+                            请说明你认为本次下架需要复核的原因。申诉通过后会恢复原线上服务。
+                        </Text>
+                    </View>
+
+                    {currentAuditItem ? (
+                        <View className="rounded-2xl bg-[#F3F4F6] p-3">
+                            <Text className="text-xs text-[#6A7282]">
+                                下架原因
+                            </Text>
+                            <Text className="mt-1 text-sm leading-5 text-[#111827]">
+                                {currentAuditItem.takenDownReason ?? "暂无原因"}
+                            </Text>
+                        </View>
+                    ) : null}
+
+                    <Controller
+                        control={appealForm.control}
+                        name="appealReason"
+                        rules={{
+                            required: "请填写申诉说明",
+                            minLength: {
+                                value: 10,
+                                message: "申诉说明至少 10 个字",
+                            },
+                            maxLength: {
+                                value: 500,
+                                message: "申诉说明不能超过 500 个字",
+                            },
+                        }}
+                        render={({ field, fieldState }) => (
+                            <View>
+                                <Textarea
+                                    value={field.value}
+                                    onChangeText={field.onChange}
+                                    placeholder="请填写申诉说明"
+                                    className="min-h-[120px]"
+                                />
+                                {fieldState.error?.message ? (
+                                    <Text className="mt-1 text-xs text-[#DC2626]">
+                                        {fieldState.error.message}
+                                    </Text>
+                                ) : null}
+                            </View>
+                        )}
+                    />
+
+                    <Pressable
+                        className="items-center rounded-full bg-[#111827] py-3"
+                        disabled={submitAppealMutation.isPending}
+                        onPress={() => {
+                            void handleSubmitAppeal();
+                        }}
+                    >
+                        <Text className="text-sm font-medium text-white">
+                            {submitAppealMutation.isPending
+                                ? "提交中..."
+                                : "提交申诉"}
+                        </Text>
+                    </Pressable>
+                </View>
+            </BottomSheetModal>
         </SafeAreaView>
     );
 }
@@ -1832,8 +1942,12 @@ function QualificationCard(props: {
     );
 }
 
-function ServiceAuditNoticeCard(props: { notice: ServiceAuditNotice }) {
+function ServiceAuditNoticeCard(props: {
+    notice: ServiceAuditNotice;
+    onAppealPress?: () => void;
+}) {
     const tone = getAuditNoticeToneStyle(props.notice.tone);
+    const isAppealPending = props.notice.appealState === "pending";
     return (
         <View
             className="gap-3 rounded-2xl border p-4"
@@ -1868,18 +1982,31 @@ function ServiceAuditNoticeCard(props: { notice: ServiceAuditNotice }) {
                     </Text>
                 </View>
             </View>
-            {/* TODO: 申诉功能 */}
-            {/* {props.notice.showAppeal ? (
+            {props.notice.appealState ? (
                 <Pressable
-                    className="items-center rounded-full bg-[#E5E7EB] py-2.5"
-                    disabled
-                    onPress={() => toast.info("敬请期待")}
+                    className="items-center rounded-full py-2.5"
+                    disabled={isAppealPending}
+                    onPress={props.onAppealPress}
+                    style={{
+                        backgroundColor: isAppealPending
+                            ? "#E5E7EB"
+                            : "#111827",
+                    }}
                 >
-                    <Text className="text-xs leading-[18px] text-[#6A7282]">
-                        申诉（敬请期待）
+                    <Text
+                        className="text-xs leading-[18px]"
+                        style={{
+                            color: isAppealPending ? "#6A7282" : "#FFFFFF",
+                        }}
+                    >
+                        {props.notice.appealState === "pending"
+                            ? "申诉处理中"
+                            : props.notice.appealState === "rejected"
+                              ? "重新申诉"
+                              : "申诉"}
                     </Text>
                 </Pressable>
-            ) : null} */}
+            ) : null}
             {/* {props.notice.steps ? (
                 <AuditStepBar
                     steps={props.notice.steps.map((step) => ({
@@ -1908,24 +2035,48 @@ function buildServiceAuditNotice(
     }
     const steps = buildStepItems(item.auditLogs);
     const reason = getWorkerServiceReason(item);
-
-    if (hasPendingUpdateForTakenDownService(item)) {
-        return {
-            title: "下架中・已提交新审核",
-            message: "整改内容正在等待管理员重新审核，通过后将恢复对外展示。",
-            tone: "pending",
-            icon: "time-outline",
-            steps,
-        };
-    }
+    const latestAppeal = item.latestAppeal;
 
     if (item.derivedStatus === "takendown") {
+        if (latestAppeal?.status === "pending") {
+            return {
+                title: "申诉处理中",
+                message: "申诉已提交，等待管理员处理。",
+                tone: "pending",
+                icon: "time-outline",
+                appealState: "pending",
+                steps,
+            };
+        }
+        if (latestAppeal?.status === "rejected") {
+            return {
+                title: "申诉已驳回",
+                message: `驳回原因：${
+                    latestAppeal.reviewResultReason ?? "暂无原因"
+                }`,
+                tone: "taken_down",
+                icon: "remove-circle-outline",
+                appealState: "rejected",
+                appealRejectReason: latestAppeal.reviewResultReason ?? null,
+                steps,
+            };
+        }
+        if (hasPendingUpdateForTakenDownService(item)) {
+            return {
+                title: "下架中・已提交新审核",
+                message: "整改内容正在等待管理员重新审核，通过后将恢复对外展示。",
+                tone: "pending",
+                icon: "time-outline",
+                appealState: "available",
+                steps,
+            };
+        }
         return {
             title: "服务已下架",
             message: `下架原因：${reason ?? "暂无原因"}`,
             tone: "taken_down",
             icon: "remove-circle-outline",
-            showAppeal: true,
+            appealState: "available",
             steps,
         };
     }

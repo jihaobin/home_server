@@ -7,6 +7,7 @@ export const LIFECYCLE_LABELS: Record<ServiceOfferingLifecycle, string> = {
     rejected: "已拒绝",
     active: "已上架",
     taken_down: "已下架",
+    appeal_pending: "申诉待处理",
 }
 
 const LIFECYCLE_BADGE_CLASS: Record<ServiceOfferingLifecycle, string> = {
@@ -14,6 +15,7 @@ const LIFECYCLE_BADGE_CLASS: Record<ServiceOfferingLifecycle, string> = {
     rejected: "bg-rose-100 text-rose-700",
     active: "bg-emerald-100 text-emerald-700",
     taken_down: "bg-slate-200 text-slate-700",
+    appeal_pending: "bg-sky-100 text-sky-800",
 }
 
 const LIFECYCLE_DOT_CLASS: Record<ServiceOfferingLifecycle, string> = {
@@ -21,6 +23,7 @@ const LIFECYCLE_DOT_CLASS: Record<ServiceOfferingLifecycle, string> = {
     rejected: "bg-rose-500",
     active: "bg-emerald-500",
     taken_down: "bg-slate-500",
+    appeal_pending: "bg-sky-500",
 }
 
 export function ServiceOfferingLifecycleBadge({

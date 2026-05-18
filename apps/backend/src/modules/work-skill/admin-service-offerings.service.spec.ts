@@ -3,6 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 import { NotificationPublisher } from '../notification/notification.publisher';
 import {
     AdminServiceOfferingsRepository,
+    type ServiceOfferingAppealReviewResult,
     type ServiceOfferingReviewResult,
     type ServiceOfferingTakeDownResult,
 } from './admin-service-offerings.repository';
@@ -15,6 +16,8 @@ type MockRepository = jest.Mocked<
         | 'approveDraft'
         | 'rejectDraft'
         | 'takeDownOffering'
+        | 'approveAppeal'
+        | 'rejectAppeal'
     >
 >;
 
@@ -33,6 +36,14 @@ const takeDownResult: ServiceOfferingTakeDownResult = {
     serviceId: 'service_1',
 };
 
+const appealReviewResult: ServiceOfferingAppealReviewResult = {
+    appealId: 'appeal_1',
+    personnelUserId: 'personnel_1',
+    serviceId: 'service_1',
+    status: 'approved',
+    message: '申诉已通过，服务已恢复上线',
+};
+
 describe('AdminServiceOfferingsService', () => {
     let service: AdminServiceOfferingsService;
     let repository: MockRepository;
@@ -44,6 +55,8 @@ describe('AdminServiceOfferingsService', () => {
             approveDraft: jest.fn(),
             rejectDraft: jest.fn(),
             takeDownOffering: jest.fn(),
+            approveAppeal: jest.fn(),
+            rejectAppeal: jest.fn(),
         };
         notificationPublisher = {
             publish: jest.fn(),
@@ -205,5 +218,88 @@ describe('AdminServiceOfferingsService', () => {
             'admin_1',
             '平台规则调整',
         );
+    });
+
+    it('通过申诉后通知服务人员', async () => {
+        repository.approveAppeal.mockResolvedValue(appealReviewResult);
+
+        await expect(
+            service.approveAppeal('appeal_1', 'admin_1'),
+        ).resolves.toEqual(appealReviewResult);
+
+        expect(repository.approveAppeal).toHaveBeenCalledWith(
+            'appeal_1',
+            'admin_1',
+        );
+        expect(notificationPublisher.publish).toHaveBeenCalledWith(
+            expect.objectContaining({
+                event: 'service_offering_appeal_approved',
+                payload: expect.objectContaining({
+                    event: 'service_offering_appeal_approved',
+                    userId: 'personnel_1',
+                    personnelId: 'personnel_1',
+                    serviceId: 'service_1',
+                    appealId: 'appeal_1',
+                    action: 'appeal_approved',
+                    operatorId: 'admin_1',
+                }),
+            }),
+        );
+    });
+
+    it('整改已恢复导致申诉自动取消时不发送通过通知', async () => {
+        repository.approveAppeal.mockResolvedValue({
+            ...appealReviewResult,
+            status: 'canceled',
+            message: '服务已恢复上线，本次申诉自动取消',
+        });
+
+        await expect(
+            service.approveAppeal('appeal_1', 'admin_1'),
+        ).resolves.toMatchObject({ status: 'canceled' });
+
+        expect(notificationPublisher.publish).not.toHaveBeenCalled();
+    });
+
+    it('驳回申诉时 trim reason、调用 repository 并通知服务人员', async () => {
+        repository.rejectAppeal.mockResolvedValue({
+            ...appealReviewResult,
+            status: 'rejected',
+            message: '申诉已驳回',
+        });
+
+        await expect(
+            service.rejectAppeal('appeal_1', 'admin_1', '  材料仍不符合要求  '),
+        ).resolves.toMatchObject({ status: 'rejected' });
+
+        expect(repository.rejectAppeal).toHaveBeenCalledWith(
+            'appeal_1',
+            'admin_1',
+            '材料仍不符合要求',
+        );
+        expect(notificationPublisher.publish).toHaveBeenCalledWith(
+            expect.objectContaining({
+                event: 'service_offering_appeal_rejected',
+                payload: expect.objectContaining({
+                    event: 'service_offering_appeal_rejected',
+                    userId: 'personnel_1',
+                    personnelId: 'personnel_1',
+                    serviceId: 'service_1',
+                    appealId: 'appeal_1',
+                    action: 'appeal_rejected',
+                    reason: '材料仍不符合要求',
+                    operatorId: 'admin_1',
+                }),
+            }),
+        );
+    });
+
+    it('驳回申诉原因为空时抛 BadRequestException 且不调用 repository', async () => {
+        await expect(
+            service.rejectAppeal('appeal_1', 'admin_1', '   '),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(repository.rejectAppeal).not.toHaveBeenCalled();
+        expect(notificationPublisher.publish).not.toHaveBeenCalled();
     });
 });

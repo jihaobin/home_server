@@ -10,6 +10,8 @@ import {
     UpdateServiceNonSensitiveFieldsRequest,
     WithdrawServiceDraftResponse,
     WorkerServiceItem,
+    SubmitServiceOfferingAppealRequest,
+    ServiceOfferingAppealSummary,
 } from '@repo/types';
 
 @Injectable()
@@ -171,6 +173,29 @@ export class WorkSkillService {
             personnelId,
             serviceId,
         );
+    }
+
+    async submitServiceOfferingAppeal(
+        personnelId: string,
+        serviceId: string,
+        payload: SubmitServiceOfferingAppealRequest,
+    ): Promise<ServiceOfferingAppealSummary> {
+        const appeal = await this.workSkillRepository.submitServiceOfferingAppeal(
+            personnelId,
+            serviceId,
+            payload.appealReason.trim(),
+        );
+
+        return {
+            id: appeal.id,
+            status: appeal.status,
+            appealReason: appeal.appealReason,
+            reviewResultReason: appeal.reviewResultReason ?? null,
+            takenDownAtSnapshot: appeal.takenDownAtSnapshot,
+            takeDownReasonSnapshot: appeal.takeDownReasonSnapshot ?? null,
+            createdAt: appeal.createdAt ?? new Date(),
+            reviewedAt: appeal.reviewedAt ?? null,
+        };
     }
 
     async deleteWorkerService(

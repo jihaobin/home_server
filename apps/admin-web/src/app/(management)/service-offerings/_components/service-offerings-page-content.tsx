@@ -18,7 +18,9 @@ import type {
 import {
     useAdminServiceOfferings,
     useApproveAdminServiceOfferingDraft,
+    useApproveServiceOfferingAppeal,
     useRejectAdminServiceOfferingDraft,
+    useRejectServiceOfferingAppeal,
     useTakeDownAdminServiceOffering,
 } from "@repo/hooks/api/ssr"
 import { Tabs, TabsList, TabsTrigger } from "@repo/web-ui/components/tabs"
@@ -53,6 +55,7 @@ type PublishedItem = Extract<AdminServiceOfferingListItem, { kind: "published" }
 type ReasonDialogState =
     | { type: "reject"; draft: DraftItem }
     | { type: "takeDown"; offering: PublishedItem }
+    | { type: "rejectAppeal"; offering: PublishedItem }
     | null
 
 const LIFECYCLE_TABS: Array<{
@@ -90,10 +93,14 @@ export function ServiceOfferingsPageContent({
     const approveMutation = useApproveAdminServiceOfferingDraft(requestQuery)
     const rejectMutation = useRejectAdminServiceOfferingDraft(requestQuery)
     const takeDownMutation = useTakeDownAdminServiceOffering(requestQuery)
+    const approveAppealMutation = useApproveServiceOfferingAppeal(requestQuery)
+    const rejectAppealMutation = useRejectServiceOfferingAppeal(requestQuery)
     const isActionPending =
         approveMutation.isPending ||
         rejectMutation.isPending ||
-        takeDownMutation.isPending
+        takeDownMutation.isPending ||
+        approveAppealMutation.isPending ||
+        rejectAppealMutation.isPending
 
     useEffect(() => {
         const search = buildServiceOfferingsSearchParams(queryState)
@@ -182,6 +189,27 @@ export function ServiceOfferingsPageContent({
         [approveMutation],
     )
 
+    const handleApproveAppeal = useCallback(
+        async (offering: PublishedItem) => {
+            const appealId = offering.appeal?.id
+            if (!appealId) {
+                toast.error("申诉记录不存在")
+                return
+            }
+
+            const result = await approveAppealMutation.mutateAsync(appealId)
+            if (result.status === "approved") {
+                toast.success(result.message ?? "申诉已通过，服务已恢复上线")
+            } else if (result.status === "canceled") {
+                toast.info(result.message ?? "申诉已取消，服务状态未变更")
+            } else {
+                toast.success(result.message ?? "申诉已通过")
+            }
+            setDetailItem(null)
+        },
+        [approveAppealMutation],
+    )
+
     const handleConfirmReason = useCallback(
         async (reason: string) => {
             if (!reasonDialog) {
@@ -199,6 +227,27 @@ export function ServiceOfferingsPageContent({
                 return
             }
 
+            if (reasonDialog.type === "rejectAppeal") {
+                const appealId = reasonDialog.offering.appeal?.id
+                if (!appealId) {
+                    toast.error("申诉记录不存在")
+                    return
+                }
+
+                const result = await rejectAppealMutation.mutateAsync({
+                    appealId,
+                    reason,
+                })
+                if (result.status === "rejected") {
+                    toast.success(result.message ?? "申诉已驳回")
+                } else {
+                    toast.info(result.message ?? "申诉状态未变更")
+                }
+                setReasonDialog(null)
+                setDetailItem(null)
+                return
+            }
+
             await takeDownMutation.mutateAsync({
                 personnelId: reasonDialog.offering.personnel.id,
                 serviceId: reasonDialog.offering.service.id,
@@ -208,7 +257,7 @@ export function ServiceOfferingsPageContent({
             setReasonDialog(null)
             setDetailItem(null)
         },
-        [reasonDialog, rejectMutation, takeDownMutation],
+        [reasonDialog, rejectAppealMutation, rejectMutation, takeDownMutation],
     )
 
     const handleRefresh = useCallback(() => {
@@ -265,6 +314,12 @@ export function ServiceOfferingsPageContent({
                     onTakeDown={(offering) =>
                         setReasonDialog({ type: "takeDown", offering })
                     }
+                    onApproveAppeal={(offering) => {
+                        void handleApproveAppeal(offering)
+                    }}
+                    onRejectAppeal={(offering) =>
+                        setReasonDialog({ type: "rejectAppeal", offering })
+                    }
                     onDataChange={handleDataChange}
                     onFetchingChange={handleFetchingChange}
                     onRegisterRefetch={handleRegisterRefetch}
@@ -289,25 +344,41 @@ export function ServiceOfferingsPageContent({
                 onTakeDown={(offering) =>
                     setReasonDialog({ type: "takeDown", offering })
                 }
+                onApproveAppeal={(offering) => {
+                    void handleApproveAppeal(offering)
+                }}
+                onRejectAppeal={(offering) =>
+                    setReasonDialog({ type: "rejectAppeal", offering })
+                }
             />
 
             <ServiceOfferingReasonAlert
                 open={reasonDialog !== null}
                 title={
-                    reasonDialog?.type === "takeDown" ? "下架服务" : "拒绝审核"
+                    reasonDialog?.type === "takeDown"
+                        ? "下架服务"
+                        : reasonDialog?.type === "rejectAppeal"
+                          ? "驳回申诉"
+                          : "拒绝审核"
                 }
                 description={
                     reasonDialog?.type === "takeDown"
                         ? "下架原因会发送给服务人员，并在相关页面展示。"
+                        : reasonDialog?.type === "rejectAppeal"
+                          ? "驳回原因会发送给服务人员，服务会继续保持下架。"
                         : "拒绝原因会发送给服务人员，用于修改后重新提交。"
                 }
                 confirmLabel={
                     reasonDialog?.type === "takeDown"
                         ? "确认下架"
+                        : reasonDialog?.type === "rejectAppeal"
+                          ? "确认驳回"
                         : "确认拒绝"
                 }
                 isPending={
-                    rejectMutation.isPending || takeDownMutation.isPending
+                    rejectMutation.isPending ||
+                    takeDownMutation.isPending ||
+                    rejectAppealMutation.isPending
                 }
                 onOpenChange={(open) => {
                     if (!open) {
@@ -331,6 +402,8 @@ type ServiceOfferingsTableContentProps = {
     onApproveDraft: (draft: DraftItem) => void
     onRejectDraft: (draft: DraftItem) => void
     onTakeDown: (offering: PublishedItem) => void
+    onApproveAppeal: (offering: PublishedItem) => void
+    onRejectAppeal: (offering: PublishedItem) => void
     onDataChange: (data: ServiceOfferingsListResponse) => void
     onFetchingChange: (isFetching: boolean) => void
     onRegisterRefetch: (fn: (() => Promise<unknown> | void) | null) => void
@@ -347,6 +420,8 @@ function ServiceOfferingsTableContent({
     onApproveDraft,
     onRejectDraft,
     onTakeDown,
+    onApproveAppeal,
+    onRejectAppeal,
     onDataChange,
     onFetchingChange,
     onRegisterRefetch,
@@ -386,6 +461,8 @@ function ServiceOfferingsTableContent({
             onApproveDraft={onApproveDraft}
             onRejectDraft={onRejectDraft}
             onTakeDown={onTakeDown}
+            onApproveAppeal={onApproveAppeal}
+            onRejectAppeal={onRejectAppeal}
         />
     )
 }

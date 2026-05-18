@@ -5,12 +5,11 @@ import {
     type AdminServiceOfferingReason,
 } from "@repo/types"
 import {
-    QueryClient,
     queryOptions,
     useMutation,
     useQueryClient,
     useSuspenseQuery,
-    type QueryKey,
+    type QueryClient,
 } from "@tanstack/react-query"
 import { z } from "zod/v4"
 import { getSsrApiClient } from "./client"
@@ -19,6 +18,8 @@ const ADMIN_SERVICE_OFFERINGS_QUERY_KEY = ["admin-service-offerings"] as const
 
 const operationResultSchema = z.object({
     success: z.boolean(),
+    status: z.string().optional(),
+    message: z.string().optional(),
 })
 
 export type AdminServiceOfferingsQueryInput = Partial<AdminServiceOfferingListQuery>
@@ -72,7 +73,7 @@ function buildQueryParams(input: NormalizedAdminServiceOfferingsQuery) {
 
 export const adminServiceOfferingsQueryKey = (
     input: NormalizedAdminServiceOfferingsQuery,
-) => [ADMIN_SERVICE_OFFERINGS_QUERY_KEY, input] as QueryKey
+) => ["admin-service-offerings", input] as const
 
 export const adminServiceOfferingsQueryOptions = (
     input: AdminServiceOfferingsQueryInput = {},
@@ -124,10 +125,7 @@ export function invalidateAdminServiceOfferingsQuery(
     return queryClient.invalidateQueries({
         predicate: (query) => {
             const [baseKey] = query.queryKey
-            return (
-                Array.isArray(baseKey) &&
-                baseKey[0] === ADMIN_SERVICE_OFFERINGS_QUERY_KEY[0]
-            )
+            return baseKey === ADMIN_SERVICE_OFFERINGS_QUERY_KEY[0]
         },
     })
 }
@@ -155,7 +153,7 @@ export function useApproveAdminServiceOfferingDraft(
             return response.data
         },
         onSuccess: () => {
-            invalidateAdminServiceOfferingsQuery(queryClient)
+            invalidateAdminServiceOfferingsQuery(queryClient, query)
         },
         meta: {
             errorMessage: "审核通过服务发布草稿失败",
@@ -192,10 +190,78 @@ export function useRejectAdminServiceOfferingDraft(
             return response.data
         },
         onSuccess: () => {
-            invalidateAdminServiceOfferingsQuery(queryClient)
+            invalidateAdminServiceOfferingsQuery(queryClient, query)
         },
         meta: {
             errorMessage: "审核拒绝服务发布草稿失败",
+        },
+    })
+}
+
+export function useApproveServiceOfferingAppeal(
+    query?: AdminServiceOfferingsQueryInput,
+) {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async (appealId: string) => {
+            const apiClient = getSsrApiClient()
+            const response = await apiClient.post<z.infer<typeof operationResultSchema>>(
+                `/admin/service-offerings/appeals/${appealId}/approve`,
+                undefined,
+                {
+                    schema: operationResultSchema,
+                },
+            )
+
+            if (!response.data?.success) {
+                throw new Error("通过服务下架申诉失败")
+            }
+
+            return response.data
+        },
+        onSuccess: () => {
+            invalidateAdminServiceOfferingsQuery(queryClient, query)
+        },
+        meta: {
+            errorMessage: "通过服务下架申诉失败",
+        },
+    })
+}
+
+export function useRejectServiceOfferingAppeal(
+    query?: AdminServiceOfferingsQueryInput,
+) {
+    const queryClient = useQueryClient()
+
+    return useMutation({
+        mutationFn: async ({
+            appealId,
+            reason,
+        }: {
+            appealId: string
+            reason: AdminServiceOfferingReason["reason"]
+        }) => {
+            const apiClient = getSsrApiClient()
+            const response = await apiClient.post<z.infer<typeof operationResultSchema>>(
+                `/admin/service-offerings/appeals/${appealId}/reject`,
+                { reason },
+                {
+                    schema: operationResultSchema,
+                },
+            )
+
+            if (!response.data?.success) {
+                throw new Error("驳回服务下架申诉失败")
+            }
+
+            return response.data
+        },
+        onSuccess: () => {
+            invalidateAdminServiceOfferingsQuery(queryClient, query)
+        },
+        meta: {
+            errorMessage: "驳回服务下架申诉失败",
         },
     })
 }
@@ -231,7 +297,7 @@ export function useTakeDownAdminServiceOffering(
             return response.data
         },
         onSuccess: () => {
-            invalidateAdminServiceOfferingsQuery(queryClient)
+            invalidateAdminServiceOfferingsQuery(queryClient, query)
         },
         meta: {
             errorMessage: "下架服务失败",

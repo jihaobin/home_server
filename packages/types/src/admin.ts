@@ -411,9 +411,15 @@ export type AdminBulkUpdateOrderStatusResult = z.infer<
 // =========================
 
 export const ServiceOfferingLifecycleEnum = z
-    .enum(["pending_review", "rejected", "active", "taken_down"])
+    .enum([
+        "pending_review",
+        "rejected",
+        "active",
+        "taken_down",
+        "appeal_pending",
+    ])
     .describe(
-        "服务生命周期：待审核/已拒绝/已上架/已下架",
+        "服务生命周期：待审核/已拒绝/已上架/已下架/申诉待处理",
     );
 
 export type ServiceOfferingLifecycle = z.infer<
@@ -421,7 +427,14 @@ export type ServiceOfferingLifecycle = z.infer<
 >;
 
 export const ServiceOfferingLifecycleFilterEnum = z
-    .enum(["all", "pending_review", "rejected", "active", "taken_down"])
+    .enum([
+        "all",
+        "pending_review",
+        "rejected",
+        "active",
+        "taken_down",
+        "appeal_pending",
+    ])
     .describe("服务生命周期筛选");
 
 export type ServiceOfferingLifecycleFilter = z.infer<
@@ -573,6 +586,23 @@ export type AdminServiceOfferingSpecification = z.infer<
     typeof AdminServiceOfferingSpecificationSchema
 >;
 
+export const AdminServiceOfferingAppealSummarySchema = z
+    .object({
+        id: z.string().min(1, "申诉ID不能为空"),
+        status: z.enum(["pending", "approved", "rejected", "canceled"]),
+        appealReason: z.string(),
+        reviewResultReason: z.string().nullable(),
+        takeDownReasonSnapshot: z.string().nullable(),
+        takenDownAtSnapshot: IsoDateTimeStringSchema,
+        createdAt: IsoDateTimeStringSchema,
+        reviewedAt: IsoDateTimeStringSchema.nullable(),
+    })
+    .describe("服务下架申诉摘要");
+
+export type AdminServiceOfferingAppealSummary = z.infer<
+    typeof AdminServiceOfferingAppealSummarySchema
+>;
+
 export const AdminServiceOfferingDraftListItemSchema = z
     .object({
         draftId: z.string().describe("草稿 ID"),
@@ -623,6 +653,9 @@ export const AdminServiceOfferingPublishedListItemSchema = z
         lastApprovedAt: IsoDateTimeStringSchema.nullable()
             .optional()
             .describe("最近通过审核时间"),
+        appeal: AdminServiceOfferingAppealSummarySchema.nullable()
+            .optional()
+            .describe("当前下架轮次的最新申诉"),
         createdAt: IsoDateTimeStringSchema.describe("创建时间"),
         updatedAt: IsoDateTimeStringSchema.describe("更新时间"),
     })

@@ -83,6 +83,46 @@ export class AdminServiceOfferingsController {
         return { success: true };
     }
 
+    @Post('appeals/:id/approve')
+    @ApiOperation({ summary: '通过服务下架申诉' })
+    @ApiParam({ name: 'id', description: '申诉 ID' })
+    @ApiSuccessResponse(OperationResultSchema)
+    @ApiErrorResponses()
+    async approveAppeal(
+        @Param('id', new ZodValidationPipe(IdParamSchema)) id: string,
+        @Req() req: any,
+    ) {
+        const result = await this.service.approveAppeal(id, req.user.id);
+        return {
+            success: true,
+            status: result.status,
+            message: result.message,
+        };
+    }
+
+    @Post('appeals/:id/reject')
+    @ApiOperation({ summary: '驳回服务下架申诉' })
+    @ApiParam({ name: 'id', description: '申诉 ID' })
+    @ApiSuccessResponse(OperationResultSchema)
+    @ApiErrorResponses()
+    async rejectAppeal(
+        @Param('id', new ZodValidationPipe(IdParamSchema)) id: string,
+        @Body(new ZodValidationPipe(AdminServiceOfferingReasonSchema))
+        body: AdminServiceOfferingReason,
+        @Req() req: any,
+    ) {
+        const result = await this.service.rejectAppeal(
+            id,
+            req.user.id,
+            body.reason,
+        );
+        return {
+            success: true,
+            status: result.status,
+            message: result.message,
+        };
+    }
+
     @Post(':personnelId/:serviceId/take-down')
     @ApiOperation({ summary: '下架服务人员服务项' })
     @ApiParam({ name: 'personnelId', description: '服务人员用户 ID' })

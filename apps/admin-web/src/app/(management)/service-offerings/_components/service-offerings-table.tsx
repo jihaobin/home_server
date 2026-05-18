@@ -50,6 +50,12 @@ type ServiceOfferingsTableProps = {
     onTakeDown: (
         offering: Extract<AdminServiceOfferingListItem, { kind: "published" }>,
     ) => void
+    onApproveAppeal: (
+        offering: Extract<AdminServiceOfferingListItem, { kind: "published" }>,
+    ) => void
+    onRejectAppeal: (
+        offering: Extract<AdminServiceOfferingListItem, { kind: "published" }>,
+    ) => void
 }
 
 type DraftItem = Extract<AdminServiceOfferingListItem, { kind: "draft" }>
@@ -73,6 +79,8 @@ function FlatTable({
     onApproveDraft,
     onRejectDraft,
     onTakeDown,
+    onApproveAppeal,
+    onRejectAppeal,
 }: ServiceOfferingsTableProps) {
     const columns = useMemo<ColumnDef<AdminServiceOfferingListItem>[]>(
         () => [
@@ -121,6 +129,8 @@ function FlatTable({
                             onApproveDraft={onApproveDraft}
                             onRejectDraft={onRejectDraft}
                             onTakeDown={onTakeDown}
+                            onApproveAppeal={onApproveAppeal}
+                            onRejectAppeal={onRejectAppeal}
                             onOpenDetail={onOpenDetail}
                         />
                     </div>
@@ -132,6 +142,8 @@ function FlatTable({
             onApproveDraft,
             onRejectDraft,
             onTakeDown,
+            onApproveAppeal,
+            onRejectAppeal,
             onOpenDetail,
         ],
     )
@@ -258,6 +270,8 @@ function PersonnelGroupedTable({
     onApproveDraft,
     onRejectDraft,
     onTakeDown,
+    onApproveAppeal,
+    onRejectAppeal,
 }: ServiceOfferingsTableProps) {
     const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
     const rows = useMemo(() => groupByPersonnel(data), [data])
@@ -429,6 +443,12 @@ function PersonnelGroupedTable({
                                                         onRejectDraft
                                                     }
                                                     onTakeDown={onTakeDown}
+                                                    onApproveAppeal={
+                                                        onApproveAppeal
+                                                    }
+                                                    onRejectAppeal={
+                                                        onRejectAppeal
+                                                    }
                                                 />
                                             </TableCell>
                                         </TableRow>
@@ -472,6 +492,8 @@ function PersonnelItemsList({
     onApproveDraft,
     onRejectDraft,
     onTakeDown,
+    onApproveAppeal,
+    onRejectAppeal,
 }: {
     items: AdminServiceOfferingListItem[]
     isActionPending?: boolean
@@ -479,37 +501,44 @@ function PersonnelItemsList({
     onApproveDraft: (draft: DraftItem) => void
     onRejectDraft: (draft: DraftItem) => void
     onTakeDown: (offering: PublishedItem) => void
+    onApproveAppeal: (offering: PublishedItem) => void
+    onRejectAppeal: (offering: PublishedItem) => void
 }) {
     return (
         <div className="divide-y">
             {items.map((item) => (
-                <button
-                    type="button"
+                <div
                     key={getItemId(item)}
                     className="flex w-full items-center justify-between gap-4 px-6 py-3 text-left hover:bg-muted/40"
-                    onClick={() => onOpenDetail(item)}
                 >
-                    <div className="min-w-0 flex-1 space-y-1">
-                        <ServiceCell item={item} />
-                    </div>
-                    <ServiceOfferingLifecycleBadge lifecycle={item.lifecycle} />
-                    <span className="w-32 shrink-0 text-xs text-muted-foreground">
-                        {formatDateTime(item.updatedAt)}
-                    </span>
-                    <div
-                        className="flex shrink-0 gap-2"
-                        onClick={(event) => event.stopPropagation()}
+                    <button
+                        type="button"
+                        className="flex min-w-0 flex-1 items-center gap-4 text-left"
+                        onClick={() => onOpenDetail(item)}
                     >
+                        <div className="min-w-0 flex-1 space-y-1">
+                            <ServiceCell item={item} />
+                        </div>
+                        <ServiceOfferingLifecycleBadge
+                            lifecycle={item.lifecycle}
+                        />
+                        <span className="w-32 shrink-0 text-xs text-muted-foreground">
+                            {formatDateTime(item.updatedAt)}
+                        </span>
+                    </button>
+                    <div className="flex shrink-0 gap-2">
                         <ActionButtons
                             item={item}
                             isActionPending={isActionPending}
                             onApproveDraft={onApproveDraft}
                             onRejectDraft={onRejectDraft}
                             onTakeDown={onTakeDown}
+                            onApproveAppeal={onApproveAppeal}
+                            onRejectAppeal={onRejectAppeal}
                             onOpenDetail={onOpenDetail}
                         />
                     </div>
-                </button>
+                </div>
             ))}
         </div>
     )
@@ -551,6 +580,12 @@ function ServiceCell({ item }: { item: AdminServiceOfferingListItem }) {
                     </span>
                 ) : null}
             </div>
+            {item.kind === "published" &&
+            item.appeal?.status === "pending" ? (
+                <div className="mt-2 line-clamp-2 rounded-md bg-sky-50 px-2 py-1.5 text-xs text-sky-800">
+                    申诉说明：{item.appeal.appealReason}
+                </div>
+            ) : null}
         </div>
     )
 }
@@ -561,6 +596,8 @@ function ActionButtons({
     onApproveDraft,
     onRejectDraft,
     onTakeDown,
+    onApproveAppeal,
+    onRejectAppeal,
     onOpenDetail,
 }: {
     item: AdminServiceOfferingListItem
@@ -568,6 +605,8 @@ function ActionButtons({
     onApproveDraft: (draft: DraftItem) => void
     onRejectDraft: (draft: DraftItem) => void
     onTakeDown: (offering: PublishedItem) => void
+    onApproveAppeal: (offering: PublishedItem) => void
+    onRejectAppeal: (offering: PublishedItem) => void
     onOpenDetail: (item: AdminServiceOfferingListItem) => void
 }) {
     if (item.kind === "draft" && item.reviewStatus === "pending") {
@@ -596,6 +635,39 @@ function ActionButtons({
                     }}
                 >
                     通过
+                </Button>
+            </>
+        )
+    }
+    if (
+        item.kind === "published" &&
+        item.appeal?.status === "pending"
+    ) {
+        return (
+            <>
+                <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={isActionPending}
+                    onClick={(event) => {
+                        event.stopPropagation()
+                        onRejectAppeal(item)
+                    }}
+                    className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                >
+                    驳回申诉
+                </Button>
+                <Button
+                    type="button"
+                    size="sm"
+                    disabled={isActionPending}
+                    onClick={(event) => {
+                        event.stopPropagation()
+                        onApproveAppeal(item)
+                    }}
+                >
+                    通过申诉
                 </Button>
             </>
         )
@@ -642,7 +714,13 @@ function LifecycleSummary({
         return acc
     }, {})
 
-    const order = ["pending_review", "rejected", "active", "taken_down"] as const
+    const order = [
+        "pending_review",
+        "rejected",
+        "active",
+        "appeal_pending",
+        "taken_down",
+    ] as const
     const visible = order.filter((key) => counts[key])
 
     if (visible.length === 0) {
@@ -670,6 +748,7 @@ const BADGE_STYLES = {
     pending_review: "bg-amber-100 text-amber-800",
     rejected: "bg-rose-100 text-rose-700",
     active: "bg-emerald-100 text-emerald-700",
+    appeal_pending: "bg-sky-100 text-sky-800",
     taken_down: "bg-slate-200 text-slate-700",
 } as const
 

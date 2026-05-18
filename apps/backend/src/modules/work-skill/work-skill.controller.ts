@@ -28,6 +28,9 @@ import {
     UpdateServiceNonSensitiveFieldsRequestSchema,
     type UpsertWorkInfoRequest,
     UpsertWorkInfoRequestSchema,
+    SubmitServiceOfferingAppealRequestSchema,
+    ServiceOfferingAppealSummarySchema,
+    type SubmitServiceOfferingAppealRequest,
     WithdrawServiceDraftResponseSchema,
     WorkerServicesResponseSchema,
 } from '@repo/types';
@@ -157,6 +160,33 @@ export class WorkSkillController {
         return await this.workSkillService.selfTakedownService(
             req.user.id,
             serviceId,
+        );
+    }
+
+    @UseGuards(AuthGuard)
+    @Post('worker/services/:serviceId/appeals')
+    @ApiOperation({
+        summary: '提交服务下架申诉',
+    })
+    @ApiParam({
+        name: 'serviceId',
+        description: '服务ID',
+        type: String,
+    })
+    @ApiBodies(SubmitServiceOfferingAppealRequestSchema)
+    @ApiSuccessResponse(ServiceOfferingAppealSummarySchema, {
+        description: '成功提交服务下架申诉',
+    })
+    async submitServiceOfferingAppeal(
+        @Param('serviceId') serviceId: string,
+        @Body(new ZodValidationPipe(SubmitServiceOfferingAppealRequestSchema))
+        body: SubmitServiceOfferingAppealRequest,
+        @Req() req: Request,
+    ) {
+        return await this.workSkillService.submitServiceOfferingAppeal(
+            req.user.id,
+            serviceId,
+            body,
         );
     }
 

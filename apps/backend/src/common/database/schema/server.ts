@@ -179,6 +179,11 @@ export const serviceOfferingPublicationStatusEnum = pgEnum(
     ['active', 'taken_down'],
 );
 
+export const serviceOfferingAppealStatusEnum = pgEnum(
+    'service_offering_appeal_status',
+    ['pending', 'approved', 'rejected', 'canceled'],
+);
+
 export const serviceOfferingAuditLogTypeEnum = pgEnum(
     'service_offering_audit_log_type',
     ['submitted', 'approved', 'rejected', 'takendown', 'restored', 'withdrawn'],
@@ -276,6 +281,50 @@ export const servicePersonnelOfferingStatuses = pgTable(
     ],
 );
 
+export const servicePersonnelOfferingAppeals = pgTable(
+    'service_personnel_offering_appeals',
+    {
+        id: varchar('id', { length: 255 })
+            .primaryKey()
+            .$default(() => createId()),
+        personnelUserId: varchar('personnel_user_id', { length: 255 })
+            .notNull()
+            .references(() => servicePersonnel.userId, { onDelete: 'cascade' }),
+        serviceId: varchar('service_id', { length: 255 })
+            .notNull()
+            .references(() => services.id, { onDelete: 'cascade' }),
+        takenDownAtSnapshot: timestamp('taken_down_at_snapshot', {
+            withTimezone: true,
+        }).notNull(),
+        takeDownReasonSnapshot: text('take_down_reason_snapshot'),
+        appealReason: text('appeal_reason').notNull(),
+        status: serviceOfferingAppealStatusEnum('status')
+            .notNull()
+            .default('pending'),
+        reviewResultReason: text('review_result_reason'),
+        reviewedBy: varchar('reviewed_by', { length: 255 }).references(
+            () => users.id,
+            { onDelete: 'set null' },
+        ),
+        reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+        createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+        updatedAt: timestamp('updated_at', { withTimezone: true })
+            .defaultNow()
+            .$onUpdateFn(() => new Date()),
+    },
+    (table) => [
+        index('idx_service_offering_appeals_personnel_service').on(
+            table.personnelUserId,
+            table.serviceId,
+            table.takenDownAtSnapshot,
+            table.createdAt.desc(),
+        ),
+        uniqueIndex('uniq_service_offering_appeals_pending_round')
+            .on(table.personnelUserId, table.serviceId, table.takenDownAtSnapshot)
+            .where(sql`status = 'pending'`),
+    ],
+);
+
 export const serviceOfferingAuditLogs = pgTable(
     'service_offering_audit_logs',
     {
@@ -352,6 +401,7 @@ export const servicesRelations = relations(services, ({ one, many }) => ({
     }),
     personnelSkills: many(servicePersonnelSkills),
     offeringStatuses: many(servicePersonnelOfferingStatuses),
+    offeringAppeals: many(servicePersonnelOfferingAppeals),
     offeringAuditLogs: many(serviceOfferingAuditLogs),
 }));
 
@@ -408,6 +458,24 @@ export const servicePersonnelOfferingStatusesRelations = relations(
         lastApprovedDraft: one(servicePersonnelOfferingDrafts, {
             fields: [servicePersonnelOfferingStatuses.lastApprovedDraftId],
             references: [servicePersonnelOfferingDrafts.id],
+        }),
+    }),
+);
+
+export const servicePersonnelOfferingAppealsRelations = relations(
+    servicePersonnelOfferingAppeals,
+    ({ one }) => ({
+        personnel: one(servicePersonnel, {
+            fields: [servicePersonnelOfferingAppeals.personnelUserId],
+            references: [servicePersonnel.userId],
+        }),
+        service: one(services, {
+            fields: [servicePersonnelOfferingAppeals.serviceId],
+            references: [services.id],
+        }),
+        reviewer: one(users, {
+            fields: [servicePersonnelOfferingAppeals.reviewedBy],
+            references: [users.id],
         }),
     }),
 );

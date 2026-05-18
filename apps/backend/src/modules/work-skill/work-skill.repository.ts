@@ -10,6 +10,7 @@ import type {
     WorkerServiceDerivedStatus,
     WorkerServiceDraft,
     WorkerServiceItem,
+    ServiceOfferingAppealSummary,
     WithdrawServiceDraftResponse,
 } from '@repo/types';
 import { DB } from 'src/common/database/database.provider';
@@ -17,6 +18,7 @@ import { DbType } from 'src/common/database/db';
 import {
     serviceOfferingAuditLogs,
     servicePersonnel,
+    servicePersonnelOfferingAppeals,
     servicePersonnelOfferingStatuses,
     servicePersonnelSkills,
     servicePersonnelPricing,
@@ -45,6 +47,19 @@ export function resolveOfferingVisibilityState({
 type WorkerVisibleService = NonNullable<
     Awaited<ReturnType<WorkSkillRepository['getPersonnelInfo']>>
 >['skills'][number];
+
+function isPendingAppealUniqueViolation(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null || !('code' in error)) {
+        return false;
+    }
+
+    const dbError = error as { code?: string; constraint?: string };
+
+    return (
+        dbError.code === '23505' &&
+        dbError.constraint === 'uniq_service_offering_appeals_pending_round'
+    );
+}
 
 @Injectable()
 export class WorkSkillRepository {
@@ -595,11 +610,89 @@ export class WorkSkillRepository {
         }
 
         const logs = await this.listServiceAuditLogs(personnelId);
+        const appeals =
+            await this.loadLatestAppealsForCurrentTakedown(personnelId);
         return await Promise.all(
             personnel.skills.map((service) =>
-                this.toWorkerServiceItem(service, logs.get(service.id) ?? []),
+                this.toWorkerServiceItem(
+                    service,
+                    logs.get(service.id) ?? [],
+                    appeals.get(service.id) ?? null,
+                ),
             ),
         );
+    }
+
+    private async loadLatestAppealsForCurrentTakedown(
+        personnelId: string,
+    ): Promise<Map<string, ServiceOfferingAppealSummary>> {
+        const rows = await this.db
+            .select({
+                serviceId: servicePersonnelOfferingAppeals.serviceId,
+                id: servicePersonnelOfferingAppeals.id,
+                status: servicePersonnelOfferingAppeals.status,
+                appealReason: servicePersonnelOfferingAppeals.appealReason,
+                reviewResultReason:
+                    servicePersonnelOfferingAppeals.reviewResultReason,
+                takenDownAtSnapshot:
+                    servicePersonnelOfferingAppeals.takenDownAtSnapshot,
+                takeDownReasonSnapshot:
+                    servicePersonnelOfferingAppeals.takeDownReasonSnapshot,
+                createdAt: servicePersonnelOfferingAppeals.createdAt,
+                reviewedAt: servicePersonnelOfferingAppeals.reviewedAt,
+            })
+            .from(servicePersonnelOfferingAppeals)
+            .innerJoin(
+                servicePersonnelOfferingStatuses,
+                and(
+                    eq(
+                        servicePersonnelOfferingStatuses.personnelUserId,
+                        servicePersonnelOfferingAppeals.personnelUserId,
+                    ),
+                    eq(
+                        servicePersonnelOfferingStatuses.serviceId,
+                        servicePersonnelOfferingAppeals.serviceId,
+                    ),
+                    eq(
+                        servicePersonnelOfferingStatuses.takenDownAt,
+                        servicePersonnelOfferingAppeals.takenDownAtSnapshot,
+                    ),
+                ),
+            )
+            .where(
+                and(
+                    eq(
+                        servicePersonnelOfferingAppeals.personnelUserId,
+                        personnelId,
+                    ),
+                    eq(
+                        servicePersonnelOfferingStatuses.publicationStatus,
+                        'taken_down',
+                    ),
+                ),
+            )
+            .orderBy(
+                desc(servicePersonnelOfferingAppeals.createdAt),
+                desc(servicePersonnelOfferingAppeals.id),
+            );
+
+        const map = new Map<string, ServiceOfferingAppealSummary>();
+        for (const row of rows) {
+            if (map.has(row.serviceId)) {
+                continue;
+            }
+            map.set(row.serviceId, {
+                id: row.id,
+                status: row.status,
+                appealReason: row.appealReason,
+                reviewResultReason: row.reviewResultReason ?? null,
+                takenDownAtSnapshot: row.takenDownAtSnapshot,
+                takeDownReasonSnapshot: row.takeDownReasonSnapshot ?? null,
+                createdAt: row.createdAt ?? new Date(),
+                reviewedAt: row.reviewedAt ?? null,
+            });
+        }
+        return map;
     }
 
     async withdrawServiceDraft(
@@ -840,6 +933,121 @@ export class WorkSkillRepository {
         return { serviceId, takenDown: true };
     }
 
+    async submitServiceOfferingAppeal(
+        personnelId: string,
+        serviceId: string,
+        appealReason: string,
+    ): Promise<typeof servicePersonnelOfferingAppeals.$inferSelect> {
+        const now = new Date();
+
+        return await this.db.transaction(async (tx) => {
+            const [status] = await tx
+                .select({
+                    personnelUserId:
+                        servicePersonnelOfferingStatuses.personnelUserId,
+                    serviceId: servicePersonnelOfferingStatuses.serviceId,
+                    publicationStatus:
+                        servicePersonnelOfferingStatuses.publicationStatus,
+                    reviewStatus: servicePersonnelOfferingStatuses.reviewStatus,
+                    takeDownReason:
+                        servicePersonnelOfferingStatuses.takeDownReason,
+                    takenDownAt: servicePersonnelOfferingStatuses.takenDownAt,
+                    takenDownBy: servicePersonnelOfferingStatuses.takenDownBy,
+                })
+                .from(servicePersonnelOfferingStatuses)
+                .where(
+                    and(
+                        eq(
+                            servicePersonnelOfferingStatuses.personnelUserId,
+                            personnelId,
+                        ),
+                        eq(
+                            servicePersonnelOfferingStatuses.serviceId,
+                            serviceId,
+                        ),
+                    ),
+                )
+                .limit(1);
+
+            if (!status) {
+                throw new BadRequestException('服务不存在或尚未发布，无法申诉');
+            }
+            if (
+                status.publicationStatus !== 'taken_down' ||
+                status.reviewStatus !== 'approved' ||
+                !status.takenDownAt ||
+                !status.takenDownBy
+            ) {
+                throw new BadRequestException('当前服务未处于可申诉的下架状态');
+            }
+            if (status.takenDownBy === personnelId) {
+                throw new BadRequestException('服务人员主动下架不可申诉');
+            }
+
+            const [pendingAppeal] = await tx
+                .select({ id: servicePersonnelOfferingAppeals.id })
+                .from(servicePersonnelOfferingAppeals)
+                .where(
+                    and(
+                        eq(
+                            servicePersonnelOfferingAppeals.personnelUserId,
+                            personnelId,
+                        ),
+                        eq(servicePersonnelOfferingAppeals.serviceId, serviceId),
+                        eq(
+                            servicePersonnelOfferingAppeals.takenDownAtSnapshot,
+                            status.takenDownAt,
+                        ),
+                        eq(servicePersonnelOfferingAppeals.status, 'pending'),
+                    ),
+                )
+                .limit(1);
+
+            if (pendingAppeal) {
+                throw new BadRequestException(
+                    '本次下架申诉已提交，请等待管理员处理',
+                );
+            }
+
+            let appeal: typeof servicePersonnelOfferingAppeals.$inferSelect;
+            try {
+                const [insertedAppeal] = await tx
+                    .insert(servicePersonnelOfferingAppeals)
+                    .values({
+                        personnelUserId: personnelId,
+                        serviceId,
+                        takenDownAtSnapshot: status.takenDownAt,
+                        takeDownReasonSnapshot: status.takeDownReason,
+                        appealReason,
+                        status: 'pending',
+                        createdAt: now,
+                        updatedAt: now,
+                    })
+                    .returning();
+                appeal = insertedAppeal;
+            } catch (error) {
+                if (isPendingAppealUniqueViolation(error)) {
+                    throw new BadRequestException(
+                        '本次下架申诉已提交，请等待管理员处理',
+                    );
+                }
+
+                throw error;
+            }
+
+            await tx.insert(serviceOfferingAuditLogs).values({
+                personnelUserId: personnelId,
+                serviceId,
+                type: 'submitted',
+                operatorId: personnelId,
+                occurredAt: now,
+                note: `提交下架申诉：${appealReason}`,
+            });
+
+            return appeal;
+        });
+    }
+
     async getWorkerServiceName(
         personnelId: string,
         serviceId: string,
@@ -966,6 +1174,7 @@ export class WorkSkillRepository {
     private async toWorkerServiceItem(
         service: WorkerVisibleService,
         auditLogs: WorkerServiceAuditLog[],
+        latestAppeal?: ServiceOfferingAppealSummary | null,
     ): Promise<WorkerServiceItem> {
         const hasOffering =
             Boolean(service.hasOfferingStatus) &&
@@ -1034,6 +1243,7 @@ export class WorkSkillRepository {
             lastSubmittedAt: draft?.submittedAt ?? null,
             lastReviewedAt: draft?.reviewedAt ?? service.lastApprovedAt ?? null,
             takenDownReason: service.takeDownReason ?? null,
+            latestAppeal: latestAppeal ?? null,
             updatedAt:
                 draft?.reviewedAt ??
                 draft?.submittedAt ??

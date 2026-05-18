@@ -575,6 +575,44 @@ export const ServiceOfferingSubmissionResultSchema = z
         description: "服务人员提交服务设置审核草稿后的响应",
     });
 
+export const ServiceOfferingAppealStatusSchema = z.enum([
+    "pending",
+    "approved",
+    "rejected",
+    "canceled",
+]);
+
+export type ServiceOfferingAppealStatus = z.infer<
+    typeof ServiceOfferingAppealStatusSchema
+>;
+
+export const SubmitServiceOfferingAppealRequestSchema = z.object({
+    appealReason: z
+        .string()
+        .trim()
+        .min(10, "申诉说明至少 10 个字")
+        .max(500, "申诉说明不能超过 500 个字"),
+});
+
+export type SubmitServiceOfferingAppealRequest = z.infer<
+    typeof SubmitServiceOfferingAppealRequestSchema
+>;
+
+export const ServiceOfferingAppealSummarySchema = z.object({
+    id: z.string().min(1, "申诉ID不能为空"),
+    status: ServiceOfferingAppealStatusSchema,
+    appealReason: z.string(),
+    reviewResultReason: z.string().nullable(),
+    takenDownAtSnapshot: z.date(),
+    takeDownReasonSnapshot: z.string().nullable(),
+    createdAt: z.date(),
+    reviewedAt: z.date().nullable(),
+});
+
+export type ServiceOfferingAppealSummary = z.infer<
+    typeof ServiceOfferingAppealSummarySchema
+>;
+
 export const WorkerServiceAuditLogSchema = z.object({
     id: z.string().min(1, "审计日志ID不能为空"),
     type: WorkerServiceAuditLogTypeSchema,
@@ -620,6 +658,7 @@ export const WorkerServiceItemSchema = z.object({
     lastSubmittedAt: z.date().nullable(),
     lastReviewedAt: z.date().nullable(),
     takenDownReason: z.string().nullable(),
+    latestAppeal: ServiceOfferingAppealSummarySchema.nullable().optional(),
     updatedAt: z.date().nullable(),
 });
 

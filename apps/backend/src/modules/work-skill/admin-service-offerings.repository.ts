@@ -25,7 +25,9 @@ import { DB } from 'src/common/database/database.provider';
 import type { DbType } from 'src/common/database/db';
 import {
     serviceCategories,
+    serviceOfferingAuditLogs,
     servicePersonnel,
+    servicePersonnelOfferingAppeals,
     servicePersonnelOfferingDrafts,
     servicePersonnelOfferingStatuses,
     servicePersonnelPricing,
@@ -60,6 +62,14 @@ export interface ServiceOfferingTakeDownResult {
     serviceId: string;
 }
 
+export interface ServiceOfferingAppealReviewResult {
+    appealId: string;
+    personnelUserId: string;
+    serviceId: string;
+    status: 'approved' | 'rejected' | 'canceled';
+    message: string;
+}
+
 type NormalizedListQuery = {
     page: number;
     limit: number;
@@ -69,7 +79,11 @@ type NormalizedListQuery = {
 };
 
 type DraftLifecycleSource = 'pending' | 'rejected';
-type PublishedLifecycleSource = 'active' | 'taken_down';
+type PublishedLifecycleSource = 'active' | 'taken_down' | 'appeal_pending';
+type PublicationStatusSource = Exclude<
+    PublishedLifecycleSource,
+    'appeal_pending'
+>;
 
 function deriveDraftLifecycle(
     reviewStatus: 'pending' | 'approved' | 'rejected',
@@ -81,7 +95,7 @@ function deriveDraftLifecycle(
 }
 
 function derivePublishedLifecycle(
-    publicationStatus: PublishedLifecycleSource,
+    publicationStatus: PublicationStatusSource,
 ): ServiceOfferingLifecycle {
     return publicationStatus === 'taken_down' ? 'taken_down' : 'active';
 }
@@ -97,8 +111,10 @@ function lifecycleIncludesDraft(lifecycle: ServiceOfferingLifecycleFilter) {
 function lifecycleIncludesPublished(lifecycle: ServiceOfferingLifecycleFilter) {
     return (
         lifecycle === 'all' ||
+        lifecycle === 'pending_review' ||
         lifecycle === 'active' ||
-        lifecycle === 'taken_down'
+        lifecycle === 'taken_down' ||
+        lifecycle === 'appeal_pending'
     );
 }
 
@@ -112,7 +128,7 @@ function lifecycleToDraftReviewStatus(
 
 function lifecycleToPublicationStatus(
     lifecycle: ServiceOfferingLifecycleFilter,
-): PublishedLifecycleSource | undefined {
+): PublicationStatusSource | undefined {
     if (lifecycle === 'active') return 'active';
     if (lifecycle === 'taken_down') return 'taken_down';
     return undefined;
@@ -154,6 +170,14 @@ type PublishedListRow = {
     takenDownAt: Date | null;
     lastApprovedDraftId: string | null;
     lastApprovedAt: Date | null;
+    appealId: string | null;
+    appealStatus: 'pending' | 'approved' | 'rejected' | 'canceled' | null;
+    appealReason: string | null;
+    appealReviewResultReason: string | null;
+    appealTakeDownReasonSnapshot: string | null;
+    appealTakenDownAtSnapshot: Date | null;
+    appealCreatedAt: Date | null;
+    appealReviewedAt: Date | null;
     createdAt: Date | null;
     updatedAt: Date | null;
 };
@@ -342,11 +366,22 @@ export class AdminServiceOfferingsRepository {
                 servicePersonnelOfferingStatuses.reviewStatus,
                 'approved',
             ),
+            normalized.lifecycle === 'appeal_pending' ||
+            normalized.lifecycle === 'pending_review'
+                ? eq(
+                      servicePersonnelOfferingStatuses.publicationStatus,
+                      'taken_down',
+                  )
+                : undefined,
             publicationStatus
                 ? eq(
                       servicePersonnelOfferingStatuses.publicationStatus,
                       publicationStatus,
                   )
+                : undefined,
+            normalized.lifecycle === 'appeal_pending' ||
+            normalized.lifecycle === 'pending_review'
+                ? sql`${servicePersonnelOfferingAppeals.id} IS NOT NULL`
                 : undefined,
             this.buildPublishedKeywordCondition(normalized.keyword),
         ].filter(Boolean);
@@ -382,6 +417,18 @@ export class AdminServiceOfferingsRepository {
                         servicePersonnelOfferingStatuses.lastApprovedDraftId,
                     lastApprovedAt:
                         servicePersonnelOfferingStatuses.lastApprovedAt,
+                    appealId: servicePersonnelOfferingAppeals.id,
+                    appealStatus: servicePersonnelOfferingAppeals.status,
+                    appealReason: servicePersonnelOfferingAppeals.appealReason,
+                    appealReviewResultReason:
+                        servicePersonnelOfferingAppeals.reviewResultReason,
+                    appealTakeDownReasonSnapshot:
+                        servicePersonnelOfferingAppeals.takeDownReasonSnapshot,
+                    appealTakenDownAtSnapshot:
+                        servicePersonnelOfferingAppeals.takenDownAtSnapshot,
+                    appealCreatedAt: servicePersonnelOfferingAppeals.createdAt,
+                    appealReviewedAt:
+                        servicePersonnelOfferingAppeals.reviewedAt,
                     createdAt: servicePersonnelOfferingStatuses.createdAt,
                     updatedAt: servicePersonnelOfferingStatuses.updatedAt,
                 })
@@ -414,6 +461,24 @@ export class AdminServiceOfferingsRepository {
                 .leftJoin(
                     serviceCategories,
                     eq(serviceCategories.id, services.categoryId),
+                )
+                .leftJoin(
+                    servicePersonnelOfferingAppeals,
+                    and(
+                        eq(
+                            servicePersonnelOfferingAppeals.personnelUserId,
+                            servicePersonnelOfferingStatuses.personnelUserId,
+                        ),
+                        eq(
+                            servicePersonnelOfferingAppeals.serviceId,
+                            servicePersonnelOfferingStatuses.serviceId,
+                        ),
+                        eq(
+                            servicePersonnelOfferingAppeals.takenDownAtSnapshot,
+                            servicePersonnelOfferingStatuses.takenDownAt,
+                        ),
+                        eq(servicePersonnelOfferingAppeals.status, 'pending'),
+                    ),
                 )
                 .where(where)
                 .orderBy(desc(servicePersonnelOfferingStatuses.updatedAt))
@@ -455,6 +520,24 @@ export class AdminServiceOfferingsRepository {
                     serviceCategories,
                     eq(serviceCategories.id, services.categoryId),
                 )
+                .leftJoin(
+                    servicePersonnelOfferingAppeals,
+                    and(
+                        eq(
+                            servicePersonnelOfferingAppeals.personnelUserId,
+                            servicePersonnelOfferingStatuses.personnelUserId,
+                        ),
+                        eq(
+                            servicePersonnelOfferingAppeals.serviceId,
+                            servicePersonnelOfferingStatuses.serviceId,
+                        ),
+                        eq(
+                            servicePersonnelOfferingAppeals.takenDownAtSnapshot,
+                            servicePersonnelOfferingStatuses.takenDownAt,
+                        ),
+                        eq(servicePersonnelOfferingAppeals.status, 'pending'),
+                    ),
+                )
                 .where(where),
         ]);
 
@@ -495,9 +578,12 @@ export class AdminServiceOfferingsRepository {
                             specificationsByOffering.get(offeringKey) ?? [],
                         reviewStatus: item.reviewStatus,
                         publicationStatus: item.publicationStatus,
-                        lifecycle: derivePublishedLifecycle(
-                            item.publicationStatus,
-                        ),
+                        lifecycle:
+                            item.appealId && item.appealStatus === 'pending'
+                                ? 'pending_review'
+                                : derivePublishedLifecycle(
+                                      item.publicationStatus,
+                                  ),
                         takeDownReason: item.takeDownReason,
                         takenDownBy: item.takenDownBy,
                         takenDownAt: this.toNullableIsoString(item.takenDownAt),
@@ -505,6 +591,27 @@ export class AdminServiceOfferingsRepository {
                         lastApprovedAt: this.toNullableIsoString(
                             item.lastApprovedAt,
                         ),
+                        appeal: item.appealId
+                            ? {
+                                  id: item.appealId,
+                                  status: item.appealStatus ?? 'pending',
+                                  appealReason: item.appealReason ?? '',
+                                  reviewResultReason:
+                                      item.appealReviewResultReason ?? null,
+                                  takeDownReasonSnapshot:
+                                      item.appealTakeDownReasonSnapshot ?? null,
+                                  takenDownAtSnapshot:
+                                      this.toRequiredIsoString(
+                                          item.appealTakenDownAtSnapshot,
+                                      ),
+                                  createdAt: this.toRequiredIsoString(
+                                      item.appealCreatedAt,
+                                  ),
+                                  reviewedAt: this.toNullableIsoString(
+                                      item.appealReviewedAt,
+                                  ),
+                              }
+                            : null,
                         createdAt: this.toRequiredIsoString(item.createdAt),
                         updatedAt: this.toRequiredIsoString(item.updatedAt),
                     };
@@ -614,6 +721,35 @@ export class AdminServiceOfferingsRepository {
                 targetServiceIds[0] !== draft.serviceId
             ) {
                 throw new BadRequestException('待审核草稿服务不一致');
+            }
+            const takenDownRows = await tx
+                .select({
+                    serviceId: servicePersonnelOfferingStatuses.serviceId,
+                    takenDownAt: servicePersonnelOfferingStatuses.takenDownAt,
+                })
+                .from(servicePersonnelOfferingStatuses)
+                .where(
+                    and(
+                        eq(
+                            servicePersonnelOfferingStatuses.personnelUserId,
+                            draft.personnelUserId,
+                        ),
+                        inArray(
+                            servicePersonnelOfferingStatuses.serviceId,
+                            targetServiceIds,
+                        ),
+                        eq(
+                            servicePersonnelOfferingStatuses.publicationStatus,
+                            'taken_down',
+                        ),
+                    ),
+                )
+                .for('update');
+            const takenDownSnapshots = new Map<string, Date>();
+            for (const row of takenDownRows) {
+                if (row.takenDownAt) {
+                    takenDownSnapshots.set(row.serviceId, row.takenDownAt);
+                }
             }
 
             await tx
@@ -771,6 +907,37 @@ export class AdminServiceOfferingsRepository {
                     });
             }
 
+            for (const [serviceId, takenDownAt] of takenDownSnapshots) {
+                await tx
+                    .update(servicePersonnelOfferingAppeals)
+                    .set({
+                        status: 'canceled',
+                        reviewResultReason:
+                            '整改审核已通过，服务已恢复上线，本次申诉自动取消',
+                        reviewedBy: adminUserId,
+                        reviewedAt: now,
+                        updatedAt: now,
+                    })
+                    .where(
+                        and(
+                            eq(
+                                servicePersonnelOfferingAppeals.personnelUserId,
+                                draft.personnelUserId,
+                            ),
+                            eq(
+                                servicePersonnelOfferingAppeals.serviceId,
+                                serviceId,
+                            ),
+                            eq(
+                                servicePersonnelOfferingAppeals
+                                    .takenDownAtSnapshot,
+                                takenDownAt,
+                            ),
+                            eq(servicePersonnelOfferingAppeals.status, 'pending'),
+                        ),
+                    );
+            }
+
             await tx
                 .update(servicePersonnelOfferingDrafts)
                 .set({
@@ -897,6 +1064,187 @@ export class AdminServiceOfferingsRepository {
             personnelUserId: personnelId,
             serviceId,
         };
+    }
+
+    async approveAppeal(
+        appealId: string,
+        adminUserId: string,
+    ): Promise<ServiceOfferingAppealReviewResult> {
+        const now = new Date();
+
+        return this.db.transaction(async (tx) => {
+            const [appeal] = await tx
+                .select()
+                .from(servicePersonnelOfferingAppeals)
+                .where(
+                    and(
+                        eq(servicePersonnelOfferingAppeals.id, appealId),
+                        eq(servicePersonnelOfferingAppeals.status, 'pending'),
+                    ),
+                )
+                .limit(1)
+                .for('update');
+
+            if (!appeal) {
+                throw new BadRequestException('申诉不存在或已处理');
+            }
+
+            const [status] = await tx
+                .select({
+                    publicationStatus:
+                        servicePersonnelOfferingStatuses.publicationStatus,
+                    reviewStatus: servicePersonnelOfferingStatuses.reviewStatus,
+                    takenDownAt: servicePersonnelOfferingStatuses.takenDownAt,
+                })
+                .from(servicePersonnelOfferingStatuses)
+                .where(
+                    and(
+                        eq(
+                            servicePersonnelOfferingStatuses.personnelUserId,
+                            appeal.personnelUserId,
+                        ),
+                        eq(
+                            servicePersonnelOfferingStatuses.serviceId,
+                            appeal.serviceId,
+                        ),
+                    ),
+                )
+                .limit(1)
+                .for('update');
+
+            if (
+                !status ||
+                status.publicationStatus !== 'taken_down' ||
+                status.reviewStatus !== 'approved' ||
+                !status.takenDownAt ||
+                status.takenDownAt.getTime() !==
+                    appeal.takenDownAtSnapshot.getTime()
+            ) {
+                await tx
+                    .update(servicePersonnelOfferingAppeals)
+                    .set({
+                        status: 'canceled',
+                        reviewResultReason:
+                            '服务已通过整改恢复上线，本次申诉自动取消',
+                        reviewedBy: adminUserId,
+                        reviewedAt: now,
+                        updatedAt: now,
+                    })
+                    .where(eq(servicePersonnelOfferingAppeals.id, appeal.id));
+
+                return {
+                    appealId: appeal.id,
+                    personnelUserId: appeal.personnelUserId,
+                    serviceId: appeal.serviceId,
+                    status: 'canceled',
+                    message: '服务已恢复上线，本次申诉自动取消',
+                };
+            }
+
+            await tx
+                .update(servicePersonnelOfferingAppeals)
+                .set({
+                    status: 'approved',
+                    reviewResultReason: '申诉已通过，服务已恢复上线',
+                    reviewedBy: adminUserId,
+                    reviewedAt: now,
+                    updatedAt: now,
+                })
+                .where(eq(servicePersonnelOfferingAppeals.id, appeal.id));
+
+            await tx
+                .update(servicePersonnelOfferingStatuses)
+                .set({
+                    publicationStatus: 'active',
+                    reviewStatus: 'approved',
+                    takeDownReason: null,
+                    takenDownBy: null,
+                    takenDownAt: null,
+                    updatedAt: now,
+                })
+                .where(
+                    and(
+                        eq(
+                            servicePersonnelOfferingStatuses.personnelUserId,
+                            appeal.personnelUserId,
+                        ),
+                        eq(
+                            servicePersonnelOfferingStatuses.serviceId,
+                            appeal.serviceId,
+                        ),
+                    ),
+                );
+
+            await tx.insert(serviceOfferingAuditLogs).values({
+                personnelUserId: appeal.personnelUserId,
+                serviceId: appeal.serviceId,
+                type: 'restored',
+                operatorId: adminUserId,
+                occurredAt: now,
+                note: '申诉通过，服务恢复上线',
+            });
+
+            return {
+                appealId: appeal.id,
+                personnelUserId: appeal.personnelUserId,
+                serviceId: appeal.serviceId,
+                status: 'approved',
+                message: '申诉已通过，服务已恢复上线',
+            };
+        });
+    }
+
+    async rejectAppeal(
+        appealId: string,
+        adminUserId: string,
+        reason: string,
+    ): Promise<ServiceOfferingAppealReviewResult> {
+        const now = new Date();
+
+        return this.db.transaction(async (tx) => {
+            const [appeal] = await tx
+                .update(servicePersonnelOfferingAppeals)
+                .set({
+                    status: 'rejected',
+                    reviewResultReason: reason,
+                    reviewedBy: adminUserId,
+                    reviewedAt: now,
+                    updatedAt: now,
+                })
+                .where(
+                    and(
+                        eq(servicePersonnelOfferingAppeals.id, appealId),
+                        eq(servicePersonnelOfferingAppeals.status, 'pending'),
+                    ),
+                )
+                .returning({
+                    id: servicePersonnelOfferingAppeals.id,
+                    personnelUserId:
+                        servicePersonnelOfferingAppeals.personnelUserId,
+                    serviceId: servicePersonnelOfferingAppeals.serviceId,
+                });
+
+            if (!appeal) {
+                throw new BadRequestException('申诉不存在或已处理');
+            }
+
+            await tx.insert(serviceOfferingAuditLogs).values({
+                personnelUserId: appeal.personnelUserId,
+                serviceId: appeal.serviceId,
+                type: 'rejected',
+                operatorId: adminUserId,
+                occurredAt: now,
+                note: `申诉驳回：${reason}`,
+            });
+
+            return {
+                appealId: appeal.id,
+                personnelUserId: appeal.personnelUserId,
+                serviceId: appeal.serviceId,
+                status: 'rejected',
+                message: '申诉已驳回',
+            };
+        });
     }
 
     private normalizeQuery(

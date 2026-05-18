@@ -50,7 +50,8 @@ type ServiceOfferingDetailSheetProps = {
     onApproveDraft: (draft: DraftItem) => void
     onRejectDraft: (draft: DraftItem) => void
     onTakeDown: (offering: PublishedItem) => void
-    onRestore?: (offering: PublishedItem) => void
+    onApproveAppeal: (offering: PublishedItem) => void
+    onRejectAppeal: (offering: PublishedItem) => void
 }
 
 export function ServiceOfferingDetailSheet({
@@ -61,6 +62,8 @@ export function ServiceOfferingDetailSheet({
     onApproveDraft,
     onRejectDraft,
     onTakeDown,
+    onApproveAppeal,
+    onRejectAppeal,
 }: ServiceOfferingDetailSheetProps) {
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
@@ -72,6 +75,8 @@ export function ServiceOfferingDetailSheet({
                         onApproveDraft={onApproveDraft}
                         onRejectDraft={onRejectDraft}
                         onTakeDown={onTakeDown}
+                        onApproveAppeal={onApproveAppeal}
+                        onRejectAppeal={onRejectAppeal}
                     />
                 ) : null}
             </SheetContent>
@@ -85,12 +90,16 @@ function DetailContent({
     onApproveDraft,
     onRejectDraft,
     onTakeDown,
+    onApproveAppeal,
+    onRejectAppeal,
 }: {
     item: AdminServiceOfferingListItem
     isActionPending?: boolean
     onApproveDraft: (draft: DraftItem) => void
     onRejectDraft: (draft: DraftItem) => void
     onTakeDown: (offering: PublishedItem) => void
+    onApproveAppeal: (offering: PublishedItem) => void
+    onRejectAppeal: (offering: PublishedItem) => void
 }) {
     const services = getServicesFromItem(item)
     const reason = getReason(item)
@@ -143,6 +152,18 @@ function DetailContent({
                         </div>
                     ) : null}
 
+                    {item.kind === "published" &&
+                    item.appeal?.status === "pending" ? (
+                        <div className="rounded-md border border-sky-100 bg-sky-50 p-3 text-sky-900">
+                            <div className="text-xs font-medium text-sky-700">
+                                申诉说明
+                            </div>
+                            <p className="mt-1 whitespace-pre-wrap text-sm leading-6">
+                                {item.appeal.appealReason}
+                            </p>
+                        </div>
+                    ) : null}
+
                     {services.length > 0 ? (
                         services.map((service, index) => (
                             <ServiceSection
@@ -181,6 +202,27 @@ function DetailContent({
                             onClick={() => onApproveDraft(item)}
                         >
                             审核通过
+                        </Button>
+                    </>
+                ) : null}
+                {item.kind === "published" &&
+                item.appeal?.status === "pending" ? (
+                    <>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={isActionPending}
+                            onClick={() => onRejectAppeal(item)}
+                            className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        >
+                            驳回申诉
+                        </Button>
+                        <Button
+                            type="button"
+                            disabled={isActionPending}
+                            onClick={() => onApproveAppeal(item)}
+                        >
+                            通过申诉
                         </Button>
                     </>
                 ) : null}

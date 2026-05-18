@@ -96,6 +96,8 @@ export {
     invalidateAdminServiceOfferingsQuery,
     useApproveAdminServiceOfferingDraft,
     useRejectAdminServiceOfferingDraft,
+    useApproveServiceOfferingAppeal,
+    useRejectServiceOfferingAppeal,
     useTakeDownAdminServiceOffering,
 } from "./admin-service-offerings";
 export type {

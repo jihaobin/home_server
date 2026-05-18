@@ -533,6 +533,13 @@
       "when": 1778909977084,
       "tag": "0075_dizzy_thunderbolt_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1779092386156,
+      "tag": "0076_hard_scarlet_spider",
+      "breakpoints": true
     }
   ]
 }

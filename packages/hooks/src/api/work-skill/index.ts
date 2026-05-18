@@ -1,6 +1,8 @@
 import type {
     RemovePersonnelPricingRequest,
+    ServiceOfferingAppealSummary,
     ServiceOfferingSubmissionResult,
+    SubmitServiceOfferingAppealRequest,
     UpdatePersonnelSkillsRequest,
     UpdateServiceNonSensitiveFieldsRequest,
     UpsertPersonnelPricingRequest,
@@ -10,6 +12,7 @@ import type {
     WithdrawServiceDraftResponse,
 } from "@repo/types";
 import {
+    ServiceOfferingAppealSummarySchema,
     ServiceOfferingSubmissionResultSchema,
     WorkerServicesResponseSchema,
     WithdrawServiceDraftResponseSchema,
@@ -25,6 +28,7 @@ export const workSkillQueryKeys = {
 type QueryClient = ReturnType<typeof useQueryClient>;
 type WorkerServiceItem = WorkerServicesResponse["services"][number];
 type RawDate = Date | string | null | undefined;
+type RawRequiredDate = Date | string;
 type RawWorkerServiceDraft = Omit<
     NonNullable<WorkerServiceItem["draft"]>,
     "submittedAt" | "reviewedAt"
@@ -36,20 +40,42 @@ type RawWorkerServiceAuditLog = Omit<
     WorkerServiceItem["auditLogs"][number],
     "occurredAt"
 > & {
-    occurredAt?: Exclude<RawDate, null>;
+    occurredAt: RawRequiredDate;
+};
+type RawWorkerServiceAppeal = Omit<
+    NonNullable<WorkerServiceItem["latestAppeal"]>,
+    "takenDownAtSnapshot" | "createdAt" | "reviewedAt"
+> & {
+    takenDownAtSnapshot: RawRequiredDate;
+    createdAt: RawRequiredDate;
+    reviewedAt?: RawDate;
 };
 type RawWorkerServiceItem = Omit<
     WorkerServiceItem,
-    "lastSubmittedAt" | "lastReviewedAt" | "updatedAt" | "draft" | "auditLogs"
+    | "lastSubmittedAt"
+    | "lastReviewedAt"
+    | "updatedAt"
+    | "draft"
+    | "auditLogs"
+    | "latestAppeal"
 > & {
     lastSubmittedAt?: RawDate;
     lastReviewedAt?: RawDate;
     updatedAt?: RawDate;
     draft?: RawWorkerServiceDraft | null;
     auditLogs: RawWorkerServiceAuditLog[];
+    latestAppeal?: RawWorkerServiceAppeal | null;
 };
 type RawWorkerServicesResponse = {
     services: RawWorkerServiceItem[];
+};
+type RawServiceOfferingAppealSummary = Omit<
+    ServiceOfferingAppealSummary,
+    "takenDownAtSnapshot" | "createdAt" | "reviewedAt"
+> & {
+    takenDownAtSnapshot: RawRequiredDate;
+    createdAt: RawRequiredDate;
+    reviewedAt?: RawDate;
 };
 
 const toRequiredNullableDate = (value: RawDate) => {
@@ -59,8 +85,11 @@ const toRequiredNullableDate = (value: RawDate) => {
     return new Date(value);
 };
 
-const toRequiredDate = (value: Exclude<RawDate, null>) => {
-    if (value === undefined || value instanceof Date) {
+const toRequiredDate = (value: RawDate, fieldName: string) => {
+    if (value === null || value === undefined) {
+        throw new Error(`Missing required date field: ${fieldName}`);
+    }
+    if (value instanceof Date) {
         return value;
     }
     return new Date(value);
@@ -88,9 +117,38 @@ const normalizeWorkerServicesResponse = (
                   },
         auditLogs: service.auditLogs.map((auditLog) => ({
             ...auditLog,
-            occurredAt: toRequiredDate(auditLog.occurredAt),
+            occurredAt: toRequiredDate(auditLog.occurredAt, "occurredAt"),
         })),
+        latestAppeal:
+            service.latestAppeal === null || service.latestAppeal === undefined
+                ? service.latestAppeal
+                : {
+                      ...service.latestAppeal,
+                      takenDownAtSnapshot: toRequiredDate(
+                          service.latestAppeal.takenDownAtSnapshot,
+                          "latestAppeal.takenDownAtSnapshot",
+                      ),
+                      createdAt: toRequiredDate(
+                          service.latestAppeal.createdAt,
+                          "latestAppeal.createdAt",
+                      ),
+                      reviewedAt: toRequiredNullableDate(
+                          service.latestAppeal.reviewedAt,
+                      ),
+                  },
     })),
+});
+
+const normalizeServiceOfferingAppealSummary = (
+    appeal: RawServiceOfferingAppealSummary,
+): ServiceOfferingAppealSummary => ({
+    ...appeal,
+    takenDownAtSnapshot: toRequiredDate(
+        appeal.takenDownAtSnapshot,
+        "takenDownAtSnapshot",
+    ),
+    createdAt: toRequiredDate(appeal.createdAt, "createdAt"),
+    reviewedAt: toRequiredNullableDate(appeal.reviewedAt) ?? null,
 });
 
 export const invalidateWorkerServices = (queryClient: QueryClient) => {
@@ -217,6 +275,32 @@ export const useUpdateServiceOfferings = () => {
 };
 
 export const useSubmitServiceUpdate = () => useUpdateServiceOfferings();
+
+export const useSubmitServiceOfferingAppeal = () => {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async ({
+            serviceId,
+            ...payload
+        }: SubmitServiceOfferingAppealRequest & { serviceId: string }) => {
+            const response = await apiClient.post<RawServiceOfferingAppealSummary>(
+                `/workSkill/worker/services/${serviceId}/appeals`,
+                payload,
+            );
+            return ServiceOfferingAppealSummarySchema.parse(
+                normalizeServiceOfferingAppealSummary(response.data),
+            );
+        },
+        onSuccess: () => invalidateWorkerServices(queryClient),
+        meta: {
+            errorMessage: "提交服务申诉失败",
+        },
+        scope: {
+            id: "submitServiceOfferingAppeal",
+        },
+    });
+};
 
 export const useUpdateActiveService = () => {
     const queryClient = useQueryClient();

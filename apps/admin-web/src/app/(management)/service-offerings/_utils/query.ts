@@ -106,6 +106,9 @@ function parseLifecycleParam(
     value: string | string[] | undefined,
 ): ServiceOfferingLifecycleFilter | undefined {
     const raw = parseStringParam(value)
+    if (raw === "appeal_pending") {
+        return "pending_review"
+    }
     return raw && (SERVICE_OFFERINGS_LIFECYCLE_VALUES as string[]).includes(raw)
         ? (raw as ServiceOfferingLifecycleFilter)
         : undefined

@@ -7,6 +7,7 @@ import type {
 import { NotificationPublisher } from '../notification/notification.publisher';
 import {
     AdminServiceOfferingsRepository,
+    type ServiceOfferingAppealReviewResult,
     type ServiceOfferingReviewResult,
     type ServiceOfferingTakeDownResult,
 } from './admin-service-offerings.repository';
@@ -97,6 +98,60 @@ export class AdminServiceOfferingsService {
                 personnelId: result.personnelUserId,
                 action: 'taken_down',
                 serviceId: result.serviceId,
+                reason: normalizedReason,
+                operatorId: adminUserId,
+            },
+        );
+        return result;
+    }
+
+    async approveAppeal(
+        appealId: string,
+        adminUserId: string,
+    ): Promise<ServiceOfferingAppealReviewResult> {
+        const result = await this.repository.approveAppeal(
+            appealId,
+            adminUserId,
+        );
+        if (result.status === 'approved') {
+            await this.publishServiceOfferingNotification(
+                'service_offering_appeal_approved',
+                result.personnelUserId,
+                {
+                    title: '服务申诉已通过',
+                    message: result.message,
+                    personnelId: result.personnelUserId,
+                    serviceId: result.serviceId,
+                    appealId: result.appealId,
+                    action: 'appeal_approved',
+                    operatorId: adminUserId,
+                },
+            );
+        }
+        return result;
+    }
+
+    async rejectAppeal(
+        appealId: string,
+        adminUserId: string,
+        reason: string,
+    ): Promise<ServiceOfferingAppealReviewResult> {
+        const normalizedReason = this.normalizeRequiredReason(reason);
+        const result = await this.repository.rejectAppeal(
+            appealId,
+            adminUserId,
+            normalizedReason,
+        );
+        await this.publishServiceOfferingNotification(
+            'service_offering_appeal_rejected',
+            result.personnelUserId,
+            {
+                title: '服务申诉已驳回',
+                message: normalizedReason,
+                personnelId: result.personnelUserId,
+                serviceId: result.serviceId,
+                appealId: result.appealId,
+                action: 'appeal_rejected',
                 reason: normalizedReason,
                 operatorId: adminUserId,
             },

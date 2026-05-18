@@ -1,5 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
-import { UpdateServiceNonSensitiveFieldsRequestSchema } from '@repo/types';
+import {
+    ServiceOfferingAppealSummary,
+    UpdateServiceNonSensitiveFieldsRequestSchema,
+} from '@repo/types';
 import {
     resolveOfferingVisibilityState,
     WorkSkillRepository,
@@ -18,6 +21,7 @@ type MockWorkSkillRepository = jest.Mocked<
         | 'withdrawServiceDraft'
         | 'updateServiceNonSensitiveFields'
         | 'selfTakedownService'
+        | 'submitServiceOfferingAppeal'
         | 'deleteWorkerService'
         | 'getWorkerServiceName'
     >
@@ -60,6 +64,7 @@ describe('WorkSkillService.updateServiceOfferings', () => {
             withdrawServiceDraft: jest.fn(),
             updateServiceNonSensitiveFields: jest.fn(),
             selfTakedownService: jest.fn(),
+            submitServiceOfferingAppeal: jest.fn(),
             deleteWorkerService: jest.fn(),
             getWorkerServiceName: jest.fn(),
         };
@@ -334,6 +339,7 @@ describe('WorkSkillService.getPersonnelInfo visibility', () => {
             withdrawServiceDraft: jest.fn(),
             updateServiceNonSensitiveFields: jest.fn(),
             selfTakedownService: jest.fn(),
+            submitServiceOfferingAppeal: jest.fn(),
             deleteWorkerService: jest.fn(),
             getWorkerServiceName: jest.fn(),
         };
@@ -425,6 +431,7 @@ describe('WorkSkillService worker service audit aggregation', () => {
             withdrawServiceDraft: jest.fn(),
             updateServiceNonSensitiveFields: jest.fn(),
             selfTakedownService: jest.fn(),
+            submitServiceOfferingAppeal: jest.fn(),
             deleteWorkerService: jest.fn(),
             getWorkerServiceName: jest.fn(),
         };
@@ -560,6 +567,85 @@ describe('WorkSkillService worker service audit aggregation', () => {
             'worker_1',
             'svc_1',
         );
+    });
+});
+
+describe('WorkSkillService.submitServiceOfferingAppeal', () => {
+    let service: WorkSkillService;
+    let repository: MockWorkSkillRepository;
+
+    beforeEach(() => {
+        repository = {
+            findServicesByIds: jest.fn(),
+            getPersonnelInfo: jest.fn(),
+            getPublishedPersonnelInfo: jest.fn(),
+            updateServiceOfferings: jest.fn(),
+            submitServiceOfferingsForReview: jest.fn(),
+            listWorkerServices: jest.fn(),
+            withdrawServiceDraft: jest.fn(),
+            updateServiceNonSensitiveFields: jest.fn(),
+            selfTakedownService: jest.fn(),
+            submitServiceOfferingAppeal: jest.fn(),
+            deleteWorkerService: jest.fn(),
+            getWorkerServiceName: jest.fn(),
+        };
+
+        service = new WorkSkillService();
+        Reflect.set(service, 'workSkillRepository', repository);
+    });
+
+    it('提交申诉时 trim 说明并返回申诉摘要', async () => {
+        const takenDownAt = new Date('2026-05-18T00:00:00.000Z');
+        const createdAt = new Date('2026-05-18T01:00:00.000Z');
+
+        repository.submitServiceOfferingAppeal.mockResolvedValue({
+            id: 'appeal_1',
+            personnelUserId: 'worker_1',
+            serviceId: 'svc_1',
+            status: 'pending',
+            appealReason: '下架原因与实际情况不符，请复核',
+            reviewResultReason: null,
+            takenDownAtSnapshot: takenDownAt,
+            takeDownReasonSnapshot: '资料不完整',
+            reviewedBy: null,
+            reviewedAt: null,
+            createdAt,
+            updatedAt: createdAt,
+        });
+
+        const result = await service.submitServiceOfferingAppeal(
+            'worker_1',
+            'svc_1',
+            { appealReason: '  下架原因与实际情况不符，请复核  ' },
+        );
+
+        expect(repository.submitServiceOfferingAppeal).toHaveBeenCalledWith(
+            'worker_1',
+            'svc_1',
+            '下架原因与实际情况不符，请复核',
+        );
+        expect(result).toEqual<ServiceOfferingAppealSummary>({
+            id: 'appeal_1',
+            status: 'pending',
+            appealReason: '下架原因与实际情况不符，请复核',
+            reviewResultReason: null,
+            takenDownAtSnapshot: takenDownAt,
+            takeDownReasonSnapshot: '资料不完整',
+            createdAt,
+            reviewedAt: null,
+        });
+    });
+
+    it('repository 拒绝重复 pending 申诉时透传异常', async () => {
+        repository.submitServiceOfferingAppeal.mockRejectedValue(
+            new BadRequestException('本次下架申诉已提交，请等待管理员处理'),
+        );
+
+        await expect(
+            service.submitServiceOfferingAppeal('worker_1', 'svc_1', {
+                appealReason: '下架原因与实际情况不符，请复核',
+            }),
+        ).rejects.toThrow('本次下架申诉已提交，请等待管理员处理');
     });
 });
 
