@@ -154,6 +154,104 @@ describe('JVerification one-click login endpoint', () => {
         );
     });
 
+    it('服务人员端一键登录已有 customer 手机号时补齐 service_personnel 角色', async () => {
+        const existingUser = createUser({
+            id: 'customer_1',
+            phoneNumber: '13812345678',
+            role: ['customer'],
+        });
+        const upgradedUser = createUser({
+            ...existingUser,
+            role: ['customer', 'service_personnel'],
+        });
+        const ctx = createEndpointContext({
+            context: {
+                internalAdapter: {
+                    ...createEndpointContext().context.internalAdapter,
+                    listUsers: jest.fn().mockResolvedValue([existingUser]),
+                    updateUser: jest.fn().mockResolvedValue(upgradedUser),
+                    createSession: jest
+                        .fn()
+                        .mockResolvedValue({ token: 'worker_token' }),
+                },
+                options: {},
+            },
+        });
+
+        const result = await loginWithJVerification(
+            {
+                loginToken: 'one-click-login-token',
+                app: 'mobile-worker',
+                platform: 'android',
+            },
+            ctx.context.internalAdapter,
+            {
+                verifyLoginToken: jest.fn().mockResolvedValue({
+                    code: 8000,
+                    phone: 'encrypted-phone',
+                }),
+                decryptPhoneNumber: jest.fn().mockReturnValue('13812345678'),
+            },
+        );
+
+        expect(ctx.context.internalAdapter.updateUser).toHaveBeenCalledWith(
+            'customer_1',
+            expect.objectContaining({
+                role: ['customer', 'service_personnel'],
+            }),
+        );
+        expect(result.user.role).toEqual(['customer', 'service_personnel']);
+    });
+
+    it('用户端一键登录已有 service_personnel 手机号时补齐 customer 角色', async () => {
+        const existingUser = createUser({
+            id: 'worker_1',
+            phoneNumber: '13912345678',
+            role: ['service_personnel'],
+        });
+        const upgradedUser = createUser({
+            ...existingUser,
+            role: ['service_personnel', 'customer'],
+        });
+        const ctx = createEndpointContext({
+            context: {
+                internalAdapter: {
+                    ...createEndpointContext().context.internalAdapter,
+                    listUsers: jest.fn().mockResolvedValue([existingUser]),
+                    updateUser: jest.fn().mockResolvedValue(upgradedUser),
+                    createSession: jest
+                        .fn()
+                        .mockResolvedValue({ token: 'customer_token' }),
+                },
+                options: {},
+            },
+        });
+
+        const result = await loginWithJVerification(
+            {
+                loginToken: 'one-click-login-token',
+                app: 'mobile-user',
+                platform: 'android',
+            },
+            ctx.context.internalAdapter,
+            {
+                verifyLoginToken: jest.fn().mockResolvedValue({
+                    code: 8000,
+                    phone: 'encrypted-worker-phone',
+                }),
+                decryptPhoneNumber: jest.fn().mockReturnValue('13912345678'),
+            },
+        );
+
+        expect(ctx.context.internalAdapter.updateUser).toHaveBeenCalledWith(
+            'worker_1',
+            expect.objectContaining({
+                role: ['service_personnel', 'customer'],
+            }),
+        );
+        expect(result.user.role).toEqual(['service_personnel', 'customer']);
+    });
+
     it('极光返回非 8000 时拒绝登录且不创建 session', async () => {
         const ctx = createEndpointContext();
 

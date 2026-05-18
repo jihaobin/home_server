@@ -1,4 +1,9 @@
 import { constants, createPrivateKey, privateDecrypt } from 'node:crypto';
+import {
+    getRequiredRoleForAuthApp,
+    mergeRequiredRoleForAuthApp,
+} from './app-role.utils';
+import { normalizeUserRoles } from './rbac.utils';
 
 const JVERIFICATION_LOGIN_TOKEN_VERIFY_URL =
     'https://api.verification.jpush.cn/v1/web/loginTokenVerify';
@@ -96,10 +101,13 @@ export function getJVerificationConfig(
     platform?: JVerificationPlatform,
 ): JVerificationConfig {
     const prefix = JVERIFICATION_ENV_PREFIX[app];
-    const platformPrefix = platform ? `${prefix}_${platform.toUpperCase()}` : '';
+    const platformPrefix = platform
+        ? `${prefix}_${platform.toUpperCase()}`
+        : '';
     const appKey =
-        (platformPrefix ? process.env[`${platformPrefix}_APP_KEY`]?.trim() : '') ||
-        process.env[`${prefix}_APP_KEY`]?.trim();
+        (platformPrefix
+            ? process.env[`${platformPrefix}_APP_KEY`]?.trim()
+            : '') || process.env[`${prefix}_APP_KEY`]?.trim();
     const masterSecret =
         (platformPrefix
             ? process.env[`${platformPrefix}_MASTER_SECRET`]?.trim()
@@ -176,10 +184,14 @@ export function decryptJVerificationPhoneNumber(
         decryptedBlock[1] !== 2 ||
         separatorIndex < 10
     ) {
-        throw new Error('JVerification phone encrypted payload padding invalid');
+        throw new Error(
+            'JVerification phone encrypted payload padding invalid',
+        );
     }
 
-    const decrypted = decryptedBlock.subarray(separatorIndex + 1).toString('utf8');
+    const decrypted = decryptedBlock
+        .subarray(separatorIndex + 1)
+        .toString('utf8');
 
     return decrypted.trim();
 }
@@ -247,8 +259,7 @@ export async function loginWithJVerification(
         { field: 'phoneNumber', value: phoneNumber },
     ]);
     const now = new Date();
-    const role =
-        input.app === 'mobile-worker' ? ['service_personnel'] : ['customer'];
+    const role = [getRequiredRoleForAuthApp(input.app)];
     const user =
         existingUsers[0] ??
         (await adapter.createUser({
@@ -261,12 +272,21 @@ export async function loginWithJVerification(
             image: '',
             updatedAt: now,
         }));
-    const nextUser = user.phoneNumberVerified
-        ? user
-        : await adapter.updateUser(user.id, {
-              phoneNumberVerified: true,
-              updatedAt: now,
-          });
+    const nextRoles = mergeRequiredRoleForAuthApp(user.role, input.app);
+    const shouldUpdatePhoneVerified = !user.phoneNumberVerified;
+    const shouldUpdateRole =
+        JSON.stringify(nextRoles) !==
+        JSON.stringify(normalizeUserRoles(user.role ?? undefined));
+    const nextUser =
+        shouldUpdatePhoneVerified || shouldUpdateRole
+            ? await adapter.updateUser(user.id, {
+                  ...(shouldUpdatePhoneVerified
+                      ? { phoneNumberVerified: true }
+                      : {}),
+                  ...(shouldUpdateRole ? { role: nextRoles } : {}),
+                  updatedAt: now,
+              })
+            : user;
     const session = await adapter.createSession(nextUser.id);
 
     logger.info('JVerification login succeeded', {

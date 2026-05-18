@@ -19,6 +19,10 @@ import {
     JVerificationLoginError,
     loginWithJVerification,
 } from 'src/modules/auth/jverification-login';
+import {
+    type AuthClientApp,
+    mergeRequiredRoleForAuthApp,
+} from 'src/modules/auth/app-role.utils';
 
 const envTrustedOrigins = process.env.TRUSTED_ORIGINS
     ? process.env.TRUSTED_ORIGINS.split(',').map((origin) => origin.trim())
@@ -34,6 +38,7 @@ const isHttps =
 
 const DEFAULT_WORK_DAYS = '1234567';
 const WORKER_ORIGIN_PREFIX = 'mobileworker://';
+const USER_ORIGIN_PREFIX = 'home-server-user://';
 
 const jverificationLoginBodySchema = z.object({
     loginToken: z.string().min(1),
@@ -42,11 +47,19 @@ const jverificationLoginBodySchema = z.object({
     exId: z.string().min(1).max(128).optional(),
 });
 
-function isWorkerOrigin(origin?: string | null) {
+function getAuthClientAppFromOrigin(
+    origin?: string | null,
+): AuthClientApp | null {
     if (!origin) {
-        return false;
+        return null;
     }
-    return origin.startsWith(WORKER_ORIGIN_PREFIX);
+    if (origin.startsWith(WORKER_ORIGIN_PREFIX)) {
+        return 'mobile-worker';
+    }
+    if (origin.startsWith(USER_ORIGIN_PREFIX)) {
+        return 'mobile-user';
+    }
+    return null;
 }
 
 function createJVerificationEndpoint() {
@@ -85,36 +98,14 @@ function createJVerificationEndpoint() {
                 });
             } catch (error) {
                 if (error instanceof JVerificationLoginError) {
-                    throw new APIError(error.status, { message: error.message });
+                    throw new APIError(error.status, {
+                        message: error.message,
+                    });
                 }
                 throw error;
             }
         },
     );
-}
-
-function getTimestamp(value: unknown): number | null {
-    if (!value) {
-        return null;
-    }
-    const date = value instanceof Date ? value : new Date(value as string);
-    const time = date.getTime();
-    if (Number.isNaN(time)) {
-        return null;
-    }
-    return time;
-}
-
-function isNewlyCreatedUser(user: {
-    createdAt?: unknown;
-    updatedAt?: unknown;
-}) {
-    const createdAt = getTimestamp(user.createdAt);
-    const updatedAt = getTimestamp(user.updatedAt);
-    if (createdAt === null || updatedAt === null) {
-        return false;
-    }
-    return Math.abs(updatedAt - createdAt) <= 1000;
 }
 
 function getSmsErrorMessage(error: unknown, fallback: string): string {
@@ -487,23 +478,27 @@ export function createAuth(
                     getTempName: (phone) => `用户${phone.slice(-4)}`,
                 },
                 async callbackOnVerification({ user }, ctx) {
-                    const origin = ctx?.getHeader?.('expo-origin');
-                    if (!isWorkerOrigin(origin)) {
+                    const app = getAuthClientAppFromOrigin(
+                        ctx?.getHeader?.('expo-origin'),
+                    );
+                    if (!app) {
                         return;
                     }
                     const roles = normalizeUserRoles((user as any).role);
+                    const nextRoles = mergeRequiredRoleForAuthApp(roles, app);
                     try {
-                        if (isNewlyCreatedUser(user)) {
-                            await upgradeToServicePersonnel(user.id, roles);
+                        if (
+                            JSON.stringify(nextRoles) !== JSON.stringify(roles)
+                        ) {
+                            await updateUserRoles(user.id, nextRoles);
+                        }
+                        if (nextRoles.includes('service_personnel')) {
+                            await ensureServicePersonnelRecord(user.id);
                             return;
                         }
-                        if (!roles.includes('service_personnel')) {
-                            return;
-                        }
-                        await ensureServicePersonnelRecord(user.id);
                     } catch (error) {
                         console.error(
-                            `[better-auth] Failed to apply service_personnel for ${user.id}`,
+                            `[better-auth] Failed to apply app role for ${user.id}`,
                             error,
                         );
                         throw error;
