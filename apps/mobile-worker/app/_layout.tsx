@@ -306,7 +306,14 @@ function RootNavigation() {
                     <Stack.Screen
                         name="profile/service-area"
                         options={{
-                            title: "服务区域",
+                            title: "工作区域",
+                            headerShown: false,
+                        }}
+                    />
+                    <Stack.Screen
+                        name="profile/work-time"
+                        options={{
+                            title: "工作时间",
                             headerShown: false,
                         }}
                     />

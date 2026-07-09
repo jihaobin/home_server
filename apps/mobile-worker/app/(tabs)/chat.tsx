@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { ActivityIndicator, Pressable, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useChatConversationsQuery } from "@repo/hooks/api/chat";
@@ -31,13 +31,14 @@ export default function ChatTabScreen() {
     return (
         <RequireAuth>
             <View className="flex-1 bg-background">
-                <SafeAreaView edges={["top"]} className="bg-card">
-                    <View className="h-11 justify-center border-b-hairline border-border px-4">
-                        <Text className="text-base text-foreground font-puhui-medium">
-                            消息
-                        </Text>
-                    </View>
-                </SafeAreaView>
+                <View style={styles.header}>
+                    <Text className="text-[24px] text-foreground font-bold">
+                        消息
+                    </Text>
+                    <Text style={styles.subtitle}>
+                        查看客户私聊与订单沟通
+                    </Text>
+                </View>
 
                 {isPending ? (
                     <View className="flex-1 items-center justify-center">
@@ -85,3 +86,20 @@ export default function ChatTabScreen() {
         </RequireAuth>
     );
 }
+
+const styles = StyleSheet.create({
+    header: {
+        minHeight: 128,
+        paddingHorizontal: 20,
+        paddingTop: 56,
+        paddingBottom: 20,
+        backgroundColor: "white",
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: "#eee",
+    },
+    subtitle: {
+        marginTop: 6,
+        fontSize: 14,
+        color: "#666",
+    },
+});

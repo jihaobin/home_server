@@ -1,8 +1,7 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
-    Alert,
     Image,
     RefreshControl,
     ScrollView,
@@ -11,20 +10,23 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { Image as ExpoImage } from "@repo/mobile-ui/components/ui/image";
-import { FlashList } from "@shopify/flash-list";
-import { LinearGradient } from "expo-linear-gradient";
 import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { RequireAuth } from "@repo/mobile-ui/components/guards/RequireAuth";
 import { useGlobalPageRefresh } from "@repo/hooks/use-global-page-refresh";
 import { useUserRealNameProfile } from "@repo/hooks/api/user";
 import { useFile } from "@repo/hooks/api/files";
+import { useMyWorkerServices } from "@repo/hooks/api/work-skill";
 import {
     useServicePersonnelProfile,
     useServicePersonnelDashboardStats,
 } from "@repo/hooks/api/service-personnel";
+import type { WorkerServiceItem } from "@repo/types";
 import { Icon } from "@repo/mobile-ui/components/ui/icon";
 import { Settings } from "lucide-react-native";
+import { WorkerServiceAuditList } from "../../components/profile/WorkerServiceAuditList";
+import type { WorkerServiceTabKey } from "../profile/service-settings-audit-model";
+
+const EMPTY_WORKER_SERVICES: WorkerServiceItem[] = [];
 
 const maskPhone = (value: string) => {
     if (!value) {
@@ -67,6 +69,8 @@ export default function ProfileScreen() {
 
 function ProfileContent() {
     const router = useRouter();
+    const [activeServiceTab, setActiveServiceTab] =
+        useState<WorkerServiceTabKey>("all");
     const { session, refetch: refetchSession } = useSession();
     const userId = session?.user?.id;
     const {
@@ -84,6 +88,11 @@ function ProfileContent() {
         isFetching: isDashboardStatsFetching,
         refetch: refetchDashboardStats,
     } = useServicePersonnelDashboardStats(userId);
+    const {
+        data: workerServicesResponse,
+        isFetching: isWorkerServicesFetching,
+        refetch: refetchWorkerServices,
+    } = useMyWorkerServices();
     const { refreshing, onRefresh } = useGlobalPageRefresh({
         refetchActiveQueries: false,
         extraRefresh: () =>
@@ -92,6 +101,7 @@ function ProfileContent() {
                 userId ? refetchProfile() : Promise.resolve(),
                 userId ? refetchPersonnelProfile() : Promise.resolve(),
                 userId ? refetchDashboardStats() : Promise.resolve(),
+                refetchWorkerServices(),
             ]),
     });
 
@@ -156,63 +166,6 @@ function ProfileContent() {
         };
     }, [dashboardStats, workerMeta]);
 
-    const services = useMemo(
-        () => personnelProfile?.services ?? [],
-        [personnelProfile?.services]
-    );
-
-    const aggregatedServices = useMemo(() => {
-        return services.map((service) => {
-            const specs = (service as any)?.specifications ?? [];
-            const prices = specs
-                .map((s: any) => Number(s.price))
-                .filter((p: number) => !isNaN(p) && p > 0);
-            const durations = specs
-                .map((s: any) => s.estimatedDurationMinutes)
-                .filter(
-                    (d: any) =>
-                        typeof d === "number" && !isNaN(d) && d > 0,
-                );
-            return {
-                ...service,
-                minPrice:
-                    prices.length > 0
-                        ? Math.min(...prices)
-                        : null,
-                minDuration:
-                    durations.length > 0
-                        ? Math.min(...durations)
-                        : null,
-                specCount: specs.length,
-            };
-        });
-    }, [services]);
-
-    const serviceRegionLabel = useMemo(() => {
-        if (!personnelProfile) {
-            return "未填写";
-        }
-        const parts = [
-            personnelProfile.province,
-            personnelProfile.district,
-            personnelProfile.county,
-            personnelProfile.detailedAddress,
-        ].filter(Boolean);
-        return parts.length > 0 ? parts.join(" ") : "未填写";
-    }, [personnelProfile]);
-
-    const workScheduleLabel = useMemo(() => {
-        if (!personnelProfile) {
-            return "未填写";
-        }
-        return `${personnelProfile.workStartTime} - ${personnelProfile.workEndTime}`;
-    }, [personnelProfile]);
-
-    const workDaysLabel = useMemo(
-        () => formatWorkDays(personnelProfile?.workDays),
-        [personnelProfile],
-    );
-
     const ratingLabel = stats.ratingDisplay ?? stats.ratingValue.toFixed(1);
     const avatarIdentifier =
         personnelProfile?.avatar?.fileId ??
@@ -244,11 +197,13 @@ function ProfileContent() {
                 refetchProfile(),
                 refetchPersonnelProfile(),
                 refetchDashboardStats(),
+                refetchWorkerServices(),
             ]);
         }, [
             refetchProfile,
             refetchPersonnelProfile,
             refetchDashboardStats,
+            refetchWorkerServices,
             userId,
         ]),
     );
@@ -257,13 +212,21 @@ function ProfileContent() {
         refreshing ||
         isProfileFetching ||
         isPersonnelProfileFetching ||
-        isDashboardStatsFetching;
+        isDashboardStatsFetching ||
+        isWorkerServicesFetching;
 
-    const openServiceDetail = (serviceId: string) => {
+    const workerServices =
+        workerServicesResponse?.services ?? EMPTY_WORKER_SERVICES;
+
+    const openServiceDetail = (service: (typeof workerServices)[number]) => {
         router.push({
             pathname:
                 "/profile/service-settings-detail-redesign" as never,
-            params: { serviceId },
+            params: {
+                serviceId: service.serviceId,
+                mode: service.derivedStatus,
+                draftId: service.draft?.id,
+            },
         } as never);
     };
 
@@ -333,7 +296,7 @@ function ProfileContent() {
                                     <View style={styles.verifiedBadge}>
                                         <Ionicons
                                             name="checkmark-circle"
-                                            size={16}
+                                            size={12}
                                             color="#4CAF50"
                                         />
                                         <Text style={styles.verifiedText}>
@@ -351,7 +314,7 @@ function ProfileContent() {
                         </View>
                         <Ionicons
                             name="chevron-forward"
-                            size={24}
+                            size={18}
                             color="#999"
                         />
                     </TouchableOpacity>
@@ -377,178 +340,41 @@ function ProfileContent() {
                         </View>
                     </View>
                 </View>
-
                 {personnelProfile && (
                     <View style={styles.infoCard}>
                         <TouchableOpacity
                             onPress={() => router.push("/profile/service-area")}
                             style={styles.sectionTitleContainer}
                         >
-                            <Text style={styles.sectionTitle}>服务资料</Text>
+                            <Text style={styles.sectionTitle}>工作区域</Text>
                             <Ionicons name="chevron-forward" size={16} color="#666" />
                         </TouchableOpacity>
-                        <View style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>服务区域</Text>
-                            <Text style={styles.infoValue}>
-                                {serviceRegionLabel}
-                            </Text>
-                        </View>
-                        <View style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>可服务时间</Text>
-                            <Text style={styles.infoValue}>
-                                {workScheduleLabel}
-                            </Text>
-                        </View>
-                        <View style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>工作日</Text>
-                            <Text style={styles.infoValue}>
-                                {workDaysLabel}
-                            </Text>
-                        </View>
                     </View>
                 )}
 
-                {services.length > 0 && (
-                    <View className="mb-4">
-                        <Text className="text-xl text-foreground mb-3 px-4">
-                            可提供的服务
-                        </Text>
-                        <View style={{ position: "relative" }}>
-                            <FlashList
-                                data={aggregatedServices}
-                                horizontal
-                                showsHorizontalScrollIndicator={false}
-                                contentContainerStyle={{ paddingHorizontal: 16 }}
-                                ItemSeparatorComponent={() => <View className="w-3" />}
-                                renderItem={({ item: service }) => (
-                                    <TouchableOpacity
-                                        className="bg-card border border-border rounded-2xl p-4 mb-2"
-                                        style={{
-                                            shadowColor: "#000",
-                                            shadowOffset: {
-                                                width: 0,
-                                                height: 1,
-                                            },
-                                            shadowOpacity: 0.1,
-                                            shadowRadius: 3,
-                                            elevation: 2,
-                                            width: 160,
-                                        }}
-                                        onPress={() =>
-                                            openServiceDetail(service.serviceId)
-                                        }
-                                        activeOpacity={0.7}
-                                    >
-                                        <View
-                                            className="size-8 rounded-[10px] items-center justify-center mb-2 overflow-hidden"
-                                            style={{
-                                                backgroundColor: "#FFF7ED",
-                                            }}
-                                        >
-                                            {service.gallery?.[0]?.url ? (
-                                                <ExpoImage
-                                                    source={{
-                                                        uri: service.gallery[0]
-                                                            .url,
-                                                    }}
-                                                    className="size-full"
-                                                    contentFit="cover"
-                                                    placeholder={
-                                                        service.gallery[0]
-                                                            .blurhash
-                                                            ? {
-                                                                  blurhash:
-                                                                      service
-                                                                          .gallery[0]
-                                                                          .blurhash,
-                                                              }
-                                                            : undefined
-                                                    }
-                                                />
-                                            ) : (
-                                                <Ionicons
-                                                    name="sparkles-outline"
-                                                    size={18}
-                                                    color="#FF6900"
-                                                />
-                                            )}
-                                        </View>
-
-                                        <Text
-                                            className="text-base text-foreground font-medium mb-1"
-                                            numberOfLines={1}
-                                        >
-                                            {service.serviceName}
-                                        </Text>
-
-                                        {service.personnelDescription ||
-                                        service.serviceDescription ? (
-                                            <Text
-                                                className="text-sm text-muted-foreground mb-2"
-                                                numberOfLines={2}
-                                            >
-                                                {service.personnelDescription ||
-                                                    service.serviceDescription}
-                                            </Text>
-                                        ) : null}
-
-                                        {service.minPrice !== null ? (
-                                            <View className="flex-row items-baseline mb-2">
-                                                <Text
-                                                    className="text-lg font-bold"
-                                                    style={{ color: "#FF6900" }}
-                                                >
-                                                    ¥{service.minPrice}
-                                                </Text>
-                                                <Text className="text-xs text-muted-foreground ml-0.5">
-                                                    起
-                                                </Text>
-                                            </View>
-                                        ) : (
-                                            <View className="mb-2">
-                                                <Text className="text-sm text-muted-foreground">
-                                                    暂无报价
-                                                </Text>
-                                            </View>
-                                        )}
-
-                                        <View className="flex-row gap-2">
-                                            {service.minDuration !== null && (
-                                                <View className="bg-muted rounded px-2 py-0.5">
-                                                    <Text className="text-xs text-muted-foreground">
-                                                        {service.minDuration}
-                                                        分钟起
-                                                    </Text>
-                                                </View>
-                                            )}
-                                            {service.specCount > 0 && (
-                                                <View className="bg-muted rounded px-2 py-0.5">
-                                                    <Text className="text-xs text-muted-foreground">
-                                                        {service.specCount}
-                                                        种规格
-                                                    </Text>
-                                                </View>
-                                            )}
-                                        </View>
-                                    </TouchableOpacity>
-                                )}
-                            />
-                            <LinearGradient
-                                colors={["rgba(255,255,255,0)", "rgba(255,255,255,1)"]}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 0 }}
-                                style={{
-                                    position: "absolute",
-                                    right: 0,
-                                    top: 0,
-                                    bottom: 0,
-                                    width: 50,
-                                }}
-                                pointerEvents="none"
-                            />
-                        </View>
+                {personnelProfile && (
+                    <View style={styles.infoCard}>
+                        <TouchableOpacity
+                            onPress={() => router.push("/profile/work-time")}
+                            style={styles.sectionTitleContainer}
+                        >
+                            <Text style={styles.sectionTitle}>工作时间</Text>
+                            <Ionicons name="chevron-forward" size={16} color="#666" />
+                        </TouchableOpacity>
                     </View>
                 )}
+
+                <View className="mb-4 px-4">
+                    <Text className="text-[15px] leading-[23px] text-black">
+                        我的服务
+                    </Text>
+                    <WorkerServiceAuditList
+                        activeTab={activeServiceTab}
+                        services={workerServices}
+                        onChangeTab={setActiveServiceTab}
+                        onPressService={openServiceDetail}
+                    />
+                </View>
 
             </ScrollView>
         </View>
@@ -562,8 +388,9 @@ const styles = StyleSheet.create({
     },
     header: {
         backgroundColor: "white",
+        minHeight: 128,
         paddingTop: 56,
-        paddingBottom: 24,
+        paddingBottom: 20,
         paddingHorizontal: 20,
         borderBottomWidth: 1,
         borderBottomColor: "#eee",
@@ -595,9 +422,9 @@ const styles = StyleSheet.create({
     },
     userCard: {
         backgroundColor: "white",
-        margin: 16,
-        borderRadius: 16,
-        padding: 20,
+        margin: 10,
+        borderRadius: 12,
+        padding: 10,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.08,
@@ -607,15 +434,15 @@ const styles = StyleSheet.create({
     userInfo: {
         flexDirection: "row",
         alignItems: "center",
-        paddingBottom: 20,
+        paddingBottom: 10,
         borderBottomWidth: 1,
         borderBottomColor: "#eee",
     },
     avatar: {
-        width: 70,
-        height: 70,
-        borderRadius: 35,
-        marginRight: 16,
+        width: 46,
+        height: 46,
+        borderRadius: 23,
+        marginRight: 10,
     },
     avatarFallback: {
         backgroundColor: "#E0E7FF",
@@ -623,7 +450,7 @@ const styles = StyleSheet.create({
         justifyContent: "center",
     },
     avatarInitial: {
-        fontSize: 22,
+        fontSize: 16,
         fontWeight: "bold",
         color: "#312E81",
     },
@@ -633,53 +460,54 @@ const styles = StyleSheet.create({
     nameRow: {
         flexDirection: "row",
         alignItems: "center",
-        marginBottom: 8,
+        marginBottom: 3,
     },
     userName: {
-        fontSize: 20,
+        fontSize: 16,
         fontWeight: "bold",
         color: "#333",
-        marginRight: 8,
+        marginRight: 6,
     },
     verifiedBadge: {
         flexDirection: "row",
         alignItems: "center",
         backgroundColor: "#E8F5E9",
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 12,
+        paddingHorizontal: 5,
+        paddingVertical: 2,
+        borderRadius: 9,
     },
     verifiedText: {
-        fontSize: 12,
+        fontSize: 10,
         color: "#4CAF50",
-        marginLeft: 4,
+        marginLeft: 3,
     },
     userPhone: {
-        fontSize: 14,
+        fontSize: 11,
         color: "#666",
-        marginBottom: 4,
+        marginBottom: 2,
     },
     workYears: {
-        fontSize: 14,
+        fontSize: 11,
         color: "#999",
     },
     statsRow: {
         flexDirection: "row",
         justifyContent: "space-around",
-        paddingTop: 20,
+        paddingTop: 10,
+        paddingBottom: 10,
     },
     statItem: {
         alignItems: "center",
         flex: 1,
     },
     statValue: {
-        fontSize: 18,
+        fontSize: 14,
         fontWeight: "bold",
         color: "#333",
-        marginBottom: 4,
+        marginBottom: 2,
     },
     statLabel: {
-        fontSize: 12,
+        fontSize: 10,
         color: "#666",
     },
     statDivider: {

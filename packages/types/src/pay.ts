@@ -1219,13 +1219,14 @@ export const EarningsOverviewResponseSchema = z
             total: z.number().nonnegative(),
             currency: z.string().min(1),
         }),
+        dailyEarnings: z.number().nonnegative(),
         monthlyEarnings: z.number().nonnegative(),
         totalEarnings: z.number().nonnegative(),
         updatedAt: z.date(),
     })
     .meta({
         title: "收益概览响应",
-        description: "返回余额、月收益与累计收益及更新时间。",
+        description: "返回余额、日收益、月收益与累计收益及更新时间。",
     });
 export type EarningsOverviewResponse = z.infer<
     typeof EarningsOverviewResponseSchema

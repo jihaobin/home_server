@@ -92,7 +92,7 @@ function HomeContent() {
 
     const stats = {
         todayOrders,
-        monthlyEarnings: earningsOverview?.monthlyEarnings ?? 0,
+        dailyEarnings: earningsOverview?.dailyEarnings ?? 0,
         completedOrders: dashboardStats?.serviceCount ?? 0,
         ratingDisplay:
             dashboardStats?.rating?.display ??
@@ -148,8 +148,8 @@ function HomeContent() {
                         />
                         <StatItem
                             icon="wallet-outline"
-                            label="本月收益"
-                            value={`¥${formatCurrency(stats.monthlyEarnings)}`}
+                            label="本日收益"
+                            value={`¥${formatCurrency(stats.dailyEarnings)}`}
                             color="#FF9800"
                         />
                     </View>
@@ -366,8 +366,10 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
-        padding: 20,
-        paddingTop: 60,
+        minHeight: 128,
+        paddingHorizontal: 20,
+        paddingTop: 56,
+        paddingBottom: 20,
         backgroundColor: "white",
     },
     greeting: {

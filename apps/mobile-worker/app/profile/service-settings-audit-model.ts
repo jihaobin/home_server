@@ -7,6 +7,7 @@ import type {
 export type { WorkerServiceTimelineItem };
 
 export type WorkerServiceTabKey =
+    | "all"
     | "active"
     | "pending"
     | "rejected"
@@ -30,13 +31,14 @@ export type WorkerServiceAuditStepItem = {
     note?: string | null;
 };
 
-export const WORKER_SERVICE_TABS: Array<{
+export const WORKER_SERVICE_TABS: {
     key: WorkerServiceTabKey;
     label: string;
-}> = [
+}[] = [
+    { key: "all", label: "全部" },
     { key: "active", label: "运营中" },
     { key: "pending", label: "审核中" },
-    { key: "rejected", label: "审核未通过" },
+    { key: "rejected", label: "未通过" },
     { key: "takendown", label: "已下架" },
 ];
 
@@ -49,9 +51,11 @@ type TimelineLike = WorkerServiceTimelineItem & {
 
 type DraftLike = NonNullable<WorkerServiceItem["draft"]> & {
     submittedSnapshot?: {
-        services?: Array<{
-            serviceId?: string | null;
-        }> | null;
+        services?:
+            | {
+                  serviceId?: string | null;
+              }[]
+            | null;
     } | null;
 };
 
@@ -82,8 +86,7 @@ export type SensitiveServiceChangesInput = {
 export const hasPendingUpdateForTakenDownService = (
     item?: Pick<WorkerServiceLike, "derivedStatus" | "draft"> | null,
 ): boolean =>
-    item?.derivedStatus === "takendown" &&
-    item.draft?.status === "pending";
+    item?.derivedStatus === "takendown" && item.draft?.status === "pending";
 
 export const getWorkerServiceTabKey = (
     status: WorkerServiceDerivedStatus,
@@ -165,6 +168,7 @@ export const groupWorkerServicesByTab = <T extends WorkerServiceItem>(
     items: readonly T[],
 ): Record<WorkerServiceTabKey, T[]> => {
     const groups: Record<WorkerServiceTabKey, T[]> = {
+        all: [...items],
         active: [],
         pending: [],
         rejected: [],

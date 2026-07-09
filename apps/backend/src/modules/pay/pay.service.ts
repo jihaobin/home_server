@@ -152,6 +152,7 @@ export interface EarningsOverview {
         total: number;
         currency: string;
     };
+    dailyEarnings: number;
     monthlyEarnings: number;
     totalEarnings: number;
     updatedAt: Date;
@@ -2866,6 +2867,15 @@ export class PayService {
         }
 
         const now = new Date();
+        const startOfDay = new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate(),
+            0,
+            0,
+            0,
+            0,
+        );
         const startOfMonth = new Date(
             now.getFullYear(),
             now.getMonth(),
@@ -2876,7 +2886,8 @@ export class PayService {
             0,
         );
 
-        const [balance, totalResult, monthlyResult] = await Promise.all([
+        const [balance, totalResult, dailyResult, monthlyResult] =
+            await Promise.all([
             this.getUserBalanceSnapshot(userId),
             this.db
                 .select({
@@ -2884,6 +2895,17 @@ export class PayService {
                 })
                 .from(earnings)
                 .where(eq(earnings.userId, userId)),
+            this.db
+                .select({
+                    total: sql<string>`COALESCE(SUM(${earnings.amount}), 0)`,
+                })
+                .from(earnings)
+                .where(
+                    and(
+                        eq(earnings.userId, userId),
+                        gte(earnings.createdAt, startOfDay),
+                    ),
+                ),
             this.db
                 .select({
                     total: sql<string>`COALESCE(SUM(${earnings.amount}), 0)`,
@@ -2902,6 +2924,7 @@ export class PayService {
         return {
             balance,
             totalEarnings: toNumber(totalResult[0]?.total),
+            dailyEarnings: toNumber(dailyResult[0]?.total),
             monthlyEarnings: toNumber(monthlyResult[0]?.total),
             updatedAt: new Date(),
         };

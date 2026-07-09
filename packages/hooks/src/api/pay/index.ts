@@ -32,6 +32,7 @@ export interface EarningsOverview {
         total: number;
         currency: string;
     };
+    dailyEarnings: number;
     monthlyEarnings: number;
     totalEarnings: number;
     updatedAt: string;

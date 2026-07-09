@@ -3,7 +3,6 @@ import { useRouter } from "expo-router";
 import {
     ActivityIndicator,
     Alert,
-    Modal,
     ScrollView,
     StyleSheet,
     Text,
@@ -16,19 +15,7 @@ import { useSession } from "@repo/mobile-ui/components/SessionProvider";
 import { useServicePersonnelProfile } from "@repo/hooks/api/service-personnel";
 import { useUpsertWorkInfo } from "@repo/hooks/api/work-skill";
 import { useGeocode } from "@repo/hooks/api/address";
-import { DateTimePicker } from "@repo/mobile-ui/components/ui/date-time-picker";
 import type { GeocodeResult } from "@repo/types";
-
-const WEEK_DAYS = ["1", "2", "3", "4", "5", "6", "7"];
-const WEEKDAY_MAP: Record<string, string> = {
-    "1": "一",
-    "2": "二",
-    "3": "三",
-    "4": "四",
-    "5": "五",
-    "6": "六",
-    "7": "日",
-};
 
 const normalizeAddressPart = (value: string | null | undefined) => {
     const normalized = (value ?? "").trim();
@@ -64,23 +51,6 @@ const normalizeAdministrativeFields = (
     };
 };
 
-const parseTimeString = (value: string) => {
-    const [hours = "0", minutes = "0", seconds = "0"] = value.split(":");
-    const date = new Date();
-    date.setHours(Number.parseInt(hours, 10) || 0);
-    date.setMinutes(Number.parseInt(minutes, 10) || 0);
-    date.setSeconds(Number.parseInt(seconds, 10) || 0);
-    date.setMilliseconds(0);
-    return date;
-};
-
-const formatTimeValue = (date: Date) => {
-    const pad = (num: number) => num.toString().padStart(2, "0");
-    return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(
-        date.getSeconds(),
-    )}`;
-};
-
 export default function ServiceAreaScreen() {
     const router = useRouter();
     const { session } = useSession();
@@ -95,9 +65,6 @@ export default function ServiceAreaScreen() {
     const [address, setAddress] = useState("");
     const [lng, setLng] = useState("");
     const [lat, setLat] = useState("");
-    const [workStartTime, setWorkStartTime] = useState("08:00:00");
-    const [workEndTime, setWorkEndTime] = useState("18:00:00");
-    const [selectedDays, setSelectedDays] = useState<string[]>([]);
     const [saving, setSaving] = useState(false);
     const [lastGeocodedAddress, setLastGeocodedAddress] = useState("");
     const [geocodeError, setGeocodeError] = useState<string | null>(null);
@@ -130,9 +97,6 @@ export default function ServiceAreaScreen() {
         setDistrict(normalizedDistrict);
         setCounty(normalizedCounty);
         setAddress(normalizedAddress);
-        setWorkStartTime(profile.workStartTime ?? "08:00:00");
-        setWorkEndTime(profile.workEndTime ?? "18:00:00");
-        setSelectedDays(profile.workDays ? profile.workDays.split("") : ["1", "2", "3", "4", "5", "6", "7"]);
         setLng(
             existingLocation && typeof existingLocation.lng === "number"
                 ? existingLocation.lng.toString()
@@ -255,14 +219,6 @@ export default function ServiceAreaScreen() {
         lng,
     ]);
 
-    const toggleDay = (day: string) => {
-        setSelectedDays((prev) =>
-            prev.includes(day) ? prev.filter((item) => item !== day) : [...prev, day],
-        );
-    };
-
-    const orderedWorkDays = useMemo(() => selectedDays.slice().sort().join(""), [selectedDays]);
-
     const handleSave = useCallback(async () => {
         if (!profile) return;
 
@@ -273,11 +229,6 @@ export default function ServiceAreaScreen() {
 
         if (!normalizedProvince || !normalizedDistrict || !normalizedAddress) {
             Alert.alert("提示", "请按照要求填写省份、城市/城区和详细地址");
-            return;
-        }
-
-        if (selectedDays.length === 0) {
-            Alert.alert("提示", "请至少选择一个工作日");
             return;
         }
 
@@ -292,15 +243,15 @@ export default function ServiceAreaScreen() {
                 district: normalizedDistrict,
                 county: normalizedCounty,
                 detailedAddress: normalizedAddress,
-                workStartTime,
-                workEndTime,
-                workDays: orderedWorkDays,
+                workStartTime: profile.workStartTime ?? "08:00:00",
+                workEndTime: profile.workEndTime ?? "18:00:00",
+                workDays: profile.workDays ?? "1234567",
                 isAvailable: profile.isAvailable,
                 currentStatus: profile.currentStatus,
                 location,
             });
             await refetch();
-            Alert.alert("保存成功", "服务区域已更新", [
+            Alert.alert("保存成功", "工作区域已更新", [
                 { text: "好的", onPress: () => router.back() },
             ]);
         } catch (error) {
@@ -315,16 +266,12 @@ export default function ServiceAreaScreen() {
         address,
         county,
         district,
-        orderedWorkDays,
         profile,
         province,
         refetch,
         router,
-        selectedDays,
         ensureCoordinates,
         upsertWorkInfo,
-        workEndTime,
-        workStartTime,
     ]);
 
     const isLoading = isFetching && !profile;
@@ -335,7 +282,7 @@ export default function ServiceAreaScreen() {
                 <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
                     <Ionicons name="arrow-back" size={24} color="#333" />
                 </TouchableOpacity>
-                <Text style={styles.title}>服务区域与时间</Text>
+                <Text style={styles.title}>工作区域</Text>
                 <TouchableOpacity
                     style={styles.saveButton}
                     disabled={saving || !profile}
@@ -430,44 +377,6 @@ export default function ServiceAreaScreen() {
                                 </TouchableOpacity>
                             </View>
                         </View>
-
-                        <View style={styles.card}>
-                            <Text style={styles.sectionTitle}>工作时间</Text>
-                            <TimePickerField
-                                label="开始"
-                                value={workStartTime}
-                                onConfirm={setWorkStartTime}
-                            />
-                            <TimePickerField
-                                label="结束"
-                                value={workEndTime}
-                                onConfirm={setWorkEndTime}
-                            />
-                            <Text style={[styles.sectionTitle, { marginTop: 12 }]}>
-                                工作日
-                            </Text>
-                            <View style={styles.weekContainer}>
-                                {WEEK_DAYS.map((day) => (
-                                    <TouchableOpacity
-                                        key={day}
-                                        style={[
-                                            styles.weekBadge,
-                                            selectedDays.includes(day) && styles.weekBadgeActive,
-                                        ]}
-                                        onPress={() => toggleDay(day)}
-                                    >
-                                        <Text
-                                            style={[
-                                                styles.weekBadgeText,
-                                                selectedDays.includes(day) && styles.weekBadgeTextActive,
-                                            ]}
-                                        >
-                                            周{WEEKDAY_MAP[day]}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        </View>
                     </>
                 )}
             </ScrollView>
@@ -490,100 +399,6 @@ function InputRow({
             <Text style={styles.label}>{label}</Text>
             <TextInput style={styles.input} {...rest} />
         </View>
-    );
-}
-
-function TimePickerField({
-    label,
-    value,
-    onConfirm,
-}: {
-    label: string;
-    value: string;
-    onConfirm: (time: string) => void;
-}) {
-    const [visible, setVisible] = useState(false);
-    const [previewDate, setPreviewDate] = useState(() => parseTimeString(value));
-
-    useEffect(() => {
-        if (!visible) {
-            setPreviewDate(parseTimeString(value));
-        }
-    }, [value, visible]);
-
-    const handleClose = () => setVisible(false);
-    const handleConfirm = () => {
-        onConfirm(formatTimeValue(previewDate));
-        setVisible(false);
-    };
-
-    return (
-        <>
-            <TouchableOpacity
-                style={styles.timeRow}
-                onPress={() => setVisible(true)}
-                activeOpacity={0.8}
-            >
-                <Text style={styles.label}>{label}</Text>
-                <View style={styles.timeValueBox}>
-                    <Text style={styles.timeValue}>{value}</Text>
-                    <Ionicons name="time-outline" size={16} color="#555" />
-                </View>
-            </TouchableOpacity>
-            <Modal
-                visible={visible}
-                transparent
-                animationType="fade"
-                onRequestClose={handleClose}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalCard}>
-                        <Text style={styles.modalTitle}>选择{label}时间</Text>
-                        <DateTimePicker
-                            mode="single"
-                            timePicker
-                            initialView="time"
-                            locale="zh-cn"
-                            hideHeader
-                            date={previewDate}
-                            onChange={({ date }) => {
-                                if (!date) return;
-                                const resolved =
-                                    date instanceof Date
-                                        ? date
-                                        : new Date(date as string);
-                                setPreviewDate(resolved);
-                            }}
-                        />
-                        <View style={styles.modalActions}>
-                            <TouchableOpacity
-                                style={styles.modalButton}
-                                onPress={handleClose}
-                            >
-                                <Text style={styles.modalButtonText}>取消</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[
-                                    styles.modalButton,
-                                    styles.modalButtonSpacing,
-                                    styles.modalButtonPrimary,
-                                ]}
-                                onPress={handleConfirm}
-                            >
-                                <Text
-                                    style={[
-                                        styles.modalButtonText,
-                                        styles.modalButtonPrimaryText,
-                                    ]}
-                                >
-                                    确定
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
-        </>
     );
 }
 
@@ -693,30 +508,6 @@ const styles = StyleSheet.create({
         color: "#666",
         marginBottom: 8,
     },
-    weekContainer: {
-        flexDirection: "row",
-        flexWrap: "wrap",
-        gap: 8,
-    },
-    weekBadge: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 999,
-        borderWidth: 1,
-        borderColor: "#d1d5db",
-    },
-    weekBadgeActive: {
-        backgroundColor: "#e0f2fe",
-        borderColor: "#38bdf8",
-    },
-    weekBadgeText: {
-        fontSize: 13,
-        color: "#555",
-    },
-    weekBadgeTextActive: {
-        color: "#0284c7",
-        fontWeight: "600",
-    },
     coordCard: {
         flexDirection: "row",
         alignItems: "center",
@@ -762,68 +553,5 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: "#dc2626",
         marginTop: 6,
-    },
-    timeRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        marginBottom: 14,
-    },
-    timeValueBox: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: "#f3f4f6",
-        borderRadius: 10,
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-    },
-    timeValue: {
-        fontSize: 15,
-        color: "#111",
-        marginRight: 6,
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: "rgba(0,0,0,0.4)",
-        justifyContent: "center",
-        alignItems: "center",
-        padding: 24,
-    },
-    modalCard: {
-        width: "100%",
-        borderRadius: 16,
-        backgroundColor: "#fff",
-        padding: 20,
-    },
-    modalTitle: {
-        fontSize: 16,
-        fontWeight: "600",
-        color: "#111",
-        marginBottom: 12,
-    },
-    modalActions: {
-        flexDirection: "row",
-        justifyContent: "flex-end",
-        marginTop: 16,
-    },
-    modalButton: {
-        paddingVertical: 10,
-        paddingHorizontal: 18,
-        borderRadius: 999,
-        backgroundColor: "#f3f4f6",
-    },
-    modalButtonSpacing: {
-        marginLeft: 12,
-    },
-    modalButtonPrimary: {
-        backgroundColor: "#2196F3",
-    },
-    modalButtonText: {
-        fontSize: 14,
-        color: "#111",
-    },
-    modalButtonPrimaryText: {
-        color: "#fff",
-        fontWeight: "600",
     },
 });

@@ -569,6 +569,9 @@ function EarningsContent() {
             >
                 <View style={styles.header}>
                     <Text style={styles.title}>我的收益</Text>
+                    <Text style={styles.subtitle}>
+                        查看收入流水与提现进度
+                    </Text>
                 </View>
 
                 <View style={styles.infoBanner}>
@@ -729,8 +732,11 @@ const styles = StyleSheet.create({
     },
     header: {
         backgroundColor: "white",
-        padding: 20,
-        paddingTop: 60,
+        minHeight: 128,
+        paddingHorizontal: 20,
+        paddingTop: 56,
+        paddingBottom: 20,
+        justifyContent: "center",
         borderBottomWidth: 1,
         borderBottomColor: "#eee",
     },
@@ -738,6 +744,11 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: "bold",
         color: "#333",
+    },
+    subtitle: {
+        marginTop: 6,
+        fontSize: 14,
+        color: "#666",
     },
     infoBanner: {
         marginHorizontal: 16,

@@ -264,9 +264,10 @@ const styles = StyleSheet.create({
         backgroundColor: "#F5F5F5",
     },
     header: {
-        paddingHorizontal: 16,
-        paddingTop: 48,
-        paddingBottom: 16,
+        minHeight: 128,
+        paddingHorizontal: 20,
+        paddingTop: 56,
+        paddingBottom: 20,
         backgroundColor: "white",
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: "#eee",
