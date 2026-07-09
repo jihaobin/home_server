@@ -21,6 +21,8 @@
 
 1. 准备运行环境
     - 安装 Node.js ≥18、pnpm ≥10。
+    - 如果是新环境，仓库根目录的 `docker-compose.yaml` 会自动创建 PostgreSQL、Redis、RustFS 所需命名卷。
+    - 如果机器上已有旧数据目录（例如 `/e/home_server_data`），先运行 `bash ./migrate-to-named-volumes.sh /e/home_server_data`，再执行 `docker compose up -d`。
     - 安装 Docker 与 Docker Compose，使用仓库根目录的 `docker-compose.yaml` 启动数据库/Redis/对象存储：
 
     ```bash

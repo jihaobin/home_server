@@ -129,9 +129,10 @@ echo "数据迁移完成！"
 echo "=========================================="
 echo
 echo "请按以下步骤操作："
-echo "1. 修改 docker-compose.yaml，使用新的命名卷配置"
-echo "2. 运行: ${COMPOSE_CMD[*]} up -d"
-echo "3. 验证服务是否正常"
+echo "1. docker-compose.yaml 已使用同名命名卷；缺失时 Compose 会自动创建"
+echo "2. 如果本脚本已迁移旧数据，Compose 会复用刚创建并写入数据的同名卷"
+echo "3. 运行: ${COMPOSE_CMD[*]} up -d"
+echo "4. 验证服务是否正常"
 echo
 echo "如果一切正常，可以删除旧数据: $SOURCE_DIR"
 echo "备份位置: $BACKUP_DIR"

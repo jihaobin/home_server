@@ -46,17 +46,15 @@ services:
             RUSTFS_OBS_LOGGER_LEVEL: info
         restart: unless-stopped
 
-# # 命名卷声明 - 数据将持久化存储在Docker管理的卷中
+# 命名卷声明 - 数据将持久化存储在 Docker 管理的卷中。
+# 不使用 external: true：首次 docker compose up 会自动创建缺失卷；
+# 如需保留旧数据，先运行 migrate-to-named-volumes.sh 预创建同名卷并迁移数据。
 volumes:
     home_server_postgres_data:
-        external: true
         name: home_server_home_server_postgres_data
     home_server_redis_data:
-        external: true
         name: home_server_home_server_redis_data
     home_server_rustfs_data:
-        external: true
         name: home_server_home_server_rustfs_data
     home_server_rustfs_logs:
-        external: true
         name: home_server_home_server_rustfs_logs

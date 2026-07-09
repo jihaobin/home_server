@@ -10,8 +10,8 @@ Commit: 24e1b4e
 
 ## 概览
 
-- Turborepo + pnpm workspace 的 TypeScript monorepo：NestJS 后端 + Next.js 管理端 + Expo 双端 App。
-- 环境变量通过 `env/` 片段合并到各 app 的 `.env.*`（`pnpm env:setup`），运行时统一经由 `dotenvx` 注入。
+- Turborepo + pnpm workspace 的 TypeScript monorepo：NestJS 后端 + Next.js 管理端/介绍页 + Expo 双端 App。
+- 前先运行 `pnpm env:setup`，用 `env/` 片段生成各 app 的 `.env.*`；运行时统一经由 `dotenvx` 注入。
 
 ## 结构
 
@@ -20,6 +20,7 @@ Commit: 24e1b4e
 ├── apps/
 │   ├── backend/          # NestJS 11 API + Drizzle
 │   ├── admin-web/        # Next.js (App Router) 管理端
+│   ├── marketing-web/    # Next.js (App Router) 介绍页/官网
 │   ├── mobile-user/      # Expo Router 用户端
 │   └── mobile-worker/    # Expo Router 服务人员端
 ├── packages/
@@ -43,6 +44,7 @@ Commit: 24e1b4e
 | 数据库迁移          | `apps/backend/drizzle/`                   | `pnpm --filter backend db:generate` / `db:migration`             |
 | 管理端路由          | `apps/admin-web/src/app`                  | Route Groups：`(auth)`/`(dashboard)`/`(management)`              |
 | 管理端 SSR 预取     | `apps/admin-web/src/lib/prefetchers.ts`   | 必须 `ensureSsrApiClient()`，每次请求独立 QueryClient            |
+| 介绍页路由/内容     | `apps/marketing-web/src/app`              | `content/` 存放博客/法律文档，`scripts/` 生成静态内容索引         |
 | 移动端路由          | `apps/mobile-*/app`                       | Expo Router，根 Provider 在 `app/_layout.tsx`                    |
 | 共享类型/Schema     | `packages/types/src`                      | 只改 `src/`，不要编辑 `dist/`                                    |
 | 跨端 API hooks      | `packages/hooks/src/api`                  | 约定：queryKey + `meta.errorMessage` + invalidation              |
@@ -59,6 +61,7 @@ docker-compose up -d
 pnpm dev
 pnpm backend:dev
 pnpm admin:dev
+pnpm marketing:dev
 pnpm mobile-user:dev
 pnpm mobile-worker:dev
 
@@ -71,7 +74,7 @@ pnpm test --filter=backend
 ## 约定与差异
 
 - 格式：`.editorconfig` 默认 `CRLF + 4 空格`；
-- React 版本：`pnpm-workspace.yaml` 使用 catalogs；Expo 用 `react19-1`，Admin Web 用 `react19-2`。
+- React 版本：`pnpm-workspace.yaml` 使用 catalogs；Expo 用 `react19-1`，Admin Web 与 Marketing Web 用 `react19-2`。
 - Admin Web SSR：必须遵循 `docs/admin-web-ssr-guide.md`（`ensureSsrApiClient` + `prefetchDehydratedState` + `HydrateClient`）。
 
 ## 反模式（本仓库）

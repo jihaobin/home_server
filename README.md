@@ -6,7 +6,7 @@
 [![React Native](https://img.shields.io/badge/React%20Native-Expo-blue)](https://expo.dev/)
 [![Turborepo](https://img.shields.io/badge/Turborepo-2.5.5-orange)](https://turbo.build/)
 
-基于现代化全栈技术栈构建的家庭服务平台，采用 Turborepo Monorepo 架构，包含后端 API 服务、管理后台、用户移动应用和工作人员移动应用。
+基于现代化全栈技术栈构建的家庭服务平台，采用 Turborepo Monorepo 架构，包含后端 API 服务、管理后台、介绍页项目、用户移动应用和工作人员移动应用。
 
 ## 📋 目录
 
@@ -29,6 +29,7 @@
 - 🏠 **家庭服务预约**：用户可以浏览服务分类、预约服务、管理订单
 - 👥 **工作人员管理**：工作人员接单、服务执行、收益管理
 - 🎛️ **管理后台**：服务管理、用户管理、订单管理、数据统计
+- 🌐 **介绍页项目**：提供产品介绍、下载引导、FAQ、博客和法律文档
 - 📱 **移动端支持**：iOS/Android 原生体验
 - 🔐 **统一认证**：基于 better-auth 的多端身份认证
 - 🗺️ **地理位置**：基于腾讯地图的位置服务
@@ -47,43 +48,44 @@
 graph TB
     subgraph "前端应用"
         A[管理后台 Next.js]
-        B[用户移动应用 RN]
-        C[工作人员应用 RN]
+        B[介绍页 Next.js]
+        C[用户移动应用 RN]
+        D[工作人员应用 RN]
     end
 
     subgraph "后端服务"
-        D[NestJS API 服务]
-        E[身份认证服务]
+        E[NestJS API 服务]
+        F[身份认证服务]
     end
 
     subgraph "数据存储"
-        F[(PostgreSQL + PostGIS)]
-        G[(Redis 缓存)]
-        H[RustFS 对象存储]
+        G[(PostgreSQL + PostGIS)]
+        H[(Redis 缓存)]
+        I[RustFS 对象存储]
     end
 
     subgraph "共享库"
-        I["@repo/types"]
-        J["@repo/web-ui"]
-        K["@repo/mobile-ui"]
-        L["@repo/utils"]
+        J["@repo/types"]
+        K["@repo/web-ui"]
+        L["@repo/mobile-ui"]
+        M["@repo/utils"]
     end
 
-    A --> D
-    B --> D
-    C --> D
-    D --> F
-    D --> G
-    D --> H
+    A --> E
+    C --> E
     D --> E
+    E --> G
+    E --> H
+    E --> I
+    E --> F
 
-    A --> J
-    B --> K
-    C --> K
-    A -.-> I
-    B -.-> I
-    C -.-> I
-    D -.-> I
+    A --> K
+    C --> L
+    D --> L
+    A -.-> J
+    C -.-> J
+    D -.-> J
+    E -.-> J
 ```
 
 ### 技术选型
@@ -102,6 +104,7 @@ graph TB
 #### 前端技术栈
 
 - **管理后台**：Next.js + App Router + Tailwind CSS
+- **介绍页项目**：Next.js + App Router + Tailwind CSS，博客和法律文档由 `content/` 生成
 - **移动应用**：React Native + Expo
 - **状态管理**：React Context + Zustand
 - **UI 组件**：shadcn/ui + NativeWind
@@ -133,6 +136,10 @@ graph TB
 │   │       ├── app/              # App Router 页面
 │   │       ├── components/       # React 组件
 │   │       └── lib/              # 工具库
+│   ├── marketing-web/            # Next.js 介绍页项目
+│   │   ├── src/                  # App Router 页面与站点组件
+│   │   ├── content/              # 博客与法律文档内容
+│   │   └── scripts/              # 内容生成脚本
 │   ├── mobile-user/              # 用户移动应用 (React Native)
 │   │   ├── app/                  # Expo Router 页面
 │   │   ├── components/           # RN 组件
@@ -156,6 +163,7 @@ graph TB
 
 - **`backend`**：基于 NestJS 的后端 API 服务，提供 RESTful API
 - **`admin-web`**：基于 Next.js 的管理后台，支持 SSR/SSG
+- **`marketing-web`**：基于 Next.js 的介绍页项目，提供产品介绍、下载入口、FAQ、博客和法律文档
 - **`mobile-user`**：基于 React Native Expo 的用户端移动应用
 - **`mobile-worker`**：基于 React Native Expo 的工作人员端移动应用
 
@@ -184,6 +192,8 @@ graph TB
 
 ## 🚀 快速开始
 
+> 请先运行 `pnpm env:setup`，它会把 `env/` 片段合并生成各 app 的 `.env.development/.env.production`。未执行前，后端、管理端、介绍页和移动端可能读取不到必要环境变量。
+
 ### 1. 克隆项目
 
 ```bash
@@ -207,9 +217,8 @@ docker-compose up -d
 ### 4. 配置环境变量
 
 ```bash
-# 设置环境变量（参考各应用的 .env.example 文件）
-cp apps/backend/.env.example apps/backend/.env.development
-cp apps/admin-web/.env.example apps/admin-web/.env.development
+# 生成各应用的 .env.development/.env.production
+pnpm env:setup
 ```
 
 ### 5. 数据库初始化
@@ -229,6 +238,7 @@ pnpm dev
 # 或者启动特定服务
 pnpm backend:dev      # 后端 API (http://localhost:5050)
 pnpm admin:dev        # 管理后台 (http://localhost:3000)
+pnpm marketing:dev    # 介绍页项目
 pnpm mobile-user:dev  # 用户移动应用
 pnpm mobile-worker:dev # 工作人员移动应用
 ```
